@@ -1,0 +1,48 @@
+{
+  "name": "claude-usage-bar",
+  "displayName": "Claude Usage Monitor",
+  "description": "Unofficial usage monitor for Claude Code — session & weekly limits, tokens, and requests in the status bar and a panel.",
+  "version": "0.0.5",
+  "publisher": "saegim",
+  "license": "MIT",
+  "icon": "marketplace-icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gnldnd11/claude-usage-monitor"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "usage",
+    "tokens",
+    "rate limit",
+    "monitor",
+    "status bar"
+  ],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "claudeUsage.view",
+          "name": "Claude Usage",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "bugs": {
+    "url": "https://github.com/gnldnd11/claude-usage-monitor/issues"
+  },
+  "homepage": "https://github.com/gnldnd11/claude-usage-monitor#readme"
+}
