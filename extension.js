@@ -208,11 +208,11 @@ const CSS = `
     border-radius:8px;padding:3px 4px;line-height:0;box-shadow:0 2px 5px rgba(0,0,0,.2);}
   .bubble svg{width:12px;height:12px;display:block;}
   .inner{background:var(--inner);border:1px solid var(--iborder);border-radius:13px;padding:13px;}
-  .ihead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .ihead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-right:5px;}
   .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);}
   .ihead .it svg{width:15px;height:15px;color:#e8895a;}
   .upd{color:var(--muted);font-size:10.5px;display:flex;align-items:center;gap:5px;}
-  .upd .d{width:6px;height:6px;border-radius:50%;background:#e8895a;box-shadow:0 0 6px #e8895a;}
+  .upd .d{width:6px;height:6px;border-radius:50%;background:#e8895a;box-shadow:0 0 3px #e8895a;flex:none;}
   .body{display:flex;gap:14px;align-items:center;flex-wrap:nowrap;}
   .meters{flex:1 1 auto;min-width:0;}
   .meter{margin-bottom:10px;}
@@ -275,7 +275,7 @@ const CSS = `
   .compact .meter{margin-bottom:9px;}
   @keyframes flash{0%{opacity:0;transform:translateY(5px);}12%{opacity:1;transform:translateY(0);}70%{opacity:1;}100%{opacity:0;transform:translateY(-3px);}}
   @keyframes roll{0%{opacity:.25;transform:translateY(6px);}100%{opacity:1;transform:translateY(0);}}
-  @keyframes pulse{0%,100%{opacity:.45;transform:scale(1);}50%{opacity:1;transform:scale(1.3);}}
+  @keyframes pulse{0%,100%{opacity:.4;}50%{opacity:1;}}
   @media (max-width:340px){.body{flex-wrap:wrap;}.ringbox{margin:6px auto 0;}}
 `;
 
