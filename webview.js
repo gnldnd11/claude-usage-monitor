@@ -74,8 +74,13 @@
   }
   setInterval(tick, 1000);
 
-  function meter(pfx, obj, showReset) {
-    if (!obj || obj.used_percentage == null) return;
+  function meter(pfx, obj, showReset, loading) {
+    if (!obj || obj.used_percentage == null) {
+      var pe = el(pfx + '_pct'); if (pe) pe.textContent = loading ? '…' : '—';
+      var fe = el(pfx + '_fill'); if (fe) fe.style.width = '0%';
+      if (showReset) { var se = el(pfx + '_sub'); if (se) se.textContent = ''; }
+      return;
+    }
     var p = Math.round(obj.used_percentage);
     tween(pfx + '_pct', prev[pfx], p, function (v) { return Math.round(v) + '%'; });
     setBar(pfx + '_fill', p);
@@ -87,12 +92,12 @@
   function render(d) {
     lastData = d; refreshedAt = Date.now();
 
-    meter('s', d.fh, true);
-    meter('w', d.sd, true);
-    meter('c', d.ctx, false);
+    meter('s', d.fh, true, d.usageLoading);
+    meter('w', d.sd, true, d.usageLoading);
+    meter('c', d.ctx, false, false);
     if (d.ctx && d.ctx.window && el('c_sub')) el('c_sub').textContent = '/ ' + (d.ctx.window >= 1e6 ? '1M' : '200K');
 
-    // ring (session)
+    // ring + active time (session)
     if (d.fh && d.fh.used_percentage != null) {
       var p = Math.round(d.fh.used_percentage);
       var arc = el('ringArc');
@@ -100,6 +105,10 @@
       tween('ringPct', prev.ring, p, function (v) { return Math.round(v); });
       prev.ring = p;
       if (el('st_time')) el('st_time').textContent = activeTime(d.fh.resets_at);
+    } else {
+      var rpe = el('ringPct'); if (rpe) rpe.textContent = d.usageLoading ? '…' : '—';
+      var arce = el('ringArc'); if (arce) arce.style.strokeDashoffset = String(C);
+      var ste = el('st_time'); if (ste) ste.textContent = d.usageLoading ? '…' : '—';
     }
 
     // tokens (today's output)

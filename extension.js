@@ -12,6 +12,8 @@ let statusItem;
 let provider;
 let timer;
 let usageTimer;
+let usageLoaded = false;
+let usageFails = 0;
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
 const watchers = [];
@@ -137,6 +139,7 @@ async function refreshUsage() {
     five_hour: u.five_hour ? { used_percentage: u.five_hour.utilization, resets_at: isoToEpoch(u.five_hour.resets_at) } : null,
     seven_day: u.seven_day ? { used_percentage: u.seven_day.utilization, resets_at: isoToEpoch(u.seven_day.resets_at) } : null
   };
+  usageLoaded = true;
   push();
 }
 
@@ -156,6 +159,7 @@ function collect() {
     fh: usageCache ? usageCache.five_hour : null,
     sd: usageCache ? usageCache.seven_day : null,
     ctx: cp,
+    usageLoading: !usageLoaded,
     today: tokens.today,
     last: tokens.last,
     count: tokens.count,
@@ -408,10 +412,19 @@ function activate(context) {
   timer = setInterval(push, 10000);
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
 
-  // live session/weekly limits from the usage endpoint
-  refreshUsage();
-  usageTimer = setInterval(refreshUsage, 60000);
-  context.subscriptions.push({ dispose: () => clearInterval(usageTimer) });
+  // live session/weekly limits from the usage endpoint.
+  // Poll gently (every 5 min once loaded) and back off on failure so we never hammer the
+  // endpoint or trip its rate limit. Session/weekly windows change slowly, so 5 min is plenty.
+  const usageLoop = () => {
+    refreshUsage().finally(() => {
+      let delay;
+      if (usageLoaded) { usageFails = 0; delay = 300000; }
+      else { usageFails++; delay = Math.min(300000, 30000 * usageFails); } // 30s,60s,90s… up to 5 min
+      usageTimer = setTimeout(usageLoop, delay);
+    });
+  };
+  usageLoop();
+  context.subscriptions.push({ dispose: () => clearTimeout(usageTimer) });
 }
 
 function deactivate() {}
