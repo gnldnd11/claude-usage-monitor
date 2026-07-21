@@ -15,6 +15,7 @@ let usageTimer;
 let usageLoaded = false;
 let usageFails = 0;
 let lastFetch = 0;
+let log; // debug OutputChannel — every fetch logs its status/values here
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
 const watchers = [];
@@ -139,13 +140,20 @@ function isoToEpoch(s) { const t = Date.parse(s); return isNaN(t) ? null : Math.
 async function refreshUsage() {
   const r = await fetchUsage();
   lastFetch = Date.now();
-  if (r.status !== 200 || !r.data) return r.status;
+  const ts = new Date().toLocaleTimeString();
+  if (r.status !== 200 || !r.data) {
+    if (log) log.appendLine('[' + ts + '] fetch -> ' + (r.status === 429
+      ? '429 rate-limited (transient burst) — keeping last values, retrying in 2 min'
+      : (r.status ? 'HTTP ' + r.status : 'unreachable') + ' — keeping last values'));
+    return r.status;
+  }
   const u = r.data;
   usageCache = {
     five_hour: u.five_hour ? { used_percentage: u.five_hour.utilization, resets_at: isoToEpoch(u.five_hour.resets_at) } : null,
     seven_day: u.seven_day ? { used_percentage: u.seven_day.utilization, resets_at: isoToEpoch(u.seven_day.resets_at) } : null
   };
   usageLoaded = true;
+  if (log) log.appendLine('[' + ts + '] fetch -> 200  session=' + (u.five_hour ? u.five_hour.utilization + '%' : '–') + '  weekly=' + (u.seven_day ? u.seven_day.utilization + '%' : '–'));
   push();
   return 200;
 }
@@ -406,6 +414,10 @@ function scheduleRefresh() {
 }
 
 function activate(context) {
+  log = vscode.window.createOutputChannel('Claude Usage');
+  context.subscriptions.push(log);
+  log.appendLine('[' + new Date().toLocaleTimeString() + '] Claude Usage activated — every usage fetch is logged below (open via View > Output > Claude Usage, or the refresh button).');
+
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusItem.name = 'Claude Usage';
   statusItem.command = 'claudeUsage.view.focus';
@@ -452,6 +464,7 @@ function activate(context) {
 
   // manual refresh (panel title button + command palette) — forces a fetch, ignores throttle
   context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.refresh', async () => {
+    if (log) { log.show(true); log.appendLine('[' + new Date().toLocaleTimeString() + '] manual refresh requested'); }
     const status = await refreshUsage();
     if (status === 200) vscode.window.setStatusBarMessage('$(crab) Claude usage refreshed', 2500);
     else if (status === 429) vscode.window.showInformationMessage('Claude usage endpoint is briefly rate-limited (a short burst limit it shares with Claude Code). The panel keeps refreshing on its own every few minutes.');
