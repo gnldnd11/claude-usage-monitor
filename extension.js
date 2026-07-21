@@ -629,17 +629,16 @@ function activate(context) {
   // Poll gently (every 5 min once loaded) and back off on failure so we never hammer the
   // endpoint or trip its rate limit. Session/weekly windows change slowly, so 5 min is plenty.
   const usageLoop = () => {
-    // Claude Code only checks usage on demand, so the tap alone is unpredictable — our own
-    // poll sets the real cadence. Poll ~every 60s. The endpoint's tight rate limit means some
-    // calls 429 (silent, harmless — last value kept); the ones that get through keep the panel
-    // current (~1-2 min), and /usage or the refresh button pulls instantly. If a tapped value
-    // just arrived, skip this cycle.
-    if (Date.now() - lastTapAt < 55000) {
-      usageTimer = setTimeout(usageLoop, 55000);
+    // The endpoint only lets a token through about once every few minutes, so polling
+    // faster just wastes calls on silent 429s. Poll ~every 2 min; whichever get through keep
+    // the panel current, the tap adds Claude Code's own checks, and /usage or the refresh
+    // button pulls instantly. Skip a cycle if a tapped value just arrived.
+    if (Date.now() - lastTapAt < 110000) {
+      usageTimer = setTimeout(usageLoop, 110000);
       return;
     }
     refreshUsage().finally(() => {
-      usageTimer = setTimeout(usageLoop, usageLoaded ? 60000 : 20000);
+      usageTimer = setTimeout(usageLoop, usageLoaded ? 120000 : 20000);
     });
   };
   usageLoop();
