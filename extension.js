@@ -395,19 +395,19 @@ const CSS = `
   .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:13px;}
   .brand{display:flex;align-items:center;gap:10px;min-width:0;}
   .logo{width:28px;height:28px;flex:none;}
-  .ttl{min-width:0;}
-  .ttl .t1{font-size:16px;font-weight:700;line-height:1.1;color:var(--text);}
-  .ttl .t2{color:var(--muted);font-size:11px;margin-top:2px;}
+  .ttl{min-width:0;flex:1 1 auto;overflow:hidden;}
+  .ttl .t1{font-size:16px;font-weight:700;line-height:1.1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ttl .t2{color:var(--muted);font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .mascot{position:relative;flex:none;}
-  .mascot img{width:50px;height:auto;image-rendering:pixelated;display:block;}
+  .mascot img{width:44px;height:auto;image-rendering:pixelated;display:block;}
   .bubble{position:absolute;top:-4px;right:-8px;background:var(--bubble);border:1px solid var(--bubblebd);
     border-radius:8px;padding:3px 4px;line-height:0;box-shadow:0 2px 5px rgba(0,0,0,.2);}
   .bubble svg{width:12px;height:12px;display:block;}
   .inner{background:var(--inner);border:1px solid var(--iborder);border-radius:13px;padding:13px;}
   .ihead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-right:5px;}
-  .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);}
+  .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);white-space:nowrap;min-width:0;overflow:hidden;flex:0 1 auto;}
   .ihead .it svg{width:15px;height:15px;color:#e8895a;}
-  .upd{color:var(--muted);font-size:10.5px;display:flex;align-items:center;gap:5px;}
+  .upd{color:var(--muted);font-size:10.5px;display:flex;align-items:center;gap:5px;white-space:nowrap;flex:none;}
   .upd .d{width:6px;height:6px;border-radius:50%;background:#e8895a;box-shadow:0 0 3px #e8895a;flex:none;}
   .body{display:flex;gap:14px;align-items:center;flex-wrap:nowrap;}
   .meters{flex:1 1 auto;min-width:0;}
