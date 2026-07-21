@@ -637,8 +637,12 @@ function activate(context) {
       usageTimer = setTimeout(usageLoop, 110000);
       return;
     }
-    refreshUsage().finally(() => {
-      usageTimer = setTimeout(usageLoop, usageLoaded ? 120000 : 20000);
+    refreshUsage().then((status) => {
+      // On success, relax for 2 min. On 429 the window is momentarily taken — retry every
+      // 30s to grab it the moment it frees, instead of sitting stale for 2 min.
+      usageTimer = setTimeout(usageLoop, status === 200 ? 120000 : 30000);
+    }, () => {
+      usageTimer = setTimeout(usageLoop, 30000);
     });
   };
   usageLoop();
