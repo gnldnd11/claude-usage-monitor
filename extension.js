@@ -16,6 +16,9 @@ let usageLoaded = false;
 let usageFails = 0;
 let lastFetch = 0;
 let log; // debug OutputChannel — every fetch logs its status/values here
+let lastTapAt = 0; // last time we read Claude Code's own usage response via diagnostics_channel
+const pendingUsageRequests = new WeakSet(); // in-flight Claude Code requests to /api/oauth/usage
+let extContext; // for persisting the last-good usage value across reloads
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
 const watchers = [];
@@ -104,6 +107,9 @@ function readTokens() {
 // The stored OAuth token is sent ONLY to api.anthropic.com and nowhere else.
 function fetchUsage() {
   return new Promise((resolve) => {
+    // Fallback path only (used when the tap has not seen a Claude Code usage response
+    // in a while). Reads Claude Code's token; shares its budget, so it can 429 during
+    // active use — that is fine, the tap covers active use and we keep the last value.
     let token;
     try {
       const cred = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf8'));
@@ -134,6 +140,95 @@ function fetchUsage() {
 }
 
 function isoToEpoch(s) { const t = Date.parse(s); return isNaN(t) ? null : Math.floor(t / 1000); }
+function resetsToEpoch(v) {
+  if (typeof v === 'number') return v > 1e12 ? Math.floor(v / 1000) : v; // ms vs s
+  return isoToEpoch(v);
+}
+
+// Persist the last-good usage so a reload shows it instantly instead of "loading".
+function saveUsage() {
+  try { if (extContext && usageCache) extContext.globalState.update('usageCacheV1', { at: Date.now(), value: usageCache }); } catch (e) { /* ignore */ }
+}
+
+// --- diagnostics_channel tap -------------------------------------------------
+// Claude Code fetches /api/oauth/usage for its own display. Since its extension
+// runs in the same host process, we can observe its request via diagnostics_channel
+// and read the RESPONSE BODY as it streams — without making our own call. That means
+// no rate limit competition (no 429) and no sign-in: we ride Claude Code's success.
+function setupUsageTap(context) {
+  let dc;
+  try { dc = require('diagnostics_channel'); } catch (e) { return; }
+  const reqHandler = (message) => {
+    try {
+      const req = message && message.request;
+      if (!req) return;
+      const p = req.path;
+      const host = req.getHeader && req.getHeader('host');
+      if (p && p.indexOf('/api/oauth/usage') !== -1 && host && String(host).indexOf('anthropic.com') !== -1) {
+        pendingUsageRequests.add(req);
+        if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap: saw Claude Code request to /api/oauth/usage');
+      }
+    } catch (e) { /* never break other extensions */ }
+  };
+  const resHandler = (message) => {
+    try {
+      if (!message || !pendingUsageRequests.has(message.request)) return;
+      pendingUsageRequests.delete(message.request);
+      const res = message.response;
+      if (res && res.statusCode === 200) tapResponseBody(res);
+    } catch (e) { /* never break */ }
+  };
+  try {
+    dc.subscribe('http.client.request.start', reqHandler);
+    dc.subscribe('http.client.response.finish', resHandler);
+    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap active — reading Claude Code\'s own usage responses (no own calls while it is active)');
+    context.subscriptions.push({ dispose: () => {
+      try { dc.unsubscribe('http.client.request.start', reqHandler); dc.unsubscribe('http.client.response.finish', resHandler); } catch (e) {}
+    } });
+  } catch (e) {
+    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap unavailable: ' + (e && e.message));
+  }
+}
+
+// Pass response chunks through to Claude Code's own listeners while copying the
+// body for ourselves. Monkey-patch res.on so we never consume the stream.
+function tapResponseBody(res) {
+  let body = '';
+  const MAX = 200000;
+  const origOn = res.on.bind(res);
+  res.on = function (event, listener) {
+    if (event === 'data') {
+      return origOn('data', (chunk) => { if (body.length < MAX) body += chunk.toString(); listener(chunk); });
+    }
+    if (event === 'end') {
+      return origOn('end', (...args) => { try { if (body) processTapped(body); } catch (e) {} listener(...args); });
+    }
+    return origOn(event, listener);
+  };
+}
+
+// Parse a tapped usage payload (either the /api/oauth/usage shape or the
+// statusLine rate_limits shape) into usageCache and push to the panel.
+function processTapped(body) {
+  let u;
+  try { u = JSON.parse(body); } catch (e) { return; }
+  const fh = u.five_hour || (u.rate_limits && u.rate_limits.five_hour);
+  const sd = u.seven_day || (u.rate_limits && u.rate_limits.seven_day);
+  const pct = (o) => (o == null ? null : (o.utilization != null ? o.utilization : o.used_percentage));
+  if (fh == null && sd == null) return;
+  usageCache = {
+    five_hour: fh ? { used_percentage: pct(fh), resets_at: resetsToEpoch(fh.resets_at) } : null,
+    seven_day: sd ? { used_percentage: pct(sd), resets_at: resetsToEpoch(sd.resets_at) } : null
+  };
+  usageLoaded = true;
+  lastTapAt = Date.now();
+  lastFetch = Date.now();
+  if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap (Claude Code) -> '
+    + (usageCache.five_hour ? 'session=' + Math.round(usageCache.five_hour.used_percentage) + '%' : '')
+    + (usageCache.seven_day ? '  weekly=' + Math.round(usageCache.seven_day.used_percentage) + '%' : ''));
+  saveUsage();
+  push();
+}
 
 // returns the HTTP status (200 ok, 429 rate-limited, 0 unreachable) so the
 // manual-refresh command can tell the user what happened.
@@ -143,7 +238,7 @@ async function refreshUsage() {
   const ts = new Date().toLocaleTimeString();
   if (r.status !== 200 || !r.data) {
     if (log) log.appendLine('[' + ts + '] fetch -> ' + (r.status === 429
-      ? '429 rate-limited (transient burst) — keeping last values, retrying in 2 min'
+      ? '429 (Claude Code busy) — retrying in 2 min; the tap covers active use, last value kept'
       : (r.status ? 'HTTP ' + r.status : 'unreachable') + ' — keeping last values'));
     return r.status;
   }
@@ -154,6 +249,7 @@ async function refreshUsage() {
   };
   usageLoaded = true;
   if (log) log.appendLine('[' + ts + '] fetch -> 200  session=' + (u.five_hour ? u.five_hour.utilization + '%' : '–') + '  weekly=' + (u.seven_day ? u.seven_day.utilization + '%' : '–'));
+  saveUsage();
   push();
   return 200;
 }
@@ -418,6 +514,22 @@ function activate(context) {
   context.subscriptions.push(log);
   log.appendLine('[' + new Date().toLocaleTimeString() + '] Claude Usage activated — every usage fetch is logged below (open via View > Output > Claude Usage, or the refresh button).');
 
+  // Restore last-good usage immediately so a reload never shows "loading" when we
+  // have a prior value (this is what the other extensions do — show last, update later).
+  extContext = context;
+  try {
+    const saved = context.globalState.get('usageCacheV1');
+    if (saved && saved.value && (saved.value.five_hour || saved.value.seven_day)) {
+      usageCache = saved.value;
+      usageLoaded = true;
+      log.appendLine('[' + new Date().toLocaleTimeString() + '] restored last-good usage: session=' + (saved.value.five_hour ? Math.round(saved.value.five_hour.used_percentage) + '%' : '–') + ' weekly=' + (saved.value.seven_day ? Math.round(saved.value.seven_day.used_percentage) + '%' : '–'));
+    }
+  } catch (e) { /* ignore */ }
+
+  // Primary source: ride Claude Code's own usage responses (no own calls, no 429).
+  // Our own fetch is only a fallback for when the tap has been quiet for a while.
+  setupUsageTap(context);
+
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusItem.name = 'Claude Usage';
   statusItem.command = 'claudeUsage.view.focus';
@@ -443,6 +555,12 @@ function activate(context) {
   // Poll gently (every 5 min once loaded) and back off on failure so we never hammer the
   // endpoint or trip its rate limit. Session/weekly windows change slowly, so 5 min is plenty.
   const usageLoop = () => {
+    // If we tapped Claude Code's own usage response in the last 6 min, don't make our
+    // own call at all — no competition for the rate limit. Just re-check later.
+    if (Date.now() - lastTapAt < 360000) {
+      usageTimer = setTimeout(usageLoop, 120000);
+      return;
+    }
     refreshUsage().then((status) => {
       // 200 -> fresh, next poll in 5 min. The endpoint has a short burst limit, so a
       // 429 (or unreachable) is transient: retry in 2 min instead of waiting the full 5,
@@ -466,9 +584,13 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.refresh', async () => {
     if (log) { log.show(true); log.appendLine('[' + new Date().toLocaleTimeString() + '] manual refresh requested'); }
     const status = await refreshUsage();
-    if (status === 200) vscode.window.setStatusBarMessage('$(crab) Claude usage refreshed', 2500);
-    else if (status === 429) vscode.window.showInformationMessage('Claude usage endpoint is briefly rate-limited (a short burst limit it shares with Claude Code). The panel keeps refreshing on its own every few minutes.');
-    else vscode.window.showWarningMessage('Could not reach the Claude usage endpoint. Showing the last known values.');
+    if (status === 200) {
+      vscode.window.setStatusBarMessage('$(crab) Claude usage refreshed', 2500);
+    } else if (status === 429) {
+      vscode.window.showInformationMessage('Claude Code was busy, so the direct refresh was rate-limited. The panel updates itself from Claude Code\'s own usage checks; last value kept.');
+    } else {
+      vscode.window.showWarningMessage('Could not reach the Claude usage endpoint. Showing the last known values.');
+    }
   }));
 }
 
