@@ -39,6 +39,22 @@
           "type": "webview"
         }
       ]
+    },
+    "commands": [
+      {
+        "command": "claudeUsage.refresh",
+        "title": "Claude Usage: Refresh",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudeUsage.refresh",
+          "when": "view == claudeUsage.view",
+          "group": "navigation"
+        }
+      ]
     }
   },
   "bugs": {

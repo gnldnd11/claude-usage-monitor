@@ -438,6 +438,9 @@ function activate(context) {
   context.subscriptions.push(vscode.window.onDidChangeWindowState((e) => {
     if (e.focused && Date.now() - lastFetch > 300000) refreshUsage();
   }));
+
+  // manual refresh (panel title button + command palette) — forces a fetch, ignores throttle
+  context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.refresh', () => refreshUsage()));
 }
 
 function deactivate() {}
