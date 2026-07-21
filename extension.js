@@ -124,7 +124,8 @@ function fetchUsage() {
       headers: {
         'Authorization': 'Bearer ' + token,
         'Content-Type': 'application/json',
-        'anthropic-beta': 'oauth-2025-04-20'
+        'anthropic-beta': 'oauth-2025-04-20',
+        'x-cuc-self': '1'
       }
     }, (res) => {
       let body = '';
@@ -157,8 +158,10 @@ function saveUsage() {
 function scheduleTurnRefresh() {
   clearTimeout(turnRefreshTimer);
   turnRefreshTimer = setTimeout(() => {
-    if (Date.now() - lastTapAt < 8000) return; // a tap already refreshed us moments ago
-    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] turn finished — pulling fresh usage');
+    // The tap gives us Claude Code's own fresh value around each turn; only make our own
+    // (429-prone) call if the tap has actually been quiet for a while.
+    if (Date.now() - lastTapAt < 90000) return;
+    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] turn finished, tap quiet — pulling fresh usage');
     refreshUsage();
   }, 2500);
 }
@@ -175,6 +178,7 @@ function setupUsageTap(context) {
     try {
       const req = message && message.request;
       if (!req) return;
+      if (req.getHeader && req.getHeader('x-cuc-self')) return; // our own fetch, not Claude Code's
       const p = req.path;
       const host = req.getHeader && req.getHeader('host');
       if (!p || !host || String(host).indexOf('anthropic.com') === -1) return;
