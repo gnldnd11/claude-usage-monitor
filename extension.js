@@ -508,6 +508,8 @@ class UsageViewProvider {
     const crabUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'crab.png'));
     const logoUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'logo.png'));
     const sparkleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'sparkle.png'));
+    const mascotIdleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-idle.png'));
+    const mascotStunnedUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-stunned.png'));
     const csp = webview.cspSource;
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
@@ -526,7 +528,7 @@ class UsageViewProvider {
     </div>
     <div class="hactions">
       <div class="mascot">
-        <img src="${crabUri}" alt="claude"/>
+        <img id="mascot" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-stunned="${mascotStunnedUri}" alt="claude"/>
         <div class="bubble">${IC.heart}</div>
       </div>
       <img class="sparkle-hd" src="${sparkleUri}" alt=""/>

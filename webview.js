@@ -92,6 +92,12 @@
   function render(d) {
     lastData = d; refreshedAt = Date.now();
     var _ab = el('authbar'); if (_ab) _ab.style.display = d.signedIn ? 'none' : 'flex';
+    var _m = el('mascot');
+    if (_m) {
+      var _s100 = (d.fh && d.fh.used_percentage >= 100) || (d.sd && d.sd.used_percentage >= 100);
+      var _want = _s100 ? _m.getAttribute('data-stunned') : _m.getAttribute('data-idle');
+      if (_want && _m.getAttribute('src') !== _want) _m.setAttribute('src', _want);
+    }
 
     meter('s', d.fh, true, d.usageLoading);
     meter('w', d.sd, true, d.usageLoading);
