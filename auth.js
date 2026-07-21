@@ -31,6 +31,48 @@ class AuthManager {
   getAccessToken() { return this.token ? this.token.access_token : null; }
   async logout() { this.token = null; await this.secrets.delete(SECRET_KEY); }
 
+  // Refresh the access token before it expires so one sign-in lasts indefinitely.
+  async ensureFresh() {
+    if (!this.token) return false;
+    if (this.token.expires_at && Date.now() > this.token.expires_at - 5 * 60000) return await this.refresh();
+    return true;
+  }
+
+  refresh() {
+    return new Promise((resolve) => {
+      if (!this.token || !this.token.refresh_token) { resolve(false); return; }
+      const body = JSON.stringify({ grant_type: 'refresh_token', refresh_token: this.token.refresh_token, client_id: CLIENT_ID });
+      const parsed = new URL(TOKEN_URL);
+      const req = https.request({
+        hostname: parsed.hostname, path: parsed.pathname, method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      }, (res) => {
+        let data = '';
+        res.on('data', (c) => data += c);
+        res.on('end', () => {
+          let json = null;
+          try { json = JSON.parse(data); } catch (e) {}
+          if (json && json.access_token) {
+            this.token = {
+              access_token: json.access_token,
+              refresh_token: json.refresh_token || this.token.refresh_token,
+              expires_at: json.expires_in ? Date.now() + json.expires_in * 1000 : undefined
+            };
+            this.secrets.store(SECRET_KEY, JSON.stringify(this.token));
+            this._l('token refreshed (status ' + res.statusCode + ')');
+            resolve(true);
+          } else {
+            this._l('token refresh failed (status ' + res.statusCode + ') — sign in again');
+            this.token = null; // force re-sign-in
+            resolve(false);
+          }
+        });
+      });
+      req.on('error', (e) => { this._l('token refresh error: ' + e.message); resolve(false); });
+      req.write(body); req.end();
+    });
+  }
+
   login() {
     const codeVerifier = crypto.randomBytes(32).toString('base64url');
     const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');

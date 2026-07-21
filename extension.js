@@ -308,6 +308,7 @@ function processTapped(body) {
 // returns the HTTP status (200 ok, 429 rate-limited, 0 unreachable) so the
 // manual-refresh command can tell the user what happened.
 async function refreshUsage() {
+  if (auth && auth.isLoggedIn()) await auth.ensureFresh(); // refresh our token before it expires
   const r = await fetchUsage();
   lastFetch = Date.now();
   const ts = new Date().toLocaleTimeString();
