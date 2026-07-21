@@ -157,13 +157,14 @@ function saveUsage() {
 // fetch usually succeeds. Debounced so a turn with many tool-use round trips fires once.
 function scheduleTurnRefresh() {
   clearTimeout(turnRefreshTimer);
+  // Fire ~7s after the turn's last transcript write. By then generation is done and the
+  // user is reading (a lull), so the usage window is free and our fetch gets through —
+  // exactly like clicking refresh, but automatic after every turn.
   turnRefreshTimer = setTimeout(() => {
-    // The tap gives us Claude Code's own fresh value around each turn; only make our own
-    // (429-prone) call if the tap has actually been quiet for a while.
-    if (Date.now() - lastTapAt < 90000) return;
-    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] turn finished, tap quiet — pulling fresh usage');
+    if (Date.now() - lastFetch < 15000) return; // fetched very recently, skip
+    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] turn done — refreshing usage');
     refreshUsage();
-  }, 2500);
+  }, 7000);
 }
 
 // Normalize undici raw headers (Buffer[] of [name,value,name,value,...]) to a lowercase map.
@@ -615,10 +616,9 @@ function activate(context) {
     watchers.push(fs.watch(CLAUDE_DIR, (ev, fn) => { if (!fn || fn === 'usage-bar.json') scheduleRefresh(); }));
   } catch (e) { /* covered by timer */ }
   try {
-    // A transcript write refreshes the token/request counts (those are real-time). It does
-    // NOT trigger a usage fetch — that would just 429 during active use; session/weekly come
-    // from the tap (Claude Code's own checks) plus the gentle background poll when idle.
-    watchers.push(fs.watch(PROJECTS_DIR, { recursive: true }, () => scheduleRefresh()));
+    // A transcript write refreshes token/request counts (real-time) AND schedules a usage
+    // refresh ~7s later, in the post-turn reading lull when the window is free.
+    watchers.push(fs.watch(PROJECTS_DIR, { recursive: true }, () => { scheduleRefresh(); scheduleTurnRefresh(); }));
   } catch (e) { /* covered by timer */ }
   context.subscriptions.push({ dispose: () => watchers.forEach((w) => { try { w.close(); } catch (e) {} }) });
 
