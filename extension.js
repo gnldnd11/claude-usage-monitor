@@ -14,6 +14,7 @@ let timer;
 let usageTimer;
 let usageLoaded = false;
 let usageFails = 0;
+let lastFetch = 0;
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
 const watchers = [];
@@ -140,6 +141,7 @@ async function refreshUsage() {
     seven_day: u.seven_day ? { used_percentage: u.seven_day.utilization, resets_at: isoToEpoch(u.seven_day.resets_at) } : null
   };
   usageLoaded = true;
+  lastFetch = Date.now();
   push();
 }
 
@@ -304,6 +306,9 @@ class UsageViewProvider {
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     view.webview.html = this.html(view.webview);
     view.webview.onDidReceiveMessage((m) => { if (m && m.type === 'ready') push(); });
+    view.onDidChangeVisibility(() => {
+      if (view.visible && Date.now() - lastFetch > 60000) refreshUsage();
+    });
     push();
   }
   post(data) {
@@ -428,6 +433,11 @@ function activate(context) {
   };
   usageLoop();
   context.subscriptions.push({ dispose: () => clearTimeout(usageTimer) });
+
+  // refresh right away when the window regains focus (e.g. after sleep/wake), throttled to 60s
+  context.subscriptions.push(vscode.window.onDidChangeWindowState((e) => {
+    if (e.focused && Date.now() - lastFetch > 60000) refreshUsage();
+  }));
 }
 
 function deactivate() {}
