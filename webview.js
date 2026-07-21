@@ -97,6 +97,8 @@
       var _s100 = (d.fh && d.fh.used_percentage >= 100) || (d.sd && d.sd.used_percentage >= 100);
       var _want = _s100 ? _m.getAttribute('data-stunned') : _m.getAttribute('data-idle');
       if (_want && _m.getAttribute('src') !== _want) _m.setAttribute('src', _want);
+      _m.style.cursor = _s100 ? 'pointer' : 'default';
+      _m.title = _s100 ? 'poke' : '';
     }
 
     meter('s', d.fh, true, d.usageLoading);
@@ -158,6 +160,16 @@
 
   var _sb = el('signinBtn');
   if (_sb) _sb.addEventListener('click', function () { vscode.postMessage({ type: 'login' }); });
+
+  // poke the fallen crab to replay the collapse (only while stunned)
+  var _mc = el('mascot');
+  if (_mc) _mc.addEventListener('click', function () {
+    if (_mc.getAttribute('src') !== _mc.getAttribute('data-stunned')) return;
+    var s = _mc.getAttribute('data-stunned');
+    _mc.removeAttribute('src');
+    void _mc.offsetWidth; // force the browser to drop the frame so the APNG restarts
+    _mc.setAttribute('src', s);
+  });
 
   vscode.postMessage({ type: 'ready' });
 })();

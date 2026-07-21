@@ -428,7 +428,7 @@ const CSS = `
   .rpct{font-size:22px;font-weight:800;color:#e8895a;line-height:1;}
   .rpct span:last-child{font-size:12px;}
   .rtext{font-size:9.5px;color:var(--muted);margin-top:2px;}
-  .sparkle{width:30px;height:30px;margin-top:6px;}
+  .sparkle{width:76px;height:auto;margin-top:2px;image-rendering:pixelated;}
   .stats{display:flex;gap:1px;margin-top:13px;background:var(--iborder);border-radius:11px;overflow:hidden;}
   .stat{flex:1;background:var(--inner);padding:10px 8px;min-width:0;position:relative;}
   .stat .stop{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
@@ -528,7 +528,7 @@ class UsageViewProvider {
     </div>
     <div class="hactions">
       <div class="mascot">
-        <img id="mascot" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-stunned="${mascotStunnedUri}" alt="claude"/>
+        <img src="${crabUri}" alt="claude"/>
         <div class="bubble">${IC.heart}</div>
       </div>
       <img class="sparkle-hd" src="${sparkleUri}" alt=""/>
@@ -570,7 +570,7 @@ class UsageViewProvider {
             <div class="rtext">used</div>
           </div>
         </div>
-        <img class="sparkle" src="${sparkleUri}" alt=""/>
+        <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-stunned="${mascotStunnedUri}" alt=""/>
       </div>
     </div>
     <div class="stats">
