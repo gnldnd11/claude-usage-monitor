@@ -169,23 +169,28 @@ function collect() {
 
 function renderStatusBar(data) {
   const segs = [];
+  const tip = [];
   let worst = 0;
   if (data.fh && data.fh.used_percentage != null) {
     const p = Math.round(data.fh.used_percentage);
     worst = Math.max(worst, p);
+    segs.push(`5h ${p}%`);
     const cd = fmtCountdown(data.fh.resets_at);
-    segs.push(`S ${dotbar(p)} ${p}%${cd ? ' ' + cd : ''}`);
+    tip.push(`Session (5h): ${p}%${cd ? ' · resets ' + cd : ''}`);
   }
   if (data.sd && data.sd.used_percentage != null) {
     const p = Math.round(data.sd.used_percentage);
     worst = Math.max(worst, p);
-    segs.push(`W ${p}%`);
+    segs.push(`wk ${p}%`);
+    const cd = fmtCountdown(data.sd.resets_at);
+    tip.push(`Weekly (7d): ${p}%${cd ? ' · resets ' + cd : ''}`);
   }
-  statusItem.text = segs.length ? segs.join(' · ') : 'Claude: waiting…';
+  statusItem.text = segs.length ? segs.join(' · ') : 'Claude usage: loading…';
   if (worst >= 90) statusItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
   else if (worst >= 70) statusItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
   else statusItem.backgroundColor = undefined;
-  statusItem.tooltip = 'Claude usage · click to open panel';
+  tip.push('Click to open the panel');
+  statusItem.tooltip = tip.join('\n');
   statusItem.show();
 }
 
@@ -417,10 +422,8 @@ function activate(context) {
   // endpoint or trip its rate limit. Session/weekly windows change slowly, so 5 min is plenty.
   const usageLoop = () => {
     refreshUsage().finally(() => {
-      let delay;
-      if (usageLoaded) { usageFails = 0; delay = 300000; }
-      else { usageFails++; delay = Math.min(300000, 30000 * usageFails); } // 30s,60s,90s… up to 5 min
-      usageTimer = setTimeout(usageLoop, delay);
+      // retry every 30s until the first success (fast recovery), then poll every 5 min
+      usageTimer = setTimeout(usageLoop, usageLoaded ? 300000 : 30000);
     });
   };
   usageLoop();

@@ -76,7 +76,7 @@
 
   function meter(pfx, obj, showReset, loading) {
     if (!obj || obj.used_percentage == null) {
-      var pe = el(pfx + '_pct'); if (pe) pe.textContent = loading ? '…' : '—';
+      var pe = el(pfx + '_pct'); if (pe) pe.textContent = loading ? 'loading' : '—';
       var fe = el(pfx + '_fill'); if (fe) fe.style.width = '0%';
       if (showReset) { var se = el(pfx + '_sub'); if (se) se.textContent = ''; }
       return;
@@ -108,7 +108,7 @@
     } else {
       var rpe = el('ringPct'); if (rpe) rpe.textContent = d.usageLoading ? '…' : '—';
       var arce = el('ringArc'); if (arce) arce.style.strokeDashoffset = String(C);
-      var ste = el('st_time'); if (ste) ste.textContent = d.usageLoading ? '…' : '—';
+      var ste = el('st_time'); if (ste) ste.textContent = d.usageLoading ? 'loading' : '—';
     }
 
     // tokens (today's output)
