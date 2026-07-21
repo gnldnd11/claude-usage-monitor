@@ -18,6 +18,8 @@ let lastFetch = 0;
 let log; // debug OutputChannel — every fetch logs its status/values here
 let lastTapAt = 0; // last time we read Claude Code's own usage response via diagnostics_channel
 const pendingUsageRequests = new WeakSet(); // in-flight Claude Code requests to /api/oauth/usage
+const pendingMessageRequests = new WeakSet(); // in-flight Claude Code /v1/messages turns
+let turnRefreshTimer; // debounced refresh fired after a turn completes
 let extContext; // for persisting the last-good usage value across reloads
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
@@ -150,6 +152,17 @@ function saveUsage() {
   try { if (extContext && usageCache) extContext.globalState.update('usageCacheV1', { at: Date.now(), value: usageCache }); } catch (e) { /* ignore */ }
 }
 
+// After a Claude Code turn finishes, the usage token is briefly free, so a direct
+// fetch usually succeeds. Debounced so a turn with many tool-use round trips fires once.
+function scheduleTurnRefresh() {
+  clearTimeout(turnRefreshTimer);
+  turnRefreshTimer = setTimeout(() => {
+    if (Date.now() - lastTapAt < 8000) return; // a tap already refreshed us moments ago
+    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] turn finished — pulling fresh usage');
+    refreshUsage();
+  }, 2500);
+}
+
 // --- diagnostics_channel tap -------------------------------------------------
 // Claude Code fetches /api/oauth/usage for its own display. Since its extension
 // runs in the same host process, we can observe its request via diagnostics_channel
@@ -164,18 +177,29 @@ function setupUsageTap(context) {
       if (!req) return;
       const p = req.path;
       const host = req.getHeader && req.getHeader('host');
-      if (p && p.indexOf('/api/oauth/usage') !== -1 && host && String(host).indexOf('anthropic.com') !== -1) {
+      if (!p || !host || String(host).indexOf('anthropic.com') === -1) return;
+      if (p.indexOf('/api/oauth/usage') !== -1) {
         pendingUsageRequests.add(req);
         if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap: saw Claude Code request to /api/oauth/usage');
+      } else if (p.indexOf('/v1/messages') !== -1 && p.indexOf('count_tokens') === -1) {
+        pendingMessageRequests.add(req); // a real message turn (not token counting)
       }
     } catch (e) { /* never break other extensions */ }
   };
   const resHandler = (message) => {
     try {
-      if (!message || !pendingUsageRequests.has(message.request)) return;
-      pendingUsageRequests.delete(message.request);
-      const res = message.response;
-      if (res && res.statusCode === 200) tapResponseBody(res);
+      if (!message) return;
+      const req = message.request;
+      if (pendingUsageRequests.has(req)) {
+        pendingUsageRequests.delete(req);
+        const res = message.response;
+        if (res && res.statusCode === 200) tapResponseBody(res);
+        return;
+      }
+      if (pendingMessageRequests.has(req)) {
+        pendingMessageRequests.delete(req);
+        scheduleTurnRefresh(); // a Claude Code turn finished — pull fresh usage right after
+      }
     } catch (e) { /* never break */ }
   };
   try {
