@@ -94,11 +94,16 @@
     var _ab = el('authbar'); if (_ab) _ab.style.display = d.signedIn ? 'none' : 'flex';
     var _m = el('mascot');
     if (_m) {
-      var _s100 = (d.fh && d.fh.used_percentage >= 100) || (d.sd && d.sd.used_percentage >= 100);
-      var _want = _s100 ? _m.getAttribute('data-stunned') : _m.getAttribute('data-idle');
+      // Mascot state by 5h session %: <50 idle, 50-89 working, >=90 stunned.
+      // Weekly at 100% also stuns.
+      var _sess = (d.fh && d.fh.used_percentage) || 0;
+      var _wk = (d.sd && d.sd.used_percentage) || 0;
+      var _state = (_sess >= 90 || _wk >= 100) ? 'stunned' : (_sess >= 50 ? 'working' : 'idle');
+      var _want = _m.getAttribute('data-' + _state);
       if (_want && _m.getAttribute('src') !== _want) _m.setAttribute('src', _want);
-      _m.style.cursor = _s100 ? 'pointer' : 'default';
-      _m.title = _s100 ? 'poke' : '';
+      var _stunned = _state === 'stunned';
+      _m.style.cursor = _stunned ? 'pointer' : 'default';
+      _m.title = _stunned ? 'poke' : '';
     }
 
     meter('s', d.fh, true, d.usageLoading);

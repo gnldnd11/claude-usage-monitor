@@ -510,6 +510,7 @@ class UsageViewProvider {
     const sparkleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'sparkle.png'));
     const mascotIdleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-idle.png'));
     const mascotStunnedUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-stunned.png'));
+    const mascotWorkingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-working.png'));
     const csp = webview.cspSource;
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
@@ -570,7 +571,7 @@ class UsageViewProvider {
             <div class="rtext">used</div>
           </div>
         </div>
-        <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-stunned="${mascotStunnedUri}" alt=""/>
+        <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-stunned="${mascotStunnedUri}" alt=""/>
       </div>
     </div>
     <div class="stats">
