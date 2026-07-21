@@ -555,20 +555,20 @@ function activate(context) {
   // Poll gently (every 5 min once loaded) and back off on failure so we never hammer the
   // endpoint or trip its rate limit. Session/weekly windows change slowly, so 5 min is plenty.
   const usageLoop = () => {
-    // If we tapped Claude Code's own usage response in the last 6 min, don't make our
-    // own call at all — no competition for the rate limit. Just re-check later.
-    if (Date.now() - lastTapAt < 360000) {
-      usageTimer = setTimeout(usageLoop, 120000);
+    // Claude Code only calls /api/oauth/usage occasionally, so the tap alone can sit
+    // still for minutes. Fill the gaps with our own gentle fetch. If a tapped value
+    // arrived in the last ~2.5 min we're already fresh; otherwise fetch to catch a
+    // quiet moment. During active streaming our call may 429 (harmless — last value is
+    // kept and the tap covers it), so retry sooner then.
+    if (Date.now() - lastTapAt < 150000) {
+      usageTimer = setTimeout(usageLoop, 75000);
       return;
     }
     refreshUsage().then((status) => {
-      // 200 -> fresh, next poll in 5 min. The endpoint has a short burst limit, so a
-      // 429 (or unreachable) is transient: retry in 2 min instead of waiting the full 5,
-      // then settle back to 5 min once it succeeds. 30s only until the very first success.
-      const next = status === 200 ? 300000 : (usageLoaded ? 120000 : 30000);
+      const next = status === 200 ? 150000 : (usageLoaded ? 75000 : 30000);
       usageTimer = setTimeout(usageLoop, next);
     }, () => {
-      usageTimer = setTimeout(usageLoop, usageLoaded ? 120000 : 30000);
+      usageTimer = setTimeout(usageLoop, usageLoaded ? 75000 : 30000);
     });
   };
   usageLoop();
@@ -584,9 +584,9 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.refresh', async () => {
     if (log) log.show(true);
     const tapAge = Date.now() - lastTapAt;
-    // If we already have a recent value from Claude Code's own usage check, don't make
-    // a direct call — it would just 429 while Claude Code is busy, for no benefit.
-    if (usageLoaded && tapAge < 360000) {
+    // Only short-circuit if Claude Code's own reading just arrived; otherwise the button
+    // should actually try to pull a current value.
+    if (usageLoaded && tapAge < 45000) {
       const secs = Math.round(tapAge / 1000);
       if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] refresh: already up to date (from Claude Code ' + secs + 's ago). Type /usage in the terminal to force a fresh reading.');
       push();
