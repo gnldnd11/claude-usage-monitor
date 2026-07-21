@@ -107,42 +107,47 @@ function fetchUsage() {
     try {
       const cred = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf8'));
       token = (cred.claudeAiOauth || {}).accessToken;
-    } catch (e) { resolve(null); return; }
-    if (!token) { resolve(null); return; }
+    } catch (e) { resolve({ status: 0, data: null }); return; }
+    if (!token) { resolve({ status: 0, data: null }); return; }
+    // Match Claude Code's own request to this endpoint exactly.
     const req = https.request({
       hostname: 'api.anthropic.com', path: '/api/oauth/usage', method: 'GET',
       headers: {
         'Authorization': 'Bearer ' + token,
-        'anthropic-beta': 'oauth-2025-04-20',
-        'anthropic-version': '2023-06-01',
-        'User-Agent': 'claude-usage-monitor'
+        'Content-Type': 'application/json',
+        'anthropic-beta': 'oauth-2025-04-20'
       }
     }, (res) => {
       let body = '';
       res.on('data', (c) => { body += c; });
       res.on('end', () => {
-        if (res.statusCode !== 200) { resolve(null); return; }
-        try { resolve(JSON.parse(body)); } catch (e) { resolve(null); }
+        let data = null;
+        try { data = JSON.parse(body); } catch (e) { /* non-JSON */ }
+        resolve({ status: res.statusCode, data: data });
       });
     });
-    req.on('error', () => resolve(null));
-    req.setTimeout(12000, () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve({ status: 0, data: null }));
+    req.setTimeout(12000, () => { req.destroy(); resolve({ status: 0, data: null }); });
     req.end();
   });
 }
 
 function isoToEpoch(s) { const t = Date.parse(s); return isNaN(t) ? null : Math.floor(t / 1000); }
 
+// returns the HTTP status (200 ok, 429 rate-limited, 0 unreachable) so the
+// manual-refresh command can tell the user what happened.
 async function refreshUsage() {
-  const u = await fetchUsage();
-  if (!u) return;
+  const r = await fetchUsage();
+  lastFetch = Date.now();
+  if (r.status !== 200 || !r.data) return r.status;
+  const u = r.data;
   usageCache = {
     five_hour: u.five_hour ? { used_percentage: u.five_hour.utilization, resets_at: isoToEpoch(u.five_hour.resets_at) } : null,
     seven_day: u.seven_day ? { used_percentage: u.seven_day.utilization, resets_at: isoToEpoch(u.seven_day.resets_at) } : null
   };
   usageLoaded = true;
-  lastFetch = Date.now();
   push();
+  return 200;
 }
 
 // context window %: input + cache tokens of the latest message.
@@ -426,21 +431,32 @@ function activate(context) {
   // Poll gently (every 5 min once loaded) and back off on failure so we never hammer the
   // endpoint or trip its rate limit. Session/weekly windows change slowly, so 5 min is plenty.
   const usageLoop = () => {
-    refreshUsage().finally(() => {
-      // retry every 30s until the first success (fast recovery), then poll every 5 min
-      usageTimer = setTimeout(usageLoop, usageLoaded ? 300000 : 30000);
+    refreshUsage().then((status) => {
+      // 200 -> fresh, next poll in 5 min. The endpoint has a short burst limit, so a
+      // 429 (or unreachable) is transient: retry in 2 min instead of waiting the full 5,
+      // then settle back to 5 min once it succeeds. 30s only until the very first success.
+      const next = status === 200 ? 300000 : (usageLoaded ? 120000 : 30000);
+      usageTimer = setTimeout(usageLoop, next);
+    }, () => {
+      usageTimer = setTimeout(usageLoop, usageLoaded ? 120000 : 30000);
     });
   };
   usageLoop();
   context.subscriptions.push({ dispose: () => clearTimeout(usageTimer) });
 
-  // refresh right away when the window regains focus (e.g. after sleep/wake), throttled to 60s
+  // refresh when the window regains focus (e.g. after sleep/wake), throttled to 5 min so
+  // focus churn during active use can't burst the endpoint's short rate limit
   context.subscriptions.push(vscode.window.onDidChangeWindowState((e) => {
     if (e.focused && Date.now() - lastFetch > 300000) refreshUsage();
   }));
 
   // manual refresh (panel title button + command palette) — forces a fetch, ignores throttle
-  context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.refresh', () => refreshUsage()));
+  context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.refresh', async () => {
+    const status = await refreshUsage();
+    if (status === 200) vscode.window.setStatusBarMessage('$(crab) Claude usage refreshed', 2500);
+    else if (status === 429) vscode.window.showInformationMessage('Claude usage endpoint is briefly rate-limited (a short burst limit it shares with Claude Code). The panel keeps refreshing on its own every few minutes.');
+    else vscode.window.showWarningMessage('Could not reach the Claude usage endpoint. Showing the last known values.');
+  }));
 }
 
 function deactivate() {}
