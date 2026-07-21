@@ -474,7 +474,7 @@ const CSS = `
   @keyframes roll{0%{opacity:.25;transform:translateY(6px);}100%{opacity:1;transform:translateY(0);}}
   @keyframes pulse{0%,100%{opacity:.4;}50%{opacity:1;}}
   @media (max-width:340px){.body{flex-wrap:wrap;}.ringbox{margin:6px auto 0;}}
-  @media (max-width:270px){.stat .slabel{display:none;}.stat .sval{font-size:12.5px;}.stat{padding:9px 7px;}}
+  @media (max-width:270px){.stat .slabel{display:none;}.stat .sval{font-size:11px;text-overflow:clip;}.stat .sdelta{display:none;}.stat{padding:8px 6px;}.munit{display:none;}}
 `;
 
 const IC = {
@@ -546,12 +546,12 @@ class UsageViewProvider {
     <div class="body">
       <div class="meters">
         <div class="meter">
-          <div class="mtop"><span class="mlabel">Session (5h)</span><span class="mgrp"><span class="delta" id="s_delta"></span><span class="mval" id="s_pct">–</span></span></div>
+          <div class="mtop"><span class="mlabel">Session <span class="munit">(5h)</span></span><span class="mgrp"><span class="delta" id="s_delta"></span><span class="mval" id="s_pct">–</span></span></div>
           <div class="mbar"><div class="mfill" id="s_fill"></div></div>
           <div class="msub" id="s_sub"></div>
         </div>
         <div class="meter">
-          <div class="mtop"><span class="mlabel">Weekly (7d)</span><span class="mgrp"><span class="delta" id="w_delta"></span><span class="mval" id="w_pct">–</span></span></div>
+          <div class="mtop"><span class="mlabel">Weekly <span class="munit">(7d)</span></span><span class="mgrp"><span class="delta" id="w_delta"></span><span class="mval" id="w_pct">–</span></span></div>
           <div class="mbar"><div class="mfill" id="w_fill"></div></div>
           <div class="msub" id="w_sub"></div>
         </div>

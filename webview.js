@@ -141,7 +141,7 @@
 
     // requests
     var rq = d.count != null ? d.count : 0;
-    tween('st_req', prev.req, rq, function (v) { return String(Math.round(v)); });
+    tween('st_req', prev.req, rq, function (v) { return fmtTok(v); });
     if (prev.req != null && rq > prev.req) { roll('st_req'); flash('req_delta', '+' + (rq - prev.req)); }
     prev.req = rq;
 
