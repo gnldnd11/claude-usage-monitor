@@ -463,6 +463,7 @@ const CSS = `
   .compact .ttl .t2{max-height:0;opacity:0;}
   .compact .ihead{max-height:0;opacity:0;margin-bottom:0;}
   .compact .stats{max-height:0;opacity:0;margin-top:0;}
+  .compact .ttl{display:none;}
   .compact .ringbox{max-width:0;opacity:0;}
   .compact .body{gap:0;}
   .compact .card{padding:12px;}
@@ -473,6 +474,7 @@ const CSS = `
   @keyframes roll{0%{opacity:.25;transform:translateY(6px);}100%{opacity:1;transform:translateY(0);}}
   @keyframes pulse{0%,100%{opacity:.4;}50%{opacity:1;}}
   @media (max-width:340px){.body{flex-wrap:wrap;}.ringbox{margin:6px auto 0;}}
+  @media (max-width:270px){.stat .slabel{display:none;}.stat .sval{font-size:12.5px;}.stat{padding:9px 7px;}}
 `;
 
 const IC = {
