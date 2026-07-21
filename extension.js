@@ -307,7 +307,7 @@ class UsageViewProvider {
     view.webview.html = this.html(view.webview);
     view.webview.onDidReceiveMessage((m) => { if (m && m.type === 'ready') push(); });
     view.onDidChangeVisibility(() => {
-      if (view.visible && Date.now() - lastFetch > 60000) refreshUsage();
+      if (view.visible && Date.now() - lastFetch > 300000) refreshUsage();
     });
     push();
   }
@@ -436,7 +436,7 @@ function activate(context) {
 
   // refresh right away when the window regains focus (e.g. after sleep/wake), throttled to 60s
   context.subscriptions.push(vscode.window.onDidChangeWindowState((e) => {
-    if (e.focused && Date.now() - lastFetch > 60000) refreshUsage();
+    if (e.focused && Date.now() - lastFetch > 300000) refreshUsage();
   }));
 }
 
