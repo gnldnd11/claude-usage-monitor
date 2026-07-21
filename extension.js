@@ -166,6 +166,30 @@ function scheduleTurnRefresh() {
   }, 2500);
 }
 
+// Normalize undici raw headers (Buffer[] of [name,value,name,value,...]) to a lowercase map.
+function undiciHeaders(h) {
+  const out = {};
+  try {
+    if (Array.isArray(h)) {
+      for (let i = 0; i + 1 < h.length; i += 2) out[String(h[i]).toLowerCase()] = String(h[i + 1]);
+    } else if (h && typeof h === 'object') {
+      for (const k in h) out[String(k).toLowerCase()] = String(h[k]);
+    }
+  } catch (e) {}
+  return out;
+}
+
+// DIAGNOSTIC: log any anthropic rate-limit response headers so we can see whether
+// per-message usage is available in message responses (and in what format).
+function applyRateLimitHeaders(hdrs, path, source) {
+  const rl = {};
+  for (const k in hdrs) {
+    if (k.indexOf('ratelimit') !== -1 || k.indexOf('unified') !== -1) rl[k] = hdrs[k];
+  }
+  if (!Object.keys(rl).length) return;
+  if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] [' + source + '] ' + String(path).slice(0, 24) + ' rate-limit headers: ' + JSON.stringify(rl));
+}
+
 // --- diagnostics_channel tap -------------------------------------------------
 // Claude Code fetches /api/oauth/usage for its own display. Since its extension
 // runs in the same host process, we can observe its request via diagnostics_channel
@@ -202,16 +226,35 @@ function setupUsageTap(context) {
       }
       if (pendingMessageRequests.has(req)) {
         pendingMessageRequests.delete(req);
+        const mres = message.response;
+        if (mres && mres.headers) applyRateLimitHeaders(mres.headers, req.path || '', 'http-msg');
         scheduleTurnRefresh(); // a Claude Code turn finished — pull fresh usage right after
       }
     } catch (e) { /* never break */ }
   };
+  // undici (global fetch) path: Claude Code likely streams /v1/messages over fetch, which
+  // does NOT publish http.client.* but publishes undici:request:headers with the response
+  // headers. Read anthropic rate-limit headers there.
+  const undiciHandler = (message) => {
+    try {
+      const req = message && message.request;
+      const res = message && message.response;
+      if (!req || !res) return;
+      const origin = String(req.origin || '');
+      const path = String(req.path || '');
+      if (origin.indexOf('anthropic.com') === -1 && path.indexOf('/v1/') === -1 && path.indexOf('/api/') === -1) return;
+      applyRateLimitHeaders(undiciHeaders(res.headers), path, 'undici');
+    } catch (e) {}
+  };
   try {
     dc.subscribe('http.client.request.start', reqHandler);
     dc.subscribe('http.client.response.finish', resHandler);
-    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap active — reading Claude Code\'s own usage responses (no own calls while it is active)');
+    let undiciOk = false;
+    try { dc.subscribe('undici:request:headers', undiciHandler); undiciOk = true; } catch (e) {}
+    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap active — reading Claude Code\'s own usage responses' + (undiciOk ? ' (+ undici header tap)' : ''));
     context.subscriptions.push({ dispose: () => {
       try { dc.unsubscribe('http.client.request.start', reqHandler); dc.unsubscribe('http.client.response.finish', resHandler); } catch (e) {}
+      try { dc.unsubscribe('undici:request:headers', undiciHandler); } catch (e) {}
     } });
   } catch (e) {
     if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap unavailable: ' + (e && e.message));
@@ -265,9 +308,9 @@ async function refreshUsage() {
   lastFetch = Date.now();
   const ts = new Date().toLocaleTimeString();
   if (r.status !== 200 || !r.data) {
-    if (log) log.appendLine('[' + ts + '] fetch -> ' + (r.status === 429
-      ? '429 (Claude Code busy) — retrying in 2 min; the tap covers active use, last value kept'
-      : (r.status ? 'HTTP ' + r.status : 'unreachable') + ' — keeping last values'));
+    // 429 is expected while Claude Code is busy (shared token) and harmless (we keep the
+    // last value and the tap covers active use), so don't spam the log with it.
+    if (log && r.status !== 429) log.appendLine('[' + ts + '] fetch -> ' + (r.status ? 'HTTP ' + r.status : 'unreachable') + ' — keeping last values');
     return r.status;
   }
   const u = r.data;
@@ -572,10 +615,10 @@ function activate(context) {
     watchers.push(fs.watch(CLAUDE_DIR, (ev, fn) => { if (!fn || fn === 'usage-bar.json') scheduleRefresh(); }));
   } catch (e) { /* covered by timer */ }
   try {
-    // A transcript write means a turn is happening/finishing: refresh the token counts
-    // (scheduleRefresh) and pull fresh session/weekly usage (scheduleTurnRefresh). This is
-    // the reliable turn signal — it works even if /v1/messages isn't visible to the tap.
-    watchers.push(fs.watch(PROJECTS_DIR, { recursive: true }, () => { scheduleRefresh(); scheduleTurnRefresh(); }));
+    // A transcript write refreshes the token/request counts (those are real-time). It does
+    // NOT trigger a usage fetch — that would just 429 during active use; session/weekly come
+    // from the tap (Claude Code's own checks) plus the gentle background poll when idle.
+    watchers.push(fs.watch(PROJECTS_DIR, { recursive: true }, () => scheduleRefresh()));
   } catch (e) { /* covered by timer */ }
   context.subscriptions.push({ dispose: () => watchers.forEach((w) => { try { w.close(); } catch (e) {} }) });
 
