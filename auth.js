@@ -36,7 +36,9 @@ class AuthManager {
     const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
     const state = crypto.randomBytes(16).toString('hex');
 
-    return new Promise((resolve) => {
+    return new Promise((resolveRaw) => {
+      let timeout, settled = false;
+      const resolve = (v) => { if (settled) return; settled = true; clearTimeout(timeout); resolveRaw(v); };
       const server = http.createServer(async (req, res) => {
         this._l('callback hit: ' + req.url);
         if (!req.url || !req.url.startsWith('/callback')) { res.writeHead(404); res.end(); return; }
@@ -80,7 +82,7 @@ class AuthManager {
         this._l('auth url: ' + authUrl);
         vscode.env.openExternal(vscode.Uri.parse(authUrl));
       });
-      setTimeout(() => { this._l('timed out after 180s waiting for callback'); try { server.close(); } catch (e) {} resolve(false); }, 180000);
+      timeout = setTimeout(() => { this._l('timed out after 180s waiting for callback'); try { server.close(); } catch (e) {} resolve(false); }, 180000);
     });
   }
 

@@ -91,6 +91,7 @@
 
   function render(d) {
     lastData = d; refreshedAt = Date.now();
+    var _ab = el('authbar'); if (_ab) _ab.style.display = d.signedIn ? 'none' : 'flex';
 
     meter('s', d.fh, true, d.usageLoading);
     meter('w', d.sd, true, d.usageLoading);
@@ -148,6 +149,9 @@
     applyCompact(c);
     var s = vscode.getState() || {}; s.compact = c; vscode.setState(s);
   });
+
+  var _sb = el('signinBtn');
+  if (_sb) _sb.addEventListener('click', function () { vscode.postMessage({ type: 'login' }); });
 
   vscode.postMessage({ type: 'ready' });
 })();

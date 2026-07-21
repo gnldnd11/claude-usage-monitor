@@ -489,7 +489,11 @@ class UsageViewProvider {
     this.view = view;
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     view.webview.html = this.html(view.webview);
-    view.webview.onDidReceiveMessage((m) => { if (m && m.type === 'ready') push(); });
+    view.webview.onDidReceiveMessage((m) => {
+      if (!m) return;
+      if (m.type === 'ready') push();
+      else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
+    });
     view.onDidChangeVisibility(() => {
       if (view.visible && Date.now() - lastFetch > 300000) refreshUsage();
     });
@@ -507,6 +511,10 @@ class UsageViewProvider {
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
 <style>${CSS}</style></head><body><div class="wrap"><div class="card">
+  <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11.5px;font-weight:600;line-height:1.35">
+    <span>Sign in for <b>live</b> session &amp; weekly %</span>
+    <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11.5px;white-space:nowrap">Sign In</button>
+  </div>
   <div class="head">
     <div class="brand">
       <img class="logo" src="${logoUri}" alt=""/>
@@ -575,6 +583,7 @@ class UsageViewProvider {
 
 function push() {
   const data = collect();
+  data.signedIn = !!(auth && auth.isLoggedIn());
   if (statusItem) renderStatusBar(data);
   if (provider) provider.post(data);
 }
