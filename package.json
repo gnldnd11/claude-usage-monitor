@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "Unofficial usage monitor for Claude Code — session & weekly limits, tokens, and requests in the status bar and a panel.",
-  "version": "0.0.25",
+  "version": "1.0.0",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
@@ -45,14 +45,34 @@
         "command": "claudeUsage.refresh",
         "title": "Claude Usage: Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeUsage.login",
+        "title": "Claude Usage: Sign In (live session %)",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "claudeUsage.logout",
+        "title": "Claude Usage: Sign Out",
+        "icon": "$(sign-out)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "claudeUsage.login",
+          "when": "view == claudeUsage.view && !claudeUsage.signedIn",
+          "group": "navigation@1"
+        },
+        {
           "command": "claudeUsage.refresh",
           "when": "view == claudeUsage.view",
-          "group": "navigation"
+          "group": "navigation@2"
+        },
+        {
+          "command": "claudeUsage.logout",
+          "when": "view == claudeUsage.view && claudeUsage.signedIn",
+          "group": "1_z"
         }
       ]
     }

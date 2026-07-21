@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const https = require('https');
+const { AuthManager } = require('./auth');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const RATE_FILE = path.join(CLAUDE_DIR, 'usage-bar.json');
@@ -16,6 +17,7 @@ let usageLoaded = false;
 let usageFails = 0;
 let lastFetch = 0;
 let log; // debug OutputChannel — every fetch logs its status/values here
+let auth; // our own OAuth token (own rate-limit budget) when signed in
 let lastTapAt = 0; // last time we read Claude Code's own usage response via diagnostics_channel
 const pendingUsageRequests = new WeakSet(); // in-flight Claude Code requests to /api/oauth/usage
 const pendingMessageRequests = new WeakSet(); // in-flight Claude Code /v1/messages turns
@@ -109,14 +111,15 @@ function readTokens() {
 // The stored OAuth token is sent ONLY to api.anthropic.com and nowhere else.
 function fetchUsage() {
   return new Promise((resolve) => {
-    // Fallback path only (used when the tap has not seen a Claude Code usage response
-    // in a while). Reads Claude Code's token; shares its budget, so it can 429 during
-    // active use — that is fine, the tap covers active use and we keep the last value.
-    let token;
-    try {
-      const cred = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf8'));
-      token = (cred.claudeAiOauth || {}).accessToken;
-    } catch (e) { resolve({ status: 0, data: null }); return; }
+    // Prefer our own signed-in token — its own budget, so polls succeed during active use
+    // and session % updates live. Fall back to Claude Code's shared token when not signed in.
+    let token = auth && auth.getAccessToken();
+    if (!token) {
+      try {
+        const cred = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf8'));
+        token = (cred.claudeAiOauth || {}).accessToken;
+      } catch (e) { resolve({ status: 0, data: null }); return; }
+    }
     if (!token) { resolve({ status: 0, data: null }); return; }
     // Match Claude Code's own request to this endpoint exactly.
     const req = https.request({
@@ -602,6 +605,14 @@ function activate(context) {
   // Our own fetch is only a fallback for when the tap has been quiet for a while.
   setupUsageTap(context);
 
+  // Optional own-token sign-in (own rate-limit budget → live session %). Never forced.
+  auth = new AuthManager(context.secrets, log);
+  auth.initialize().then((ok) => {
+    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] auth: ' + (ok ? 'signed in (own token — session % updates live)' : 'not signed in (Claude Code token fallback; click the sign-in button for live session %)'));
+    vscode.commands.executeCommand('setContext', 'claudeUsage.signedIn', ok);
+    if (ok) refreshUsage();
+  });
+
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusItem.name = 'Claude Usage';
   statusItem.command = 'claudeUsage.view.focus';
@@ -638,9 +649,10 @@ function activate(context) {
       return;
     }
     refreshUsage().then((status) => {
-      // On success, relax for 2 min. On 429 the window is momentarily taken — retry every
-      // 30s to grab it the moment it frees, instead of sitting stale for 2 min.
-      usageTimer = setTimeout(usageLoop, status === 200 ? 120000 : 30000);
+      // Signed in (own budget) → poll every 60s, it succeeds. Shared token → 2 min on success,
+      // 30s retry on 429 to grab the window when it frees.
+      const signedIn = auth && auth.isLoggedIn();
+      usageTimer = setTimeout(usageLoop, status === 200 ? (signedIn ? 60000 : 120000) : 30000);
     }, () => {
       usageTimer = setTimeout(usageLoop, 30000);
     });
@@ -676,6 +688,24 @@ function activate(context) {
     } else {
       vscode.window.showWarningMessage('Could not reach the Claude usage endpoint. Showing the last known values.');
     }
+  }));
+
+  // sign in with our own token (own budget → live session %). Logs every step.
+  context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.login', async () => {
+    if (log) log.show(true);
+    const ok = await auth.login();
+    vscode.commands.executeCommand('setContext', 'claudeUsage.signedIn', ok);
+    if (ok) {
+      vscode.window.setStatusBarMessage('$(crab) Claude Usage: signed in — session % is now live', 4000);
+      refreshUsage();
+    } else {
+      vscode.window.showWarningMessage('Claude Usage: sign-in did not complete. Open the Claude Usage output to see where it stopped.');
+    }
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.logout', async () => {
+    await auth.logout();
+    vscode.commands.executeCommand('setContext', 'claudeUsage.signedIn', false);
+    vscode.window.setStatusBarMessage('Claude Usage: signed out', 3000);
   }));
 }
 
