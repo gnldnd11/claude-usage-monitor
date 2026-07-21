@@ -568,7 +568,10 @@ function activate(context) {
     watchers.push(fs.watch(CLAUDE_DIR, (ev, fn) => { if (!fn || fn === 'usage-bar.json') scheduleRefresh(); }));
   } catch (e) { /* covered by timer */ }
   try {
-    watchers.push(fs.watch(PROJECTS_DIR, { recursive: true }, () => scheduleRefresh()));
+    // A transcript write means a turn is happening/finishing: refresh the token counts
+    // (scheduleRefresh) and pull fresh session/weekly usage (scheduleTurnRefresh). This is
+    // the reliable turn signal — it works even if /v1/messages isn't visible to the tap.
+    watchers.push(fs.watch(PROJECTS_DIR, { recursive: true }, () => { scheduleRefresh(); scheduleTurnRefresh(); }));
   } catch (e) { /* covered by timer */ }
   context.subscriptions.push({ dispose: () => watchers.forEach((w) => { try { w.close(); } catch (e) {} }) });
 
