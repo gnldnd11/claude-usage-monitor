@@ -582,12 +582,23 @@ function activate(context) {
 
   // manual refresh (panel title button + command palette) — forces a fetch, ignores throttle
   context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.refresh', async () => {
-    if (log) { log.show(true); log.appendLine('[' + new Date().toLocaleTimeString() + '] manual refresh requested'); }
+    if (log) log.show(true);
+    const tapAge = Date.now() - lastTapAt;
+    // If we already have a recent value from Claude Code's own usage check, don't make
+    // a direct call — it would just 429 while Claude Code is busy, for no benefit.
+    if (usageLoaded && tapAge < 360000) {
+      const secs = Math.round(tapAge / 1000);
+      if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] refresh: already up to date (from Claude Code ' + secs + 's ago). Type /usage in the terminal to force a fresh reading.');
+      push();
+      vscode.window.setStatusBarMessage('$(crab) Claude usage up to date (' + secs + 's ago)', 3000);
+      return;
+    }
+    if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] manual refresh — tap has been quiet, trying a direct fetch');
     const status = await refreshUsage();
     if (status === 200) {
       vscode.window.setStatusBarMessage('$(crab) Claude usage refreshed', 2500);
     } else if (status === 429) {
-      vscode.window.showInformationMessage('Claude Code was busy, so the direct refresh was rate-limited. The panel updates itself from Claude Code\'s own usage checks; last value kept.');
+      vscode.window.showInformationMessage('Claude Code was busy, so the direct refresh was rate-limited. The panel keeps updating from Claude Code\'s own usage checks; last value kept.');
     } else {
       vscode.window.showWarningMessage('Could not reach the Claude usage endpoint. Showing the last known values.');
     }
