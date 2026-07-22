@@ -17,6 +17,11 @@ Live **Claude Code** usage at a glance — session & weekly limits, context wind
 </p>
 <p align="center"><sub>The crab reads your session usage: calm under 50%, heads-down while working, flat-out near the limit.</sub></p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/responsive.png" width="440" alt="Compact bars-only view and a narrowed panel with the tiles tucked away" />
+</p>
+<p align="center"><sub>Collapse it to bars, or narrow it and the tiles tuck away — nothing truncates.</sub></p>
+
 ## Features
 
 - **Session (5h) / Weekly (7d)** limits — the same live numbers as Claude Code's built-in usage dialog, refreshed every 60s.
