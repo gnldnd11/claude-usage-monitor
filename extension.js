@@ -435,6 +435,8 @@ const CSS = `
   .stat svg{width:14px;height:14px;color:#e8895a;flex:none;}
   .stat .sval{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .stat .slabel{color:var(--muted);font-size:10px;white-space:nowrap;}
+  /* narrow panel: hide the stat tiles so values never truncate */
+  body.narrow .stats{display:none;}
   .mgrp{display:flex;align-items:baseline;gap:6px;}
   .srow{display:flex;align-items:baseline;gap:5px;}
   .delta,.sdelta{color:#e8895a;font-weight:700;opacity:0;}

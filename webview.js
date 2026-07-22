@@ -176,5 +176,10 @@
     _mc.setAttribute('src', s);
   });
 
+  // hide the stat tiles when the panel is too narrow for their values
+  function applyNarrow() { document.body.classList.toggle('narrow', document.body.clientWidth < 232); }
+  if (window.ResizeObserver) { new ResizeObserver(applyNarrow).observe(document.body); }
+  applyNarrow();
+
   vscode.postMessage({ type: 'ready' });
 })();

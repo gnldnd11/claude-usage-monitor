@@ -1,4 +1,7 @@
-.git/
-.gitignore
-.vscodeignore
+.vscode/**
 *.vsix
+*.bak
+**/*.bak
+scratchpad/**
+.git/**
+media/**
