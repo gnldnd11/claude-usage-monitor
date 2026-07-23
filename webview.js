@@ -190,7 +190,7 @@
         _mw.hidden = false;
         if (_level === 'high') { _mw.className = 'mwarn high'; _mw.innerHTML = WARN_SVG; }
         else { _mw.className = 'mwarn mid'; _mw.innerHTML = WARN_MID_SVG; }
-        _burnMsg = 'A recent request burned ' + fmtTok(_pt) + ' tokens, ' + _ratio.toFixed(1) + '× your average (' + fmtTok(Math.round(_avg)) + ')' + (_peak && _peak.t ? ' · ' + agoText(_peak.t) : '') + '.';
+        _burnMsg = fmtTok(_pt) + ' tokens · ' + _ratio.toFixed(1) + '× avg (' + fmtTok(Math.round(_avg)) + ')' + (_peak && _peak.t ? ' · ' + agoText(_peak.t) : '');
         _burnPrompt = (_peak && _peak.prompt) ? _peak.prompt.replace(/\s+/g, ' ').slice(0, 70) : '';
         _mw.title = _burnMsg + (_burnPrompt ? '\n"' + _burnPrompt + '"' : '');
       }
