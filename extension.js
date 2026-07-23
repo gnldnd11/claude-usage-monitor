@@ -431,7 +431,7 @@ const CSS = `
     border-radius:8px;padding:3px 4px;line-height:0;box-shadow:0 2px 5px rgba(0,0,0,.2);}
   .bubble svg{width:12px;height:12px;display:block;}
   .bubble.warn{border-color:#e5484d;background:rgba(229,72,77,.18);cursor:pointer;animation:pulse 1.3s ease-in-out infinite;}
-  .warnbar{position:absolute;left:11px;right:11px;top:11px;z-index:15;display:flex;align-items:flex-start;gap:8px;padding:9px 11px;border-radius:9px;background:var(--card);border:1px solid rgba(229,72,77,.6);box-shadow:0 5px 16px rgba(0,0,0,.32);color:var(--text);font-size:11.5px;line-height:1.35;}
+  .warnbar{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;margin-bottom:11px;border-radius:9px;background:rgba(229,72,77,.13);border:1px solid rgba(229,72,77,.55);color:var(--text);font-size:11.5px;line-height:1.35;}
   .warnbar[hidden]{display:none;}
   .warnbar svg{width:15px;height:15px;flex:none;}
   .warnbar .wbmsg{flex:1 1 auto;}
