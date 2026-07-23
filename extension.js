@@ -418,7 +418,7 @@ const CSS = `
     --border:#e7e7ea;--iborder:#ededf0;--ringtrack:#e2e2e6;--bubble:#ffffff;--bubblebd:rgba(0,0,0,.14);}
   body.vscode-high-contrast{--card:#000;--inner:#000;--border:#6fc3df;--iborder:#6fc3df;--text:#fff;--track:#555;}
   .wrap{padding:10px;}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;}
+  .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;}
   .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:13px;}
   .brand{display:flex;align-items:center;gap:10px;min-width:0;}
   .logo{width:28px;height:28px;flex:none;}
