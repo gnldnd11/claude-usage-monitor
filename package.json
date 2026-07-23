@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "Unofficial usage monitor for Claude Code — session & weekly limits, tokens, and requests in the status bar and a panel.",
-  "version": "1.0.22",
+  "version": "1.0.24",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
@@ -105,7 +105,14 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["session", "weekly", "context", "ring", "tiles", "mascot"]
+            "enum": [
+              "session",
+              "weekly",
+              "context",
+              "ring",
+              "tiles",
+              "mascot"
+            ]
           },
           "default": [],
           "markdownDescription": "Panel dashboard elements to hide. Toggle these from the panel's settings gear."
