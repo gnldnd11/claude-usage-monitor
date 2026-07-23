@@ -417,7 +417,7 @@ const CSS = `
   .ttl .t2{color:var(--muted);font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .mascot{position:relative;flex:none;}
   .mascot img{width:44px;height:auto;image-rendering:pixelated;display:block;}
-  .bubble{position:absolute;top:-4px;right:-8px;background:var(--bubble);border:1px solid var(--bubblebd);
+  .bubble{position:absolute;top:-10px;right:-13px;background:var(--bubble);border:1px solid var(--bubblebd);
     border-radius:8px;padding:3px 4px;line-height:0;box-shadow:0 2px 5px rgba(0,0,0,.2);}
   .bubble svg{width:12px;height:12px;display:block;}
   .bubble.warn{border-color:#e5484d;background:rgba(229,72,77,.18);cursor:pointer;animation:pulse 1.3s ease-in-out infinite;}
@@ -428,14 +428,14 @@ const CSS = `
   .warnbar .wbx{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:1px 5px;border-radius:5px;align-self:flex-start;}
   .warnbar .wbx:hover{background:rgba(255,255,255,.12);color:var(--text);}
   .mascot-wrap{position:relative;display:inline-flex;}
-  .mwarn{position:absolute;top:-10px;right:-14px;background:#fff;border-radius:10px;padding:3px 5px 4px;box-shadow:0 3px 9px rgba(0,0,0,.25);cursor:pointer;z-index:6;}
-  .mwarn.calm{animation:none;}
+  .mwarn{position:absolute;top:-15px;left:50%;transform:translateX(-50%);background:#fff;border-radius:10px;padding:3px 5px 4px;box-shadow:0 3px 9px rgba(0,0,0,.25);cursor:pointer;z-index:6;}
+  .mwarn.calm{animation:none;cursor:default;}
   .mwarn.mid{animation:pulse 1.9s ease-in-out infinite;}
   .mwarn.high{animation:pulse 1.2s ease-in-out infinite;}
   .warnbar.mid{background:rgba(245,166,35,.14);border-color:rgba(245,166,35,.5);}
   .mwarn[hidden]{display:none;}
   .mwarn svg{width:17px;height:17px;display:block;}
-  .mwarn::after{content:'';position:absolute;bottom:-6px;left:11px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #fff;}
+  .mwarn::after{content:'';position:absolute;bottom:-6px;left:50%;margin-left:-6px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #fff;}
   .inner{background:var(--inner);border:1px solid var(--iborder);border-radius:13px;padding:13px;}
   .ihead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-right:5px;}
   .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);white-space:nowrap;min-width:0;overflow:hidden;flex:0 1 auto;}
@@ -461,7 +461,7 @@ const CSS = `
   .rpct{font-size:22px;font-weight:800;color:#e8895a;line-height:1;}
   .rpct span:last-child{font-size:12px;}
   .rtext{font-size:9.5px;color:var(--muted);margin-top:2px;}
-  .sparkle{width:76px;height:auto;margin-top:2px;image-rendering:pixelated;}
+  .sparkle{width:88px;height:auto;margin-top:2px;image-rendering:pixelated;}
   .stats{display:flex;gap:1px;margin-top:13px;background:var(--iborder);border-radius:11px;overflow:hidden;}
   .stat{flex:1;background:var(--inner);padding:10px 8px;min-width:0;position:relative;}
   .stat .stop{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
@@ -505,7 +505,7 @@ const CSS = `
   .card,.inner{transition:padding .4s cubic-bezier(.4,0,.2,1);}
   .body{transition:gap .4s cubic-bezier(.4,0,.2,1);}
   .ttl .t2,.ihead,.stats{overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s ease,margin .4s cubic-bezier(.4,0,.2,1);}
-  .ringbox{max-width:150px;overflow:hidden;transition:max-width .45s cubic-bezier(.4,0,.2,1),opacity .35s ease;}
+  .ringbox{max-width:150px;overflow:visible;transition:max-width .45s cubic-bezier(.4,0,.2,1),opacity .35s ease;}
   .ttl .t2{max-height:20px;}
   .ihead{max-height:34px;}
   .stats{max-height:90px;}
@@ -514,7 +514,7 @@ const CSS = `
   .compact .ihead{max-height:0;opacity:0;margin-bottom:0;}
   .compact .stats{max-height:0;opacity:0;margin-top:0;}
   .compact .ttl{display:none;}
-  .compact .ringbox{max-width:0;opacity:0;}
+  .compact .ringbox{max-width:0;opacity:0;overflow:hidden;}
   .compact .body{gap:0;}
   .compact .card{padding:12px;}
   .compact .inner{padding:11px;}
