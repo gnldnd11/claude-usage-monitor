@@ -534,7 +534,8 @@ const CSS = `
   @keyframes flash{0%{opacity:0;transform:translateY(5px);}12%{opacity:1;transform:translateY(0);}70%{opacity:1;}100%{opacity:0;transform:translateY(-3px);}}
   @keyframes roll{0%{opacity:.25;transform:translateY(6px);}100%{opacity:1;transform:translateY(0);}}
   @keyframes pulse{0%,100%{opacity:.4;}50%{opacity:1;}}
-  @media (max-width:340px){.body{flex-wrap:wrap;}.ringbox{margin:6px auto 0;}}
+  body.wrapcols .body{flex-wrap:wrap;}
+  body.wrapcols .ringbox{margin:6px auto 0;}
   @media (max-width:270px){.stat .slabel{display:none;}.stat .sval{font-size:11px;text-overflow:clip;}.stat .sdelta{display:none;}.stat{padding:8px 6px;}.munit{display:none;}}
 `;
 

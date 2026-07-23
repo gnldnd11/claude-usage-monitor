@@ -250,9 +250,16 @@
   });
 
   // hide the stat tiles when the panel is too narrow for their values
-  function applyNarrow() { document.body.classList.toggle('narrow', document.body.clientWidth < 232); }
-  if (window.ResizeObserver) { new ResizeObserver(applyNarrow).observe(document.body); }
-  applyNarrow();
+  // Debounced so a momentary width blip (sidebar re-layout when a badge count appears)
+  // doesn't flip the panel to its narrow layout and back.
+  function applyResponsive() {
+    var w = document.body.clientWidth;
+    document.body.classList.toggle('narrow', w < 232);
+    document.body.classList.toggle('wrapcols', w < 340);
+  }
+  var _rzt;
+  if (window.ResizeObserver) { new ResizeObserver(function () { clearTimeout(_rzt); _rzt = setTimeout(applyResponsive, 160); }).observe(document.body); }
+  applyResponsive();
 
   // click the warning bubble to reveal / hide the burn-rate detail banner
   var _mwClick = el('mwarn');
