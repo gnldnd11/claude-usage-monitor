@@ -36,6 +36,15 @@
   }
 
   function el(id) { return document.getElementById(id); }
+  function setVis(id, on) { var e = el(id); if (e) e.style.display = on ? '' : 'none'; }
+  function applyPanelVis(hid) {
+    setVis('pm_session', hid.indexOf('session') < 0);
+    setVis('pm_weekly', hid.indexOf('weekly') < 0);
+    setVis('pm_context', hid.indexOf('context') < 0);
+    setVis('pm_ring', hid.indexOf('ring') < 0);
+    setVis('pm_tiles', hid.indexOf('tiles') < 0);
+    setVis('mascot', hid.indexOf('mascot') < 0);
+  }
   function setBar(id, p) { var e = el(id); if (e) { e.style.width = Math.min(p, 100) + '%'; e.style.background = grad(p); } }
 
   // count-up tween: from → to over 500ms
@@ -92,13 +101,24 @@
   function render(d) {
     lastData = d; refreshedAt = Date.now();
     var _ab = el('authbar'); if (_ab) _ab.style.display = d.signedIn ? 'none' : 'flex';
+    var _cfgSb0 = el('cfgStatusBar'); if (_cfgSb0 && d.cfg && d.cfg.statusBar) _cfgSb0.value = d.cfg.statusBar;
+    // Only sync panel visibility/checkboxes from config when the settings sheet is
+    // closed. While it's open the user is toggling, so the local DOM is the source of
+    // truth — a late-arriving stale push must not overwrite their in-progress choices.
+    var _sh = el('settingsSheet');
+    if (!_sh || _sh.hidden) {
+      var _ph = (d.cfg && d.cfg.panelHidden) || [];
+      applyPanelVis(_ph);
+      var _pmc = document.querySelectorAll('.pmk');
+      for (var _pi = 0; _pi < _pmc.length; _pi++) { _pmc[_pi].checked = _ph.indexOf(_pmc[_pi].getAttribute('data-k')) < 0; }
+    }
     var _m = el('mascot');
     if (_m) {
-      // Mascot state by 5h session %: <50 idle, 50-89 working, >=90 stunned.
+      // Mascot state by 5h session %: <50 idle, 50-69 working, 70-89 despair, >=90 stunned.
       // Weekly at 100% also stuns.
       var _sess = (d.fh && d.fh.used_percentage) || 0;
       var _wk = (d.sd && d.sd.used_percentage) || 0;
-      var _state = (_sess >= 90 || _wk >= 100) ? 'stunned' : (_sess >= 50 ? 'working' : 'idle');
+      var _state = (_sess >= 90 || _wk >= 100) ? 'stunned' : (_sess >= 70 ? 'despair' : (_sess >= 50 ? 'working' : 'idle'));
       var _want = _m.getAttribute('data-' + _state);
       if (_want && _m.getAttribute('src') !== _want) _m.setAttribute('src', _want);
       var _stunned = _state === 'stunned';
@@ -148,7 +168,11 @@
     if (el('upd')) el('upd').textContent = 'now';
   }
 
-  window.addEventListener('message', function (e) { var m = e.data; if (m && m.type === 'data') render(m.data); });
+  window.addEventListener('message', function (e) {
+    var m = e.data; if (!m) return;
+    if (m.type === 'data') render(m.data);
+    else if (m.type === 'openSettings') { var s = el('settingsSheet'); if (s) s.hidden = !s.hidden; }
+  });
 
   // compact mode toggle (persisted per view)
   function applyCompact(c) { document.body.classList.toggle('compact', !!c); }
@@ -165,6 +189,24 @@
 
   var _sb = el('signinBtn');
   if (_sb) _sb.addEventListener('click', function () { vscode.postMessage({ type: 'login' }); });
+
+  // in-panel settings sheet
+  var _setBtn = el('settingsBtn'), _sheet = el('settingsSheet'), _setClose = el('settingsClose'), _cfgSb = el('cfgStatusBar');
+  function openSheet(o) { if (_sheet) _sheet.hidden = !o; }
+  if (_setBtn) _setBtn.addEventListener('click', function () { openSheet(_sheet && _sheet.hidden); });
+  if (_setClose) _setClose.addEventListener('click', function () { openSheet(false); });
+  if (_sheet) _sheet.addEventListener('click', function (e) { if (e.target === _sheet) openSheet(false); });
+  if (_cfgSb) _cfgSb.addEventListener('change', function () { vscode.postMessage({ type: 'setConfig', key: 'statusBar.show', value: _cfgSb.value }); });
+
+  var _pmks = document.querySelectorAll('.pmk');
+  for (var _pk = 0; _pk < _pmks.length; _pk++) {
+    _pmks[_pk].addEventListener('change', function () {
+      var hid = [], all = document.querySelectorAll('.pmk');
+      for (var j = 0; j < all.length; j++) { if (!all[j].checked) hid.push(all[j].getAttribute('data-k')); }
+      applyPanelVis(hid);
+      vscode.postMessage({ type: 'setConfig', key: 'panel.hidden', value: hid });
+    });
+  }
 
   // poke the fallen crab to replay the collapse (only while stunned)
   var _mc = el('mascot');

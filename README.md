@@ -9,18 +9,25 @@ Live **Claude Code** usage at a glance — session & weekly limits, context wind
 > Unofficial community extension. Not affiliated with Anthropic.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mascot-idle.gif" width="84" alt="idle crab" />
-  &nbsp;&nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mascot-working.gif" width="84" alt="working crab" />
-  &nbsp;&nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mascot-stunned.gif" width="84" alt="stunned crab" />
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mascot-idle.gif" width="76" alt="idle crab" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mascot-working.gif" width="76" alt="working crab" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mascot-despair.gif" width="76" alt="despairing crab" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mascot-stunned.gif" width="76" alt="stunned crab" />
 </p>
-<p align="center"><sub>The crab reads your session usage: calm under 50%, heads-down while working, flat-out near the limit.</sub></p>
+<p align="center"><sub>The crab reads your session usage: calm under 50%, heads-down at 50%, unravelling past 70%, flat-out near the limit.</sub></p>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/responsive.png" width="440" alt="Compact bars-only view and a narrowed panel with the tiles tucked away" />
 </p>
 <p align="center"><sub>Collapse it to bars, or narrow it and the tiles tuck away — nothing truncates.</sub></p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/customize.png" width="300" alt="In-panel settings sheet with status bar mode and per-element panel toggles" />
+</p>
+<p align="center"><sub>Click the gear to pick what shows in the status bar, and toggle any panel element on or off.</sub></p>
 
 ## Features
 

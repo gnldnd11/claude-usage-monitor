@@ -10,6 +10,7 @@ const RATE_FILE = path.join(CLAUDE_DIR, 'usage-bar.json');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
 
 let statusItem;
+let lastStatusData = null;
 let provider;
 let timer;
 let usageTimer;
@@ -355,17 +356,22 @@ function collect() {
 }
 
 function renderStatusBar(data) {
+  lastStatusData = data;
+  const mode = vscode.workspace.getConfiguration('claudeUsage').get('statusBar.show', 'session+weekly');
+  if (mode === 'off') { statusItem.hide(); return; }
+  const showSession = mode === 'session' || mode === 'session+weekly';
+  const showWeekly = mode === 'weekly' || mode === 'session+weekly';
   const segs = [];
   const tip = [];
   let worst = 0;
-  if (data.fh && data.fh.used_percentage != null) {
+  if (showSession && data.fh && data.fh.used_percentage != null) {
     const p = Math.round(data.fh.used_percentage);
     worst = Math.max(worst, p);
     segs.push(`5h ${p}%`);
     const cd = fmtCountdown(data.fh.resets_at);
     tip.push(`Session (5h): ${p}%${cd ? ' · resets ' + cd : ''}`);
   }
-  if (data.sd && data.sd.used_percentage != null) {
+  if (showWeekly && data.sd && data.sd.used_percentage != null) {
     const p = Math.round(data.sd.used_percentage);
     worst = Math.max(worst, p);
     segs.push(`wk ${p}%`);
@@ -452,6 +458,21 @@ const CSS = `
   .toggle:hover{background:var(--track);color:var(--text);}
   .toggle svg{width:16px;height:16px;transition:transform .4s cubic-bezier(.34,1.56,.64,1);}
   .compact .toggle svg{transform:rotate(180deg);}
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:flex-start;justify-content:center;padding:14px;z-index:20;animation:fade .16s ease;}
+  .sheet[hidden]{display:none;}
+  .sheet-card{background:var(--inner);border:1px solid var(--iborder);border-radius:12px;width:100%;max-width:280px;padding:13px 15px;box-shadow:0 8px 28px rgba(0,0,0,.32);}
+  .sheet-head{display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:13px;color:var(--text);margin-bottom:12px;}
+  .sheet-x{background:transparent;border:0;color:var(--muted);cursor:pointer;padding:3px;border-radius:6px;display:flex;line-height:0;}
+  .sheet-x:hover{background:var(--track);color:var(--text);}
+  .sheet-x svg{width:15px;height:15px;transform:rotate(180deg);}
+  .sheet-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;color:var(--text);}
+  .sheet-row + .sheet-row{margin-top:11px;}
+  .sheet-row label{color:var(--muted);}
+  .sheet-row select{background:var(--track);color:var(--text);border:1px solid var(--iborder);border-radius:7px;padding:5px 8px;font-size:12px;cursor:pointer;}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .sheet-sec{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:15px 0 7px;font-weight:700;}
+  .sheet-check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text);cursor:pointer;padding:4px 0;}
+  .sheet-check input{accent-color:#e8895a;cursor:pointer;width:14px;height:14px;flex:none;}
   .sparkle-hd{width:0;opacity:0;flex:none;object-fit:contain;transition:width .4s cubic-bezier(.34,1.56,.64,1),opacity .35s ease;}
   .compact .sparkle-hd{width:32px;opacity:1;}
   .card,.inner{transition:padding .4s cubic-bezier(.4,0,.2,1);}
@@ -485,7 +506,8 @@ const IC = {
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
   heart: '<svg viewBox="0 0 24 24" fill="#e8895a"><path d="M12 21s-8-5-8-11a4 4 0 018-1 4 4 0 018 1c0 6-8 11-8 11z"/></svg>',
-  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>'
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>'
 };
 
 class UsageViewProvider {
@@ -498,6 +520,9 @@ class UsageViewProvider {
       if (!m) return;
       if (m.type === 'ready') push();
       else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
+      else if (m.type === 'setConfig' && m.key) {
+        vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global).then(function () { push(); });
+      }
     });
     view.onDidChangeVisibility(() => {
       if (view.visible && Date.now() - lastFetch > 300000) refreshUsage();
@@ -514,6 +539,7 @@ class UsageViewProvider {
     const sparkleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'sparkle.png'));
     const mascotIdleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-idle.png'));
     const mascotStunnedUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-stunned.png'));
+    const mascotDespairUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-despair.png'));
     const mascotWorkingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-working.png'));
     const csp = webview.cspSource;
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -547,24 +573,24 @@ class UsageViewProvider {
     </div>
     <div class="body">
       <div class="meters">
-        <div class="meter">
+        <div class="meter" id="pm_session">
           <div class="mtop"><span class="mlabel">Session <span class="munit">(5h)</span></span><span class="mgrp"><span class="delta" id="s_delta"></span><span class="mval" id="s_pct">–</span></span></div>
           <div class="mbar"><div class="mfill" id="s_fill"></div></div>
           <div class="msub" id="s_sub"></div>
         </div>
-        <div class="meter">
+        <div class="meter" id="pm_weekly">
           <div class="mtop"><span class="mlabel">Weekly <span class="munit">(7d)</span></span><span class="mgrp"><span class="delta" id="w_delta"></span><span class="mval" id="w_pct">–</span></span></div>
           <div class="mbar"><div class="mfill" id="w_fill"></div></div>
           <div class="msub" id="w_sub"></div>
         </div>
-        <div class="meter">
+        <div class="meter" id="pm_context">
           <div class="mtop"><span class="mlabel">Context</span><span class="mgrp"><span class="delta" id="c_delta"></span><span class="mval" id="c_pct">–</span></span></div>
           <div class="mbar"><div class="mfill" id="c_fill"></div></div>
           <div class="msub" id="c_sub">/ 200K</div>
         </div>
       </div>
       <div class="ringbox">
-        <div class="ringwrap">
+        <div class="ringwrap" id="pm_ring">
           <svg width="88" height="88" viewBox="0 0 88 88">
             <circle class="rtrack" cx="44" cy="44" r="33" fill="none" stroke-width="6"/>
             <circle id="ringArc" cx="44" cy="44" r="33" fill="none" stroke="#e8895a" stroke-width="6"
@@ -575,16 +601,37 @@ class UsageViewProvider {
             <div class="rtext">used</div>
           </div>
         </div>
-        <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-stunned="${mascotStunnedUri}" alt=""/>
+        <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" alt=""/>
       </div>
     </div>
-    <div class="stats">
+    <div class="stats" id="pm_tiles">
       <div class="stat"><div class="stop">${IC.clock}</div><div class="srow"><span class="sval" id="st_time">–</span></div><div class="slabel">Active time</div></div>
       <div class="stat" id="st_tok_tile"><div class="stop">${IC.bolt}</div><div class="srow"><span class="sval" id="st_tok">–</span><span class="sdelta" id="tok_delta"></span></div><div class="slabel">Tokens</div></div>
       <div class="stat"><div class="stop">${IC.doc}</div><div class="srow"><span class="sval" id="st_req">–</span><span class="sdelta" id="req_delta"></span></div><div class="slabel">Requests</div></div>
     </div>
   </div>
 </div></div>
+  <div class="sheet" id="settingsSheet" hidden>
+    <div class="sheet-card">
+      <div class="sheet-head"><span>Settings</span><button class="sheet-x" id="settingsClose" title="Close">${IC.chevron}</button></div>
+      <div class="sheet-row">
+        <label for="cfgStatusBar">Status bar</label>
+        <select id="cfgStatusBar">
+          <option value="session+weekly">Session + Weekly</option>
+          <option value="session">Session only</option>
+          <option value="weekly">Weekly only</option>
+          <option value="off">Hidden</option>
+        </select>
+      </div>
+      <div class="sheet-sec">Show in panel</div>
+      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="session" checked> Session (5h)</label>
+      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="weekly" checked> Weekly (7d)</label>
+      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="context" checked> Context</label>
+      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="ring" checked> Usage ring</label>
+      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="tiles" checked> Stat tiles</label>
+      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="mascot" checked> Mascot</label>
+    </div>
+  </div>
 <script src="${scriptUri}"></script></body></html>`;
   }
 }
@@ -592,6 +639,8 @@ class UsageViewProvider {
 function push() {
   const data = collect();
   data.signedIn = !!(auth && auth.isLoggedIn());
+  const _cfg = vscode.workspace.getConfiguration('claudeUsage');
+  data.cfg = { statusBar: _cfg.get('statusBar.show', 'session+weekly'), panelHidden: _cfg.get('panel.hidden', []) };
   if (statusItem) renderStatusBar(data);
   if (provider) provider.post(data);
 }
@@ -634,6 +683,10 @@ function activate(context) {
   statusItem.name = 'Claude Usage';
   statusItem.command = 'claudeUsage.view.focus';
   context.subscriptions.push(statusItem);
+
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration('claudeUsage.statusBar') && lastStatusData) renderStatusBar(lastStatusData);
+  }));
 
   provider = new UsageViewProvider(context.extensionUri);
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('claudeUsage.view', provider));
@@ -684,6 +737,10 @@ function activate(context) {
   }));
 
   // manual refresh (panel title button + command palette) — forces a fetch, ignores throttle
+  context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.openSettings', () => {
+    if (provider && provider.view) provider.view.webview.postMessage({ type: 'openSettings' });
+  }));
+
   context.subscriptions.push(vscode.commands.registerCommand('claudeUsage.refresh', async () => {
     if (log) log.show(true);
     const tapAge = Date.now() - lastTapAt;
