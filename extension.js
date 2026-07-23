@@ -17,6 +17,8 @@ let usageTimer;
 let usageLoaded = false;
 let usageFails = 0;
 let lastFetch = 0;
+let lastUsageAt = 0;
+let lastSeenT = 0; // burn-rate: requests newer than this are "unseen"; the peak survives other sessions' replies until dismissed
 let log; // debug OutputChannel — every fetch logs its status/values here
 let auth; // our own OAuth token (own rate-limit budget) when signed in
 let lastTapAt = 0; // last time we read Claude Code's own usage response via diagnostics_channel
@@ -58,6 +60,7 @@ function readTokens() {
   const today = { input: 0, output: 0, cache_creation: 0, cache_read: 0 };
   let last = null;
   let count = 0;
+  let peak = null; // largest request newer than lastSeenT (survives other sessions' replies)
 
   const files = [];
   const stack = [PROJECTS_DIR];
@@ -103,9 +106,13 @@ function readTokens() {
           cache_read: u.cache_read_input_tokens || 0
         };
       }
+      if (t > lastSeenT) {
+        const tot = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+        if (!peak || tot > peak.total) peak = { t: t, total: tot };
+      }
     }
   }
-  return { today, last, count };
+  return { today, last, count, peak };
 }
 
 // Live session/weekly limits from Claude's own usage endpoint (same source as the built-in dialog).
@@ -154,7 +161,8 @@ function resetsToEpoch(v) {
 
 // Persist the last-good usage so a reload shows it instantly instead of "loading".
 function saveUsage() {
-  try { if (extContext && usageCache) extContext.globalState.update('usageCacheV1', { at: Date.now(), value: usageCache }); } catch (e) { /* ignore */ }
+  lastUsageAt = Date.now();
+  try { if (extContext && usageCache) extContext.globalState.update('usageCacheV1', { at: lastUsageAt, value: usageCache }); } catch (e) { /* ignore */ }
 }
 
 // After a Claude Code turn finishes, the usage token is briefly free, so a direct
@@ -351,7 +359,10 @@ function collect() {
     today: tokens.today,
     last: tokens.last,
     count: tokens.count,
-    refreshedAt: Date.now()
+    refreshedAt: Date.now(),
+    usageAt: (usageCache ? lastUsageAt : 0),
+    avg: (tokens.count > 0) ? (((tokens.today.input || 0) + (tokens.today.output || 0) + (tokens.today.cache_creation || 0) + (tokens.today.cache_read || 0)) / tokens.count) : 0,
+    peak: tokens.peak
   };
 }
 
@@ -409,6 +420,22 @@ const CSS = `
   .bubble{position:absolute;top:-4px;right:-8px;background:var(--bubble);border:1px solid var(--bubblebd);
     border-radius:8px;padding:3px 4px;line-height:0;box-shadow:0 2px 5px rgba(0,0,0,.2);}
   .bubble svg{width:12px;height:12px;display:block;}
+  .bubble.warn{border-color:#e5484d;background:rgba(229,72,77,.18);cursor:pointer;animation:pulse 1.3s ease-in-out infinite;}
+  .warnbar{display:flex;align-items:center;gap:8px;padding:8px 11px;margin-bottom:10px;border-radius:8px;background:rgba(229,72,77,.14);border:1px solid rgba(229,72,77,.5);color:var(--text);font-size:11.5px;line-height:1.35;}
+  .warnbar[hidden]{display:none;}
+  .warnbar svg{width:15px;height:15px;flex:none;}
+  .warnbar .wbmsg{flex:1 1 auto;}
+  .warnbar .wbx{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:1px 5px;border-radius:5px;align-self:flex-start;}
+  .warnbar .wbx:hover{background:rgba(255,255,255,.12);color:var(--text);}
+  .mascot-wrap{position:relative;display:inline-flex;}
+  .mwarn{position:absolute;top:-10px;right:-14px;background:#fff;border-radius:10px;padding:3px 5px 4px;box-shadow:0 3px 9px rgba(0,0,0,.25);cursor:pointer;z-index:6;}
+  .mwarn.calm{animation:none;}
+  .mwarn.mid{animation:pulse 1.9s ease-in-out infinite;}
+  .mwarn.high{animation:pulse 1.2s ease-in-out infinite;}
+  .warnbar.mid{background:rgba(245,166,35,.14);border-color:rgba(245,166,35,.5);}
+  .mwarn[hidden]{display:none;}
+  .mwarn svg{width:17px;height:17px;display:block;}
+  .mwarn::after{content:'';position:absolute;bottom:-6px;left:11px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #fff;}
   .inner{background:var(--inner);border:1px solid var(--iborder);border-radius:13px;padding:13px;}
   .ihead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-right:5px;}
   .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);white-space:nowrap;min-width:0;overflow:hidden;flex:0 1 auto;}
@@ -506,6 +533,7 @@ const IC = {
   bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
   heart: '<svg viewBox="0 0 24 24" fill="#e8895a"><path d="M12 21s-8-5-8-11a4 4 0 018-1 4 4 0 018 1c0 6-8 11-8 11z"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#e5484d" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>'
 };
@@ -523,6 +551,7 @@ class UsageViewProvider {
       else if (m.type === 'setConfig' && m.key) {
         vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global).then(function () { push(); });
       }
+      else if (m.type === 'dismissBurn') { lastSeenT = Date.now(); if (extContext) extContext.globalState.update('burnSeenT', lastSeenT); push(); }
     });
     view.onDidChangeVisibility(() => {
       if (view.visible && Date.now() - lastFetch > 300000) refreshUsage();
@@ -560,13 +589,14 @@ class UsageViewProvider {
     <div class="hactions">
       <div class="mascot">
         <img src="${crabUri}" alt="claude"/>
-        <div class="bubble">${IC.heart}</div>
+        <div class="bubble" id="bubble">${IC.heart}</div>
       </div>
       <img class="sparkle-hd" src="${sparkleUri}" alt=""/>
       <button class="toggle" id="toggle" title="Compact / expand">${IC.chevron}</button>
     </div>
   </div>
   <div class="inner">
+    <div class="warnbar" id="warnbar" hidden></div>
     <div class="ihead">
       <div class="it">${IC.bars} Usage summary</div>
       <div class="upd">Updated <span id="upd">now</span> <span class="d"></span></div>
@@ -601,7 +631,10 @@ class UsageViewProvider {
             <div class="rtext">used</div>
           </div>
         </div>
-        <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" alt=""/>
+        <div class="mascot-wrap">
+          <div class="mwarn" id="mwarn" hidden>${IC.warn}</div>
+          <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" alt=""/>
+        </div>
       </div>
     </div>
     <div class="stats" id="pm_tiles">
@@ -630,6 +663,8 @@ class UsageViewProvider {
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="ring" checked> Usage ring</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="tiles" checked> Stat tiles</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="mascot" checked> Mascot</label>
+      <div class="sheet-sec">Alerts</div>
+      <label class="sheet-check"><input type="checkbox" id="cfgBurn" checked> Burn-rate warning</label>
     </div>
   </div>
 <script src="${scriptUri}"></script></body></html>`;
@@ -640,7 +675,7 @@ function push() {
   const data = collect();
   data.signedIn = !!(auth && auth.isLoggedIn());
   const _cfg = vscode.workspace.getConfiguration('claudeUsage');
-  data.cfg = { statusBar: _cfg.get('statusBar.show', 'session+weekly'), panelHidden: _cfg.get('panel.hidden', []) };
+  data.cfg = { statusBar: _cfg.get('statusBar.show', 'session+weekly'), panelHidden: _cfg.get('panel.hidden', []), burnRate: _cfg.get('burnRate.enabled', true) };
   if (statusItem) renderStatusBar(data);
   if (provider) provider.post(data);
 }
@@ -658,6 +693,7 @@ function activate(context) {
   // Restore last-good usage immediately so a reload never shows "loading" when we
   // have a prior value (this is what the other extensions do — show last, update later).
   extContext = context;
+  lastSeenT = context.globalState.get('burnSeenT', 0); // restore burn-rate dismiss point across reloads
   try {
     const saved = context.globalState.get('usageCacheV1');
     if (saved && saved.value && (saved.value.five_hour || saved.value.seven_day)) {

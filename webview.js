@@ -37,6 +37,11 @@
 
   function el(id) { return document.getElementById(id); }
   function setVis(id, on) { var e = el(id); if (e) e.style.display = on ? '' : 'none'; }
+  function agoText(ts) { var s = Math.floor((Date.now() - ts) / 1000); if (s < 45) return 'now'; if (s < 3600) return Math.round(s / 60) + 'm ago'; return Math.round(s / 3600) + 'h ago'; }
+  var _burnMsg = '';
+  var HEART_SVG = '<svg viewBox="0 0 24 24" fill="#e8895a"><path d="M12 21s-8-5-8-11a4 4 0 018-1 4 4 0 018 1c0 6-8 11-8 11z"/></svg>';
+  var WARN_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#e5484d" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
+  var WARN_MID_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#f5a623" stroke="#f5a623" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
   function applyPanelVis(hid) {
     setVis('pm_session', hid.indexOf('session') < 0);
     setVis('pm_weekly', hid.indexOf('weekly') < 0);
@@ -111,6 +116,7 @@
       applyPanelVis(_ph);
       var _pmc = document.querySelectorAll('.pmk');
       for (var _pi = 0; _pi < _pmc.length; _pi++) { _pmc[_pi].checked = _ph.indexOf(_pmc[_pi].getAttribute('data-k')) < 0; }
+      var _cb0 = el('cfgBurn'); if (_cb0) _cb0.checked = !(d.cfg && d.cfg.burnRate === false);
     }
     var _m = el('mascot');
     if (_m) {
@@ -165,7 +171,31 @@
     if (prev.req != null && rq > prev.req) { roll('st_req'); flash('req_delta', '+' + (rq - prev.req)); }
     prev.req = rq;
 
-    if (el('upd')) el('upd').textContent = 'now';
+    if (el('upd')) { var _ua = d.usageAt || 0; el('upd').textContent = _ua ? agoText(_ua) : (d.usageLoading ? 'loading' : '—'); }
+
+    // burn-rate: 3 levels — calm(heart) / mid(amber) / high(red)
+    var _mw = el('mwarn');
+    if (_mw) {
+      var _burnOn = !(d.cfg && d.cfg.burnRate === false); // default on
+      var _peak = d.peak, _n = d.count || 0, _avg = d.avg || 0;
+      var _pt = _peak ? _peak.total : 0;
+      var _ratio = _avg > 0 ? (_pt / _avg) : 0;
+      // peak = largest unseen request across all sessions, so a spike isn't buried by another session's reply
+      var _level = (!_peak || _n < 4 || _avg <= 0) ? 'calm' : (_ratio >= 2.5 ? 'high' : (_ratio >= 1.5 ? 'mid' : 'calm'));
+      if (!_burnOn) {
+        _mw.hidden = true; _burnMsg = ''; var _wbx0 = el('warnbar'); if (_wbx0) _wbx0.hidden = true;
+      } else {
+        _mw.hidden = false;
+        if (_level === 'high') { _mw.className = 'mwarn high'; _mw.innerHTML = WARN_SVG; }
+        else if (_level === 'mid') { _mw.className = 'mwarn mid'; _mw.innerHTML = WARN_MID_SVG; }
+        else { _mw.className = 'mwarn calm'; _mw.innerHTML = HEART_SVG; }
+        if (_level === 'calm') { _burnMsg = ''; _mw.title = 'Usage looks normal'; var _wbc = el('warnbar'); if (_wbc) _wbc.hidden = true; }
+        else {
+          _burnMsg = 'A recent request burned ' + fmtTok(_pt) + ' tokens, ' + _ratio.toFixed(1) + '× your average (' + fmtTok(Math.round(_avg)) + ')' + (_peak && _peak.t ? ' · ' + agoText(_peak.t) : '') + '.';
+          _mw.title = _burnMsg;
+        }
+      }
+    }
   }
 
   window.addEventListener('message', function (e) {
@@ -207,6 +237,8 @@
       vscode.postMessage({ type: 'setConfig', key: 'panel.hidden', value: hid });
     });
   }
+  var _cbEl = el('cfgBurn');
+  if (_cbEl) _cbEl.addEventListener('change', function () { vscode.postMessage({ type: 'setConfig', key: 'burnRate.enabled', value: _cbEl.checked }); });
 
   // poke the fallen crab to replay the collapse (only while stunned)
   var _mc = el('mascot');
@@ -222,6 +254,24 @@
   function applyNarrow() { document.body.classList.toggle('narrow', document.body.clientWidth < 232); }
   if (window.ResizeObserver) { new ResizeObserver(applyNarrow).observe(document.body); }
   applyNarrow();
+
+  // click the warning bubble to reveal / hide the burn-rate detail banner
+  var _mwClick = el('mwarn');
+  if (_mwClick) _mwClick.addEventListener('click', function () {
+    if (_mwClick.hidden || !_burnMsg) return; // calm: nothing to show
+    var wb = el('warnbar'); if (!wb) return;
+    if (wb.hidden) {
+      var mid = _mwClick.classList.contains('mid');
+      wb.className = mid ? 'warnbar mid' : 'warnbar';
+      wb.innerHTML = (mid ? WARN_MID_SVG : WARN_SVG) + '<span class="wbmsg">' + _burnMsg + '</span><button class="wbx" title="Dismiss">×</button>';
+      wb.hidden = false;
+    } else wb.hidden = true;
+  });
+  // x on the banner dismisses it
+  var _wbEl = el('warnbar');
+  if (_wbEl) _wbEl.addEventListener('click', function (e) { if (e.target && e.target.closest && e.target.closest('.wbx')) { _wbEl.hidden = true; vscode.postMessage({ type: 'dismissBurn' }); } });
+  // keep "updated Xm ago" ticking between data pushes
+  setInterval(function () { if (lastData && el('upd')) { var ua = lastData.usageAt || 0; if (ua) el('upd').textContent = agoText(ua); } }, 30000);
 
   vscode.postMessage({ type: 'ready' });
 })();
