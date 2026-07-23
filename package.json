@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "Unofficial usage monitor for Claude Code — session & weekly limits, tokens, and requests in the status bar and a panel.",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
