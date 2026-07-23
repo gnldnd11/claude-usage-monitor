@@ -39,6 +39,8 @@
   function setVis(id, on) { var e = el(id); if (e) e.style.display = on ? '' : 'none'; }
   function agoText(ts) { var s = Math.floor((Date.now() - ts) / 1000); if (s < 45) return 'now'; if (s < 3600) return Math.round(s / 60) + 'm ago'; return Math.round(s / 3600) + 'h ago'; }
   var _burnMsg = '';
+  var _burnPrompt = '';
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   var HEART_SVG = '<svg viewBox="0 0 24 24" fill="#e8895a"><path d="M12 21s-8-5-8-11a4 4 0 018-1 4 4 0 018 1c0 6-8 11-8 11z"/></svg>';
   var WARN_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#e5484d" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
   var WARN_MID_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#f5a623" stroke="#f5a623" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
@@ -183,13 +185,14 @@
       // peak = largest unseen request across all sessions, so a spike isn't buried by another session's reply
       var _level = (!_peak || _n < 4 || _avg <= 0) ? 'calm' : (_ratio >= 2.5 ? 'high' : (_ratio >= 1.5 ? 'mid' : 'calm'));
       if (!_burnOn || _level === 'calm') {
-        _mw.hidden = true; _burnMsg = ''; var _wbx0 = el('warnbar'); if (_wbx0) _wbx0.hidden = true;
+        _mw.hidden = true; _burnMsg = ''; _burnPrompt = ''; var _wbx0 = el('warnbar'); if (_wbx0) _wbx0.hidden = true;
       } else {
         _mw.hidden = false;
         if (_level === 'high') { _mw.className = 'mwarn high'; _mw.innerHTML = WARN_SVG; }
         else { _mw.className = 'mwarn mid'; _mw.innerHTML = WARN_MID_SVG; }
         _burnMsg = 'A recent request burned ' + fmtTok(_pt) + ' tokens, ' + _ratio.toFixed(1) + '× your average (' + fmtTok(Math.round(_avg)) + ')' + (_peak && _peak.t ? ' · ' + agoText(_peak.t) : '') + '.';
-        _mw.title = _burnMsg;
+        _burnPrompt = (_peak && _peak.prompt) ? _peak.prompt.replace(/\s+/g, ' ').slice(0, 70) : '';
+        _mw.title = _burnMsg + (_burnPrompt ? '\n"' + _burnPrompt + '"' : '');
       }
     }
   }
@@ -259,7 +262,7 @@
     if (wb.hidden) {
       var mid = _mwClick.classList.contains('mid');
       wb.className = mid ? 'warnbar mid' : 'warnbar';
-      wb.innerHTML = (mid ? WARN_MID_SVG : WARN_SVG) + '<span class="wbmsg">' + _burnMsg + '</span><button class="wbx" title="Dismiss">×</button>';
+      wb.innerHTML = (mid ? WARN_MID_SVG : WARN_SVG) + '<span class="wbmsg">' + _burnMsg + (_burnPrompt ? '<span class="wbq">“' + esc(_burnPrompt) + '”</span>' : '') + '</span><button class="wbx" title="Dismiss">×</button>';
       wb.hidden = false;
     } else wb.hidden = true;
   });

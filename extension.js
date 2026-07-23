@@ -53,6 +53,14 @@ function readRate() {
   catch (e) { return null; }
 }
 
+// Extract the first text block from a transcript user message (skips tool_result turns).
+function userText(msg) {
+  const c = msg && msg.content;
+  if (typeof c === 'string') return c.trim();
+  if (Array.isArray(c)) { for (const b of c) { if (b && b.type === 'text' && b.text) return String(b.text).trim(); } }
+  return '';
+}
+
 // From transcript JSONL: today's tokens + latest message + today's request count
 function readTokens() {
   const now = new Date();
@@ -82,10 +90,12 @@ function readTokens() {
   for (const p of files) {
     let content;
     try { content = fs.readFileSync(p, 'utf8'); } catch (e) { continue; }
+    let lastUserText = ''; // latest real user prompt in this session file
     for (const line of content.split('\n')) {
       if (!line) continue;
       let o;
       try { o = JSON.parse(line); } catch (e) { continue; }
+      if (o.type === 'user' && o.message) { const _ut = userText(o.message); if (_ut) lastUserText = _ut; }
       const u = (o.message && o.message.usage) || o.usage;
       if (!u) continue;
       const t = o.timestamp ? Date.parse(o.timestamp) : NaN;
@@ -108,7 +118,7 @@ function readTokens() {
       }
       if (t > lastSeenT) {
         const tot = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
-        if (!peak || tot > peak.total) peak = { t: t, total: tot };
+        if (!peak || tot > peak.total) peak = { t: t, total: tot, prompt: lastUserText };
       }
     }
   }
@@ -425,6 +435,7 @@ const CSS = `
   .warnbar[hidden]{display:none;}
   .warnbar svg{width:15px;height:15px;flex:none;}
   .warnbar .wbmsg{flex:1 1 auto;}
+  .warnbar .wbq{display:block;margin-top:5px;color:var(--muted);font-style:italic;font-size:11px;line-height:1.3;}
   .warnbar .wbx{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:1px 5px;border-radius:5px;align-self:flex-start;}
   .warnbar .wbx:hover{background:rgba(255,255,255,.12);color:var(--text);}
   .mascot-wrap{position:relative;display:inline-flex;}
