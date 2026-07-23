@@ -173,7 +173,7 @@
 
     if (el('upd')) { var _ua = d.usageAt || 0; el('upd').textContent = _ua ? agoText(_ua) : (d.usageLoading ? 'loading' : '—'); }
 
-    // burn-rate: 3 levels — calm(heart) / mid(amber) / high(red)
+    // burn-rate: only 2 levels shown — mid(amber) / high(red). calm = no bubble at all.
     var _mw = el('mwarn');
     if (_mw) {
       var _burnOn = !(d.cfg && d.cfg.burnRate === false); // default on
@@ -182,18 +182,14 @@
       var _ratio = _avg > 0 ? (_pt / _avg) : 0;
       // peak = largest unseen request across all sessions, so a spike isn't buried by another session's reply
       var _level = (!_peak || _n < 4 || _avg <= 0) ? 'calm' : (_ratio >= 2.5 ? 'high' : (_ratio >= 1.5 ? 'mid' : 'calm'));
-      if (!_burnOn) {
+      if (!_burnOn || _level === 'calm') {
         _mw.hidden = true; _burnMsg = ''; var _wbx0 = el('warnbar'); if (_wbx0) _wbx0.hidden = true;
       } else {
         _mw.hidden = false;
         if (_level === 'high') { _mw.className = 'mwarn high'; _mw.innerHTML = WARN_SVG; }
-        else if (_level === 'mid') { _mw.className = 'mwarn mid'; _mw.innerHTML = WARN_MID_SVG; }
-        else { _mw.className = 'mwarn calm'; _mw.innerHTML = HEART_SVG; }
-        if (_level === 'calm') { _burnMsg = ''; _mw.title = 'Usage looks normal'; var _wbc = el('warnbar'); if (_wbc) _wbc.hidden = true; }
-        else {
-          _burnMsg = 'A recent request burned ' + fmtTok(_pt) + ' tokens, ' + _ratio.toFixed(1) + '× your average (' + fmtTok(Math.round(_avg)) + ')' + (_peak && _peak.t ? ' · ' + agoText(_peak.t) : '') + '.';
-          _mw.title = _burnMsg;
-        }
+        else { _mw.className = 'mwarn mid'; _mw.innerHTML = WARN_MID_SVG; }
+        _burnMsg = 'A recent request burned ' + fmtTok(_pt) + ' tokens, ' + _ratio.toFixed(1) + '× your average (' + fmtTok(Math.round(_avg)) + ')' + (_peak && _peak.t ? ' · ' + agoText(_peak.t) : '') + '.';
+        _mw.title = _burnMsg;
       }
     }
   }
