@@ -5,6 +5,9 @@
   var lastData = null;  // for the 1s live tick
   var refreshedAt = Date.now();
 
+  // ===========================================================================
+  // 유틸리티: 숫자 포맷·카운트다운·색상·게이지 계산 헬퍼
+  // ===========================================================================
   function fmtTok(n) {
     n = Math.round(n || 0);
     if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
@@ -35,39 +38,14 @@
     return h + 'h ' + String(m).padStart(2, '0') + 'm';
   }
 
-  // --- agent roster (M1) -----------------------------------------------------
-  // Deterministic: same name -> same species + colour, forever. Species from the
-  // name hash, size/bob speed from the model, colour tint from a second hash byte.
+  // ===========================================================================
+  // 로스터: 에이전트 NPC 스프라이트 배정 + 카드 렌더 + 활동 상태 오버레이 (M1)
+  // Deterministic: same name -> same NPC sprite, forever. Sprite chosen from the name hash.
+  // ===========================================================================
   function hashStr(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h; }
-  var PALETTE = ['#e8895a', '#3bbdb9', '#f0a83a', '#9b7ede', '#e57ca8', '#5fb87a', '#5a9ae8', '#e5686a'];
-  // top-down silhouettes in a 0..100 box; bodies tint via currentColor, eyes are code-drawn
-  var SPECIES = [
-    { b: '<ellipse cx="50" cy="55" rx="30" ry="21"/><circle cx="15" cy="42" r="10"/><circle cx="85" cy="42" r="10"/><path d="M22 68 L9 80 M30 73 L20 88 M70 73 L80 88 M78 68 L91 80" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/>', ey: 51, eg: 9, er: 7 },
-    { b: '<circle cx="50" cy="43" r="27"/><path d="M27 58 q-7 24 -16 26 M41 65 q-4 25 -11 30 M59 65 q4 25 11 30 M73 58 q7 24 16 26" stroke="currentColor" stroke-width="7" fill="none" stroke-linecap="round"/>', ey: 41, eg: 9, er: 7 },
-    { b: '<path d="M50 10 L61 39 L93 41 L67 61 L77 92 L50 73 L23 92 L33 61 L7 41 L39 39 Z"/>', ey: 52, eg: 9, er: 7 },
-    { b: '<ellipse cx="55" cy="66" rx="34" ry="14"/><circle cx="44" cy="46" r="27"/><circle cx="44" cy="46" r="14" fill="none" stroke="rgba(0,0,0,.18)" stroke-width="5"/><path d="M74 54 l6 -12 M80 58 l10 -8" stroke="currentColor" stroke-width="4" stroke-linecap="round" fill="none"/>', ey: 60, ex: 73, eg: 6, er: 5 },
-    { b: '<path d="M60 22 q26 6 26 28 q0 22 -26 28 q-30 -4 -38 -28 q8 -24 38 -28 Z"/><path d="M22 34 L6 22 L11 50 L6 78 L22 66 Z"/>', ey: 44, ex: 56, eg: 9, er: 7 },
-    { b: '<path d="M20 48 q0 -34 30 -34 q30 0 30 34 q-15 8 -30 8 q-15 0 -30 -8 Z"/><path d="M30 54 q-3 28 -6 34 M43 58 q-2 30 -4 36 M57 58 q2 30 4 36 M70 54 q3 28 6 34" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/>', ey: 38, eg: 9, er: 7 },
-    { b: '<path d="M80 30 q-46 -10 -54 24 q-6 27 21 31 q-23 -15 -6 -31 q17 -17 41 -9 Z"/><path d="M80 30 q10 -8 16 -4 M80 30 q12 -1 16 5" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/>', ey: 44, ex: 42, eg: 8, er: 6 },
-    { b: '<g stroke="currentColor" stroke-width="5" stroke-linecap="round" fill="none"><path d="M50 8 V26 M50 92 V74 M8 50 H26 M92 50 H74 M20 20 L32 32 M80 20 L68 32 M20 80 L32 68 M80 80 L68 68"/></g><circle cx="50" cy="50" r="26"/>', ey: 50, eg: 9, er: 7 }
-  ];
-  function eyesFor(sp) {
-    var cx = sp.ex || 50, ey = sp.ey, g = sp.eg, r = sp.er, pr = r * 0.5;
-    function eye(x) {
-      return '<circle cx="' + x + '" cy="' + ey + '" r="' + r + '" fill="#fff" stroke="rgba(0,0,0,.22)" stroke-width="1"/>'
-        + '<circle cx="' + x + '" cy="' + (ey + r * 0.32) + '" r="' + pr + '" fill="#1b1b1b"/>';
-    }
-    return eye(cx - g) + eye(cx + g);
-  }
-  function creatureSVG(name) {
-    var h = hashStr(name);
-    var sp = SPECIES[h % SPECIES.length];
-    var color = PALETTE[(h >> 8) % PALETTE.length];
-    return '<svg viewBox="0 0 100 100" style="color:' + color + '"><g fill="currentColor">' + sp.b + '</g>' + eyesFor(sp) + '</svg>';
-  }
   // --- NPC sprite pool (Kenmi NPCs) — distinct character per agent, deterministic ---
   var CUC = { npcs: {} };
-  try { var _ae = document.getElementById('cuc-assets'); if (_ae) CUC = JSON.parse(_ae.getAttribute('data-json')) || CUC; } catch (e) { /* assets missing → fall back to code-rendered creatures */ }
+  try { var _ae = document.getElementById('cuc-assets'); if (_ae) CUC = JSON.parse(_ae.getAttribute('data-json')) || CUC; } catch (e) { /* no assets → roster bodies render empty (assets are always bundled, so this is not a normal path) */ }
   var NPC_KEYS = Object.keys(CUC.npcs);
   // per-sprite metadata drives everything (packs differ in cell size & layout).
   // Rendering crops to the measured character bbox [x,y,w,h] (cell px) so every sprite
@@ -125,8 +103,6 @@
   function displayName(name) { var nn = (lastData && lastData.nicknames) || {}; return nn[name] || name; }
   function displayRole(name) { var rr = (lastData && lastData.roles) || {}; return rr[name] || name; }
 
-  function modelScale(m) { m = (m || '').toLowerCase(); if (m.indexOf('opus') >= 0) return 1.14; if (m.indexOf('haiku') >= 0) return 0.8; if (m.indexOf('sonnet') >= 0) return 0.9; return 1; }
-  function modelBob(m) { m = (m || '').toLowerCase(); if (m.indexOf('opus') >= 0) return 3.6; if (m.indexOf('haiku') >= 0) return 1.9; if (m.indexOf('sonnet') >= 0) return 2.4; return 2.9; }
   function firstSentence(d) {
     if (!d) return '';
     d = String(d).replace(/\\n/g, ' ').replace(/\s+/g, ' ').trim();
@@ -147,7 +123,7 @@
       var a = agents[i];
       var desc = firstSentence(a.description);
       var sheet = agentSheet(a.name);
-      var inner = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, ROSTER_T) + '"></div>' : creatureSVG(a.name);
+      var inner = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, ROSTER_T) + '"></div>' : '';
       var nick = displayName(a.name), role = displayRole(a.name);
       html += '<div class="cr-card" data-agent="' + esc(a.name) + '" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
         + '<button class="cr-gear" title="설정">' + GEAR_SVG + '</button>'
@@ -178,8 +154,10 @@
     pool.classList.toggle('has-active', anyActive);
   }
 
-  // --- room walker engine: only working agents enter the room, walk to the desk,
-  // work, then leave. Sprite frames cycle in a steady loop independent of pushes. ---
+  // ===========================================================================
+  // 방 워커: 작업 중인 에이전트만 방에 입장해 책상으로 걸어가 일하고 나간다.
+  // Sprite frames cycle in a steady loop independent of pushes.
+  // ===========================================================================
   var SPOT_ENTRY = { x: 0.26, y: 0.80 };
   var SPOT_DESK = { x: 0.50, y: 0.735 };
   var TRAVEL_MS = 1650;
@@ -259,13 +237,15 @@
     if (typeof updateToggleChevron === 'function') updateToggleChevron();
   }
 
+  // ===========================================================================
+  // 미터 렌더: DOM 헬퍼 + 게이지/링/통계 타일/번레이트 배너 그리기 (render 진입점)
+  // ===========================================================================
   function el(id) { return document.getElementById(id); }
   function setVis(id, on) { var e = el(id); if (e) e.style.display = on ? '' : 'none'; }
   function agoText(ts) { var s = Math.floor((Date.now() - ts) / 1000); if (s < 45) return 'now'; if (s < 3600) return Math.round(s / 60) + 'm ago'; return Math.round(s / 3600) + 'h ago'; }
   var _burnMsg = '';
   var _burnPrompt = '';
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  var HEART_SVG = '<svg viewBox="0 0 24 24" fill="#e8895a"><path d="M12 21s-8-5-8-11a4 4 0 018-1 4 4 0 018 1c0 6-8 11-8 11z"/></svg>';
   var WARN_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#e5484d" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
   var GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>';
   var WARN_MID_SVG ='<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#f5a623" stroke="#f5a623" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
@@ -411,7 +391,7 @@
       var _pt = _peak ? _peak.total : 0;
       var _ratio = _avg > 0 ? (_pt / _avg) : 0;
       // peak = largest unseen request across all sessions, so a spike isn't buried by another session's reply
-      var _level = (!_peak || _n < 4 || _avg <= 0) ? 'calm' : (_ratio >= 2.5 ? 'high' : (_ratio >= 1.5 ? 'mid' : 'calm'));
+      var _level = (!_peak || _n < 4 || _avg <= 0) ? 'calm' : (_ratio >= 2.5 ? 'high' : 'calm'); // red only; amber(mid) suppressed
       if (!_burnOn || _level === 'calm') {
         _mw.hidden = true; _burnMsg = ''; _burnPrompt = ''; var _wbx0 = el('warnbar'); if (_wbx0) _wbx0.hidden = true;
       } else {
@@ -425,6 +405,9 @@
     }
   }
 
+  // ===========================================================================
+  // 이벤트 배선 & 초기화: 메시지 수신, 탭·컴팩트 토글, 로스터/모달/설정 상호작용
+  // ===========================================================================
   window.addEventListener('message', function (e) {
     var m = e.data; if (!m) return;
     if (m.type === 'data') render(m.data);
