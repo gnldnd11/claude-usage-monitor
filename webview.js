@@ -198,9 +198,10 @@
     var root = document.createElement('div'); root.className = 'walker'; root.style.opacity = '0';
     var sp = document.createElement('div'); sp.className = 'wk-sprite';
     var m = sheet.meta; sp.style.cssText = cropStyle(m, m.idleRow || 0, m.idleCol || 0, ROOM_T);
-    var tag = document.createElement('div'); tag.className = 'wk-tag'; tag.textContent = shortName(displayName(name));
-    root.appendChild(sp); root.appendChild(tag); stage.appendChild(root);
-    var wk = { root: root, sprite: sp, tag: tag, meta: sheet.meta, mode: 'walking', leaving: false, targetKey: '' };
+    var roleTag = document.createElement('div'); roleTag.className = 'wk-role'; roleTag.textContent = shortName(displayRole(name)); // job above
+    var nameTag = document.createElement('div'); nameTag.className = 'wk-name'; nameTag.textContent = shortName(displayName(name)); // name below
+    root.appendChild(roleTag); root.appendChild(sp); root.appendChild(nameTag); stage.appendChild(root);
+    var wk = { root: root, sprite: sp, roleTag: roleTag, nameTag: nameTag, meta: sheet.meta, mode: 'walking', leaving: false, targetKey: '' };
     walkers[name] = wk;
     placeAt(wk, SPOT_ENTRY.x, SPOT_ENTRY.y); // spawn at the doorway
     requestAnimationFrame(function () { root.style.opacity = '1'; });
@@ -232,7 +233,8 @@
     for (var i = 0; i < present.length; i++) {
       var name = present[i];
       var wk = ensureWalker(name, stage); if (!wk || wk.leaving) continue;
-      if (wk.tag) wk.tag.textContent = shortName(displayName(name)); // reflect live nickname edits
+      if (wk.roleTag) wk.roleTag.textContent = shortName(displayRole(name)); // reflect live edits
+      if (wk.nameTag) wk.nameTag.textContent = shortName(displayName(name));
       var off = (i - (present.length - 1) / 2) * 0.11; // fan out if several are working
       goTo(wk, SPOT_DESK.x + off, SPOT_DESK.y, 'desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
     }
@@ -254,6 +256,7 @@
     if (au) au.classList.toggle('active', !agents);
     if (ag) ag.classList.toggle('active', agents);
     var s = vscode.getState() || {}; s.tab = t; vscode.setState(s);
+    if (typeof updateToggleChevron === 'function') updateToggleChevron();
   }
 
   function el(id) { return document.getElementById(id); }
@@ -435,10 +438,20 @@
   applyCompact(st0.compact);
   requestAnimationFrame(function () { requestAnimationFrame(function () { document.body.classList.remove('notrans'); }); });
   var tbtn = el('toggle');
+  // the top-right chevron is context-aware: Usage tab -> compact panel; Agents tab -> collapse roster
+  function updateToggleChevron() {
+    var s = vscode.getState() || {}, onAgents = (s.tab || 'usage') === 'agents';
+    var flip = onAgents ? !!s.rosterCollapsed : document.body.classList.contains('compact');
+    if (tbtn) {
+      var svg = tbtn.querySelector('svg'); if (svg) svg.style.transform = flip ? 'rotate(180deg)' : '';
+      tbtn.title = onAgents ? (s.rosterCollapsed ? 'Show roster' : 'Hide roster') : 'Compact / expand';
+    }
+  }
   if (tbtn) tbtn.addEventListener('click', function () {
-    var c = !document.body.classList.contains('compact');
-    applyCompact(c);
-    var s = vscode.getState() || {}; s.compact = c; vscode.setState(s);
+    var s = vscode.getState() || {};
+    if ((s.tab || 'usage') === 'agents') { s.rosterCollapsed = !s.rosterCollapsed; vscode.setState(s); applyRoster(s.rosterCollapsed); }
+    else { var c = !document.body.classList.contains('compact'); applyCompact(c); s.compact = c; vscode.setState(s); }
+    updateToggleChevron();
   });
 
   // tab switcher (Usage default; last choice remembered within the view)
@@ -457,16 +470,12 @@
   applyRoom();
   if (window.MutationObserver) new MutationObserver(applyRoom).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
-  // collapse / expand the roster (separate from the panel's compact toggle), persisted
-  var _rostHead = el('rosterHead');
+  // collapse / expand the roster — driven by the top-right chevron on the Agents tab
   function applyRoster(collapsed) {
     var p = el('pool'); if (p) p.style.display = collapsed ? 'none' : '';
-    if (_rostHead) _rostHead.classList.toggle('collapsed', !!collapsed);
   }
   applyRoster(!!(vscode.getState() || {}).rosterCollapsed);
-  if (_rostHead) _rostHead.addEventListener('click', function () {
-    var s = vscode.getState() || {}; s.rosterCollapsed = !s.rosterCollapsed; vscode.setState(s); applyRoster(s.rosterCollapsed);
-  });
+  updateToggleChevron();
 
   // click a roster character -> select (border) + walk south (front-facing walk cycle)
   function resetRosterSprite(card, name) {
@@ -476,17 +485,29 @@
     sp.style.backgroundPosition = frameBg(m, m.idleRow || 0, m.idleCol || 0, spriteScale(m, ROSTER_T));
   }
   var _poolEl = el('pool');
+  function deselectRoster() {
+    if (!selectedAgent || !_poolEl) return;
+    var c = _poolEl.querySelector('.cr-card[data-agent="' + selectedAgent + '"]');
+    if (c) { c.classList.remove('selected'); resetRosterSprite(c, selectedAgent); }
+    selectedAgent = null;
+  }
   if (_poolEl) _poolEl.addEventListener('click', function (e) {
     var t = e.target; if (!t || !t.closest) return;
-    var card = t.closest('.cr-card'); if (!card) return;
+    var card = t.closest('.cr-card'); if (!card) { deselectRoster(); return; } // empty area -> deselect
     var name = card.getAttribute('data-agent');
     if (t.closest('.cr-gear')) { openAgentModal(name); return; } // gear opens the settings modal
-    if (selectedAgent === name) return; // already selected — keep it (no toggle-off)
+    if (selectedAgent === name) { deselectRoster(); return; } // re-click same -> deselect
     if (selectedAgent) {
       var prev = _poolEl.querySelector('.cr-card[data-agent="' + selectedAgent + '"]');
       if (prev) { prev.classList.remove('selected'); resetRosterSprite(prev, selectedAgent); }
     }
     selectedAgent = name; card.classList.add('selected');
+  });
+  // clicking anywhere else in the Agents tab (room, header, empty space) also deselects
+  var _paEl = el('panelAgents');
+  if (_paEl) _paEl.addEventListener('click', function (e) {
+    var t = e.target; if (t && t.closest && (t.closest('.cr-card') || t.closest('.cr-gear'))) return;
+    deselectRoster();
   });
 
   // animate the selected roster sprite through the south-facing walk frames
@@ -506,7 +527,7 @@
     var mm = (ag && ag.model || '').toLowerCase();
     return mm.indexOf('opus') >= 0 ? 'opus' : mm.indexOf('sonnet') >= 0 ? 'sonnet' : mm.indexOf('haiku') >= 0 ? 'haiku' : 'inherit';
   }
-  var CAT_LABEL = { human: '인간형', monster: '몬스터형', animal: '동물형' };
+  var CAT_LABEL = { human: 'Human', monster: 'Monster', animal: 'Animal' };
   var CAT_ORDER = ['human', 'monster', 'animal'];
   var amCat = null; // active appearance-picker tab
   function buildAppearancePicker(name) {
@@ -587,6 +608,12 @@
     var w = document.body.clientWidth;
     document.body.classList.toggle('narrow', w < 232);
     document.body.classList.toggle('wrapcols', w < 340);
+    // keep the roster a 4-column grid at any width by scaling characters + labels down to fit
+    // (derive from body width so it's correct even while the Agents tab is hidden)
+    var contentW = w - 70; // wrap+card+inner paddings
+    var colW = (contentW - 2 * 3) / 4; // 4 cols, ~2px gaps
+    var scale = Math.max(0.5, Math.min(1, colW / 52)); // 52px = comfortable full-size card
+    document.body.style.setProperty('--cr-scale', scale.toFixed(3));
   }
   var _rzt;
   if (window.ResizeObserver) { new ResizeObserver(function () { clearTimeout(_rzt); _rzt = setTimeout(applyResponsive, 160); }).observe(document.body); }

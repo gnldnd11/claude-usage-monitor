@@ -625,8 +625,7 @@ const CSS = `
   .toggle{background:transparent;border:0;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px;display:flex;line-height:0;}
   .toggle:hover{background:var(--track);color:var(--text);}
   .toggle svg{width:16px;height:16px;transition:transform .4s cubic-bezier(.34,1.56,.64,1);}
-  .compact .toggle svg{transform:rotate(180deg);}
-  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:flex-start;justify-content:center;padding:14px;z-index:20;animation:fade .16s ease;}
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:flex-start;justify-content:center;padding:14px;z-index:1000;animation:fade .16s ease;}
   .sheet[hidden]{display:none;}
   .sheet-card{background:var(--inner);border:1px solid var(--iborder);border-radius:12px;width:100%;max-width:280px;padding:13px 15px;box-shadow:0 8px 28px rgba(0,0,0,.32);max-height:100%;overflow-y:auto;box-sizing:border-box;}
   .sheet-head{display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:13px;color:var(--text);margin-bottom:12px;}
@@ -676,18 +675,22 @@ const CSS = `
   .ws-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
   .ws-head .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);}
   .ws-head .it svg{width:15px;height:15px;color:#e8895a;}
-  .ws-live{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;color:#4fae74;}
-  .ws-dot{width:6px;height:6px;border-radius:50%;background:#4fae74;box-shadow:0 0 4px #4fae74;animation:pulse 2.2s ease-in-out infinite;}
+  .ws-map{display:flex;align-items:center;gap:4px;color:var(--muted);background:var(--inner);border:1px solid var(--iborder);border-radius:8px;padding:2px 5px 2px 7px;}
+  .ws-map svg{width:13px;height:13px;color:#e8895a;flex:none;}
+  .ws-map select{background:transparent;border:0;color:var(--text);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;padding:1px 0;}
+  .ws-map select:focus{outline:none;}
   .ws-room{position:relative;width:100%;aspect-ratio:1/1;border-radius:11px;overflow:hidden;background:#0c0c0d;border:1px solid var(--iborder);}
   body.vscode-light .ws-room{background:#ececef;}
   .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;}
   .ws-stage{position:absolute;inset:0;overflow:hidden;}
   .walker{position:absolute;transform:translate(-50%,-100%);transition:left 1.6s ease-in-out,top 1.6s ease-in-out,opacity .45s ease;pointer-events:none;}
   .wk-sprite{image-rendering:pixelated;}
-  .wk-tag{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:-16px;font-size:8px;font-weight:700;color:#fff;background:rgba(0,0,0,.62);padding:1px 5px;border-radius:6px;white-space:nowrap;letter-spacing:.2px;}
+  .wk-role,.wk-name{position:absolute;left:50%;transform:translateX(-50%);font-size:8.5px;font-weight:700;white-space:nowrap;letter-spacing:.2px;padding:1px 5px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.5);}
+  .wk-role{bottom:100%;margin-bottom:3px;color:#ffcaa8;background:rgba(20,12,8,.82);}
+  .wk-name{top:100%;margin-top:3px;color:#fff;background:rgba(20,12,8,.82);}
   .cr-sprite{image-rendering:pixelated;cursor:pointer;}
-  .pool{display:flex;flex-wrap:wrap;gap:8px 2px;justify-content:center;padding:8px 2px 2px;}
-  .cr-card{position:relative;display:flex;flex-direction:column;align-items:center;width:94px;padding:5px 2px 8px;border-radius:10px;cursor:pointer;transition:opacity .3s ease,box-shadow .18s ease,background .18s ease;}
+  .pool{display:flex;flex-wrap:wrap;justify-content:center;row-gap:8px;padding:8px 2px 2px;}
+  .cr-card{position:relative;flex:0 0 25%;display:flex;flex-direction:column;align-items:center;min-width:0;padding:5px 1px 8px;border-radius:10px;cursor:pointer;transition:opacity .3s ease,box-shadow .18s ease,background .18s ease;}
   .cr-card:hover:not(.selected){background:rgba(127,127,127,.09);}
   .cr-card:hover .cr-sprite{filter:brightness(1.1);}
   .cr-card.selected{background:rgba(232,137,90,.13);box-shadow:0 0 0 1.5px #e8895a;}
@@ -717,17 +720,13 @@ const CSS = `
   .cr-card.active .cr-sprite{filter:drop-shadow(0 0 5px rgba(229,72,77,.55));}
   /* when any agent is active, dim the resting ones so the caller stands out */
   .pool.has-active .cr-card:not(.active):not(.done){opacity:.42;}
-  .cr-body{display:flex;align-items:flex-end;justify-content:center;height:52px;overflow:hidden;line-height:0;}
+  .cr-body{display:flex;align-items:flex-end;justify-content:center;height:calc(52px * var(--cr-scale, 1));overflow:hidden;line-height:0;}
+  .cr-body .cr-sprite{transform:scale(var(--cr-scale, 1));transform-origin:bottom center;}
   .cr-body svg{width:100%;height:100%;overflow:visible;display:block;}
   .cr-shadow{height:6px;border-radius:50%;background:rgba(0,0,0,.24);margin-top:-1px;filter:blur(1px);animation:crshadow 2.6s ease-in-out infinite;will-change:transform;}
   body.vscode-light .cr-shadow{background:rgba(0,0,0,.14);}
-  .cr-name{font-size:10.5px;font-weight:600;color:var(--text);margin-top:3px;text-align:center;line-height:1.2;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .cr-role{font-size:9.5px;font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .rost-head{cursor:pointer;user-select:none;}
-  .rost-head:hover .it{color:#e8895a;}
-  .rost-chev{display:inline-flex;vertical-align:middle;transition:transform .3s ease;margin-left:3px;color:var(--muted);}
-  .rost-chev svg{width:12px;height:12px;}
-  .rost-head.collapsed .rost-chev{transform:rotate(180deg);}
+  .cr-name{font-size:clamp(8px, calc(10.5px * var(--cr-scale, 1)), 10.5px);font-weight:600;color:var(--text);margin-top:3px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cr-role{font-size:clamp(7.5px, calc(9.5px * var(--cr-scale, 1)), 9.5px);font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .pool-empty{color:var(--muted);font-size:11.5px;text-align:center;padding:26px 12px;line-height:1.55;}
   @keyframes crbob{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
   @keyframes crshadow{0%,100%{transform:scaleX(1);opacity:.55;}50%{transform:scaleX(.8);opacity:.32;}}
@@ -741,7 +740,10 @@ const IC = {
   heart: '<svg viewBox="0 0 24 24" fill="#e8895a"><path d="M12 21s-8-5-8-11a4 4 0 018-1 4 4 0 018 1c0 6-8 11-8 11z"/></svg>',
   warn: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#e5484d" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>',
-  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>'
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+  map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 6v15l6-3 6 3 6-3V3l-6 3-6-3z"/><path d="M9 3v15M15 6v15"/></svg>',
+  room: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6M18.5 20a5.5 5.5 0 0 0-3-4.9"/></svg>'
 };
 
 class UsageViewProvider {
@@ -921,16 +923,16 @@ class UsageViewProvider {
   </div>
   <div class="inner agents" id="panelAgents" style="display:none">
     <div class="ws-head">
-      <div class="it">${IC.bars} Agent Workspace</div>
-      <div class="ws-live"><span class="ws-dot"></span>Live</div>
+      <div class="it">${IC.room} Workroom</div>
+      <div class="ws-map"><select id="wsMap" title="맵 선택"><option value="cave">Blocky Cave</option><option disabled>Office (soon)</option><option disabled>Liminal Space (soon)</option></select></div>
     </div>
     <div class="ws-room" id="wsRoom">
       <img class="ws-bg" id="wsBg" src="${roomMinecraftUri}" alt="Minecraft workspace"/>
       <div class="ws-stage" id="wsStage"></div>
     </div>
-    <div class="ihead rost-head" id="rosterHead" style="margin-top:13px">
-      <div class="it">${IC.bars} Agent roster</div>
-      <div class="upd"><span id="agCount">0</span> agents <span class="rost-chev" id="rostChev">${IC.chevron}</span></div>
+    <div class="ihead" style="margin-top:13px">
+      <div class="it">${IC.users} Crew</div>
+      <div class="upd"><span id="agCount">0</span> agents</div>
     </div>
     <div class="pool" id="pool"></div>
   </div>
