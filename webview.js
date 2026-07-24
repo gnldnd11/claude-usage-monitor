@@ -69,11 +69,31 @@
   var CUC = { npcs: {} };
   try { var _ae = document.getElementById('cuc-assets'); if (_ae) CUC = JSON.parse(_ae.getAttribute('data-json')) || CUC; } catch (e) { /* assets missing → fall back to code-rendered creatures */ }
   var NPC_KEYS = Object.keys(CUC.npcs);
-  var CELL = 64;                     // sheet cell px
-  var ROSTER_SCALE = 1.3;            // roster thumbnail scale
-  var ROOM_SCALE = 1.4;              // walker scale inside the room
-  var ROW_IDLE = 0, ROW_WALK = 1;    // Kenmi front-facing rows; row2 = back (unused in MVP)
-  var WALK_FRAMES = 6;
+  // per-sprite metadata drives everything (packs differ in cell size & layout).
+  // Rendering crops to the measured character bbox [x,y,w,h] (cell px) so every sprite
+  // shows at a consistent size regardless of how much padding its sheet cell has.
+  var ROSTER_T = 40, ROOM_T = 58, PICKER_T = 40; // target character height (px) per context
+  function mCell(m) { return (m && m.cell) || 64; }
+  function bbOf(m) { return (m && m.bb) || [0, 0, mCell(m), mCell(m)]; }
+  function spriteScale(m, target) { return target / bbOf(m)[3]; }
+  // background-position that places frame (row,col)'s character into the cropped viewport
+  function frameBg(m, row, col, scale) {
+    var bb = bbOf(m), cell = mCell(m);
+    return (-((col * cell + bb[0]) * scale)) + 'px ' + (-((row * cell + bb[1]) * scale)) + 'px';
+  }
+  // full inline style for a character-cropped viewport at the given target height
+  function cropStyle(m, row, col, target) {
+    var bb = bbOf(m), scale = target / bb[3];
+    return 'width:' + (bb[2] * scale) + 'px;height:' + (bb[3] * scale) + 'px;background-image:url(\'' + m.u + '\');'
+      + 'background-repeat:no-repeat;background-size:' + (m.w * scale) + 'px ' + (m.h * scale) + 'px;'
+      + 'background-position:' + frameBg(m, row, col, scale) + ';image-rendering:pixelated;';
+  }
+  // current animation frame {row,col} for a sprite given its state
+  function framePos(m, walking) {
+    var t = Date.now();
+    if (walking) { var wf = m.walkFrames || 6; return { row: (m.walkRow != null ? m.walkRow : 1), col: Math.floor(t / (1000 / 7)) % wf }; }
+    var iff = m.idleFrames || 1; return { row: m.idleRow || 0, col: (m.idleCol || 0) + (Math.floor(t / (1000 / 3)) % iff) };
+  }
   // distinct-first order so unique agents look as different as possible (near-dupe pairs last)
   var NPC_ORDER = ['chef', 'farmer', 'fisherman', 'lumberjack', 'miner', 'bartender', 'bartender2', 'farmer2'];
   var SHEET_MAP = {};                // agentName -> npc key (built from the full roster, collision-free)
@@ -82,9 +102,14 @@
     var pool = NPC_ORDER.filter(function (k) { return CUC.npcs[k]; });
     if (!pool.length) pool = NPC_KEYS.slice();
     var used = {}, map = {};
+    var overrides = (lastData && lastData.appearance) || {};
     var names = (agents || []).map(function (a) { return a.name; }).slice().sort(); // stable order → stable probing
+    // pin user-chosen appearances first (these win, may repeat by choice)
+    for (var p = 0; p < names.length; p++) { var ov = overrides[names[p]]; if (ov && CUC.npcs[ov]) { map[names[p]] = ov; used[ov] = true; } }
+    // auto-assign the rest collision-free
     for (var i = 0; i < names.length; i++) {
-      var name = names[i], start = hashStr(name + '|npc') % pool.length, pick = null;
+      var name = names[i]; if (map[name]) continue;
+      var start = hashStr(name + '|npc') % pool.length, pick = null;
       for (var j = 0; j < pool.length; j++) { var idx = (start + j) % pool.length; if (!used[pool[idx]]) { pick = pool[idx]; break; } }
       if (pick == null) pick = pool[start]; // more agents than sprites → repeats allowed
       used[pick] = true; map[name] = pick;
@@ -95,12 +120,6 @@
     if (!NPC_KEYS.length) return null;
     var k = SHEET_MAP[name] || NPC_KEYS[hashStr(name + '|npc') % NPC_KEYS.length];
     return { key: k, meta: CUC.npcs[k] };
-  }
-  function spriteStaticStyle(meta, row, col, scale) {
-    var s = CELL * scale;
-    return 'width:' + s + 'px;height:' + s + 'px;background-image:url(\'' + meta.u + '\');'
-      + 'background-repeat:no-repeat;background-size:' + (meta.w * scale) + 'px ' + (meta.h * scale) + 'px;'
-      + 'background-position:' + (-col * s) + 'px ' + (-row * s) + 'px;';
   }
   function shortName(n) { n = String(n); return n.length > 13 ? n.slice(0, 12) + '…' : n; }
   function displayName(name) { var nn = (lastData && lastData.nicknames) || {}; return nn[name] || name; }
@@ -119,7 +138,7 @@
     agents = agents || [];
     var cnt = el('agCount'); if (cnt) cnt.textContent = agents.length;
     buildSheetMap(agents); // collision-free NPC assignment for the whole roster
-    var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + displayName(a.name) + ':' + displayRole(a.name); }).join('|');
+    var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + displayName(a.name) + ':' + displayRole(a.name) + ':' + SHEET_MAP[a.name]; }).join('|');
     if (pool._sig === sig) return; // roster unchanged — don't rebuild (keeps animations)
     pool._sig = sig;
     if (!agents.length) { pool.innerHTML = '<div class="pool-empty">No agent definitions found.<br>Add <b>.claude/agents/*.md</b> to see them here.</div>'; return; }
@@ -128,15 +147,17 @@
       var a = agents[i];
       var desc = firstSentence(a.description);
       var sheet = agentSheet(a.name);
-      var inner = sheet ? '<div class="cr-sprite" style="' + spriteStaticStyle(sheet.meta, ROW_IDLE, 0, ROSTER_SCALE) + '"></div>' : creatureSVG(a.name);
+      var inner = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, ROSTER_T) + '"></div>' : creatureSVG(a.name);
       var nick = displayName(a.name), role = displayRole(a.name);
       html += '<div class="cr-card" data-agent="' + esc(a.name) + '" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
+        + '<button class="cr-gear" title="설정">' + GEAR_SVG + '</button>'
         + '<div class="cr-badge"></div>'
         + '<div class="cr-body">' + inner + '</div>'
-        + '<div class="cr-name" contenteditable="true" spellcheck="false" title="이름 수정">' + esc(nick) + '</div>'
-        + '<div class="cr-role" contenteditable="true" spellcheck="false" title="칭호/역할 수정">' + esc(role) + '</div></div>';
+        + '<div class="cr-name">' + esc(nick) + '</div>'
+        + '<div class="cr-role">' + esc(role) + '</div></div>';
     }
     pool.innerHTML = html;
+    if (selectedAgent) { var sc = pool.querySelector('.cr-card[data-agent="' + selectedAgent + '"]'); if (sc) sc.classList.add('selected'); } // survive rebuilds
   }
   // Overlay live state onto the existing cards (no rebuild → animations survive).
   function applyAgentStates(activity) {
@@ -163,6 +184,7 @@
   var SPOT_DESK = { x: 0.50, y: 0.735 };
   var TRAVEL_MS = 1650;
   var walkers = {}; // agentName -> { root, sprite, meta, mode, leaving, targetKey, _t }
+  var selectedAgent = null; // roster: single selected agent (character-select style)
 
   function placeAt(wk, x, y) {
     wk.root.style.left = (x * 100) + '%';
@@ -175,11 +197,7 @@
     var sheet = agentSheet(name); if (!sheet) return null;
     var root = document.createElement('div'); root.className = 'walker'; root.style.opacity = '0';
     var sp = document.createElement('div'); sp.className = 'wk-sprite';
-    var s = CELL * ROOM_SCALE;
-    sp.style.width = s + 'px'; sp.style.height = s + 'px';
-    sp.style.backgroundImage = 'url(\'' + sheet.meta.u + '\')';
-    sp.style.backgroundRepeat = 'no-repeat';
-    sp.style.backgroundSize = (sheet.meta.w * ROOM_SCALE) + 'px ' + (sheet.meta.h * ROOM_SCALE) + 'px';
+    var m = sheet.meta; sp.style.cssText = cropStyle(m, m.idleRow || 0, m.idleCol || 0, ROOM_T);
     var tag = document.createElement('div'); tag.className = 'wk-tag'; tag.textContent = shortName(displayName(name));
     root.appendChild(sp); root.appendChild(tag); stage.appendChild(root);
     var wk = { root: root, sprite: sp, tag: tag, meta: sheet.meta, mode: 'walking', leaving: false, targetKey: '' };
@@ -221,14 +239,10 @@
   }
   // steady sprite-frame loop (idle slow, walking faster), independent of data pushes
   setInterval(function () {
-    var s = CELL * ROOM_SCALE, t = Date.now();
     for (var name in walkers) {
-      var wk = walkers[name];
-      var working = wk.mode === 'working';
-      var row = working ? ROW_IDLE : ROW_WALK;
-      var fps = working ? 3 : 7;
-      var f = Math.floor(t / (1000 / fps)) % WALK_FRAMES;
-      wk.sprite.style.backgroundPosition = (-f * s) + 'px ' + (-row * s) + 'px';
+      var wk = walkers[name], m = wk.meta;
+      var fp = framePos(m, wk.mode !== 'working');
+      wk.sprite.style.backgroundPosition = frameBg(m, fp.row, fp.col, spriteScale(m, ROOM_T));
     }
   }, 60);
   function switchTab(t) {
@@ -250,7 +264,8 @@
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   var HEART_SVG = '<svg viewBox="0 0 24 24" fill="#e8895a"><path d="M12 21s-8-5-8-11a4 4 0 018-1 4 4 0 018 1c0 6-8 11-8 11z"/></svg>';
   var WARN_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#e5484d" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
-  var WARN_MID_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#f5a623" stroke="#f5a623" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
+  var GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>';
+  var WARN_MID_SVG ='<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#f5a623" stroke="#f5a623" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
   function applyPanelVis(hid) {
     setVis('pm_session', hid.indexOf('session') < 0);
     setVis('pm_weekly', hid.indexOf('weekly') < 0);
@@ -432,6 +447,16 @@
   if (_tu) _tu.addEventListener('click', function () { switchTab('usage'); });
   if (_ta) _ta.addEventListener('click', function () { switchTab('agents'); });
 
+  // room background follows the VS Code theme (light theme -> light room), updated live
+  function applyRoom() {
+    if (!CUC.rooms) return;
+    var img = el('wsBg'); if (!img) return;
+    var src = document.body.classList.contains('vscode-light') ? CUC.rooms.light : CUC.rooms.dark;
+    if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
+  }
+  applyRoom();
+  if (window.MutationObserver) new MutationObserver(applyRoom).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
   // collapse / expand the roster (separate from the panel's compact toggle), persisted
   var _rostHead = el('rosterHead');
   function applyRoster(collapsed) {
@@ -443,28 +468,84 @@
     var s = vscode.getState() || {}; s.rosterCollapsed = !s.rosterCollapsed; vscode.setState(s); applyRoster(s.rosterCollapsed);
   });
 
-  // editable name tags (nickname) — delegated so it survives roster rebuilds
-  var _poolEl = el('pool');
-  if (_poolEl) {
-    function isEditable(t) { return t && t.classList && (t.classList.contains('cr-name') || t.classList.contains('cr-role')); }
-    _poolEl.addEventListener('keydown', function (e) {
-      var t = e.target; if (!isEditable(t)) return;
-      if (e.isComposing || e.keyCode === 229) return; // Korean/IME still composing — let it confirm first
-      if (e.key === 'Enter') { e.preventDefault(); t.blur(); }
-      else if (e.key === 'Escape') {
-        e.preventDefault(); var c = t.closest('.cr-card');
-        if (c) t.textContent = t.classList.contains('cr-name') ? displayName(c.getAttribute('data-agent')) : displayRole(c.getAttribute('data-agent'));
-        t.blur();
-      }
-    });
-    _poolEl.addEventListener('blur', function (e) {
-      var t = e.target; if (!isEditable(t)) return;
-      var c = t.closest('.cr-card'); if (!c) return;
-      var name = c.getAttribute('data-agent'), val = (t.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24);
-      if (t.classList.contains('cr-name')) vscode.postMessage({ type: 'setNickname', name: name, nick: val });
-      else vscode.postMessage({ type: 'setRole', name: name, role: val });
-    }, true);
+  // click a roster character -> select (border) + walk south (front-facing walk cycle)
+  function resetRosterSprite(card, name) {
+    var sp = card.querySelector('.cr-sprite'), sheet = agentSheet(name);
+    if (!sp || !sheet) return;
+    var m = sheet.meta;
+    sp.style.backgroundPosition = frameBg(m, m.idleRow || 0, m.idleCol || 0, spriteScale(m, ROSTER_T));
   }
+  var _poolEl = el('pool');
+  if (_poolEl) _poolEl.addEventListener('click', function (e) {
+    var t = e.target; if (!t || !t.closest) return;
+    var card = t.closest('.cr-card'); if (!card) return;
+    var name = card.getAttribute('data-agent');
+    if (t.closest('.cr-gear')) { openAgentModal(name); return; } // gear opens the settings modal
+    if (selectedAgent === name) return; // already selected — keep it (no toggle-off)
+    if (selectedAgent) {
+      var prev = _poolEl.querySelector('.cr-card[data-agent="' + selectedAgent + '"]');
+      if (prev) { prev.classList.remove('selected'); resetRosterSprite(prev, selectedAgent); }
+    }
+    selectedAgent = name; card.classList.add('selected');
+  });
+
+  // animate the selected roster sprite through the south-facing walk frames
+  setInterval(function () {
+    if (!selectedAgent || !_poolEl) return;
+    var card = _poolEl.querySelector('.cr-card[data-agent="' + selectedAgent + '"]'); if (!card) return;
+    var sp = card.querySelector('.cr-sprite'); if (!sp) return;
+    var sheet = agentSheet(selectedAgent); if (!sheet) return;
+    var m = sheet.meta, fp = framePos(m, true);
+    sp.style.backgroundPosition = frameBg(m, fp.row, fp.col, spriteScale(m, ROSTER_T));
+  }, 80);
+
+  // agent settings modal (별명 / 직업 / 외형 / 모델)
+  var amAgent = null;
+  function currentModel(name) {
+    var ag = ((lastData && lastData.agents) || []).filter(function (a) { return a.name === name; })[0];
+    var mm = (ag && ag.model || '').toLowerCase();
+    return mm.indexOf('opus') >= 0 ? 'opus' : mm.indexOf('sonnet') >= 0 ? 'sonnet' : mm.indexOf('haiku') >= 0 ? 'haiku' : 'inherit';
+  }
+  var CAT_LABEL = { human: '인간형', monster: '몬스터형', animal: '동물형' };
+  var CAT_ORDER = ['human', 'monster', 'animal'];
+  var amCat = null; // active appearance-picker tab
+  function buildAppearancePicker(name) {
+    var wrap = el('amAppear'); if (!wrap) return;
+    var cur = SHEET_MAP[name], byCat = {};
+    for (var i = 0; i < NPC_KEYS.length; i++) { var k = NPC_KEYS[i], c = (CUC.npcs[k].cat || 'human'); (byCat[c] = byCat[c] || []).push(k); }
+    var present = CAT_ORDER.filter(function (c) { return byCat[c] && byCat[c].length; });
+    if (!present.length) { wrap.innerHTML = ''; return; }
+    var curCat = null; for (var cc = 0; cc < present.length; cc++) { if (byCat[present[cc]].indexOf(cur) >= 0) curCat = present[cc]; }
+    if (present.indexOf(amCat) < 0) amCat = curCat || present[0];
+    var tabs = present.map(function (c) { return '<button class="am-tab' + (c === amCat ? ' on' : '') + '" data-cat="' + c + '">' + CAT_LABEL[c] + ' ' + byCat[c].length + '</button>'; }).join('');
+    var grid = byCat[amCat].map(function (key) {
+      var meta = CUC.npcs[key];
+      return '<div class="am-npc' + (key === cur ? ' on' : '') + '" data-npc="' + key + '"><div class="cr-sprite" style="' + cropStyle(meta, meta.idleRow || 0, meta.idleCol || 0, PICKER_T) + '"></div></div>';
+    }).join('');
+    wrap.innerHTML = '<div class="am-tabs">' + tabs + '</div><div class="am-row">' + grid + '</div>';
+  }
+  function openAgentModal(name) {
+    amAgent = name;
+    var t = el('amTitle'); if (t) t.textContent = name;
+    var nn = (lastData && lastData.nicknames || {})[name] || ''; if (el('amNick')) el('amNick').value = nn;
+    var rr = (lastData && lastData.roles || {})[name] || ''; if (el('amRole')) el('amRole').value = rr;
+    if (el('amModel')) el('amModel').value = currentModel(name);
+    buildAppearancePicker(name);
+    var m = el('agentModal'); if (m) m.hidden = false;
+  }
+  function closeAgentModal() { var m = el('agentModal'); if (m) m.hidden = true; amAgent = null; }
+  if (el('amNick')) el('amNick').addEventListener('change', function () { if (amAgent) vscode.postMessage({ type: 'setNickname', name: amAgent, nick: this.value.trim() }); });
+  if (el('amRole')) el('amRole').addEventListener('change', function () { if (amAgent) vscode.postMessage({ type: 'setRole', name: amAgent, role: this.value.trim() }); });
+  if (el('amModel')) el('amModel').addEventListener('change', function () { if (amAgent) vscode.postMessage({ type: 'setModel', name: amAgent, model: this.value }); });
+  if (el('amAppear')) el('amAppear').addEventListener('click', function (e) {
+    var tab = e.target.closest ? e.target.closest('.am-tab') : null;
+    if (tab) { amCat = tab.getAttribute('data-cat'); if (amAgent) buildAppearancePicker(amAgent); return; }
+    var n = e.target.closest ? e.target.closest('.am-npc') : null; if (!n || !amAgent) return;
+    vscode.postMessage({ type: 'setAppearance', name: amAgent, appearance: n.getAttribute('data-npc') });
+    var kids = this.querySelectorAll('.am-npc'); for (var i = 0; i < kids.length; i++) kids[i].classList.toggle('on', kids[i] === n);
+  });
+  if (el('amClose')) el('amClose').addEventListener('click', closeAgentModal);
+  if (el('agentModal')) el('agentModal').addEventListener('click', function (e) { if (e.target === this) closeAgentModal(); });
 
   var _sb = el('signinBtn');
   if (_sb) _sb.addEventListener('click', function () { vscode.postMessage({ type: 'login' }); });

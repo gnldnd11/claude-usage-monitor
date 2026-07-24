@@ -28,6 +28,7 @@ let turnRefreshTimer; // debounced refresh fired after a turn completes
 let extContext; // for persisting the last-good usage value across reloads
 let agentNicknames = {}; // agentName -> user nickname (persisted, editable in the panel)
 let agentRoles = {};     // agentName -> user role/title alias (persisted, editable)
+let agentAppearance = {}; // agentName -> chosen NPC sprite key (persisted, overrides auto-assignment)
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
 const watchers = [];
@@ -220,7 +221,7 @@ function readAgentsFrom(dir, into, seen) {
     let text;
     try { text = fs.readFileSync(path.join(dir, e.name), 'utf8'); } catch (e2) { continue; }
     const a = parseAgentFrontmatter(text);
-    if (a && !seen.has(a.name)) { seen.add(a.name); into.push(a); }
+    if (a && !seen.has(a.name)) { a.file = path.join(dir, e.name); seen.add(a.name); into.push(a); }
   }
 }
 
@@ -232,6 +233,19 @@ function readAgents() {
   readAgentsFrom(path.join(CLAUDE_DIR, 'agents'), out, seen);
   out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
+}
+
+// Rewrite the `model:` field in an agent's .md frontmatter (adds it if missing).
+// This is what makes the roster's model dropdown actually change the agent's model.
+function writeAgentModel(file, model) {
+  let text = fs.readFileSync(file, 'utf8');
+  const fm = text.match(/^(---\s*\r?\n)([\s\S]*?)(\r?\n---)/);
+  if (!fm) return false;
+  let body = fm[2];
+  if (/^model:\s*.*$/m.test(body)) body = body.replace(/^model:\s*.*$/m, 'model: ' + model);
+  else body = body + '\nmodel: ' + model;
+  fs.writeFileSync(file, fm[1] + body + fm[3] + text.slice(fm[0].length));
+  return true;
 }
 
 // Live session/weekly limits from Claude's own usage endpoint (same source as the built-in dialog).
@@ -484,10 +498,11 @@ function collect() {
     usageAt: (usageCache ? lastUsageAt : 0),
     avg: (tokens.count > 0) ? (((tokens.today.input || 0) + (tokens.today.output || 0) + (tokens.today.cache_creation || 0) + (tokens.today.cache_read || 0)) / tokens.count) : 0,
     peak: tokens.peak,
-    agents: readAgents(),
+    agents: readAgents().map((a) => ({ name: a.name, model: a.model, description: a.description })),
     agentActivity: computeAgentActivity(tokens.agentCalls, tokens.agentResults),
     nicknames: agentNicknames,
-    roles: agentRoles
+    roles: agentRoles,
+    appearance: agentAppearance
   };
 }
 
@@ -664,30 +679,50 @@ const CSS = `
   .ws-live{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;color:#4fae74;}
   .ws-dot{width:6px;height:6px;border-radius:50%;background:#4fae74;box-shadow:0 0 4px #4fae74;animation:pulse 2.2s ease-in-out infinite;}
   .ws-room{position:relative;width:100%;aspect-ratio:1/1;border-radius:11px;overflow:hidden;background:#0c0c0d;border:1px solid var(--iborder);}
+  body.vscode-light .ws-room{background:#ececef;}
   .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;}
   .ws-stage{position:absolute;inset:0;overflow:hidden;}
-  .walker{position:absolute;transform:translate(-50%,-92%);transition:left 1.6s ease-in-out,top 1.6s ease-in-out,opacity .45s ease;pointer-events:none;}
+  .walker{position:absolute;transform:translate(-50%,-100%);transition:left 1.6s ease-in-out,top 1.6s ease-in-out,opacity .45s ease;pointer-events:none;}
   .wk-sprite{image-rendering:pixelated;}
   .wk-tag{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:-16px;font-size:8px;font-weight:700;color:#fff;background:rgba(0,0,0,.62);padding:1px 5px;border-radius:6px;white-space:nowrap;letter-spacing:.2px;}
-  .cr-sprite{image-rendering:pixelated;}
+  .cr-sprite{image-rendering:pixelated;cursor:pointer;}
   .pool{display:flex;flex-wrap:wrap;gap:8px 2px;justify-content:center;padding:8px 2px 2px;}
-  .cr-card{position:relative;display:flex;flex-direction:column;align-items:center;width:94px;padding:5px 2px 8px;transition:opacity .3s ease;}
+  .cr-card{position:relative;display:flex;flex-direction:column;align-items:center;width:94px;padding:5px 2px 8px;border-radius:10px;cursor:pointer;transition:opacity .3s ease,box-shadow .18s ease,background .18s ease;}
+  .cr-card:hover:not(.selected){background:rgba(127,127,127,.09);}
+  .cr-card:hover .cr-sprite{filter:brightness(1.1);}
+  .cr-card.selected{background:rgba(232,137,90,.13);box-shadow:0 0 0 1.5px #e8895a;}
+  .cr-gear{position:absolute;top:2px;left:3px;display:none;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:rgba(232,137,90,.92);color:#fff;cursor:pointer;line-height:0;box-shadow:0 1px 4px rgba(0,0,0,.3);z-index:5;}
+  .cr-card.selected .cr-gear{display:inline-flex;}
+  .cr-gear:hover{background:#e8895a;}
+  .cr-gear svg{width:12px;height:12px;}
+  /* agent settings modal */
+  .sheet-row input[type=text]{background:var(--track);color:var(--text);border:1px solid var(--iborder);border-radius:7px;padding:5px 8px;font-size:12px;font-family:inherit;width:130px;}
+  .am-appearance{display:block;}
+  .am-tabs{display:flex;gap:4px;margin-bottom:10px;}
+  .am-tab{flex:1;background:var(--track);border:0;color:var(--muted);font-size:11px;font-weight:600;padding:6px 4px;border-radius:7px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .am-tab.on{background:#e8895a;color:#fff;}
+  .am-tab:hover:not(.on){color:var(--text);}
+  .am-row{display:flex;flex-wrap:wrap;gap:6px;}
+  .am-npc{width:50px;height:50px;border-radius:9px;border:2px solid transparent;background:var(--track);display:flex;align-items:flex-end;justify-content:center;overflow:hidden;cursor:pointer;}
+  .am-npc:hover{border-color:var(--muted);}
+  .am-npc.on{border-color:#e8895a;background:rgba(232,137,90,.18);}
+  .am-npc .cr-sprite{image-rendering:pixelated;}
+  .cr-modelsel.m-opus{background:rgba(232,137,90,.95);}
+  .cr-modelsel.m-sonnet{background:rgba(90,154,232,.95);}
+  .cr-modelsel.m-haiku{background:rgba(95,184,122,.95);}
+  .cr-modelsel.m-other{background:rgba(127,127,127,.8);}
   .cr-badge{position:absolute;top:-3px;left:50%;transform:translateX(-50%) translateY(-4px);background:#e5484d;color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap;opacity:0;transition:opacity .2s ease,transform .2s ease;pointer-events:none;box-shadow:0 2px 7px rgba(0,0,0,.3);z-index:4;letter-spacing:.2px;}
   .cr-card.active .cr-badge,.cr-card.done .cr-badge{opacity:1;transform:translateX(-50%) translateY(0);}
   .cr-card.done .cr-badge{background:#4fae74;}
   .cr-card.active .cr-sprite{filter:drop-shadow(0 0 5px rgba(229,72,77,.55));}
   /* when any agent is active, dim the resting ones so the caller stands out */
   .pool.has-active .cr-card:not(.active):not(.done){opacity:.42;}
-  .cr-body{display:flex;align-items:flex-end;justify-content:center;line-height:0;}
+  .cr-body{display:flex;align-items:flex-end;justify-content:center;height:52px;overflow:hidden;line-height:0;}
   .cr-body svg{width:100%;height:100%;overflow:visible;display:block;}
   .cr-shadow{height:6px;border-radius:50%;background:rgba(0,0,0,.24);margin-top:-1px;filter:blur(1px);animation:crshadow 2.6s ease-in-out infinite;will-change:transform;}
   body.vscode-light .cr-shadow{background:rgba(0,0,0,.14);}
-  .cr-name{font-size:10.5px;font-weight:600;color:var(--text);margin-top:-13px;text-align:center;line-height:1.2;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:5px;padding:0 3px;cursor:text;outline:none;position:relative;z-index:1;}
-  .cr-name:hover{background:rgba(127,127,127,.16);}
-  .cr-name:focus{background:rgba(0,0,0,.28);box-shadow:0 0 0 1px #e8895a;overflow:visible;text-overflow:clip;}
-  .cr-role{font-size:9.5px;font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:5px;padding:0 3px;cursor:text;outline:none;}
-  .cr-role:hover{background:rgba(127,127,127,.16);}
-  .cr-role:focus{background:rgba(0,0,0,.28);box-shadow:0 0 0 1px #e8895a;overflow:visible;text-overflow:clip;color:var(--text);}
+  .cr-name{font-size:10.5px;font-weight:600;color:var(--text);margin-top:3px;text-align:center;line-height:1.2;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cr-role{font-size:9.5px;font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .rost-head{cursor:pointer;user-select:none;}
   .rost-head:hover .it{color:#e8895a;}
   .rost-chev{display:inline-flex;vertical-align:middle;transition:transform .3s ease;margin-left:3px;color:var(--muted);}
@@ -735,6 +770,19 @@ class UsageViewProvider {
         if (extContext) extContext.globalState.update('agentRolesV1', agentRoles);
         push();
       }
+      else if (m.type === 'setAppearance' && m.name) {
+        if (m.appearance) agentAppearance[m.name] = m.appearance; else delete agentAppearance[m.name];
+        if (extContext) extContext.globalState.update('agentAppearanceV1', agentAppearance);
+        push();
+      }
+      else if (m.type === 'setModel' && m.name && m.model) {
+        const a = readAgents().find((x) => x.name === m.name);
+        if (a && a.file) {
+          try { writeAgentModel(a.file, m.model); }
+          catch (e) { if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] setModel failed: ' + (e && e.message)); }
+        }
+        push();
+      }
     });
     view.onDidChangeVisibility(() => {
       if (view.visible && Date.now() - lastFetch > 300000) refreshUsage();
@@ -754,17 +802,46 @@ class UsageViewProvider {
     const mascotDespairUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-despair.png'));
     const mascotWorkingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-working.png'));
     const roomMinecraftUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft.png'));
-    const npcUri = (n) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, n)).toString();
-    const assetsJson = JSON.stringify({ npcs: {
-      bartender: { u: npcUri('npc-bartender.png'), w: 384, h: 448 },
-      bartender2: { u: npcUri('npc-bartender2.png'), w: 384, h: 448 },
-      chef: { u: npcUri('npc-chef.png'), w: 384, h: 448 },
-      farmer: { u: npcUri('npc-farmer.png'), w: 384, h: 832 },
-      farmer2: { u: npcUri('npc-farmer2.png'), w: 384, h: 832 },
-      fisherman: { u: npcUri('npc-fisherman.png'), w: 576, h: 832 },
-      lumberjack: { u: npcUri('npc-lumberjack.png'), w: 384, h: 640 },
-      miner: { u: npcUri('npc-miner.png'), w: 384, h: 640 }
-    } }).replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
+    const roomMinecraftLightUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft-light.png'));
+    const spriteUri = (n) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, n)).toString();
+    // per-sprite metadata: cell size, columns, which rows/frames are front-facing idle vs walk,
+    // and a category. Each pack has its own grid, so these are hand-verified per sheet.
+    // ch = character height / cell (size normalize); by = bottom gap / cell (feet alignment). measured per sheet.
+    const D = (o) => Object.assign({ cell: 64, cols: 6, idleRow: 0, idleCol: 0, idleFrames: 6, walkRow: 1, walkFrames: 6, ch: 0.7, by: 0.2, cat: 'human' }, o);
+    // Kenmi front-facing character sheets: row0 = front idle/walk. Cell size & frames verified per sheet.
+    const FRONT = { idleRow: 0, idleCol: 0, idleFrames: 1, walkRow: 0 };
+    const npcs = {};
+    // --- human ---
+    [['bartender', 384, 448, 0.28], ['bartender2', 384, 448, 0.34], ['chef', 384, 448, 0.43], ['farmer', 384, 832, 0.34], ['farmer2', 384, 832, 0.34], ['fisherman', 576, 832, 0.29], ['lumberjack', 384, 640, 0.31], ['miner', 384, 640, 0.31]]
+      .forEach(([k, w, h, ch]) => { npcs[k] = D({ u: spriteUri('npc-' + k + '.png'), w, h, ch, by: 0.36 }); }); // NPCs: row0 idle / row1 walk
+    npcs.witch = D(Object.assign({ u: spriteUri('hum-witch.png'), w: 192, h: 288, cell: 32, cols: 6, walkFrames: 6, ch: 0.81, by: 0.09 }, FRONT));
+    npcs.angel1 = D(Object.assign({ u: spriteUri('hum-angel1.png'), w: 512, h: 832, cell: 64, cols: 8, walkFrames: 6, ch: 0.43, by: 0.36 }, FRONT));
+    npcs.angel2 = D(Object.assign({ u: spriteUri('hum-angel2.png'), w: 512, h: 832, cell: 64, cols: 8, walkFrames: 6, ch: 0.42, by: 0.36 }, FRONT));
+    [['archer', 0.43, 0.15], ['spearman', 0.50, 0.33], ['swordman', 0.47, 0.15], ['templar', 0.45, 0.33]].forEach(([k, ch, by]) => { npcs['knight_' + k] = D(Object.assign({ u: spriteUri('hum-knight-' + k + '.png'), w: 288, h: 624, cell: 48, cols: 6, walkFrames: 6, ch, by }, FRONT)); });
+    // 32px front-facing humanoids (Santa, Desert NPCs, Player) — verified 32px, row0 front
+    [['santa', 'hum-santa', 192, 320, 6, 0.72, 0.22], ['santa_helper', 'hum-santa-helper', 256, 320, 8, 0.66, 0.25], ['desert1', 'hum-desert1', 192, 320, 6, 0.66, 0.22], ['desert2', 'hum-desert2', 192, 320, 6, 0.66, 0.22], ['desert3', 'hum-desert3', 192, 320, 6, 0.66, 0.22], ['desert4', 'hum-desert4', 192, 320, 6, 0.66, 0.22], ['player', 'hum-player', 192, 320, 6, 0.62, 0.22], ['pharaoh', 'hum-pharaoh', 256, 320, 8, 0.66, 0.22]]
+      .forEach(([k, file, w, h, cols, ch, by]) => { npcs[k] = D(Object.assign({ u: spriteUri(file + '.png'), w, h, cell: 32, cols, walkFrames: 6, ch, by }, FRONT)); });
+    // --- monster ---
+    npcs.slime = D({ u: spriteUri('mon-slime.png'), w: 512, h: 192, cell: 64, cols: 8, idleFrames: 4, walkRow: 1, walkFrames: 8, ch: 0.28, by: 0.34, cat: 'monster' });
+    npcs.skeleton = D(Object.assign({ u: spriteUri('mon-skeleton.png'), w: 192, h: 320, cell: 32, cols: 6, walkFrames: 6, ch: 0.62, by: 0.22, cat: 'monster' }, FRONT));
+    npcs.goblin_thief = D(Object.assign({ u: spriteUri('mon-goblin-thief.png'), w: 192, h: 416, cell: 32, cols: 6, walkFrames: 4, ch: 0.50, by: 0.25, cat: 'monster' }, FRONT));
+    npcs.goblin_maceman = D(Object.assign({ u: spriteUri('mon-goblin-maceman.png'), w: 192, h: 416, cell: 32, cols: 6, walkFrames: 4, ch: 0.53, by: 0.25, cat: 'monster' }, FRONT));
+    npcs.goblin_archer = D(Object.assign({ u: spriteUri('mon-goblin-archer.png'), w: 288, h: 624, cell: 48, cols: 6, walkFrames: 4, ch: 0.33, by: 0.17, cat: 'monster' }, FRONT));
+    npcs.goblin_spearman = D(Object.assign({ u: spriteUri('mon-goblin-spearman.png'), w: 288, h: 624, cell: 48, cols: 6, walkFrames: 4, ch: 0.43, by: 0.29, cat: 'monster' }, FRONT));
+    // 32px front-facing undead (skeleton variants, mummy)
+    [['skel_bowman', 'mon-skel-bowman', 192, 416, 6, 0.62, 0.22], ['skel_mage', 'mon-skel-mage', 256, 416, 8, 0.69, 0.22], ['skel_swordman', 'mon-skel-swordman', 256, 512, 8, 0.66, 0.22], ['mummy', 'mon-mummy', 192, 416, 6, 0.66, 0.22]]
+      .forEach(([k, file, w, h, cols, ch, by]) => { npcs[k] = D(Object.assign({ u: spriteUri(file + '.png'), w, h, cell: 32, cols, walkFrames: 6, ch, by, cat: 'monster' }, FRONT)); });
+    // big slimes (directionless: idle row0 / move row1), 5 colours
+    ['blue', 'green', 'pink', 'red', 'yellow'].forEach((c) => { npcs['slime_big_' + c] = D({ u: spriteUri('mon-slime-big-' + c + '.png'), w: 512, h: 256, cell: 64, cols: 8, idleFrames: 4, walkRow: 1, walkFrames: 8, ch: 0.28, by: 0.34, cat: 'monster' }); });
+    // frog folded into monsters for now (animal category held back)
+    npcs.frog = D({ u: spriteUri('ani-frog.png'), w: 320, h: 128, cell: 32, cols: 10, idleFrames: 2, walkRow: 1, walkFrames: 8, ch: 0.31, by: 0.34, cat: 'monster' });
+    // attach measured character bounding boxes ([x,y,w,h] in cell px) so the webview can crop to the character
+    try {
+      const bbox = JSON.parse(fs.readFileSync(path.join(this.extensionUri.fsPath, 'sprite-bbox.json'), 'utf8'));
+      Object.keys(npcs).forEach((k) => { const fn = npcs[k].u.split('/').pop().split('?')[0]; if (bbox[fn]) npcs[k].bb = bbox[fn]; });
+    } catch (e) { /* no bbox file → renderer falls back to full cell */ }
+    const assetsJson = JSON.stringify({ rooms: { dark: roomMinecraftUri.toString(), light: roomMinecraftLightUri.toString() }, npcs })
+      .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
     const csp = webview.cspSource;
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
@@ -848,7 +925,7 @@ class UsageViewProvider {
       <div class="ws-live"><span class="ws-dot"></span>Live</div>
     </div>
     <div class="ws-room" id="wsRoom">
-      <img class="ws-bg" src="${roomMinecraftUri}" alt="Minecraft workspace"/>
+      <img class="ws-bg" id="wsBg" src="${roomMinecraftUri}" alt="Minecraft workspace"/>
       <div class="ws-stage" id="wsStage"></div>
     </div>
     <div class="ihead rost-head" id="rosterHead" style="margin-top:13px">
@@ -881,6 +958,18 @@ class UsageViewProvider {
       <label class="sheet-check"><input type="checkbox" id="cfgBurn" checked> Burn-rate warning</label>
     </div>
   </div>
+  <div class="sheet" id="agentModal" hidden>
+    <div class="sheet-card">
+      <div class="sheet-head"><span id="amTitle">에이전트 설정</span><button class="sheet-x" id="amClose" title="닫기">${IC.chevron}</button></div>
+      <div class="sheet-row"><label for="amNick">별명</label><input id="amNick" type="text" maxlength="24" placeholder="이름"></div>
+      <div class="sheet-row"><label for="amRole">직업</label><input id="amRole" type="text" maxlength="24" placeholder="역할"></div>
+      <div class="sheet-row"><label for="amModel">모델</label>
+        <select id="amModel"><option value="opus">opus</option><option value="sonnet">sonnet</option><option value="haiku">haiku</option><option value="inherit">inherit</option></select>
+      </div>
+      <div class="sheet-sec">외형</div>
+      <div class="am-appearance" id="amAppear"></div>
+    </div>
+  </div>
 <div id="cuc-assets" data-json='${assetsJson}' style="display:none"></div>
 <script src="${scriptUri}"></script></body></html>`;
   }
@@ -911,6 +1000,7 @@ function activate(context) {
   lastSeenT = context.globalState.get('burnSeenT', 0); // restore burn-rate dismiss point across reloads
   agentNicknames = context.globalState.get('agentNicknamesV1', {}) || {}; // restore agent nicknames
   agentRoles = context.globalState.get('agentRolesV1', {}) || {}; // restore agent role/title aliases
+  agentAppearance = context.globalState.get('agentAppearanceV1', {}) || {}; // restore appearance overrides
   try {
     const saved = context.globalState.get('usageCacheV1');
     if (saved && saved.value && (saved.value.five_hour || saved.value.seven_day)) {
