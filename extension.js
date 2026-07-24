@@ -61,13 +61,32 @@ function userText(msg) {
   return '';
 }
 
-// From transcript JSONL: today's tokens + latest message + today's request count
-function readTokens() {
+// Claude Code stores each launch dir's transcripts under projects/<path-with-slashes-as-dashes>/.
+// The active VS Code workspace(s) encode the same way, so we can tell which transcript folders
+// belong to this window — used to scope the Context gauge to this workspace, not every session.
+function activeProjectPrefixes() {
+  const folders = vscode.workspace.workspaceFolders || [];
+  return folders.map((f) => f.uri.fsPath.replace(/\//g, '-')).filter(Boolean);
+}
+function fileInProject(p, prefixes) {
+  const rel = path.relative(PROJECTS_DIR, p);
+  const folder = rel.split(path.sep)[0]; // top-level project folder under projects/
+  for (const pre of prefixes) { if (folder === pre || folder.startsWith(pre + '-')) return true; }
+  return false;
+}
+
+// From transcript JSONL: today's tokens + latest message + today's request count.
+// projPrefixes scopes which transcripts count as "this workspace" for the context window.
+function readTokens(projPrefixes) {
+  projPrefixes = projPrefixes || [];
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const today = { input: 0, output: 0, cache_creation: 0, cache_read: 0 };
-  let last = null;
+  let last = null;      // globally latest message (today), any session
+  let lastProj = null;  // latest message from this workspace's transcripts — drives Context %
   let count = 0;
+  const agentCalls = [];      // {agent, id, t, inProj} — Agent/Task tool_use invocations
+  const agentResults = {};    // tool_use_id -> result timestamp (ms)
   let peak = null; // largest request newer than lastSeenT (survives other sessions' replies)
 
   const files = [];
@@ -90,12 +109,25 @@ function readTokens() {
   for (const p of files) {
     let content;
     try { content = fs.readFileSync(p, 'utf8'); } catch (e) { continue; }
+    const inProj = projPrefixes.length ? fileInProject(p, projPrefixes) : false;
     let lastUserText = ''; // latest real user prompt in this session file
     for (const line of content.split('\n')) {
       if (!line) continue;
       let o;
       try { o = JSON.parse(line); } catch (e) { continue; }
       if (o.type === 'user' && o.message) { const _ut = userText(o.message); if (_ut) lastUserText = _ut; }
+      // agent activity: subagent invocations (tool_use name Agent/Task) and their results
+      const _content = o.message && o.message.content;
+      if (Array.isArray(_content)) {
+        const _ts = o.timestamp ? Date.parse(o.timestamp) : 0;
+        for (const b of _content) {
+          if (b && b.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task') && b.input && b.input.subagent_type) {
+            agentCalls.push({ agent: b.input.subagent_type, id: b.id, t: _ts, inProj });
+          } else if (b && b.type === 'tool_result' && b.tool_use_id) {
+            agentResults[b.tool_use_id] = _ts;
+          }
+        }
+      }
       const u = (o.message && o.message.usage) || o.usage;
       if (!u) continue;
       const t = o.timestamp ? Date.parse(o.timestamp) : NaN;
@@ -107,14 +139,16 @@ function readTokens() {
         today.cache_read += u.cache_read_input_tokens || 0;
         count += 1;
       }
-      if (!last || t > last.t) {
-        last = {
+      if (!last || t > last.t || (inProj && (!lastProj || t > lastProj.t))) {
+        const msg = {
           t,
           input: u.input_tokens || 0,
           output: u.output_tokens || 0,
           cache_creation: u.cache_creation_input_tokens || 0,
           cache_read: u.cache_read_input_tokens || 0
         };
+        if (!last || t > last.t) last = msg;
+        if (inProj && (!lastProj || t > lastProj.t)) lastProj = msg;
       }
       if (t > lastSeenT) {
         const tot = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
@@ -122,7 +156,39 @@ function readTokens() {
       }
     }
   }
-  return { today, last, count, peak };
+  return { today, last, lastProj, count, peak, agentCalls, agentResults };
+}
+
+// Derive each agent's live state from its invocations (M2 MVP, hook-free — read
+// straight from the transcript the extension already watches).
+// This harness runs subagents in the background, so a tool_result can land ~2s
+// after the call while real work continues; MIN_ACTIVE keeps the "active" state
+// visible long enough to actually see.
+function computeAgentActivity(calls, results) {
+  const NOW = Date.now();
+  const RUN_WINDOW = 15 * 60 * 1000; // a call with no result older than this is stale, ignore
+  const MIN_ACTIVE = 6000;           // show "active" at least this long even on a fast result
+  const DONE_MS = 6000;              // then flash "done" for this long
+  const out = {};
+  const rank = { active: 2, done: 1 };
+  function set(name, state, since) {
+    const cur = out[name];
+    if (!cur || rank[state] > rank[cur.state] || (rank[state] === rank[cur.state] && since > cur.since)) {
+      out[name] = { state, since };
+    }
+  }
+  for (const c of calls) {
+    if (!c.inProj || !c.t) continue; // scope to this workspace
+    const res = results[c.id];
+    if (res) {
+      const end = Math.max(res, c.t + MIN_ACTIVE);
+      if (NOW < end) set(c.agent, 'active', c.t);
+      else if (NOW - end <= DONE_MS) set(c.agent, 'done', end);
+    } else if (NOW - c.t <= RUN_WINDOW) {
+      set(c.agent, 'active', c.t);
+    }
+  }
+  return out;
 }
 
 // --- agent roster (M1) -------------------------------------------------------
@@ -400,8 +466,10 @@ function contextPct(last) {
 }
 
 function collect() {
-  const tokens = readTokens();
-  const cp = contextPct(tokens.last);
+  const tokens = readTokens(activeProjectPrefixes());
+  // Context reflects THIS workspace's most recent turn; fall back to the global
+  // latest only when no workspace transcript is found (e.g. no folder open).
+  const cp = contextPct(tokens.lastProj || tokens.last);
   return {
     fh: usageCache ? usageCache.five_hour : null,
     sd: usageCache ? usageCache.seven_day : null,
@@ -414,7 +482,8 @@ function collect() {
     usageAt: (usageCache ? lastUsageAt : 0),
     avg: (tokens.count > 0) ? (((tokens.today.input || 0) + (tokens.today.output || 0) + (tokens.today.cache_creation || 0) + (tokens.today.cache_read || 0)) / tokens.count) : 0,
     peak: tokens.peak,
-    agents: readAgents()
+    agents: readAgents(),
+    agentActivity: computeAgentActivity(tokens.agentCalls, tokens.agentResults)
   };
 }
 
@@ -586,7 +655,14 @@ const CSS = `
   .tab:hover:not(.active){color:var(--text);}
   .inner.agents{padding:11px 11px 14px;}
   .pool{display:flex;flex-wrap:wrap;gap:8px 2px;justify-content:center;padding:8px 2px 2px;}
-  .cr-card{display:flex;flex-direction:column;align-items:center;width:76px;padding:3px 2px;}
+  .cr-card{position:relative;display:flex;flex-direction:column;align-items:center;width:76px;padding:3px 2px;transition:opacity .3s ease;}
+  .cr-badge{position:absolute;top:-3px;left:50%;transform:translateX(-50%) translateY(-4px);background:#e5484d;color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap;opacity:0;transition:opacity .2s ease,transform .2s ease;pointer-events:none;box-shadow:0 2px 7px rgba(0,0,0,.3);z-index:4;letter-spacing:.2px;}
+  .cr-card.active .cr-badge,.cr-card.done .cr-badge{opacity:1;transform:translateX(-50%) translateY(0);}
+  .cr-card.done .cr-badge{background:#4fae74;}
+  .cr-card.active .cr-body{animation-duration:.85s !important;}
+  .cr-card.active .cr-body svg{filter:drop-shadow(0 0 5px rgba(229,72,77,.55));}
+  /* when any agent is active, dim the resting ones so the caller stands out */
+  .pool.has-active .cr-card:not(.active):not(.done){opacity:.42;}
   .cr-body{display:flex;align-items:center;justify-content:center;animation:crbob 2.6s ease-in-out infinite;will-change:transform;}
   .cr-body svg{width:100%;height:100%;overflow:visible;display:block;}
   .cr-shadow{height:6px;border-radius:50%;background:rgba(0,0,0,.24);margin-top:-1px;filter:blur(1px);animation:crshadow 2.6s ease-in-out infinite;will-change:transform;}

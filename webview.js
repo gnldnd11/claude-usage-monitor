@@ -86,13 +86,32 @@
       var a = agents[i], sc = modelScale(a.model), bob = modelBob(a.model);
       var sz = Math.round(58 * sc), delay = (i * 0.17).toFixed(2);
       var desc = firstSentence(a.description);
-      html += '<div class="cr-card" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
+      html += '<div class="cr-card" data-agent="' + esc(a.name) + '" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
+        + '<div class="cr-badge"></div>'
         + '<div class="cr-body" style="width:' + sz + 'px;height:' + sz + 'px;animation-duration:' + bob + 's;animation-delay:' + delay + 's">' + creatureSVG(a.name) + '</div>'
         + '<div class="cr-shadow" style="width:' + Math.round(sz * 0.52) + 'px;animation-duration:' + bob + 's;animation-delay:' + delay + 's"></div>'
         + '<div class="cr-name">' + esc(a.name) + '</div>'
         + '<div class="cr-model">' + esc(a.model) + '</div></div>';
     }
     pool.innerHTML = html;
+  }
+  // Overlay live state onto the existing cards (no rebuild → animations survive).
+  function applyAgentStates(activity) {
+    var pool = el('pool'); if (!pool) return;
+    activity = activity || {};
+    var anyActive = false;
+    var cards = pool.querySelectorAll('.cr-card');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i], name = card.getAttribute('data-agent');
+      var st = activity[name];
+      var state = st ? st.state : 'idle';
+      card.classList.toggle('active', state === 'active');
+      card.classList.toggle('done', state === 'done');
+      if (state === 'active') anyActive = true;
+      var badge = card.querySelector('.cr-badge');
+      if (badge) badge.textContent = state === 'active' ? '호출됨' : (state === 'done' ? '완료' : '');
+    }
+    pool.classList.toggle('has-active', anyActive);
   }
   function switchTab(t) {
     var agents = t === 'agents';
@@ -178,6 +197,7 @@
   function render(d) {
     lastData = d; refreshedAt = Date.now();
     renderAgents(d.agents);
+    applyAgentStates(d.agentActivity);
     var _ab = el('authbar'); if (_ab) _ab.style.display = d.signedIn ? 'none' : 'flex';
     var _cfgSb0 = el('cfgStatusBar'); if (_cfgSb0 && d.cfg && d.cfg.statusBar) _cfgSb0.value = d.cfg.statusBar;
     // Only sync panel visibility/checkboxes from config when the settings sheet is
