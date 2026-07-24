@@ -90,7 +90,7 @@ function renderHtml(vars) {
   <div class="inner agents" id="panelAgents" style="display:none">
     <div class="ws-head">
       <div class="it">${IC.room} <span class="ws-title">Workroom</span></div>
-      <div class="ws-map"><select id="wsMap" title="맵 선택"><option value="cave">Blocky Cave</option><option disabled>Office (soon)</option><option disabled>Liminal Space (soon)</option></select></div>
+      <div class="ws-map"><select id="wsMap" title="맵 선택"><option value="cave">Blocky Cave</option><option value="backrooms">Backrooms</option><option value="liminal">Liminal Office</option></select></div>
     </div>
     <div class="ws-room" id="wsRoom">
       <img class="ws-bg" id="wsBg" src="${roomMinecraftUri}" alt="Minecraft workspace"/>

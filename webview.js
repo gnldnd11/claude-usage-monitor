@@ -185,8 +185,9 @@
   // 방 워커: 작업 중인 에이전트만 방에 입장해 책상으로 걸어가 일하고 나간다.
   // Sprite frames cycle in a steady loop independent of pushes.
   // ===========================================================================
-  var SPOT_ENTRY = { x: 0.26, y: 0.80 };
-  var SPOT_DESK = { x: 0.50, y: 0.735 };
+  function roomSpots() { var r = (CUC.rooms || {})[(vscode.getState() || {}).map || 'cave'] || (CUC.rooms || {}).cave || {}; return { entry: r.entry || [0.26, 0.80], desk: r.desk || [0.50, 0.735] }; }
+  function SPOT_ENTRY() { var e = roomSpots().entry; return { x: e[0], y: e[1] }; }
+  function SPOT_DESK() { var d = roomSpots().desk; return { x: d[0], y: d[1] }; }
   var TRAVEL_MS = 1650;
   var walkers = {}; // agentName -> { root, sprite, meta, mode, leaving, targetKey, _t }
   var selectedAgent = null; // roster: single selected agent (character-select style)
@@ -208,7 +209,7 @@
     root.appendChild(roleTag); root.appendChild(sp); root.appendChild(nameTag); stage.appendChild(root);
     var wk = { root: root, sprite: sp, roleTag: roleTag, nameTag: nameTag, meta: sheet.meta, mode: 'walking', leaving: false, targetKey: '' };
     walkers[name] = wk;
-    placeAt(wk, SPOT_ENTRY.x, SPOT_ENTRY.y); // spawn at the doorway
+    var _se = SPOT_ENTRY(); placeAt(wk, _se.x, _se.y); // spawn at the doorway
     requestAnimationFrame(function () { root.style.opacity = '1'; });
     return wk;
   }
@@ -222,7 +223,7 @@
   function leaveWalker(name) {
     var wk = walkers[name]; if (!wk || wk.leaving) return;
     wk.leaving = true; wk.targetKey = 'exit'; wk.mode = 'walking';
-    requestAnimationFrame(function () { placeAt(wk, SPOT_ENTRY.x, SPOT_ENTRY.y); });
+    requestAnimationFrame(function () { var _se = SPOT_ENTRY(); placeAt(wk, _se.x, _se.y); });
     clearTimeout(wk._t);
     wk._t = setTimeout(function () {
       wk.root.style.opacity = '0';
@@ -235,13 +236,14 @@
     var present = [];
     for (var nm in activity) { var s = activity[nm]; if (s && (s.state === 'active' || s.state === 'done')) present.push(nm); }
     for (var n in walkers) { if (present.indexOf(n) < 0) leaveWalker(n); }
+    stage.classList.toggle('crowded', present.length > 2); // hide room labels when crowded (roster identifies)
     for (var i = 0; i < present.length; i++) {
       var name = present[i];
       var wk = ensureWalker(name, stage); if (!wk || wk.leaving) continue;
       if (wk.roleTag) wk.roleTag.textContent = shortName(displayRole(name)); // reflect live edits
       if (wk.nameTag) wk.nameTag.textContent = shortName(displayName(name));
       var off = (i - (present.length - 1) / 2) * 0.11; // fan out if several are working
-      goTo(wk, SPOT_DESK.x + off, SPOT_DESK.y, 'desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
+      var _sd = SPOT_DESK(); goTo(wk, _sd.x + off, _sd.y, 'desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
     }
   }
   // steady sprite-frame loop (idle slow, walking faster), independent of data pushes
@@ -476,15 +478,21 @@
   if (_tu) _tu.addEventListener('click', function () { switchTab('usage'); });
   if (_ta) _ta.addEventListener('click', function () { switchTab('agents'); });
 
-  // room background follows the VS Code theme (light theme -> light room), updated live
+  // room theme: chosen via the map dropdown (persisted); light-theme variant used when it exists
+  function currentRoom() { var rs = CUC.rooms || {}; return rs[(vscode.getState() || {}).map || 'cave'] || rs.cave; }
   function applyRoom() {
-    if (!CUC.rooms) return;
+    var r = currentRoom(); if (!r) return;
     var img = el('wsBg'); if (!img) return;
-    var src = document.body.classList.contains('vscode-light') ? CUC.rooms.light : CUC.rooms.dark;
+    var src = (document.body.classList.contains('vscode-light') && r.light) ? r.light : r.dark;
     if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
   }
   applyRoom();
   if (window.MutationObserver) new MutationObserver(applyRoom).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  var _wsMap = el('wsMap');
+  if (_wsMap) {
+    _wsMap.value = (vscode.getState() || {}).map || 'cave';
+    _wsMap.addEventListener('change', function () { var s = vscode.getState() || {}; s.map = this.value; vscode.setState(s); applyRoom(); });
+  }
 
   // collapse / expand the roster — driven by the top-right chevron on the Agents tab
   function applyRoster(collapsed) {

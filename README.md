@@ -4,7 +4,7 @@
   <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/hero.png" width="360" alt="Claude Usage panel showing session, weekly, context meters, a usage ring, and the crab mascot" />
 </p>
 
-Live **Claude Code** usage at a glance — session & weekly limits, context window, and today's tokens & requests. Shows in the VS Code status bar and an always-visible Explorer panel.
+Live **Claude Code** usage at a glance — session & weekly limits, context window, and today's tokens & requests. Shows in the VS Code status bar and an always-visible Explorer panel. Now with an **Agents (Beta)** view that turns your subagents into pixel characters you can watch, rename, and restyle.
 
 > Unofficial community extension. Not affiliated with Anthropic.
 
@@ -29,6 +29,24 @@ Live **Claude Code** usage at a glance — session & weekly limits, context wind
 </p>
 <p align="center"><sub>Click the gear to pick what shows in the status bar, and toggle any panel element on or off.</sub></p>
 
+## Agents (Beta)
+
+A living view of your Claude Code subagents. Every agent in `.claude/agents/` gets its own distinct pixel character; when one is actually invoked it walks into the **Workroom** and works at the desk — so you can see who is running, right now, at a glance.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/agents-cave-night.png" width="290" alt="Agents tab: two agents working in the room, with the full Crew roster of pixel characters below" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/agents-backrooms.png" width="290" alt="A different room theme with the roster collapsed to a compact now-running strip" />
+</p>
+<p align="center"><sub>Agents walk in when invoked — red pulse while running, green check when done. Collapse the roster and it becomes a compact "now running" strip. Swap room themes from the dropdown.</sub></p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/agents-settings.png" width="300" alt="Per-agent settings: nickname, role, model dropdown, and a character appearance picker" />
+</p>
+<p align="center"><sub>Click a character's gear to rename it, give it a role, swap its character, or change its model — the model change is written straight to the agent's <code>.claude/agents/*.md</code>.</sub></p>
+
+Detection is **transcript-based and read-only** — it never blocks or changes how your agents run. Because a background subagent has no knowable progress, running agents show an indeterminate bar and elapsed time, not a fabricated percentage.
+
 ## Features
 
 - **Session (5h) / Weekly (7d)** limits — the same live numbers as Claude Code's built-in usage dialog, refreshed every 60s.
@@ -36,6 +54,7 @@ Live **Claude Code** usage at a glance — session & weekly limits, context wind
 - **Today's tokens & requests** — summed across all your local Claude Code sessions, resets at local midnight.
 - **Status bar** — compact `S ●●●●○○ 54% · W 46%`, turns amber at 70% and red at 90%.
 - **Panel** — full dashboard with progress bars, a usage ring, and live count-up animations. One click collapses it to bars-only; narrow it and the tiles tuck away so nothing truncates.
+- **Agents (Beta)** — your subagents as distinct pixel characters that walk into a room when invoked; rename, re-role, restyle, or re-model each from the panel, and pick a room theme. Read-only, hook-free.
 
 ## How it works & privacy
 

@@ -132,7 +132,8 @@ module.exports = `
   .tab{position:relative;flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:transparent;border:0;color:var(--muted);font-size:12px;font-weight:600;padding:6px 8px;border-radius:7px;cursor:pointer;font-family:inherit;transition:color .15s ease,background .15s ease;}
   .tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
   .tab:hover:not(.active){color:var(--text);}
-  .tab-beta{font-size:7.5px;font-weight:800;letter-spacing:.5px;line-height:1;padding:2px 4px;border-radius:5px;color:#fff;background:linear-gradient(135deg,#e8895a,#e5686a);box-shadow:0 1px 2px rgba(0,0,0,.25);transform:translateY(-0.5px);}
+  .tab-beta{flex:none;font-size:7.5px;font-weight:800;letter-spacing:.5px;line-height:1;padding:2px 4px;border-radius:5px;color:#fff;background:linear-gradient(135deg,#e8895a,#e5686a);box-shadow:0 1px 2px rgba(0,0,0,.25);transform:translateY(-0.5px);}
+  body.narrow .tab-beta{display:none;}
   .inner.agents{padding:11px 11px 14px;}
   .ws-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;min-width:0;}
   .ws-head .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);min-width:0;overflow:hidden;flex:1 1 auto;}
@@ -155,6 +156,7 @@ module.exports = `
   .wk-role,.wk-name{position:absolute;left:50%;transform:translateX(-50%);font-size:8.5px;font-weight:700;white-space:nowrap;letter-spacing:.2px;padding:1px 5px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.5);}
   .wk-role{bottom:100%;margin-bottom:3px;color:#ffcaa8;background:rgba(20,12,8,.82);}
   .wk-name{top:100%;margin-top:3px;color:#fff;background:rgba(20,12,8,.82);}
+  .ws-stage.crowded .wk-role,.ws-stage.crowded .wk-name{display:none;}
   .cr-sprite{image-rendering:pixelated;cursor:pointer;}
   .pool{display:flex;flex-wrap:wrap;justify-content:center;row-gap:8px;padding:8px 2px 2px;}
   .cr-card{position:relative;flex:0 0 25%;display:flex;flex-direction:column;align-items:center;min-width:0;padding:5px 1px 8px;border-radius:10px;cursor:pointer;transition:opacity .3s ease,box-shadow .18s ease,background .18s ease;}

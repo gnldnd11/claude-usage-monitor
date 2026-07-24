@@ -593,10 +593,15 @@ class UsageViewProvider {
     const mascotDespairUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-despair.png'));
     const mascotWorkingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-working.png'));
     const roomMinecraftUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft.png'));
-    const roomMinecraftLightUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft-light.png'));
     const spriteUri = (n) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, n)).toString();
     const npcs = buildNpcCatalog(spriteUri, path.join(this.extensionUri.fsPath, 'sprite-bbox.json'));
-    const assetsJson = JSON.stringify({ rooms: { dark: roomMinecraftUri.toString(), light: roomMinecraftLightUri.toString() }, npcs })
+    // each room theme: image(s) + walker entry/desk spots (normalized 0..1 of the square image)
+    const rooms = {
+      cave: { name: 'Blocky Cave', dark: spriteUri('room-minecraft.png'), light: spriteUri('room-minecraft-light.png'), entry: [0.26, 0.80], desk: [0.50, 0.735] },
+      backrooms: { name: 'Backrooms', dark: spriteUri('room-backrooms.png'), entry: [0.28, 0.80], desk: [0.48, 0.72] },
+      liminal: { name: 'Liminal Office', dark: spriteUri('room-liminal.png'), entry: [0.30, 0.78], desk: [0.57, 0.66] }
+    };
+    const assetsJson = JSON.stringify({ rooms, npcs })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
     return renderHtml({
       csp: webview.cspSource,
@@ -676,6 +681,12 @@ function activate(context) {
     // refresh ~7s later, in the post-turn reading lull when the window is free.
     watchers.push(fs.watch(PROJECTS_DIR, { recursive: true }, () => { scheduleRefresh(); scheduleTurnRefresh(); }));
   } catch (e) { /* covered by timer */ }
+  // watch .claude/agents/ dirs so newly created agents appear in the Crew immediately
+  // (workspace-level first, then user-level). Cold start — before the dir exists — is
+  // still covered by the 10s poll.
+  const _agentDirs = (vscode.workspace.workspaceFolders || []).map((f) => path.join(f.uri.fsPath, '.claude', 'agents'));
+  _agentDirs.push(path.join(CLAUDE_DIR, 'agents'));
+  _agentDirs.forEach((dir) => { try { watchers.push(fs.watch(dir, () => scheduleRefresh())); } catch (e) { /* dir may not exist yet; timer covers it */ } });
   context.subscriptions.push({ dispose: () => watchers.forEach((w) => { try { w.close(); } catch (e) {} }) });
 
   timer = setInterval(push, 10000);
