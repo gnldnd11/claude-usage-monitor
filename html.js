@@ -37,7 +37,7 @@ function renderHtml(vars) {
   </div>
   <div class="tabs">
     <button class="tab active" id="tabUsage" data-tab="usage">Usage</button>
-    <button class="tab" id="tabAgents" data-tab="agents">Agents</button>
+    <button class="tab" id="tabAgents" data-tab="agents">Agents<span class="tab-beta">BETA</span></button>
   </div>
   <div class="inner" id="panelUsage">
     <div class="warnbar" id="warnbar" hidden></div>
@@ -89,11 +89,13 @@ function renderHtml(vars) {
   </div>
   <div class="inner agents" id="panelAgents" style="display:none">
     <div class="ws-head">
-      <div class="it">${IC.room} Workroom</div>
+      <div class="it">${IC.room} <span class="ws-title">Workroom</span></div>
       <div class="ws-map"><select id="wsMap" title="맵 선택"><option value="cave">Blocky Cave</option><option disabled>Office (soon)</option><option disabled>Liminal Space (soon)</option></select></div>
     </div>
     <div class="ws-room" id="wsRoom">
       <img class="ws-bg" id="wsBg" src="${roomMinecraftUri}" alt="Minecraft workspace"/>
+      <div class="ws-hud"><span id="wsHudS">5h –</span><span class="ws-hud-sep">·</span><span id="wsHudW">7d –</span></div>
+      <div class="ws-hud-delta" id="wsHudDelta"></div>
       <div class="ws-stage" id="wsStage"></div>
     </div>
     <div class="ihead" style="margin-top:13px">
@@ -101,6 +103,7 @@ function renderHtml(vars) {
       <div class="upd"><span id="agCount">0</span> agents</div>
     </div>
     <div class="pool" id="pool"></div>
+    <div class="crew-mini" id="crewMini" style="display:none"></div>
   </div>
 </div></div>
   <div class="sheet" id="settingsSheet" hidden>

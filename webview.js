@@ -50,7 +50,7 @@
   // per-sprite metadata drives everything (packs differ in cell size & layout).
   // Rendering crops to the measured character bbox [x,y,w,h] (cell px) so every sprite
   // shows at a consistent size regardless of how much padding its sheet cell has.
-  var ROSTER_T = 40, ROOM_T = 58, PICKER_T = 40; // target character height (px) per context
+  var ROSTER_T = 40, ROOM_T = 46, PICKER_T = 40; // target character height (px) per context
   function mCell(m) { return (m && m.cell) || 64; }
   function bbOf(m) { return (m && m.bb) || [0, 0, mCell(m), mCell(m)]; }
   function spriteScale(m, target) { return target / bbOf(m)[3]; }
@@ -117,7 +117,7 @@
     var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + displayName(a.name) + ':' + displayRole(a.name) + ':' + SHEET_MAP[a.name]; }).join('|');
     if (pool._sig === sig) return; // roster unchanged — don't rebuild (keeps animations)
     pool._sig = sig;
-    if (!agents.length) { pool.innerHTML = '<div class="pool-empty">No agent definitions found.<br>Add <b>.claude/agents/*.md</b> to see them here.</div>'; return; }
+    if (!agents.length) { pool.innerHTML = '<div class="pool-empty">No agents yet.<br>Create one with <b>/agents</b> in Claude Code.</div>'; return; }
     var html = '';
     for (var i = 0; i < agents.length; i++) {
       var a = agents[i];
@@ -148,10 +148,37 @@
       card.classList.toggle('active', state === 'active');
       card.classList.toggle('done', state === 'done');
       if (state === 'active') anyActive = true;
+      // active = red pulsing outline (border does the talking); done = green check above head + green pulse
       var badge = card.querySelector('.cr-badge');
-      if (badge) badge.textContent = state === 'active' ? '호출됨' : (state === 'done' ? '완료' : '');
+      if (badge) badge.innerHTML = state === 'done' ? '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>' : '';
     }
     pool.classList.toggle('has-active', anyActive);
+  }
+
+  // collapsed Crew: a compact "now running" strip showing active/just-done agents.
+  // No real progress % exists for background subagents, so we show the task text +
+  // an indeterminate bar + elapsed time (honest) instead of a fabricated percentage.
+  function agentModel(name) { var ag = ((lastData && lastData.agents) || []).filter(function (a) { return a.name === name; })[0]; return ag ? ag.model : ''; }
+  function elapsedStr(since) { var s = Math.max(0, Math.floor((Date.now() - since) / 1000)); return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's'; }
+  function renderCrewMini(activity) {
+    var mini = el('crewMini'); if (!mini) return;
+    activity = activity || {};
+    var rows = [];
+    for (var name in activity) { var st = activity[name]; if (st && (st.state === 'active' || st.state === 'done')) rows.push({ name: name, st: st }); }
+    if (!rows.length) { mini.innerHTML = '<div class="crew-idle">No agent running</div>'; return; }
+    rows.sort(function (a, b) { if (a.st.state !== b.st.state) return a.st.state === 'active' ? -1 : 1; return b.st.since - a.st.since; });
+    var html = '';
+    for (var i = 0; i < rows.length; i++) {
+      var nm = rows[i].name, st = rows[i].st, sheet = agentSheet(nm);
+      var spr = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, 30) + '"></div>' : '';
+      var desc = st.desc || (st.state === 'done' ? 'Done' : 'Running…');
+      html += '<div class="cm-row' + (st.state === 'done' ? ' done' : '') + '">'
+        + '<div class="cm-sprite">' + spr + '</div>'
+        + '<div class="cm-mid"><div class="cm-top"><span class="cm-name">' + esc(displayName(nm)) + '</span><span class="cm-model">' + esc(agentModel(nm)) + '</span></div>'
+        + '<div class="cm-desc">' + esc(desc) + '</div><div class="cm-bar"></div></div>'
+        + '<div class="cm-time">' + elapsedStr(st.since) + '</div></div>';
+    }
+    mini.innerHTML = html;
   }
 
   // ===========================================================================
@@ -315,6 +342,12 @@
     renderAgents(d.agents);
     applyAgentStates(d.agentActivity);
     updateRoom(d.agentActivity);
+    if ((vscode.getState() || {}).rosterCollapsed) renderCrewMini(d.agentActivity); // keep collapsed strip live
+    // compact usage HUD over the room (so session/weekly stay visible on the Agents tab)
+    var _hs = el('wsHudS');
+    if (_hs) { if (d.fh && d.fh.used_percentage != null) { var _sp = Math.round(d.fh.used_percentage); _hs.textContent = '5h ' + _sp + '%'; _hs.style.color = col(_sp); } else { _hs.textContent = '5h –'; _hs.style.color = ''; } }
+    var _hw = el('wsHudW');
+    if (_hw) { if (d.sd && d.sd.used_percentage != null) { var _wp = Math.round(d.sd.used_percentage); _hw.textContent = '7d ' + _wp + '%'; _hw.style.color = col(_wp); } else { _hw.textContent = '7d –'; _hw.style.color = ''; } }
     var _ab = el('authbar'); if (_ab) _ab.style.display = d.signedIn ? 'none' : 'flex';
     var _cfgSb0 = el('cfgStatusBar'); if (_cfgSb0 && d.cfg && d.cfg.statusBar) _cfgSb0.value = d.cfg.statusBar;
     // Only sync panel visibility/checkboxes from config when the settings sheet is
@@ -364,7 +397,7 @@
     // tokens (today's output)
     var t = d.today || {}, out = t.output || 0;
     tween('st_tok', prev.tok, out, fmtTok);
-    if (prev.tok != null && out > prev.tok) { roll('st_tok'); flash('tok_delta', '+' + fmtTok(out - prev.tok)); }
+    if (prev.tok != null && out > prev.tok) { var _dtxt = '+' + fmtTok(out - prev.tok); roll('st_tok'); flash('tok_delta', _dtxt); flash('wsHudDelta', _dtxt); }
     prev.tok = out;
     var tile = el('st_tok_tile');
     if (tile) {
@@ -456,6 +489,8 @@
   // collapse / expand the roster — driven by the top-right chevron on the Agents tab
   function applyRoster(collapsed) {
     var p = el('pool'); if (p) p.style.display = collapsed ? 'none' : '';
+    var m = el('crewMini'); if (m) m.style.display = collapsed ? '' : 'none';
+    if (collapsed) renderCrewMini((lastData && lastData.agentActivity) || {});
   }
   applyRoster(!!(vscode.getState() || {}).rosterCollapsed);
   updateToggleChevron();

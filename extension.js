@@ -120,7 +120,7 @@ function readTokens(projPrefixes) {
         const _ts = o.timestamp ? Date.parse(o.timestamp) : 0;
         for (const b of _content) {
           if (b && b.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task') && b.input && b.input.subagent_type) {
-            agentCalls.push({ agent: b.input.subagent_type, id: b.id, t: _ts, inProj });
+            agentCalls.push({ agent: b.input.subagent_type, id: b.id, t: _ts, inProj, desc: (b.input.description || '').slice(0, 60) });
           } else if (b && b.type === 'tool_result' && b.tool_use_id) {
             agentResults[b.tool_use_id] = _ts;
           }
@@ -169,10 +169,10 @@ function computeAgentActivity(calls, results) {
   const DONE_MS = 6000;              // then flash "done" for this long
   const out = {};
   const rank = { active: 2, done: 1 };
-  function set(name, state, since) {
+  function set(name, state, since, desc) {
     const cur = out[name];
     if (!cur || rank[state] > rank[cur.state] || (rank[state] === rank[cur.state] && since > cur.since)) {
-      out[name] = { state, since };
+      out[name] = { state, since, desc: desc || '' };
     }
   }
   for (const c of calls) {
@@ -180,10 +180,10 @@ function computeAgentActivity(calls, results) {
     const res = results[c.id];
     if (res) {
       const end = Math.max(res, c.t + MIN_ACTIVE);
-      if (NOW < end) set(c.agent, 'active', c.t);
-      else if (NOW - end <= DONE_MS) set(c.agent, 'done', end);
+      if (NOW < end) set(c.agent, 'active', c.t, c.desc);
+      else if (NOW - end <= DONE_MS) set(c.agent, 'done', end, c.desc);
     } else if (NOW - c.t <= RUN_WINDOW) {
-      set(c.agent, 'active', c.t);
+      set(c.agent, 'active', c.t, c.desc);
     }
   }
   return out;
