@@ -125,6 +125,47 @@ function readTokens() {
   return { today, last, count, peak };
 }
 
+// --- agent roster (M1) -------------------------------------------------------
+// Scan .claude/agents/*.md definitions (workspace first, then user-level) and
+// parse their frontmatter. Deterministic species/colour assignment happens in
+// the webview from the name hash, so here we only surface the raw facts.
+function parseAgentFrontmatter(text) {
+  const m = text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return null;
+  const fm = m[1];
+  const get = (k) => {
+    const r = fm.match(new RegExp('^' + k + ':\\s*(.*)$', 'm'));
+    return r ? r[1].trim().replace(/^["']|["']$/g, '') : '';
+  };
+  const name = get('name');
+  if (!name) return null;
+  // description is a single quoted line with literal \n examples — keep the lead only
+  const desc = get('description').split('\\n')[0].slice(0, 200);
+  return { name, model: get('model') || 'inherit', description: desc };
+}
+
+function readAgentsFrom(dir, into, seen) {
+  let ents;
+  try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+  for (const e of ents) {
+    if (!e.isFile() || !e.name.endsWith('.md')) continue;
+    let text;
+    try { text = fs.readFileSync(path.join(dir, e.name), 'utf8'); } catch (e2) { continue; }
+    const a = parseAgentFrontmatter(text);
+    if (a && !seen.has(a.name)) { seen.add(a.name); into.push(a); }
+  }
+}
+
+function readAgents() {
+  const out = [], seen = new Set();
+  // workspace agents win over user-level ones with the same name
+  const folders = vscode.workspace.workspaceFolders || [];
+  for (const f of folders) readAgentsFrom(path.join(f.uri.fsPath, '.claude', 'agents'), out, seen);
+  readAgentsFrom(path.join(CLAUDE_DIR, 'agents'), out, seen);
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
 // Live session/weekly limits from Claude's own usage endpoint (same source as the built-in dialog).
 // The stored OAuth token is sent ONLY to api.anthropic.com and nowhere else.
 function fetchUsage() {
@@ -372,7 +413,8 @@ function collect() {
     refreshedAt: Date.now(),
     usageAt: (usageCache ? lastUsageAt : 0),
     avg: (tokens.count > 0) ? (((tokens.today.input || 0) + (tokens.today.output || 0) + (tokens.today.cache_creation || 0) + (tokens.today.cache_read || 0)) / tokens.count) : 0,
-    peak: tokens.peak
+    peak: tokens.peak,
+    agents: readAgents()
   };
 }
 
@@ -434,7 +476,7 @@ const CSS = `
   .warnbar{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;margin-bottom:11px;border-radius:9px;background:rgba(229,72,77,.13);border:1px solid rgba(229,72,77,.55);color:var(--text);font-size:11.5px;line-height:1.35;}
   .warnbar[hidden]{display:none;}
   .warnbar svg{width:15px;height:15px;flex:none;}
-  .warnbar .wbmsg{flex:1 1 auto;}
+  .warnbar .wbmsg{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
   .warnbar .wbq{display:block;margin-top:4px;color:var(--muted);font-style:italic;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .warnbar .wbx{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:1px 5px;border-radius:5px;align-self:flex-start;}
   .warnbar .wbx:hover{background:rgba(255,255,255,.12);color:var(--text);}
@@ -537,6 +579,23 @@ const CSS = `
   body.wrapcols .body{flex-wrap:wrap;}
   body.wrapcols .ringbox{margin:6px auto 0;}
   @media (max-width:270px){.stat .slabel{display:none;}.stat .sval{font-size:11px;text-overflow:clip;}.stat .sdelta{display:none;}.stat{padding:8px 6px;}.munit{display:none;}}
+  /* --- tab switcher + agent roster (tide pool) --- */
+  .tabs{display:flex;gap:3px;margin-bottom:11px;background:var(--inner);border:1px solid var(--iborder);border-radius:10px;padding:3px;}
+  .tab{flex:1;background:transparent;border:0;color:var(--muted);font-size:12px;font-weight:600;padding:6px 8px;border-radius:7px;cursor:pointer;font-family:inherit;transition:color .15s ease,background .15s ease;}
+  .tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
+  .tab:hover:not(.active){color:var(--text);}
+  .inner.agents{padding:11px 11px 14px;}
+  .pool{display:flex;flex-wrap:wrap;gap:8px 2px;justify-content:center;padding:8px 2px 2px;}
+  .cr-card{display:flex;flex-direction:column;align-items:center;width:76px;padding:3px 2px;}
+  .cr-body{display:flex;align-items:center;justify-content:center;animation:crbob 2.6s ease-in-out infinite;will-change:transform;}
+  .cr-body svg{width:100%;height:100%;overflow:visible;display:block;}
+  .cr-shadow{height:6px;border-radius:50%;background:rgba(0,0,0,.24);margin-top:-1px;filter:blur(1px);animation:crshadow 2.6s ease-in-out infinite;will-change:transform;}
+  body.vscode-light .cr-shadow{background:rgba(0,0,0,.14);}
+  .cr-name{font-size:10.5px;font-weight:600;color:var(--text);margin-top:6px;text-align:center;line-height:1.2;max-width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cr-model{font-size:9px;color:var(--muted);margin-top:1px;letter-spacing:.2px;}
+  .pool-empty{color:var(--muted);font-size:11.5px;text-align:center;padding:26px 12px;line-height:1.55;}
+  @keyframes crbob{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
+  @keyframes crshadow{0%,100%{transform:scaleX(1);opacity:.55;}50%{transform:scaleX(.8);opacity:.32;}}
 `;
 
 const IC = {
@@ -607,7 +666,11 @@ class UsageViewProvider {
       <button class="toggle" id="toggle" title="Compact / expand">${IC.chevron}</button>
     </div>
   </div>
-  <div class="inner">
+  <div class="tabs">
+    <button class="tab active" id="tabUsage" data-tab="usage">Usage</button>
+    <button class="tab" id="tabAgents" data-tab="agents">Agents</button>
+  </div>
+  <div class="inner" id="panelUsage">
     <div class="warnbar" id="warnbar" hidden></div>
     <div class="ihead">
       <div class="it">${IC.bars} Usage summary</div>
@@ -654,6 +717,13 @@ class UsageViewProvider {
       <div class="stat" id="st_tok_tile"><div class="stop">${IC.bolt}</div><div class="srow"><span class="sval" id="st_tok">–</span><span class="sdelta" id="tok_delta"></span></div><div class="slabel">Tokens</div></div>
       <div class="stat"><div class="stop">${IC.doc}</div><div class="srow"><span class="sval" id="st_req">–</span><span class="sdelta" id="req_delta"></span></div><div class="slabel">Requests</div></div>
     </div>
+  </div>
+  <div class="inner agents" id="panelAgents" style="display:none">
+    <div class="ihead">
+      <div class="it">${IC.bars} Agent roster</div>
+      <div class="upd"><span id="agCount">0</span> agents</div>
+    </div>
+    <div class="pool" id="pool"></div>
   </div>
 </div></div>
   <div class="sheet" id="settingsSheet" hidden>

@@ -35,6 +35,76 @@
     return h + 'h ' + String(m).padStart(2, '0') + 'm';
   }
 
+  // --- agent roster (M1) -----------------------------------------------------
+  // Deterministic: same name -> same species + colour, forever. Species from the
+  // name hash, size/bob speed from the model, colour tint from a second hash byte.
+  function hashStr(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h; }
+  var PALETTE = ['#e8895a', '#3bbdb9', '#f0a83a', '#9b7ede', '#e57ca8', '#5fb87a', '#5a9ae8', '#e5686a'];
+  // top-down silhouettes in a 0..100 box; bodies tint via currentColor, eyes are code-drawn
+  var SPECIES = [
+    { b: '<ellipse cx="50" cy="55" rx="30" ry="21"/><circle cx="15" cy="42" r="10"/><circle cx="85" cy="42" r="10"/><path d="M22 68 L9 80 M30 73 L20 88 M70 73 L80 88 M78 68 L91 80" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/>', ey: 51, eg: 9, er: 7 },
+    { b: '<circle cx="50" cy="43" r="27"/><path d="M27 58 q-7 24 -16 26 M41 65 q-4 25 -11 30 M59 65 q4 25 11 30 M73 58 q7 24 16 26" stroke="currentColor" stroke-width="7" fill="none" stroke-linecap="round"/>', ey: 41, eg: 9, er: 7 },
+    { b: '<path d="M50 10 L61 39 L93 41 L67 61 L77 92 L50 73 L23 92 L33 61 L7 41 L39 39 Z"/>', ey: 52, eg: 9, er: 7 },
+    { b: '<ellipse cx="55" cy="66" rx="34" ry="14"/><circle cx="44" cy="46" r="27"/><circle cx="44" cy="46" r="14" fill="none" stroke="rgba(0,0,0,.18)" stroke-width="5"/><path d="M74 54 l6 -12 M80 58 l10 -8" stroke="currentColor" stroke-width="4" stroke-linecap="round" fill="none"/>', ey: 60, ex: 73, eg: 6, er: 5 },
+    { b: '<path d="M60 22 q26 6 26 28 q0 22 -26 28 q-30 -4 -38 -28 q8 -24 38 -28 Z"/><path d="M22 34 L6 22 L11 50 L6 78 L22 66 Z"/>', ey: 44, ex: 56, eg: 9, er: 7 },
+    { b: '<path d="M20 48 q0 -34 30 -34 q30 0 30 34 q-15 8 -30 8 q-15 0 -30 -8 Z"/><path d="M30 54 q-3 28 -6 34 M43 58 q-2 30 -4 36 M57 58 q2 30 4 36 M70 54 q3 28 6 34" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/>', ey: 38, eg: 9, er: 7 },
+    { b: '<path d="M80 30 q-46 -10 -54 24 q-6 27 21 31 q-23 -15 -6 -31 q17 -17 41 -9 Z"/><path d="M80 30 q10 -8 16 -4 M80 30 q12 -1 16 5" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/>', ey: 44, ex: 42, eg: 8, er: 6 },
+    { b: '<g stroke="currentColor" stroke-width="5" stroke-linecap="round" fill="none"><path d="M50 8 V26 M50 92 V74 M8 50 H26 M92 50 H74 M20 20 L32 32 M80 20 L68 32 M20 80 L32 68 M80 80 L68 68"/></g><circle cx="50" cy="50" r="26"/>', ey: 50, eg: 9, er: 7 }
+  ];
+  function eyesFor(sp) {
+    var cx = sp.ex || 50, ey = sp.ey, g = sp.eg, r = sp.er, pr = r * 0.5;
+    function eye(x) {
+      return '<circle cx="' + x + '" cy="' + ey + '" r="' + r + '" fill="#fff" stroke="rgba(0,0,0,.22)" stroke-width="1"/>'
+        + '<circle cx="' + x + '" cy="' + (ey + r * 0.32) + '" r="' + pr + '" fill="#1b1b1b"/>';
+    }
+    return eye(cx - g) + eye(cx + g);
+  }
+  function creatureSVG(name) {
+    var h = hashStr(name);
+    var sp = SPECIES[h % SPECIES.length];
+    var color = PALETTE[(h >> 8) % PALETTE.length];
+    return '<svg viewBox="0 0 100 100" style="color:' + color + '"><g fill="currentColor">' + sp.b + '</g>' + eyesFor(sp) + '</svg>';
+  }
+  function modelScale(m) { m = (m || '').toLowerCase(); if (m.indexOf('opus') >= 0) return 1.14; if (m.indexOf('haiku') >= 0) return 0.8; if (m.indexOf('sonnet') >= 0) return 0.9; return 1; }
+  function modelBob(m) { m = (m || '').toLowerCase(); if (m.indexOf('opus') >= 0) return 3.6; if (m.indexOf('haiku') >= 0) return 1.9; if (m.indexOf('sonnet') >= 0) return 2.4; return 2.9; }
+  function firstSentence(d) {
+    if (!d) return '';
+    d = String(d).replace(/\\n/g, ' ').replace(/\s+/g, ' ').trim();
+    var m = d.match(/^.*?[.。]/);
+    return (m ? m[0] : d).slice(0, 110);
+  }
+  function renderAgents(agents) {
+    var pool = el('pool'); if (!pool) return;
+    agents = agents || [];
+    var cnt = el('agCount'); if (cnt) cnt.textContent = agents.length;
+    var sig = agents.map(function (a) { return a.name + ':' + a.model; }).join('|');
+    if (pool._sig === sig) return; // roster unchanged — don't rebuild (keeps animations)
+    pool._sig = sig;
+    if (!agents.length) { pool.innerHTML = '<div class="pool-empty">No agent definitions found.<br>Add <b>.claude/agents/*.md</b> to see them here.</div>'; return; }
+    var html = '';
+    for (var i = 0; i < agents.length; i++) {
+      var a = agents[i], sc = modelScale(a.model), bob = modelBob(a.model);
+      var sz = Math.round(58 * sc), delay = (i * 0.17).toFixed(2);
+      var desc = firstSentence(a.description);
+      html += '<div class="cr-card" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
+        + '<div class="cr-body" style="width:' + sz + 'px;height:' + sz + 'px;animation-duration:' + bob + 's;animation-delay:' + delay + 's">' + creatureSVG(a.name) + '</div>'
+        + '<div class="cr-shadow" style="width:' + Math.round(sz * 0.52) + 'px;animation-duration:' + bob + 's;animation-delay:' + delay + 's"></div>'
+        + '<div class="cr-name">' + esc(a.name) + '</div>'
+        + '<div class="cr-model">' + esc(a.model) + '</div></div>';
+    }
+    pool.innerHTML = html;
+  }
+  function switchTab(t) {
+    var agents = t === 'agents';
+    var u = el('panelUsage'), g = el('panelAgents');
+    if (u) u.style.display = agents ? 'none' : '';
+    if (g) g.style.display = agents ? '' : 'none';
+    var au = el('tabUsage'), ag = el('tabAgents');
+    if (au) au.classList.toggle('active', !agents);
+    if (ag) ag.classList.toggle('active', agents);
+    var s = vscode.getState() || {}; s.tab = t; vscode.setState(s);
+  }
+
   function el(id) { return document.getElementById(id); }
   function setVis(id, on) { var e = el(id); if (e) e.style.display = on ? '' : 'none'; }
   function agoText(ts) { var s = Math.floor((Date.now() - ts) / 1000); if (s < 45) return 'now'; if (s < 3600) return Math.round(s / 60) + 'm ago'; return Math.round(s / 3600) + 'h ago'; }
@@ -107,6 +177,7 @@
 
   function render(d) {
     lastData = d; refreshedAt = Date.now();
+    renderAgents(d.agents);
     var _ab = el('authbar'); if (_ab) _ab.style.display = d.signedIn ? 'none' : 'flex';
     var _cfgSb0 = el('cfgStatusBar'); if (_cfgSb0 && d.cfg && d.cfg.statusBar) _cfgSb0.value = d.cfg.statusBar;
     // Only sync panel visibility/checkboxes from config when the settings sheet is
@@ -215,6 +286,12 @@
     applyCompact(c);
     var s = vscode.getState() || {}; s.compact = c; vscode.setState(s);
   });
+
+  // tab switcher (Usage default; last choice remembered within the view)
+  switchTab((st0 && st0.tab) || 'usage');
+  var _tu = el('tabUsage'), _ta = el('tabAgents');
+  if (_tu) _tu.addEventListener('click', function () { switchTab('usage'); });
+  if (_ta) _ta.addEventListener('click', function () { switchTab('agents'); });
 
   var _sb = el('signinBtn');
   if (_sb) _sb.addEventListener('click', function () { vscode.postMessage({ type: 'login' }); });
