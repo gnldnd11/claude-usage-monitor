@@ -26,6 +26,8 @@ const pendingUsageRequests = new WeakSet(); // in-flight Claude Code requests to
 const pendingMessageRequests = new WeakSet(); // in-flight Claude Code /v1/messages turns
 let turnRefreshTimer; // debounced refresh fired after a turn completes
 let extContext; // for persisting the last-good usage value across reloads
+let agentNicknames = {}; // agentName -> user nickname (persisted, editable in the panel)
+let agentRoles = {};     // agentName -> user role/title alias (persisted, editable)
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
 const watchers = [];
@@ -483,7 +485,9 @@ function collect() {
     avg: (tokens.count > 0) ? (((tokens.today.input || 0) + (tokens.today.output || 0) + (tokens.today.cache_creation || 0) + (tokens.today.cache_read || 0)) / tokens.count) : 0,
     peak: tokens.peak,
     agents: readAgents(),
-    agentActivity: computeAgentActivity(tokens.agentCalls, tokens.agentResults)
+    agentActivity: computeAgentActivity(tokens.agentCalls, tokens.agentResults),
+    nicknames: agentNicknames,
+    roles: agentRoles
   };
 }
 
@@ -654,21 +658,41 @@ const CSS = `
   .tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
   .tab:hover:not(.active){color:var(--text);}
   .inner.agents{padding:11px 11px 14px;}
+  .ws-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .ws-head .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);}
+  .ws-head .it svg{width:15px;height:15px;color:#e8895a;}
+  .ws-live{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;color:#4fae74;}
+  .ws-dot{width:6px;height:6px;border-radius:50%;background:#4fae74;box-shadow:0 0 4px #4fae74;animation:pulse 2.2s ease-in-out infinite;}
+  .ws-room{position:relative;width:100%;aspect-ratio:1/1;border-radius:11px;overflow:hidden;background:#0c0c0d;border:1px solid var(--iborder);}
+  .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;}
+  .ws-stage{position:absolute;inset:0;overflow:hidden;}
+  .walker{position:absolute;transform:translate(-50%,-92%);transition:left 1.6s ease-in-out,top 1.6s ease-in-out,opacity .45s ease;pointer-events:none;}
+  .wk-sprite{image-rendering:pixelated;}
+  .wk-tag{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:-16px;font-size:8px;font-weight:700;color:#fff;background:rgba(0,0,0,.62);padding:1px 5px;border-radius:6px;white-space:nowrap;letter-spacing:.2px;}
+  .cr-sprite{image-rendering:pixelated;}
   .pool{display:flex;flex-wrap:wrap;gap:8px 2px;justify-content:center;padding:8px 2px 2px;}
-  .cr-card{position:relative;display:flex;flex-direction:column;align-items:center;width:76px;padding:3px 2px;transition:opacity .3s ease;}
+  .cr-card{position:relative;display:flex;flex-direction:column;align-items:center;width:94px;padding:5px 2px 8px;transition:opacity .3s ease;}
   .cr-badge{position:absolute;top:-3px;left:50%;transform:translateX(-50%) translateY(-4px);background:#e5484d;color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;white-space:nowrap;opacity:0;transition:opacity .2s ease,transform .2s ease;pointer-events:none;box-shadow:0 2px 7px rgba(0,0,0,.3);z-index:4;letter-spacing:.2px;}
   .cr-card.active .cr-badge,.cr-card.done .cr-badge{opacity:1;transform:translateX(-50%) translateY(0);}
   .cr-card.done .cr-badge{background:#4fae74;}
-  .cr-card.active .cr-body{animation-duration:.85s !important;}
-  .cr-card.active .cr-body svg{filter:drop-shadow(0 0 5px rgba(229,72,77,.55));}
+  .cr-card.active .cr-sprite{filter:drop-shadow(0 0 5px rgba(229,72,77,.55));}
   /* when any agent is active, dim the resting ones so the caller stands out */
   .pool.has-active .cr-card:not(.active):not(.done){opacity:.42;}
-  .cr-body{display:flex;align-items:center;justify-content:center;animation:crbob 2.6s ease-in-out infinite;will-change:transform;}
+  .cr-body{display:flex;align-items:flex-end;justify-content:center;line-height:0;}
   .cr-body svg{width:100%;height:100%;overflow:visible;display:block;}
   .cr-shadow{height:6px;border-radius:50%;background:rgba(0,0,0,.24);margin-top:-1px;filter:blur(1px);animation:crshadow 2.6s ease-in-out infinite;will-change:transform;}
   body.vscode-light .cr-shadow{background:rgba(0,0,0,.14);}
-  .cr-name{font-size:10.5px;font-weight:600;color:var(--text);margin-top:6px;text-align:center;line-height:1.2;max-width:74px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .cr-model{font-size:9px;color:var(--muted);margin-top:1px;letter-spacing:.2px;}
+  .cr-name{font-size:10.5px;font-weight:600;color:var(--text);margin-top:-13px;text-align:center;line-height:1.2;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:5px;padding:0 3px;cursor:text;outline:none;position:relative;z-index:1;}
+  .cr-name:hover{background:rgba(127,127,127,.16);}
+  .cr-name:focus{background:rgba(0,0,0,.28);box-shadow:0 0 0 1px #e8895a;overflow:visible;text-overflow:clip;}
+  .cr-role{font-size:9.5px;font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:5px;padding:0 3px;cursor:text;outline:none;}
+  .cr-role:hover{background:rgba(127,127,127,.16);}
+  .cr-role:focus{background:rgba(0,0,0,.28);box-shadow:0 0 0 1px #e8895a;overflow:visible;text-overflow:clip;color:var(--text);}
+  .rost-head{cursor:pointer;user-select:none;}
+  .rost-head:hover .it{color:#e8895a;}
+  .rost-chev{display:inline-flex;vertical-align:middle;transition:transform .3s ease;margin-left:3px;color:var(--muted);}
+  .rost-chev svg{width:12px;height:12px;}
+  .rost-head.collapsed .rost-chev{transform:rotate(180deg);}
   .pool-empty{color:var(--muted);font-size:11.5px;text-align:center;padding:26px 12px;line-height:1.55;}
   @keyframes crbob{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
   @keyframes crshadow{0%,100%{transform:scaleX(1);opacity:.55;}50%{transform:scaleX(.8);opacity:.32;}}
@@ -699,6 +723,18 @@ class UsageViewProvider {
         vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global).then(function () { push(); });
       }
       else if (m.type === 'dismissBurn') { lastSeenT = Date.now(); if (extContext) extContext.globalState.update('burnSeenT', lastSeenT); push(); }
+      else if (m.type === 'setNickname' && m.name) {
+        const nick = (m.nick || '').trim().slice(0, 24);
+        if (nick && nick !== m.name) agentNicknames[m.name] = nick; else delete agentNicknames[m.name];
+        if (extContext) extContext.globalState.update('agentNicknamesV1', agentNicknames);
+        push();
+      }
+      else if (m.type === 'setRole' && m.name) {
+        const role = (m.role || '').trim().slice(0, 24);
+        if (role && role !== m.name) agentRoles[m.name] = role; else delete agentRoles[m.name];
+        if (extContext) extContext.globalState.update('agentRolesV1', agentRoles);
+        push();
+      }
     });
     view.onDidChangeVisibility(() => {
       if (view.visible && Date.now() - lastFetch > 300000) refreshUsage();
@@ -717,6 +753,18 @@ class UsageViewProvider {
     const mascotStunnedUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-stunned.png'));
     const mascotDespairUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-despair.png'));
     const mascotWorkingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-working.png'));
+    const roomMinecraftUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft.png'));
+    const npcUri = (n) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, n)).toString();
+    const assetsJson = JSON.stringify({ npcs: {
+      bartender: { u: npcUri('npc-bartender.png'), w: 384, h: 448 },
+      bartender2: { u: npcUri('npc-bartender2.png'), w: 384, h: 448 },
+      chef: { u: npcUri('npc-chef.png'), w: 384, h: 448 },
+      farmer: { u: npcUri('npc-farmer.png'), w: 384, h: 832 },
+      farmer2: { u: npcUri('npc-farmer2.png'), w: 384, h: 832 },
+      fisherman: { u: npcUri('npc-fisherman.png'), w: 576, h: 832 },
+      lumberjack: { u: npcUri('npc-lumberjack.png'), w: 384, h: 640 },
+      miner: { u: npcUri('npc-miner.png'), w: 384, h: 640 }
+    } }).replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
     const csp = webview.cspSource;
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
@@ -795,9 +843,17 @@ class UsageViewProvider {
     </div>
   </div>
   <div class="inner agents" id="panelAgents" style="display:none">
-    <div class="ihead">
+    <div class="ws-head">
+      <div class="it">${IC.bars} Agent Workspace</div>
+      <div class="ws-live"><span class="ws-dot"></span>Live</div>
+    </div>
+    <div class="ws-room" id="wsRoom">
+      <img class="ws-bg" src="${roomMinecraftUri}" alt="Minecraft workspace"/>
+      <div class="ws-stage" id="wsStage"></div>
+    </div>
+    <div class="ihead rost-head" id="rosterHead" style="margin-top:13px">
       <div class="it">${IC.bars} Agent roster</div>
-      <div class="upd"><span id="agCount">0</span> agents</div>
+      <div class="upd"><span id="agCount">0</span> agents <span class="rost-chev" id="rostChev">${IC.chevron}</span></div>
     </div>
     <div class="pool" id="pool"></div>
   </div>
@@ -825,6 +881,7 @@ class UsageViewProvider {
       <label class="sheet-check"><input type="checkbox" id="cfgBurn" checked> Burn-rate warning</label>
     </div>
   </div>
+<div id="cuc-assets" data-json='${assetsJson}' style="display:none"></div>
 <script src="${scriptUri}"></script></body></html>`;
   }
 }
@@ -852,6 +909,8 @@ function activate(context) {
   // have a prior value (this is what the other extensions do — show last, update later).
   extContext = context;
   lastSeenT = context.globalState.get('burnSeenT', 0); // restore burn-rate dismiss point across reloads
+  agentNicknames = context.globalState.get('agentNicknamesV1', {}) || {}; // restore agent nicknames
+  agentRoles = context.globalState.get('agentRolesV1', {}) || {}; // restore agent role/title aliases
   try {
     const saved = context.globalState.get('usageCacheV1');
     if (saved && saved.value && (saved.value.five_hour || saved.value.seven_day)) {

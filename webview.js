@@ -65,6 +65,47 @@
     var color = PALETTE[(h >> 8) % PALETTE.length];
     return '<svg viewBox="0 0 100 100" style="color:' + color + '"><g fill="currentColor">' + sp.b + '</g>' + eyesFor(sp) + '</svg>';
   }
+  // --- NPC sprite pool (Kenmi NPCs) — distinct character per agent, deterministic ---
+  var CUC = { npcs: {} };
+  try { var _ae = document.getElementById('cuc-assets'); if (_ae) CUC = JSON.parse(_ae.getAttribute('data-json')) || CUC; } catch (e) { /* assets missing → fall back to code-rendered creatures */ }
+  var NPC_KEYS = Object.keys(CUC.npcs);
+  var CELL = 64;                     // sheet cell px
+  var ROSTER_SCALE = 1.3;            // roster thumbnail scale
+  var ROOM_SCALE = 1.4;              // walker scale inside the room
+  var ROW_IDLE = 0, ROW_WALK = 1;    // Kenmi front-facing rows; row2 = back (unused in MVP)
+  var WALK_FRAMES = 6;
+  // distinct-first order so unique agents look as different as possible (near-dupe pairs last)
+  var NPC_ORDER = ['chef', 'farmer', 'fisherman', 'lumberjack', 'miner', 'bartender', 'bartender2', 'farmer2'];
+  var SHEET_MAP = {};                // agentName -> npc key (built from the full roster, collision-free)
+  function buildSheetMap(agents) {
+    if (!NPC_KEYS.length) return;
+    var pool = NPC_ORDER.filter(function (k) { return CUC.npcs[k]; });
+    if (!pool.length) pool = NPC_KEYS.slice();
+    var used = {}, map = {};
+    var names = (agents || []).map(function (a) { return a.name; }).slice().sort(); // stable order → stable probing
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i], start = hashStr(name + '|npc') % pool.length, pick = null;
+      for (var j = 0; j < pool.length; j++) { var idx = (start + j) % pool.length; if (!used[pool[idx]]) { pick = pool[idx]; break; } }
+      if (pick == null) pick = pool[start]; // more agents than sprites → repeats allowed
+      used[pick] = true; map[name] = pick;
+    }
+    SHEET_MAP = map;
+  }
+  function agentSheet(name) {
+    if (!NPC_KEYS.length) return null;
+    var k = SHEET_MAP[name] || NPC_KEYS[hashStr(name + '|npc') % NPC_KEYS.length];
+    return { key: k, meta: CUC.npcs[k] };
+  }
+  function spriteStaticStyle(meta, row, col, scale) {
+    var s = CELL * scale;
+    return 'width:' + s + 'px;height:' + s + 'px;background-image:url(\'' + meta.u + '\');'
+      + 'background-repeat:no-repeat;background-size:' + (meta.w * scale) + 'px ' + (meta.h * scale) + 'px;'
+      + 'background-position:' + (-col * s) + 'px ' + (-row * s) + 'px;';
+  }
+  function shortName(n) { n = String(n); return n.length > 13 ? n.slice(0, 12) + '…' : n; }
+  function displayName(name) { var nn = (lastData && lastData.nicknames) || {}; return nn[name] || name; }
+  function displayRole(name) { var rr = (lastData && lastData.roles) || {}; return rr[name] || name; }
+
   function modelScale(m) { m = (m || '').toLowerCase(); if (m.indexOf('opus') >= 0) return 1.14; if (m.indexOf('haiku') >= 0) return 0.8; if (m.indexOf('sonnet') >= 0) return 0.9; return 1; }
   function modelBob(m) { m = (m || '').toLowerCase(); if (m.indexOf('opus') >= 0) return 3.6; if (m.indexOf('haiku') >= 0) return 1.9; if (m.indexOf('sonnet') >= 0) return 2.4; return 2.9; }
   function firstSentence(d) {
@@ -77,21 +118,23 @@
     var pool = el('pool'); if (!pool) return;
     agents = agents || [];
     var cnt = el('agCount'); if (cnt) cnt.textContent = agents.length;
-    var sig = agents.map(function (a) { return a.name + ':' + a.model; }).join('|');
+    buildSheetMap(agents); // collision-free NPC assignment for the whole roster
+    var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + displayName(a.name) + ':' + displayRole(a.name); }).join('|');
     if (pool._sig === sig) return; // roster unchanged — don't rebuild (keeps animations)
     pool._sig = sig;
     if (!agents.length) { pool.innerHTML = '<div class="pool-empty">No agent definitions found.<br>Add <b>.claude/agents/*.md</b> to see them here.</div>'; return; }
     var html = '';
     for (var i = 0; i < agents.length; i++) {
-      var a = agents[i], sc = modelScale(a.model), bob = modelBob(a.model);
-      var sz = Math.round(58 * sc), delay = (i * 0.17).toFixed(2);
+      var a = agents[i];
       var desc = firstSentence(a.description);
+      var sheet = agentSheet(a.name);
+      var inner = sheet ? '<div class="cr-sprite" style="' + spriteStaticStyle(sheet.meta, ROW_IDLE, 0, ROSTER_SCALE) + '"></div>' : creatureSVG(a.name);
+      var nick = displayName(a.name), role = displayRole(a.name);
       html += '<div class="cr-card" data-agent="' + esc(a.name) + '" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
         + '<div class="cr-badge"></div>'
-        + '<div class="cr-body" style="width:' + sz + 'px;height:' + sz + 'px;animation-duration:' + bob + 's;animation-delay:' + delay + 's">' + creatureSVG(a.name) + '</div>'
-        + '<div class="cr-shadow" style="width:' + Math.round(sz * 0.52) + 'px;animation-duration:' + bob + 's;animation-delay:' + delay + 's"></div>'
-        + '<div class="cr-name">' + esc(a.name) + '</div>'
-        + '<div class="cr-model">' + esc(a.model) + '</div></div>';
+        + '<div class="cr-body">' + inner + '</div>'
+        + '<div class="cr-name" contenteditable="true" spellcheck="false" title="이름 수정">' + esc(nick) + '</div>'
+        + '<div class="cr-role" contenteditable="true" spellcheck="false" title="칭호/역할 수정">' + esc(role) + '</div></div>';
     }
     pool.innerHTML = html;
   }
@@ -113,6 +156,81 @@
     }
     pool.classList.toggle('has-active', anyActive);
   }
+
+  // --- room walker engine: only working agents enter the room, walk to the desk,
+  // work, then leave. Sprite frames cycle in a steady loop independent of pushes. ---
+  var SPOT_ENTRY = { x: 0.26, y: 0.80 };
+  var SPOT_DESK = { x: 0.50, y: 0.735 };
+  var TRAVEL_MS = 1650;
+  var walkers = {}; // agentName -> { root, sprite, meta, mode, leaving, targetKey, _t }
+
+  function placeAt(wk, x, y) {
+    wk.root.style.left = (x * 100) + '%';
+    wk.root.style.top = (y * 100) + '%';
+    wk.root.style.zIndex = String(Math.round(y * 100));
+    wk.x = x; wk.y = y;
+  }
+  function ensureWalker(name, stage) {
+    if (walkers[name]) return walkers[name];
+    var sheet = agentSheet(name); if (!sheet) return null;
+    var root = document.createElement('div'); root.className = 'walker'; root.style.opacity = '0';
+    var sp = document.createElement('div'); sp.className = 'wk-sprite';
+    var s = CELL * ROOM_SCALE;
+    sp.style.width = s + 'px'; sp.style.height = s + 'px';
+    sp.style.backgroundImage = 'url(\'' + sheet.meta.u + '\')';
+    sp.style.backgroundRepeat = 'no-repeat';
+    sp.style.backgroundSize = (sheet.meta.w * ROOM_SCALE) + 'px ' + (sheet.meta.h * ROOM_SCALE) + 'px';
+    var tag = document.createElement('div'); tag.className = 'wk-tag'; tag.textContent = shortName(displayName(name));
+    root.appendChild(sp); root.appendChild(tag); stage.appendChild(root);
+    var wk = { root: root, sprite: sp, tag: tag, meta: sheet.meta, mode: 'walking', leaving: false, targetKey: '' };
+    walkers[name] = wk;
+    placeAt(wk, SPOT_ENTRY.x, SPOT_ENTRY.y); // spawn at the doorway
+    requestAnimationFrame(function () { root.style.opacity = '1'; });
+    return wk;
+  }
+  function goTo(wk, x, y, key, onArrive) {
+    if (wk.targetKey === key) return;
+    wk.targetKey = key; wk.mode = 'walking';
+    requestAnimationFrame(function () { placeAt(wk, x, y); });
+    clearTimeout(wk._t);
+    wk._t = setTimeout(function () { if (!wk.leaving && onArrive) onArrive(); }, TRAVEL_MS);
+  }
+  function leaveWalker(name) {
+    var wk = walkers[name]; if (!wk || wk.leaving) return;
+    wk.leaving = true; wk.targetKey = 'exit'; wk.mode = 'walking';
+    requestAnimationFrame(function () { placeAt(wk, SPOT_ENTRY.x, SPOT_ENTRY.y); });
+    clearTimeout(wk._t);
+    wk._t = setTimeout(function () {
+      wk.root.style.opacity = '0';
+      setTimeout(function () { if (wk.root.parentNode) wk.root.parentNode.removeChild(wk.root); delete walkers[name]; }, 450);
+    }, TRAVEL_MS);
+  }
+  function updateRoom(activity) {
+    var stage = el('wsStage'); if (!stage) return;
+    activity = activity || {};
+    var present = [];
+    for (var nm in activity) { var s = activity[nm]; if (s && (s.state === 'active' || s.state === 'done')) present.push(nm); }
+    for (var n in walkers) { if (present.indexOf(n) < 0) leaveWalker(n); }
+    for (var i = 0; i < present.length; i++) {
+      var name = present[i];
+      var wk = ensureWalker(name, stage); if (!wk || wk.leaving) continue;
+      if (wk.tag) wk.tag.textContent = shortName(displayName(name)); // reflect live nickname edits
+      var off = (i - (present.length - 1) / 2) * 0.11; // fan out if several are working
+      goTo(wk, SPOT_DESK.x + off, SPOT_DESK.y, 'desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
+    }
+  }
+  // steady sprite-frame loop (idle slow, walking faster), independent of data pushes
+  setInterval(function () {
+    var s = CELL * ROOM_SCALE, t = Date.now();
+    for (var name in walkers) {
+      var wk = walkers[name];
+      var working = wk.mode === 'working';
+      var row = working ? ROW_IDLE : ROW_WALK;
+      var fps = working ? 3 : 7;
+      var f = Math.floor(t / (1000 / fps)) % WALK_FRAMES;
+      wk.sprite.style.backgroundPosition = (-f * s) + 'px ' + (-row * s) + 'px';
+    }
+  }, 60);
   function switchTab(t) {
     var agents = t === 'agents';
     var u = el('panelUsage'), g = el('panelAgents');
@@ -198,6 +316,7 @@
     lastData = d; refreshedAt = Date.now();
     renderAgents(d.agents);
     applyAgentStates(d.agentActivity);
+    updateRoom(d.agentActivity);
     var _ab = el('authbar'); if (_ab) _ab.style.display = d.signedIn ? 'none' : 'flex';
     var _cfgSb0 = el('cfgStatusBar'); if (_cfgSb0 && d.cfg && d.cfg.statusBar) _cfgSb0.value = d.cfg.statusBar;
     // Only sync panel visibility/checkboxes from config when the settings sheet is
@@ -312,6 +431,40 @@
   var _tu = el('tabUsage'), _ta = el('tabAgents');
   if (_tu) _tu.addEventListener('click', function () { switchTab('usage'); });
   if (_ta) _ta.addEventListener('click', function () { switchTab('agents'); });
+
+  // collapse / expand the roster (separate from the panel's compact toggle), persisted
+  var _rostHead = el('rosterHead');
+  function applyRoster(collapsed) {
+    var p = el('pool'); if (p) p.style.display = collapsed ? 'none' : '';
+    if (_rostHead) _rostHead.classList.toggle('collapsed', !!collapsed);
+  }
+  applyRoster(!!(vscode.getState() || {}).rosterCollapsed);
+  if (_rostHead) _rostHead.addEventListener('click', function () {
+    var s = vscode.getState() || {}; s.rosterCollapsed = !s.rosterCollapsed; vscode.setState(s); applyRoster(s.rosterCollapsed);
+  });
+
+  // editable name tags (nickname) — delegated so it survives roster rebuilds
+  var _poolEl = el('pool');
+  if (_poolEl) {
+    function isEditable(t) { return t && t.classList && (t.classList.contains('cr-name') || t.classList.contains('cr-role')); }
+    _poolEl.addEventListener('keydown', function (e) {
+      var t = e.target; if (!isEditable(t)) return;
+      if (e.isComposing || e.keyCode === 229) return; // Korean/IME still composing — let it confirm first
+      if (e.key === 'Enter') { e.preventDefault(); t.blur(); }
+      else if (e.key === 'Escape') {
+        e.preventDefault(); var c = t.closest('.cr-card');
+        if (c) t.textContent = t.classList.contains('cr-name') ? displayName(c.getAttribute('data-agent')) : displayRole(c.getAttribute('data-agent'));
+        t.blur();
+      }
+    });
+    _poolEl.addEventListener('blur', function (e) {
+      var t = e.target; if (!isEditable(t)) return;
+      var c = t.closest('.cr-card'); if (!c) return;
+      var name = c.getAttribute('data-agent'), val = (t.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+      if (t.classList.contains('cr-name')) vscode.postMessage({ type: 'setNickname', name: name, nick: val });
+      else vscode.postMessage({ type: 'setRole', name: name, role: val });
+    }, true);
+  }
 
   var _sb = el('signinBtn');
   if (_sb) _sb.addEventListener('click', function () { vscode.postMessage({ type: 'login' }); });
