@@ -5,6 +5,7 @@ const path = require('path');
 const https = require('https');
 const { AuthManager } = require('./auth');
 const { buildNpcCatalog } = require('./sprites');
+const spriteData = require('./sprite-data'); // character sprites as base64 (not shipped as raw png)
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const RATE_FILE = path.join(CLAUDE_DIR, 'usage-bar.json');
@@ -594,7 +595,9 @@ class UsageViewProvider {
     const mascotWorkingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-working.png'));
     const roomMinecraftUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft.png'));
     const spriteUri = (n) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, n)).toString();
-    const npcs = buildNpcCatalog(spriteUri, path.join(this.extensionUri.fsPath, 'sprite-bbox.json'));
+    // sprites resolve to embedded base64 (data URI); room images stay as file URIs (own assets)
+    const spriteSrc = (n) => spriteData[n] || spriteUri(n);
+    const npcs = buildNpcCatalog(spriteSrc, path.join(this.extensionUri.fsPath, 'sprite-bbox.json'));
     // each room theme: image(s) + walker entry/desk spots (normalized 0..1 of the square image)
     const rooms = {
       cave: { name: 'Blocky Cave', dark: spriteUri('room-minecraft.png'), light: spriteUri('room-minecraft-light.png'), entry: [0.26, 0.80], desk: [0.50, 0.735] },

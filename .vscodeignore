@@ -5,3 +5,7 @@
 scratchpad/**
 .git/**
 media/**
+npc-*.png
+hum-*.png
+mon-*.png
+ani-*.png

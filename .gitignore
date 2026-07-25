@@ -1,3 +1,8 @@
 node_modules/
 *.vsix
 .DS_Store
+# character sprites: embedded as base64 in sprite-data.js, raw png kept local only (not redistributed)
+npc-*.png
+hum-*.png
+mon-*.png
+ani-*.png
