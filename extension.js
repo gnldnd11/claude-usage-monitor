@@ -602,7 +602,7 @@ class UsageViewProvider {
     const rooms = {
       cave: { name: 'Blocky Cave', dark: spriteUri('room-minecraft.png'), light: spriteUri('room-minecraft-light.png'), entry: [0.26, 0.80], desk: [0.50, 0.735] },
       backrooms: { name: 'Backrooms', dark: spriteUri('room-backrooms.png'), entry: [0.28, 0.80], desk: [0.48, 0.72] },
-      liminal: { name: 'Liminal Office', dark: spriteUri('room-liminal.png'), entry: [0.30, 0.78], desk: [0.57, 0.66] }
+      liminal: { name: 'Liminal Office', dark: spriteUri('room-liminal.png'), entry: [0.28, 0.72], desk: [0.56, 0.63] }
     };
     const assetsJson = JSON.stringify({ rooms, npcs })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
