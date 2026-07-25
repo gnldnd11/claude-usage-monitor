@@ -57,6 +57,11 @@ function renderHtml(vars) {
           <div class="mbar"><div class="mfill" id="w_fill"></div></div>
           <div class="msub" id="w_sub"></div>
         </div>
+        <div class="meter" id="pm_fable">
+          <div class="mtop"><span class="mlabel">Fable <span class="munit">(7d)</span></span><span class="mgrp"><span class="delta" id="f_delta"></span><span class="mval" id="f_pct">–</span></span></div>
+          <div class="mbar"><div class="mfill" id="f_fill"></div></div>
+          <div class="msub" id="f_sub"></div>
+        </div>
         <div class="meter" id="pm_context">
           <div class="mtop"><span class="mlabel">Context</span><span class="mgrp"><span class="delta" id="c_delta"></span><span class="mval" id="c_pct">–</span></span></div>
           <div class="mbar"><div class="mfill" id="c_fill"></div></div>
@@ -121,6 +126,7 @@ function renderHtml(vars) {
       <div class="sheet-sec">Show in panel</div>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="session" checked> Session (5h)</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="weekly" checked> Weekly (7d)</label>
+      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="fable" checked> Fable (7d)</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="context" checked> Context</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="ring" checked> Usage ring</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="tiles" checked> Stat tiles</label>

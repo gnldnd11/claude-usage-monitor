@@ -74,19 +74,114 @@ function fileInProject(p, prefixes) {
   return false;
 }
 
+// The harness stamps each finished subagent's cost into the transcript itself:
+// tool_result text ends with "<usage>subagent_tokens: N\ntool_uses: N\nduration_ms: N</usage>",
+// and background agents report the same numbers in a <task-notification> XML block.
+// Tolerant of both spellings ("key: N" and "<key>N</key>").
+function parseSubUsage(text) {
+  const m = String(text).match(/<usage>[\s\S]*?subagent_tokens[:>\s]+(\d+)[\s\S]*?tool_uses[:>\s]+(\d+)[\s\S]*?duration_ms[:>\s]+(\d+)[\s\S]*?<\/usage>/);
+  return m ? { tokens: +m[1], tools: +m[2], durMs: +m[3] } : null;
+}
+function toolResultText(b) {
+  if (typeof b.content === 'string') return b.content;
+  if (Array.isArray(b.content)) { let s = ''; for (const p of b.content) { if (p && p.type === 'text' && p.text) s += p.text; } return s; }
+  return '';
+}
+
 // From transcript JSONL: today's tokens + latest message + today's request count.
 // projPrefixes scopes which transcripts count as "this workspace" for the context window.
+//
+// Transcripts are append-only and heavy sessions run to hundreds of MB, so re-reading
+// every file on each tick doesn't scale. Each file gets a persistent accumulator and
+// only the bytes appended since the last tick are parsed; a full re-parse happens only
+// when a file shrinks (rewrite) or the local day rolls over (the "today" sums move).
+const fileCache = {}; // path -> { mtimeMs, size, carry, dayKey, s: accumulator }
+
+function freshAcc() {
+  return {
+    today: { input: 0, output: 0, cache_creation: 0, cache_read: 0 },
+    count: 0,
+    lastMsg: null,      // latest usage-bearing message in this file
+    maxCtx: 0,          // this session's peak context — window tier is a session property
+    lastUserText: '',   // latest real user prompt in this session file
+    calls: [],          // {agent, id, t, desc} — Agent/Task tool_use invocations (today)
+    callIds: {},        // every Agent/Task tool_use id seen (any day) — results are only kept for these
+    results: {},        // tool_use_id -> {t, tokens?, tools?, durMs?}
+    peaks: []           // skyline of {t, total, prompt}: each entry's total beats everything after it
+  };
+}
+
+function parseLinesInto(s, chunk, startOfToday) {
+  for (const line of chunk) {
+    if (!line) continue;
+    let o;
+    try { o = JSON.parse(line); } catch (e) { continue; }
+    if (o.type === 'user' && o.message) { const _ut = userText(o.message); if (_ut) s.lastUserText = _ut; }
+    // agent activity: subagent invocations (tool_use name Agent/Task) and their results.
+    // Results carry the subagent's own token/tool/duration numbers (see parseSubUsage).
+    const _content = o.message && o.message.content;
+    const _ts = o.timestamp ? Date.parse(o.timestamp) : 0;
+    if (Array.isArray(_content)) {
+      for (const b of _content) {
+        if (b && b.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task') && b.input && b.input.subagent_type) {
+          s.callIds[b.id] = true;
+          if (_ts >= startOfToday) s.calls.push({ agent: b.input.subagent_type, id: b.id, t: _ts, desc: (b.input.description || '').slice(0, 60) });
+        } else if (b && b.type === 'tool_result' && b.tool_use_id && s.callIds[b.tool_use_id]) {
+          const txt = toolResultText(b);
+          const uu = parseSubUsage(txt);
+          // A background launch acks immediately with no usage block — the agent is
+          // still working, so that ack is NOT a completion (the real one arrives as a
+          // task-notification). Only sync results (or anything carrying usage) complete.
+          if (uu) s.results[b.tool_use_id] = { t: _ts, tokens: uu.tokens, tools: uu.tools, durMs: uu.durMs };
+          else if (txt.lastIndexOf('Async agent launched', 0) !== 0 && !s.results[b.tool_use_id]) s.results[b.tool_use_id] = { t: _ts };
+        }
+      }
+    } else if (o.type === 'user' && typeof _content === 'string' && _content.lastIndexOf('<task-notification>', 0) === 0) {
+      // background agents finish out-of-band; their completion lands as a task-notification
+      const idm = _content.match(/<tool-use-id>([^<]+)<\/tool-use-id>/);
+      const stm = _content.match(/<status>([^<]+)<\/status>/);
+      if (idm && stm && stm[1] !== 'running') {
+        const uu = parseSubUsage(_content);
+        s.results[idm[1]] = uu ? { t: _ts, tokens: uu.tokens, tools: uu.tools, durMs: uu.durMs } : { t: _ts };
+      }
+    }
+    const u = (o.message && o.message.usage) || o.usage;
+    if (!u) continue;
+    const t = o.timestamp ? Date.parse(o.timestamp) : NaN;
+    if (isNaN(t)) continue;
+    if (t >= startOfToday) {
+      s.today.input += u.input_tokens || 0;
+      s.today.output += u.output_tokens || 0;
+      s.today.cache_creation += u.cache_creation_input_tokens || 0;
+      s.today.cache_read += u.cache_read_input_tokens || 0;
+      s.count += 1;
+    }
+    const ctxUsed = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+    if (ctxUsed > s.maxCtx) s.maxCtx = ctxUsed;
+    if (!s.lastMsg || t > s.lastMsg.t) {
+      s.lastMsg = {
+        t,
+        input: u.input_tokens || 0,
+        output: u.output_tokens || 0,
+        cache_creation: u.cache_creation_input_tokens || 0,
+        cache_read: u.cache_read_input_tokens || 0
+      };
+    }
+    // Burn-rate peak is "largest request newer than lastSeenT", but lastSeenT moves after
+    // this line is parsed (and never again re-parsed), so keep a tiny skyline instead:
+    // drop any earlier entry a later-or-equal total makes redundant. Query answers any
+    // threshold later without touching the file again.
+    const tot = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+    while (s.peaks.length && s.peaks[s.peaks.length - 1].total <= tot) s.peaks.pop();
+    s.peaks.push({ t, total: tot, prompt: s.lastUserText });
+    if (s.peaks.length > 200) s.peaks.shift();
+  }
+}
+
 function readTokens(projPrefixes) {
   projPrefixes = projPrefixes || [];
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const today = { input: 0, output: 0, cache_creation: 0, cache_read: 0 };
-  let last = null;      // globally latest message (today), any session
-  let lastProj = null;  // latest message from this workspace's transcripts — drives Context %
-  let count = 0;
-  const agentCalls = [];      // {agent, id, t, inProj} — Agent/Task tool_use invocations
-  const agentResults = {};    // tool_use_id -> result timestamp (ms)
-  let peak = null; // largest request newer than lastSeenT (survives other sessions' replies)
 
   const files = [];
   const stack = [PROJECTS_DIR];
@@ -100,59 +195,63 @@ function readTokens(projPrefixes) {
       if (!e.name.endsWith('.jsonl')) continue;
       try {
         const st = fs.statSync(p);
-        if (st.mtimeMs >= startOfToday) files.push(p);
+        if (st.mtimeMs >= startOfToday) files.push({ p, st });
       } catch (e2) { /* skip */ }
     }
   }
 
-  for (const p of files) {
-    let content;
-    try { content = fs.readFileSync(p, 'utf8'); } catch (e) { continue; }
-    const inProj = projPrefixes.length ? fileInProject(p, projPrefixes) : false;
-    let lastUserText = ''; // latest real user prompt in this session file
-    for (const line of content.split('\n')) {
-      if (!line) continue;
-      let o;
-      try { o = JSON.parse(line); } catch (e) { continue; }
-      if (o.type === 'user' && o.message) { const _ut = userText(o.message); if (_ut) lastUserText = _ut; }
-      // agent activity: subagent invocations (tool_use name Agent/Task) and their results
-      const _content = o.message && o.message.content;
-      if (Array.isArray(_content)) {
-        const _ts = o.timestamp ? Date.parse(o.timestamp) : 0;
-        for (const b of _content) {
-          if (b && b.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task') && b.input && b.input.subagent_type) {
-            agentCalls.push({ agent: b.input.subagent_type, id: b.id, t: _ts, inProj, desc: (b.input.description || '').slice(0, 60) });
-          } else if (b && b.type === 'tool_result' && b.tool_use_id) {
-            agentResults[b.tool_use_id] = _ts;
-          }
-        }
-      }
-      const u = (o.message && o.message.usage) || o.usage;
-      if (!u) continue;
-      const t = o.timestamp ? Date.parse(o.timestamp) : NaN;
-      if (isNaN(t)) continue;
-      if (t >= startOfToday) {
-        today.input += u.input_tokens || 0;
-        today.output += u.output_tokens || 0;
-        today.cache_creation += u.cache_creation_input_tokens || 0;
-        today.cache_read += u.cache_read_input_tokens || 0;
-        count += 1;
-      }
-      if (!last || t > last.t || (inProj && (!lastProj || t > lastProj.t))) {
-        const msg = {
-          t,
-          input: u.input_tokens || 0,
-          output: u.output_tokens || 0,
-          cache_creation: u.cache_creation_input_tokens || 0,
-          cache_read: u.cache_read_input_tokens || 0
-        };
-        if (!last || t > last.t) last = msg;
-        if (inProj && (!lastProj || t > lastProj.t)) lastProj = msg;
-      }
-      if (t > lastSeenT) {
-        const tot = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
-        if (!peak || tot > peak.total) peak = { t: t, total: tot, prompt: lastUserText };
-      }
+  // Update per-file accumulators, reading only appended bytes.
+  const live = {}; // paths seen this tick — lets us drop cache entries for stale files
+  for (const f of files) {
+    const p = f.p, st = f.st;
+    live[p] = true;
+    let c = fileCache[p];
+    const fullParse = !c || c.dayKey !== startOfToday || st.size < c.size;
+    if (c && !fullParse && st.size === c.size) continue; // unchanged
+    try {
+      if (fullParse) { c = fileCache[p] = { mtimeMs: 0, size: 0, carry: '', dayKey: startOfToday, s: freshAcc() }; }
+      const fd = fs.openSync(p, 'r');
+      let text;
+      try {
+        const len = st.size - c.size;
+        const buf = Buffer.allocUnsafe(len);
+        fs.readSync(fd, buf, 0, len, c.size);
+        text = c.carry + buf.toString('utf8');
+      } finally { fs.closeSync(fd); }
+      const lines = text.split('\n');
+      c.carry = lines.pop() || ''; // partial trailing line waits for the next append
+      parseLinesInto(c.s, lines, startOfToday);
+      c.mtimeMs = st.mtimeMs; c.size = st.size;
+    } catch (e) { delete fileCache[p]; }
+  }
+  for (const p in fileCache) { if (!live[p]) delete fileCache[p]; }
+
+  // Merge accumulators. inProj is stamped here (not cached) so a workspace change
+  // doesn't serve stale scoping.
+  const today = { input: 0, output: 0, cache_creation: 0, cache_read: 0 };
+  let last = null;      // globally latest message (today), any session
+  let lastProj = null;  // latest message from this workspace's transcripts — drives Context %
+  let count = 0;
+  const agentCalls = [];
+  const agentResults = {};
+  let peak = null; // largest request newer than lastSeenT (survives other sessions' replies)
+  for (const f of files) {
+    const c = fileCache[f.p];
+    if (!c) continue;
+    const s = c.s;
+    const inProj = projPrefixes.length ? fileInProject(f.p, projPrefixes) : false;
+    today.input += s.today.input; today.output += s.today.output;
+    today.cache_creation += s.today.cache_creation; today.cache_read += s.today.cache_read;
+    count += s.count;
+    if (s.lastMsg) {
+      const msg = Object.assign({ sessMax: s.maxCtx }, s.lastMsg);
+      if (!last || msg.t > last.t) last = msg;
+      if (inProj && (!lastProj || msg.t > lastProj.t)) lastProj = msg;
+    }
+    for (const call of s.calls) agentCalls.push({ agent: call.agent, id: call.id, t: call.t, inProj, desc: call.desc });
+    for (const id in s.results) agentResults[id] = s.results[id];
+    for (const pk of s.peaks) { // skyline: the first entry newer than the threshold is the file's max
+      if (pk.t > lastSeenT) { if (!peak || pk.total > peak.total) peak = pk; break; }
     }
   }
   return { today, last, lastProj, count, peak, agentCalls, agentResults };
@@ -165,29 +264,47 @@ function readTokens(projPrefixes) {
 // visible long enough to actually see.
 function computeAgentActivity(calls, results) {
   const NOW = Date.now();
-  const RUN_WINDOW = 15 * 60 * 1000; // a call with no result older than this is stale, ignore
-  const MIN_ACTIVE = 6000;           // show "active" at least this long even on a fast result
-  const DONE_MS = 6000;              // then flash "done" for this long
-  const out = {};
-  const rank = { active: 2, done: 1 };
-  function set(name, state, since, desc) {
-    const cur = out[name];
-    if (!cur || rank[state] > rank[cur.state] || (rank[state] === rank[cur.state] && since > cur.since)) {
-      out[name] = { state, since, desc: desc || '' };
-    }
+  const MIN_ACTIVE = 6000;              // show "active" at least this long even on a fast result
+  const DONE_MS = 6000;                 // then flash "done" for this long
+  const NO_RESULT_MS = 60 * 60 * 1000;  // a call with no result older than this is from a dead session
+  const STUCK_FLOOR = 10 * 60 * 1000;   // never call an agent stuck before this much elapsed
+
+  // Today's per-agent totals from completed runs — real numbers, straight from the
+  // transcript, so "which agent eats my limit" is a fact, not an estimate.
+  const stats = {};
+  const durs = {};
+  for (const c of calls) {
+    if (!c.inProj) continue;
+    const r = results[c.id];
+    if (!r) continue;
+    const s = stats[c.agent] || (stats[c.agent] = { runs: 0, tokens: 0, medMs: 0 });
+    s.runs += 1;
+    if (r.tokens) s.tokens += r.tokens;
+    // Only the harness-reported duration counts: for background agents the tool_result
+    // lands ~2s after launch while work continues, so (result - call) is not a duration.
+    if (r.durMs > 0) (durs[c.agent] = durs[c.agent] || []).push(r.durMs);
   }
+  for (const k in durs) { const a = durs[k].sort((x, y) => x - y); stats[k].medMs = a[(a.length - 1) >> 1]; }
+
+  // One entry per INVOCATION (keyed by tool_use id), so parallel calls of the
+  // same agent show as separate characters instead of collapsing into one.
+  const instances = [];
   for (const c of calls) {
     if (!c.inProj || !c.t) continue; // scope to this workspace
-    const res = results[c.id];
-    if (res) {
-      const end = Math.max(res, c.t + MIN_ACTIVE);
-      if (NOW < end) set(c.agent, 'active', c.t, c.desc);
-      else if (NOW - end <= DONE_MS) set(c.agent, 'done', end, c.desc);
-    } else if (NOW - c.t <= RUN_WINDOW) {
-      set(c.agent, 'active', c.t, c.desc);
+    const r = results[c.id];
+    if (r) {
+      const end = Math.max(r.t, c.t + MIN_ACTIVE);
+      if (NOW < end) instances.push({ key: c.id, agent: c.agent, state: 'active', since: c.t, desc: c.desc });
+      else if (NOW - end <= DONE_MS) instances.push({ key: c.id, agent: c.agent, state: 'done', since: end, desc: c.desc, tokens: r.tokens || 0, durMs: r.durMs || 0 });
+    } else if (NOW - c.t <= NO_RESULT_MS) {
+      // Still running. Instead of silently dropping long runs (the exact case where
+      // visibility matters most), flag ones well past this agent's usual runtime.
+      const med = (stats[c.agent] || {}).medMs || 0;
+      const limit = Math.max(med * 3, STUCK_FLOOR);
+      instances.push({ key: c.id, agent: c.agent, state: NOW - c.t > limit ? 'stuck' : 'active', since: c.t, desc: c.desc });
     }
   }
-  return out;
+  return { instances, stats };
 }
 
 // --- agent roster (M1) -------------------------------------------------------
@@ -422,6 +539,19 @@ function tapResponseBody(res) {
 
 // Parse a tapped usage payload (either the /api/oauth/usage shape or the
 // statusLine rate_limits shape) into usageCache and push to the panel.
+// The usage endpoint returns a `limits` array; the weekly limit scoped to the Fable
+// model is what we surface as the "Fable" meter. Returns {used_percentage, resets_at} or null.
+function extractFable(u) {
+  const arr = (u && u.limits) || (u && u.rate_limits && u.rate_limits.limits);
+  if (!Array.isArray(arr)) return null;
+  for (const l of arr) {
+    if (l && l.group === 'weekly' && l.scope && l.scope.model && /fable/i.test(l.scope.model.display_name || '')) {
+      return { used_percentage: l.percent, resets_at: l.resets_at ? resetsToEpoch(l.resets_at) : null };
+    }
+  }
+  return null;
+}
+
 function processTapped(body) {
   let u;
   try { u = JSON.parse(body); } catch (e) { return; }
@@ -431,7 +561,8 @@ function processTapped(body) {
   if (fh == null && sd == null) return;
   usageCache = {
     five_hour: fh ? { used_percentage: pct(fh), resets_at: resetsToEpoch(fh.resets_at) } : null,
-    seven_day: sd ? { used_percentage: pct(sd), resets_at: resetsToEpoch(sd.resets_at) } : null
+    seven_day: sd ? { used_percentage: pct(sd), resets_at: resetsToEpoch(sd.resets_at) } : null,
+    fable: extractFable(u)
   };
   usageLoaded = true;
   lastTapAt = Date.now();
@@ -459,7 +590,8 @@ async function refreshUsage() {
   const u = r.data;
   usageCache = {
     five_hour: u.five_hour ? { used_percentage: u.five_hour.utilization, resets_at: isoToEpoch(u.five_hour.resets_at) } : null,
-    seven_day: u.seven_day ? { used_percentage: u.seven_day.utilization, resets_at: isoToEpoch(u.seven_day.resets_at) } : null
+    seven_day: u.seven_day ? { used_percentage: u.seven_day.utilization, resets_at: isoToEpoch(u.seven_day.resets_at) } : null,
+    fable: extractFable(u)
   };
   usageLoaded = true;
   if (log) log.appendLine('[' + ts + '] fetch -> 200  session=' + (u.five_hour ? u.five_hour.utilization + '%' : '–') + '  weekly=' + (u.seven_day ? u.seven_day.utilization + '%' : '–'));
@@ -469,11 +601,13 @@ async function refreshUsage() {
 }
 
 // context window %: input + cache tokens of the latest message.
-// Window auto-detects tier: 1M if it ever exceeds 200k, else 200k.
+// Window tier is a property of the SESSION, not the message: judge by the session's
+// peak context (sessMax), so a 1M session that dips under 200k after compaction
+// doesn't get misread as a nearly-full 200k window.
 function contextPct(last) {
   if (!last) return null;
   const used = (last.input || 0) + (last.cache_read || 0) + (last.cache_creation || 0);
-  const win = used > 200000 ? 1000000 : 200000;
+  const win = Math.max(used, last.sessMax || 0) > 200000 ? 1000000 : 200000;
   return { used_percentage: Math.min(100, Math.round(used / win * 100)), window: win };
 }
 
@@ -485,6 +619,7 @@ function collect() {
   return {
     fh: usageCache ? usageCache.five_hour : null,
     sd: usageCache ? usageCache.seven_day : null,
+    fable: usageCache ? usageCache.fable : null,
     ctx: cp,
     usageLoading: !usageLoaded,
     today: tokens.today,
@@ -775,3 +910,4 @@ function activate(context) {
 function deactivate() {}
 
 module.exports = { activate, deactivate };
+if (process.env.CUC_TEST) module.exports._test = { readTokens, computeAgentActivity, parseSubUsage, contextPct };

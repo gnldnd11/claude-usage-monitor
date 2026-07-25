@@ -1,8 +1,8 @@
 {
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
-  "description": "Unofficial usage monitor for Claude Code — session & weekly limits, tokens, and requests in the status bar and a panel.",
-  "version": "1.1.4",
+  "description": "See which Claude Code subagents are running, and spot the one that's stuck. Your agents as pixel characters in the sidebar, plus live session, weekly and context usage. Unofficial, read-only.",
+  "version": "1.2.0",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
@@ -15,11 +15,16 @@
     "Other"
   ],
   "keywords": [
-    "claude",
     "claude code",
+    "subagent",
+    "agents",
+    "claude",
+    "multi-agent",
+    "orchestration",
     "usage",
     "tokens",
     "rate limit",
+    "context window",
     "monitor",
     "status bar"
   ],

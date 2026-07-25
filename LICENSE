@@ -1,3 +1,9 @@
+The MIT License below applies to the SOURCE CODE of this extension only.
+It does NOT apply to any artwork (pixel sprites, room backgrounds, mascot
+animations, icons), whether shipped as image files or embedded in source
+files such as sprite-data.js. See the THIRD-PARTY AND ARTWORK NOTICE at the
+end of this file.
+
 MIT License
 
 Copyright (c) 2026 huiwoong
@@ -19,3 +25,30 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+================================================================================
+THIRD-PARTY AND ARTWORK NOTICE
+================================================================================
+
+The artwork bundled with this extension is NOT licensed under the MIT License
+above and is NOT part of "the Software" for the purposes of that license.
+
+1. Character sprites
+   Derived from the "Cute Fantasy" asset pack by Kenmi, licensed to the author
+   of this extension. They are included here solely so that this extension can
+   display them at runtime. They are not offered for reuse, redistribution,
+   resale, or extraction, whether modified or not, and no rights to them are
+   granted to you by installing or reading this extension. If you want these
+   assets, obtain your own license from the original author.
+
+2. Room backgrounds, mascot animations, and icons
+   Created for this project. All rights reserved by the author. Same terms as
+   above: display within this extension only, no reuse or redistribution.
+
+This applies equally to the artwork in its embedded form (for example
+base64 data inside sprite-data.js) as it does to standalone image files.
+
+Removing, replacing, or re-licensing the artwork does not affect your rights
+to the source code, which remain governed by the MIT License above.
+

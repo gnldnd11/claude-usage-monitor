@@ -130,27 +130,61 @@
         + '<div class="cr-badge"></div>'
         + '<div class="cr-body">' + inner + '</div>'
         + '<div class="cr-name">' + esc(nick) + '</div>'
-        + '<div class="cr-role">' + esc(role) + '</div></div>';
+        + '<div class="cr-role">' + esc(role) + '</div>'
+        + '<div class="cr-stats"></div></div>';
     }
     pool.innerHTML = html;
     if (selectedAgent) { var sc = pool.querySelector('.cr-card[data-agent="' + selectedAgent + '"]'); if (sc) sc.classList.add('selected'); } // survive rebuilds
   }
+  // activity = { instances: [{key, agent, state, since, desc, tokens?, durMs?}], stats: {name: {runs, tokens, medMs}} }
+  function actInstances(activity) { return (activity && activity.instances) || []; }
+  function actStats(activity) { return (activity && activity.stats) || {}; }
+  var STATE_RANK = { stuck: 3, active: 2, done: 1 };
+  // Per-agent rollup of live instances: worst state wins, count concurrent runs.
+  function activityByAgent(activity) {
+    var by = {};
+    var inst = actInstances(activity);
+    for (var i = 0; i < inst.length; i++) {
+      var s = inst[i], cur = by[s.agent];
+      if (!cur) by[s.agent] = { state: s.state, since: s.since, desc: s.desc, n: 1 };
+      else {
+        cur.n += 1;
+        if (STATE_RANK[s.state] > STATE_RANK[cur.state] || (STATE_RANK[s.state] === STATE_RANK[cur.state] && s.since > cur.since)) { cur.state = s.state; cur.since = s.since; cur.desc = s.desc; }
+      }
+    }
+    return by;
+  }
+  function fmtTok(n) { if (!n) return '0'; if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'; if (n >= 1000) return Math.round(n / 1000) + 'k'; return String(n); }
+  function fmtDur(ms) { var s = Math.round(ms / 1000); return s < 60 ? s + 's' : Math.round(s / 60) + 'm'; }
   // Overlay live state onto the existing cards (no rebuild → animations survive).
   function applyAgentStates(activity) {
     var pool = el('pool'); if (!pool) return;
-    activity = activity || {};
+    var by = activityByAgent(activity);
+    var stats = actStats(activity);
     var anyActive = false;
     var cards = pool.querySelectorAll('.cr-card');
     for (var i = 0; i < cards.length; i++) {
       var card = cards[i], name = card.getAttribute('data-agent');
-      var st = activity[name];
+      var st = by[name];
       var state = st ? st.state : 'idle';
       card.classList.toggle('active', state === 'active');
       card.classList.toggle('done', state === 'done');
-      if (state === 'active') anyActive = true;
-      // active = red pulsing outline (border does the talking); done = green check above head + green pulse
+      card.classList.toggle('stuck', state === 'stuck');
+      if (state === 'active' || state === 'stuck') anyActive = true;
+      // active = red pulsing outline; done = green check; stuck = amber "?"; ×N when running in parallel
       var badge = card.querySelector('.cr-badge');
-      if (badge) badge.innerHTML = state === 'done' ? '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>' : '';
+      if (badge) {
+        if (state === 'done') badge.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+        else if (state === 'stuck') badge.textContent = '?';
+        else if (st && st.n > 1) badge.textContent = '×' + st.n;
+        else badge.innerHTML = '';
+      }
+      // today's real cost, parsed from the transcript: runs · tokens · median duration
+      var sEl = card.querySelector('.cr-stats');
+      if (sEl) {
+        var ag = stats[name];
+        sEl.textContent = ag && ag.runs ? (ag.runs + '× · ' + fmtTok(ag.tokens) + (ag.medMs ? ' · ~' + fmtDur(ag.medMs) : '')) : '';
+      }
     }
     pool.classList.toggle('has-active', anyActive);
   }
@@ -162,17 +196,17 @@
   function elapsedStr(since) { var s = Math.max(0, Math.floor((Date.now() - since) / 1000)); return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's'; }
   function renderCrewMini(activity) {
     var mini = el('crewMini'); if (!mini) return;
-    activity = activity || {};
-    var rows = [];
-    for (var name in activity) { var st = activity[name]; if (st && (st.state === 'active' || st.state === 'done')) rows.push({ name: name, st: st }); }
+    var rows = actInstances(activity).slice(); // one row per invocation, parallel runs included
     if (!rows.length) { mini.innerHTML = '<div class="crew-idle">No agent running</div>'; return; }
-    rows.sort(function (a, b) { if (a.st.state !== b.st.state) return a.st.state === 'active' ? -1 : 1; return b.st.since - a.st.since; });
+    rows.sort(function (a, b) { if (a.state !== b.state) return (STATE_RANK[b.state] || 0) - (STATE_RANK[a.state] || 0); return b.since - a.since; });
     var html = '';
     for (var i = 0; i < rows.length; i++) {
-      var nm = rows[i].name, st = rows[i].st, sheet = agentSheet(nm);
+      var st = rows[i], nm = st.agent, sheet = agentSheet(nm);
       var spr = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, 30) + '"></div>' : '';
       var desc = st.desc || (st.state === 'done' ? 'Done' : 'Running…');
-      html += '<div class="cm-row' + (st.state === 'done' ? ' done' : '') + '">'
+      if (st.state === 'stuck') desc = 'No result yet — stuck? ' + (st.desc || '');
+      else if (st.state === 'done' && st.tokens) desc = (st.desc ? st.desc + ' · ' : '') + fmtTok(st.tokens) + ' tok';
+      html += '<div class="cm-row' + (st.state === 'done' ? ' done' : '') + (st.state === 'stuck' ? ' stuck' : '') + '">'
         + '<div class="cm-sprite">' + spr + '</div>'
         + '<div class="cm-mid"><div class="cm-top"><span class="cm-name">' + esc(displayName(nm)) + '</span><span class="cm-model">' + esc(agentModel(nm)) + '</span></div>'
         + '<div class="cm-desc">' + esc(desc) + '</div><div class="cm-bar"></div></div>'
@@ -189,7 +223,7 @@
   function SPOT_ENTRY() { var e = roomSpots().entry; return { x: e[0], y: e[1] }; }
   function SPOT_DESK() { var d = roomSpots().desk; return { x: d[0], y: d[1] }; }
   var TRAVEL_MS = 1650;
-  var walkers = {}; // agentName -> { root, sprite, meta, mode, leaving, targetKey, _t }
+  var walkers = {}; // instance key (tool_use id) -> { root, sprite, meta, mode, leaving, targetKey, _t }
   var selectedAgent = null; // roster: single selected agent (character-select style)
 
   function placeAt(wk, x, y) {
@@ -198,8 +232,8 @@
     wk.root.style.zIndex = String(Math.round(y * 100));
     wk.x = x; wk.y = y;
   }
-  function ensureWalker(name, stage) {
-    if (walkers[name]) return walkers[name];
+  function ensureWalker(key, name, stage) {
+    if (walkers[key]) return walkers[key];
     var sheet = agentSheet(name); if (!sheet) return null;
     var root = document.createElement('div'); root.className = 'walker'; root.style.opacity = '0';
     var sp = document.createElement('div'); sp.className = 'wk-sprite';
@@ -208,7 +242,7 @@
     var nameTag = document.createElement('div'); nameTag.className = 'wk-name'; nameTag.textContent = shortName(displayName(name)); // name below
     root.appendChild(roleTag); root.appendChild(sp); root.appendChild(nameTag); stage.appendChild(root);
     var wk = { root: root, sprite: sp, roleTag: roleTag, nameTag: nameTag, meta: sheet.meta, mode: 'walking', leaving: false, targetKey: '' };
-    walkers[name] = wk;
+    walkers[key] = wk;
     var _se = SPOT_ENTRY(); placeAt(wk, _se.x, _se.y); // spawn at the doorway
     requestAnimationFrame(function () { root.style.opacity = '1'; });
     return wk;
@@ -220,29 +254,31 @@
     clearTimeout(wk._t);
     wk._t = setTimeout(function () { if (!wk.leaving && onArrive) onArrive(); }, TRAVEL_MS);
   }
-  function leaveWalker(name) {
-    var wk = walkers[name]; if (!wk || wk.leaving) return;
+  function leaveWalker(key) {
+    var wk = walkers[key]; if (!wk || wk.leaving) return;
     wk.leaving = true; wk.targetKey = 'exit'; wk.mode = 'walking';
     requestAnimationFrame(function () { var _se = SPOT_ENTRY(); placeAt(wk, _se.x, _se.y); });
     clearTimeout(wk._t);
     wk._t = setTimeout(function () {
       wk.root.style.opacity = '0';
-      setTimeout(function () { if (wk.root.parentNode) wk.root.parentNode.removeChild(wk.root); delete walkers[name]; }, 450);
+      setTimeout(function () { if (wk.root.parentNode) wk.root.parentNode.removeChild(wk.root); delete walkers[key]; }, 450);
     }, TRAVEL_MS);
   }
   function updateRoom(activity) {
     var stage = el('wsStage'); if (!stage) return;
-    activity = activity || {};
-    var present = [];
-    for (var nm in activity) { var s = activity[nm]; if (s && (s.state === 'active' || s.state === 'done')) present.push(nm); }
-    for (var n in walkers) { if (present.indexOf(n) < 0) leaveWalker(n); }
+    // one walker per INVOCATION — parallel calls of the same agent stand side by side
+    var present = actInstances(activity);
+    var keys = {};
+    for (var i = 0; i < present.length; i++) keys[present[i].key] = true;
+    for (var k in walkers) { if (!keys[k]) leaveWalker(k); }
     stage.classList.toggle('crowded', present.length > 2); // hide room labels when crowded (roster identifies)
-    for (var i = 0; i < present.length; i++) {
-      var name = present[i];
-      var wk = ensureWalker(name, stage); if (!wk || wk.leaving) continue;
+    for (var j = 0; j < present.length; j++) {
+      var st = present[j], name = st.agent;
+      var wk = ensureWalker(st.key, name, stage); if (!wk || wk.leaving) continue;
       if (wk.roleTag) wk.roleTag.textContent = shortName(displayRole(name)); // reflect live edits
       if (wk.nameTag) wk.nameTag.textContent = shortName(displayName(name));
-      var off = (i - (present.length - 1) / 2) * 0.11; // fan out if several are working
+      wk.root.classList.toggle('stuck', st.state === 'stuck');
+      var off = (j - (present.length - 1) / 2) * 0.11; // fan out if several are working
       var _sd = SPOT_DESK(); goTo(wk, _sd.x + off, _sd.y, 'desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
     }
   }
@@ -281,6 +317,7 @@
   function applyPanelVis(hid) {
     setVis('pm_session', hid.indexOf('session') < 0);
     setVis('pm_weekly', hid.indexOf('weekly') < 0);
+    setVis('pm_fable', hid.indexOf('fable') < 0);
     setVis('pm_context', hid.indexOf('context') < 0);
     setVis('pm_ring', hid.indexOf('ring') < 0);
     setVis('pm_tiles', hid.indexOf('tiles') < 0);
@@ -379,6 +416,7 @@
 
     meter('s', d.fh, true, d.usageLoading);
     meter('w', d.sd, true, d.usageLoading);
+    meter('f', d.fable, true, d.usageLoading);
     meter('c', d.ctx, false, false);
     if (d.ctx && d.ctx.window && el('c_sub')) el('c_sub').textContent = '/ ' + (d.ctx.window >= 1e6 ? '1M' : '200K');
 
