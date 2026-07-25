@@ -496,8 +496,7 @@
 
   // collapse / expand the roster — driven by the top-right chevron on the Agents tab
   function applyRoster(collapsed) {
-    var p = el('pool'); if (p) p.style.display = collapsed ? 'none' : '';
-    var m = el('crewMini'); if (m) m.style.display = collapsed ? '' : 'none';
+    var pa = el('panelAgents'); if (pa) pa.classList.toggle('crew-collapsed', !!collapsed); // CSS animates pool <-> mini
     if (collapsed) renderCrewMini((lastData && lastData.agentActivity) || {});
   }
   applyRoster(!!(vscode.getState() || {}).rosterCollapsed);

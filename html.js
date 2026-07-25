@@ -103,7 +103,7 @@ function renderHtml(vars) {
       <div class="upd"><span id="agCount">0</span> agents</div>
     </div>
     <div class="pool" id="pool"></div>
-    <div class="crew-mini" id="crewMini" style="display:none"></div>
+    <div class="crew-mini" id="crewMini"></div>
   </div>
 </div></div>
   <div class="sheet" id="settingsSheet" hidden>
