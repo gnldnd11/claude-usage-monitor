@@ -4,7 +4,7 @@
   <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/agents-cave-night.png" width="360" alt="Agents tab: subagents as pixel characters working in a room, with the Crew roster below" />
 </p>
 
-**See which Claude Code subagents are running, right now, without leaving VS Code.** Each agent in `.claude/agents/` becomes a distinct pixel character; when one is actually invoked it walks into the Workroom and gets to work. Live session, weekly and context usage sit in the same panel and in the status bar.
+**See which Claude Code subagents are running, right now, without leaving VS Code.** Each agent in `.claude/agents/` becomes a distinct pixel character; when one is actually invoked it walks into the Room and gets to work. Live session, weekly and context usage sit in the same panel and in the status bar.
 
 Read-only, hook-free, local. Nothing to configure.
 

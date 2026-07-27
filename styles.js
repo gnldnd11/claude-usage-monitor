@@ -110,11 +110,14 @@ module.exports = `
   .ttl .t2{max-height:20px;}
   .ihead{max-height:34px;}
   .stats{max-height:90px;}
-  .compact .mascot{display:none;}
-  .compact .ttl .t2{max-height:0;opacity:0;}
-  .compact .ihead{max-height:0;opacity:0;margin-bottom:0;}
-  .compact .stats{max-height:0;opacity:0;margin-top:0;}
-  .compact .ttl{display:none;}
+  /* compact mode is a Usage-tab concept (bars only). On the Agents tab it has nothing
+     to compress, so its header/section hiding is scoped out there — otherwise switching
+     tabs while compact leaves the title and Crew header mysteriously missing. */
+  body:not(.tab-agents).compact .mascot{display:none;}
+  body:not(.tab-agents).compact .ttl .t2{max-height:0;opacity:0;}
+  body:not(.tab-agents).compact .ihead{max-height:0;opacity:0;margin-bottom:0;}
+  body:not(.tab-agents).compact .stats{max-height:0;opacity:0;margin-top:0;}
+  body:not(.tab-agents).compact .ttl{display:none;}
   .compact .ringbox{max-width:0;opacity:0;overflow:hidden;}
   .compact .body{gap:0;}
   .compact .card{padding:12px;}
@@ -143,11 +146,22 @@ module.exports = `
   .ws-map{display:flex;align-items:center;flex:none;max-width:60%;color:var(--muted);background:var(--inner);border:1px solid var(--iborder);border-radius:8px;padding:2px 5px;}
   .ws-map select{background:transparent;border:0;color:var(--text);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;padding:1px 0;max-width:100%;}
   .ws-map select:focus{outline:none;}
-  .ws-room{position:relative;width:100%;aspect-ratio:1/1;border-radius:11px;overflow:hidden;background:#0c0c0d;border:1px solid var(--iborder);}
+  /* wide interior vignette: the art is cropped inside the room, so the frame fills edge to
+     edge — no backdrop showing through (which is what made light mode look broken), and
+     less than half the height of the old square. */
+  .ws-room{position:relative;width:100%;aspect-ratio:1.8/1;border-radius:11px;overflow:hidden;background:#0c0c0d;border:1px solid var(--iborder);transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .28s ease,border-width .34s ease;max-height:380px;}
+  .room-collapsed .ws-room{max-height:0;opacity:0;border-width:0;}
+  .ws-fold{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;padding:3px;border-radius:6px;display:flex;line-height:0;}
+  .ws-fold:hover{background:var(--track);color:var(--text);}
+  .ws-fold svg{width:14px;height:14px;transition:transform .3s ease;}
+  .ws-fold.folded svg{transform:rotate(180deg);}
+  .ws-run{display:inline-flex;align-items:center;gap:3px;margin-left:2px;font-size:9px;font-weight:800;color:#e5484d;flex:none;}
+  .ws-run::before{content:'';width:6px;height:6px;border-radius:50%;background:#e5484d;box-shadow:0 0 4px #e5484d;animation:pulse 1.4s ease-in-out infinite;}
+  #panelAgents:not(.room-collapsed) .ws-run{display:none;} /* redundant while the room itself is visible */
   body.vscode-light .ws-room{background:#ececef;}
-  .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;}
+  .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
   .ws-stage{position:absolute;inset:0;overflow:hidden;}
-  .ws-hud{position:absolute;top:6px;left:7px;z-index:8;display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;letter-spacing:.2px;color:#fff;background:rgba(0,0,0,.5);padding:2px 8px;border-radius:8px;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.4);white-space:nowrap;}
+  .ws-hud{position:absolute;top:6px;left:7px;z-index:8;display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;letter-spacing:.2px;color:#fff;background:rgba(0,0,0,.68);padding:2px 8px;border-radius:8px;pointer-events:none;box-shadow:0 1px 5px rgba(0,0,0,.5);white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.6);}
   /* narrow: the room is tiny, so the HUD scales down instead of covering it,
      the header icon goes away, and the map dropdown gets the full row */
   body.narrow .ws-hud{font-size:8px;padding:1px 6px;gap:4px;top:4px;left:5px;}

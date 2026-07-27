@@ -844,10 +844,12 @@ class UsageViewProvider {
     const spriteSrc = (n) => spriteData[n] || spriteUri(n);
     const npcs = buildNpcCatalog(spriteSrc, path.join(this.extensionUri.fsPath, 'sprite-bbox.json'));
     // each room theme: image(s) + walker entry/desk spots (normalized 0..1 of the square image)
+    // spots are the walker's FEET, normalized 0..1 of the wide vignette
     const rooms = {
-      cave: { name: 'Blocky Cave', dark: spriteUri('room-minecraft.png'), light: spriteUri('room-minecraft-light.png'), entry: [0.26, 0.80], desk: [0.50, 0.735] },
-      backrooms: { name: 'Backrooms', dark: spriteUri('room-backrooms.png'), entry: [0.28, 0.80], desk: [0.48, 0.72] },
-      liminal: { name: 'Liminal Office', dark: spriteUri('room-liminal.png'), entry: [0.28, 0.72], desk: [0.56, 0.63] }
+      cave: { name: 'Blocky Cave', dark: spriteUri('room-minecraft.png'), light: spriteUri('room-minecraft-light.png'), entry: [0.22, 0.97], desk: [0.42, 0.90] },
+      backrooms: { name: 'Backrooms', dark: spriteUri('room-backrooms.png'), entry: [0.10, 0.86], desk: [0.30, 0.93] },
+      liminal: { name: 'Liminal Office', dark: spriteUri('room-liminal.png'), entry: [0.12, 0.82], desk: [0.46, 0.95] },
+      rootwood: { name: 'Rootwood Cabin', dark: spriteUri('room-rootwood.png'), entry: [0.28, 0.95], desk: [0.36, 0.75] }
     };
     const assetsJson = JSON.stringify({ rooms, npcs })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');

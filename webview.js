@@ -50,7 +50,7 @@
   // per-sprite metadata drives everything (packs differ in cell size & layout).
   // Rendering crops to the measured character bbox [x,y,w,h] (cell px) so every sprite
   // shows at a consistent size regardless of how much padding its sheet cell has.
-  var ROSTER_T = 40, ROOM_T = 46, PICKER_T = 40; // target character height (px) per context
+  var ROSTER_T = 40, ROOM_T = 39, PICKER_T = 40; // target character height (px) per context
   function mCell(m) { return (m && m.cell) || 64; }
   function bbOf(m) { return (m && m.bb) || [0, 0, mCell(m), mCell(m)]; }
   function spriteScale(m, target) { return target / bbOf(m)[3]; }
@@ -276,7 +276,8 @@
       +   '<div class="pf-id">'
       +     '<div class="pf-nm">' + esc(nick) + (ag.builtin ? '<span class="pf-tag">BUILT-IN</span>' : '') + '</div>'
       +     '<div class="pf-role">' + esc(role) + '</div>'
-      +     '<div class="pf-orig">' + esc(nick !== name ? name + ' · ' : '') + esc(ag.model || '') + '</div>'
+      // truncate long agent names hard so the model never gets pushed off the line
+      +     '<div class="pf-orig">' + esc(nick !== name ? (name.length > 13 ? name.slice(0, 11) + '…' : name) + ' · ' : '') + esc(ag.model || '') + '</div>'
       +   '</div>'
       + '</div>'
       + '<div class="pf-xpbar"><div class="pf-xpfill" style="width:' + pct + '%"></div></div>'
@@ -391,6 +392,9 @@
     // one walker per INVOCATION — parallel calls of the same agent stand side by side.
     // hidden agents are display-hidden everywhere, the room included.
     var present = actInstances(activity).filter(function (s) { return !isHidden(s.agent); });
+    // header indicator while the room is folded: red dot (+ ×N) = still running in there
+    var run = el('wsRun');
+    if (run) { var live = present.filter(function (s) { return s.state !== 'done'; }).length; run.hidden = !live; run.textContent = live > 1 ? '×' + live : ''; }
     var keys = {};
     for (var i = 0; i < present.length; i++) keys[present[i].key] = true;
     for (var k in walkers) { if (!keys[k]) leaveWalker(k); }
@@ -416,6 +420,7 @@
   }, 60);
   function switchTab(t) {
     var agents = t === 'agents';
+    document.body.classList.toggle('tab-agents', agents); // scopes compact-mode CSS to the Usage tab
     var u = el('panelUsage'), g = el('panelAgents');
     if (u) u.style.display = agents ? 'none' : '';
     if (g) g.style.display = agents ? '' : 'none';
@@ -637,6 +642,17 @@
 
   // tab switcher (Usage default; last choice remembered within the view)
   switchTab((st0 && st0.tab) || 'usage');
+  // room fold: the room is the panel's biggest block — let it collapse to just the header (persisted)
+  function applyRoomFold(c) {
+    var pa = el('panelAgents'); if (pa) pa.classList.toggle('room-collapsed', !!c);
+    var f = el('wsFold'); if (f) f.classList.toggle('folded', !!c);
+  }
+  applyRoomFold(st0.roomCollapsed);
+  var _wf = el('wsFold');
+  if (_wf) _wf.addEventListener('click', function () {
+    var s = vscode.getState() || {}; s.roomCollapsed = !s.roomCollapsed; vscode.setState(s);
+    applyRoomFold(s.roomCollapsed);
+  });
   var _tu = el('tabUsage'), _ta = el('tabAgents');
   if (_tu) _tu.addEventListener('click', function () { switchTab('usage'); });
   if (_ta) _ta.addEventListener('click', function () { switchTab('agents'); });
