@@ -861,7 +861,8 @@ class UsageViewProvider {
       cave: { name: 'Blocky Cave', dark: spriteUri('room-minecraft.png'), light: spriteUri('room-minecraft-light.png'), entry: [0.22, 0.97], desk: [0.42, 0.90] },
       backrooms: { name: 'Backrooms', dark: spriteUri('room-backrooms.png'), entry: [0.10, 0.86], desk: [0.30, 0.93] },
       liminal: { name: 'Liminal Office', dark: spriteUri('room-liminal.png'), entry: [0.12, 0.82], desk: [0.46, 0.95] },
-      rootwood: { name: 'Rootwood Cabin', dark: spriteUri('room-rootwood.png'), entry: [0.28, 0.95], desk: [0.36, 0.75] }
+      rootwood: { name: 'Rootwood Cabin', dark: spriteUri('room-rootwood.png'), entry: [0.28, 0.95], desk: [0.36, 0.75] },
+      pocketden: { name: 'Pocket Den', dark: spriteUri('room-pocketden.png'), entry: [0.72, 0.58], desk: [0.32, 0.62] }
     };
     const assetsJson = JSON.stringify({ rooms, npcs })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
