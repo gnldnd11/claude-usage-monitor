@@ -250,8 +250,11 @@ function readTokens(projPrefixes) {
     }
     for (const call of s.calls) agentCalls.push({ agent: call.agent, id: call.id, t: call.t, inProj, desc: call.desc });
     for (const id in s.results) agentResults[id] = s.results[id];
+    // Freshness cut: a spike is only worth warning about while it's recent — an
+    // undismissed one from a previous day would otherwise sit in the banner forever.
+    const burnMin = Math.max(lastSeenT, now.getTime() - 3 * 3600 * 1000);
     for (const pk of s.peaks) { // skyline: the first entry newer than the threshold is the file's max
-      if (pk.t > lastSeenT) { if (!peak || pk.total > peak.total) peak = pk; break; }
+      if (pk.t > burnMin) { if (!peak || pk.total > peak.total) peak = pk; break; }
     }
   }
   return { today, last, lastProj, count, peak, agentCalls, agentResults };
@@ -307,6 +310,75 @@ function computeAgentActivity(calls, results) {
   return { instances, stats };
 }
 
+// --- agent XP ----------------------------------------------------------------
+// Invocations earn XP: a completed run = base XP + a bonus scaled by the tokens
+// the subagent actually burned (real work, real numbers — nothing invented).
+// Cumulative, never resets. On first run a one-time backfill sweeps historical
+// transcripts so long-time users start at their earned level, not Lv.1.
+let xpState = null; // { agents: {name: {xp, runs, tokens}}, seen: {tool_use_id: 1}, backfilled }
+let xpDirty = false;
+
+function xpForRun(tokens) { return 10 + Math.min(40, Math.round((tokens || 0) / 2000)); }
+function xpLevel(xp) { return Math.floor(Math.sqrt(Math.max(0, xp) / 20)) + 1; } // fast early, slow late
+
+function awardXp(agent, id, tokens) {
+  if (!xpState || !agent || !id || xpState.seen[id]) return;
+  xpState.seen[id] = 1;
+  const a = xpState.agents[agent] || (xpState.agents[agent] = { xp: 0, runs: 0, tokens: 0 });
+  a.xp += xpForRun(tokens); a.runs += 1; a.tokens += tokens || 0;
+  xpDirty = true;
+}
+
+function saveXp() {
+  if (!xpDirty || !xpState || !extContext) return;
+  const ids = Object.keys(xpState.seen); // cap the dedup set (insertion order ≈ age)
+  if (ids.length > 6000) for (let i = 0; i < ids.length - 4000; i++) delete xpState.seen[ids[i]];
+  extContext.globalState.update('agentXpV1', xpState);
+  xpDirty = false;
+}
+
+// One-time historical sweep. Same pairing as the live path (tool_use id -> agent),
+// but regex-only per line — no JSON.parse — so even big transcripts stay cheap.
+function backfillXp() {
+  const dirs = [PROJECTS_DIR];
+  const files = [];
+  while (dirs.length) {
+    const dir = dirs.pop();
+    let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { continue; }
+    for (const e of ents) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) dirs.push(p);
+      else if (e.name.endsWith('.jsonl')) files.push(p);
+    }
+  }
+  const step = () => {
+    const started = Date.now();
+    while (files.length && Date.now() - started < 40) { // stay off the extension host's back
+      const p = files.pop();
+      let st; try { st = fs.statSync(p); } catch (e) { continue; }
+      if (st.size > 60e6) continue; // monster transcripts: not worth the memory spike
+      let content; try { content = fs.readFileSync(p, 'utf8'); } catch (e) { continue; }
+      if (content.indexOf('subagent_type') < 0) continue;
+      const byId = {}; // tool_use id -> agent name, within this file
+      for (const line of content.split('\n')) {
+        if (line.indexOf('"subagent_type"') >= 0) {
+          // one line can carry several parallel tool_use blocks — pair each id with
+          // the subagent_type inside its own block (id comes before input in the JSON)
+          const re = /"id":"(toolu_[^"]+)","name":"(?:Agent|Task)"[\s\S]*?"subagent_type":"([^"]+)"/g;
+          let mm; while ((mm = re.exec(line))) byId[mm[1]] = mm[2];
+        } else if (line.indexOf('subagent_tokens') >= 0) {
+          const idm = line.match(/"tool_use_id":"(toolu_[^"]+)"/) || line.match(/<tool-use-id>(toolu_[^<]+)<\/tool-use-id>/);
+          const tm = line.match(/subagent_tokens[":\s]+(\d+)/);
+          if (idm && byId[idm[1]]) awardXp(byId[idm[1]], idm[1], tm ? parseInt(tm[1], 10) : 0);
+        }
+      }
+    }
+    if (files.length) setTimeout(step, 150);
+    else { xpState.backfilled = true; xpDirty = true; saveXp(); try { push(); } catch (e) { /* view not ready */ } }
+  };
+  setTimeout(step, 3000); // let activation settle first
+}
+
 // --- agent roster (M1) -------------------------------------------------------
 // Scan .claude/agents/*.md definitions (workspace first, then user-level) and
 // parse their frontmatter. Deterministic species/colour assignment happens in
@@ -338,6 +410,15 @@ function readAgentsFrom(dir, into, seen) {
   }
 }
 
+// Claude Code's own subagent types. They have no .md file but do get invoked
+// (and would otherwise walk into the room as strangers, which reads as a bug),
+// so they sit in the roster by default. No file → the model dropdown is disabled.
+const BUILTIN_AGENTS = [
+  { name: 'Explore', model: 'inherit', description: 'Built into Claude Code. Read-only codebase search and exploration.', builtin: true },
+  { name: 'Plan', model: 'inherit', description: 'Built into Claude Code. Designs implementation plans.', builtin: true },
+  { name: 'general-purpose', model: 'inherit', description: 'Built into Claude Code. General research and multi-step tasks.', builtin: true }
+];
+
 function readAgents() {
   const out = [], seen = new Set();
   // workspace agents win over user-level ones with the same name
@@ -345,6 +426,8 @@ function readAgents() {
   for (const f of folders) readAgentsFrom(path.join(f.uri.fsPath, '.claude', 'agents'), out, seen);
   readAgentsFrom(path.join(CLAUDE_DIR, 'agents'), out, seen);
   out.sort((a, b) => a.name.localeCompare(b.name));
+  // built-ins go last, after the user's own agents
+  for (const b of BUILTIN_AGENTS) { if (!seen.has(b.name)) out.push(Object.assign({}, b)); }
   return out;
 }
 
@@ -611,8 +694,23 @@ function contextPct(last) {
   return { used_percentage: Math.min(100, Math.round(used / win * 100)), window: win };
 }
 
+function xpSummary() {
+  const out = {};
+  if (xpState) for (const n in xpState.agents) {
+    const a = xpState.agents[n];
+    out[n] = { xp: a.xp, level: xpLevel(a.xp), runs: a.runs, tokens: a.tokens };
+  }
+  return out;
+}
+
 function collect() {
   const tokens = readTokens(activeProjectPrefixes());
+  // XP accrues the moment a completed run shows up in today's transcripts
+  for (const c of tokens.agentCalls) {
+    const r = tokens.agentResults[c.id];
+    if (r) awardXp(c.agent, c.id, r.tokens || 0);
+  }
+  saveXp();
   // Context reflects THIS workspace's most recent turn; fall back to the global
   // latest only when no workspace transcript is found (e.g. no folder open).
   const cp = contextPct(tokens.lastProj || tokens.last);
@@ -633,7 +731,8 @@ function collect() {
     agentActivity: computeAgentActivity(tokens.agentCalls, tokens.agentResults),
     nicknames: agentNicknames,
     roles: agentRoles,
-    appearance: agentAppearance
+    appearance: agentAppearance,
+    xp: xpSummary()
   };
 }
 
@@ -776,6 +875,8 @@ function activate(context) {
   agentNicknames = context.globalState.get('agentNicknamesV1', {}) || {}; // restore agent nicknames
   agentRoles = context.globalState.get('agentRolesV1', {}) || {}; // restore agent role/title aliases
   agentAppearance = context.globalState.get('agentAppearanceV1', {}) || {}; // restore appearance overrides
+  xpState = context.globalState.get('agentXpV1') || { agents: {}, seen: {}, backfilled: false };
+  if (!xpState.backfilled) backfillXp(); // one-time historical sweep → earned levels from day one
   try {
     const saved = context.globalState.get('usageCacheV1');
     if (saved && saved.value && (saved.value.five_hour || saved.value.seven_day)) {

@@ -114,7 +114,9 @@
     agents = agents || [];
     var cnt = el('agCount'); if (cnt) cnt.textContent = agents.length;
     buildSheetMap(agents); // collision-free NPC assignment for the whole roster
-    var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + displayName(a.name) + ':' + displayRole(a.name) + ':' + SHEET_MAP[a.name]; }).join('|');
+    var xpMap = (lastData && lastData.xp) || {};
+    function lvOf(n) { var x = xpMap[n]; return x ? x.level : 1; }
+    var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + (a.builtin ? 'b' : '') + ':' + lvOf(a.name) + ':' + displayName(a.name) + ':' + displayRole(a.name) + ':' + SHEET_MAP[a.name]; }).join('|');
     if (pool._sig === sig) return; // roster unchanged — don't rebuild (keeps animations)
     pool._sig = sig;
     if (!agents.length) { pool.innerHTML = '<div class="pool-empty">No agents yet.<br>Create one with <b>/agents</b> in Claude Code.</div>'; return; }
@@ -125,13 +127,15 @@
       var sheet = agentSheet(a.name);
       var inner = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, ROSTER_T) + '"></div>' : '';
       var nick = displayName(a.name), role = displayRole(a.name);
-      html += '<div class="cr-card" data-agent="' + esc(a.name) + '" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
+      // built-ins have no custom role — label them as what they are
+      if (a.builtin && !((lastData && lastData.roles) || {})[a.name]) role = 'built-in';
+      html += '<div class="cr-card' + (a.builtin ? ' builtin' : '') + '" data-agent="' + esc(a.name) + '" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
         + '<button class="cr-gear" title="설정">' + GEAR_SVG + '</button>'
+        + '<div class="cr-lv">Lv.' + lvOf(a.name) + '</div>'
         + '<div class="cr-badge"></div>'
         + '<div class="cr-body">' + inner + '</div>'
         + '<div class="cr-name">' + esc(nick) + '</div>'
-        + '<div class="cr-role">' + esc(role) + '</div>'
-        + '<div class="cr-stats"></div></div>';
+        + '<div class="cr-role">' + esc(role) + '</div></div>';
     }
     pool.innerHTML = html;
     if (selectedAgent) { var sc = pool.querySelector('.cr-card[data-agent="' + selectedAgent + '"]'); if (sc) sc.classList.add('selected'); } // survive rebuilds
@@ -179,14 +183,52 @@
         else if (st && st.n > 1) badge.textContent = '×' + st.n;
         else badge.innerHTML = '';
       }
-      // today's real cost, parsed from the transcript: runs · tokens · median duration
-      var sEl = card.querySelector('.cr-stats');
-      if (sEl) {
-        var ag = stats[name];
-        sEl.textContent = ag && ag.runs ? (ag.runs + '× · ' + fmtTok(ag.tokens) + (ag.medMs ? ' · ~' + fmtDur(ag.medMs) : '')) : '';
+      // today's per-agent stats live in the card tooltip only — as a visible line
+      // they read as "1× · 0" clutter whenever a run's usage stamp is missing
+      var ag = stats[name];
+      if (ag && ag.runs) {
+        if (!card._baseTitle) card._baseTitle = card.title;
+        card.title = card._baseTitle + '\nToday: ' + ag.runs + '× · ' + fmtTok(ag.tokens) + ' tok' + (ag.medMs ? ' · ~' + fmtDur(ag.medMs) : '');
       }
     }
     pool.classList.toggle('has-active', anyActive);
+  }
+
+  // --- XP effects: "+N XP" float when a run completes, gold flash on level-up.
+  var _xpPopped = {};   // instance keys already popped (a done flash lasts a few pushes)
+  var _lastLv = null;   // previous level per agent — null until the first xp payload
+  function xpForRunUi(tokens) { return 10 + Math.min(40, Math.round((tokens || 0) / 2000)); }
+  function xpPop(card, text, cls) {
+    if (!card) return;
+    var p = document.createElement('div');
+    p.className = 'xp-pop' + (cls ? ' ' + cls : '');
+    p.textContent = text;
+    card.appendChild(p);
+    setTimeout(function () { if (p.parentNode) p.parentNode.removeChild(p); }, 1600);
+  }
+  function applyXpEffects(d) {
+    var pool = el('pool'); if (!pool) return;
+    var inst = actInstances(d.agentActivity);
+    for (var i = 0; i < inst.length; i++) {
+      var s = inst[i];
+      if (s.state !== 'done' || _xpPopped[s.key]) continue;
+      _xpPopped[s.key] = 1;
+      var card = pool.querySelector('.cr-card[data-agent="' + s.agent + '"]');
+      xpPop(card, '+' + xpForRunUi(s.tokens) + ' XP');
+    }
+    var xp = d.xp || {};
+    if (_lastLv) {
+      var ups = [];
+      for (var n in xp) { if (_lastLv[n] != null && xp[n].level > _lastLv[n]) ups.push(n); }
+      // a burst of many level-ups at once is the backfill landing, not play — stay quiet
+      if (ups.length <= 3) for (var j = 0; j < ups.length; j++) {
+        var c2 = pool.querySelector('.cr-card[data-agent="' + ups[j] + '"]');
+        if (c2) { c2.classList.add('levelup'); (function (cc) { setTimeout(function () { cc.classList.remove('levelup'); }, 1500); })(c2); }
+        xpPop(c2, 'LEVEL UP', 'lvup');
+      }
+    }
+    _lastLv = _lastLv || {};
+    for (var k in xp) _lastLv[k] = xp[k].level;
   }
 
   // collapsed Crew: a compact "now running" strip showing active/just-done agents.
@@ -380,6 +422,7 @@
     lastData = d; refreshedAt = Date.now();
     renderAgents(d.agents);
     applyAgentStates(d.agentActivity);
+    applyXpEffects(d);
     updateRoom(d.agentActivity);
     if ((vscode.getState() || {}).rosterCollapsed) renderCrewMini(d.agentActivity); // keep collapsed strip live
     // compact usage HUD over the room (so session/weekly stay visible on the Agents tab)
@@ -613,7 +656,14 @@
     var t = el('amTitle'); if (t) t.textContent = name;
     var nn = (lastData && lastData.nicknames || {})[name] || ''; if (el('amNick')) el('amNick').value = nn;
     var rr = (lastData && lastData.roles || {})[name] || ''; if (el('amRole')) el('amRole').value = rr;
-    if (el('amModel')) el('amModel').value = currentModel(name);
+    var agDef = ((lastData && lastData.agents) || []).filter(function (a) { return a.name === name; })[0];
+    var isBuiltin = !!(agDef && agDef.builtin);
+    if (el('amModel')) {
+      el('amModel').value = currentModel(name);
+      // built-ins have no .md to write the model into
+      el('amModel').disabled = isBuiltin;
+      el('amModel').title = isBuiltin ? 'Built into Claude Code — model can’t be changed here' : '';
+    }
     buildAppearancePicker(name);
     var m = el('agentModal'); if (m) m.hidden = false;
   }

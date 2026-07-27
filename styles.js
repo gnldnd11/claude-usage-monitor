@@ -39,7 +39,7 @@ module.exports = `
   .mwarn svg{width:17px;height:17px;display:block;}
   .mwarn::after{content:'';position:absolute;bottom:-6px;left:50%;margin-left:-6px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #fff;}
   .inner{position:relative;background:var(--inner);border:1px solid var(--iborder);border-radius:13px;padding:13px;}
-  .ihead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-right:5px;}
+  .ihead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;padding-right:5px;}
   .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);white-space:nowrap;min-width:0;overflow:hidden;flex:0 1 auto;}
   .ihead .it svg{width:15px;height:15px;color:#e8895a;}
   .upd{color:var(--muted);font-size:10.5px;display:flex;align-items:center;gap:5px;white-space:nowrap;flex:none;}
@@ -147,7 +147,14 @@ module.exports = `
   body.vscode-light .ws-room{background:#ececef;}
   .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;}
   .ws-stage{position:absolute;inset:0;overflow:hidden;}
-  .ws-hud{position:absolute;top:6px;left:7px;z-index:8;display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;letter-spacing:.2px;color:#fff;background:rgba(0,0,0,.5);padding:2px 8px;border-radius:8px;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+  .ws-hud{position:absolute;top:6px;left:7px;z-index:8;display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;letter-spacing:.2px;color:#fff;background:rgba(0,0,0,.5);padding:2px 8px;border-radius:8px;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.4);white-space:nowrap;}
+  /* narrow: the room is tiny, so the HUD scales down instead of covering it,
+     the header icon goes away, and the map dropdown gets the full row */
+  body.narrow .ws-hud{font-size:8px;padding:1px 6px;gap:4px;top:4px;left:5px;}
+  body.narrow .ws-hud-delta{font-size:9.5px;top:19px;left:6px;}
+  body.narrow .ws-head .it{display:none;}
+  body.narrow .ws-map{flex:1 1 auto;max-width:none;}
+  body.narrow .ws-map select{width:100%;}
   .ws-hud-sep{opacity:.45;font-weight:400;}
   .ws-hud-delta{position:absolute;top:26px;left:9px;z-index:8;font-size:11px;font-weight:800;color:#e8895a;letter-spacing:.2px;opacity:0;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.7);}
   .ws-hud-delta.show{animation:flash 1.9s ease forwards;}
@@ -203,11 +210,21 @@ module.exports = `
   /* when any agent is active, dim the resting ones so the caller stands out */
   .pool.has-active .cr-card:not(.active):not(.done):not(.stuck){opacity:.42;}
   /* today's real per-agent cost (runs · tokens · median), parsed from the transcript */
-  .cr-stats{font-size:clamp(7px, calc(8.5px * var(--cr-scale, 1)), 8.5px);font-weight:600;color:var(--muted);margin-top:2px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;min-height:1.2em;}
   .cr-body{display:flex;align-items:flex-end;justify-content:center;height:calc(52px * var(--cr-scale, 1));overflow:hidden;line-height:0;}
   .cr-body .cr-sprite{transform:scale(var(--cr-scale, 1));transform-origin:bottom center;}
   .cr-name{font-size:clamp(8px, calc(10.5px * var(--cr-scale, 1)), 10.5px);font-weight:600;color:var(--text);margin-top:3px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .cr-role{font-size:clamp(7.5px, calc(9.5px * var(--cr-scale, 1)), 9.5px);font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* XP: level badge, "+N XP" float on completion, gold flash on level-up */
+  .cr-lv{position:absolute;top:2px;right:3px;font-size:clamp(7px, calc(8.5px * var(--cr-scale, 1)), 8.5px);font-weight:800;color:var(--muted);background:var(--inner);border:1px solid var(--iborder);border-radius:6px;padding:1px 4px;line-height:1.2;pointer-events:none;z-index:4;font-variant-numeric:tabular-nums;}
+  .xp-pop{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#4fae74;text-shadow:0 1px 2px rgba(0,0,0,.25);pointer-events:none;z-index:6;white-space:nowrap;animation:xpFloat 1.5s ease-out forwards;}
+  .xp-pop.lvup{color:#e8b23a;font-size:10.5px;letter-spacing:.5px;}
+  @keyframes xpFloat{0%{opacity:0;transform:translateX(-50%) translateY(6px);}15%{opacity:1;}100%{opacity:0;transform:translateX(-50%) translateY(-16px);}}
+  .cr-card.levelup{animation:crLevelUp 1.4s ease;}
+  @keyframes crLevelUp{0%,100%{box-shadow:none;}25%{box-shadow:0 0 0 2px rgba(232,178,58,.9),0 0 14px rgba(232,178,58,.55);background:rgba(232,178,58,.10);}70%{box-shadow:0 0 0 2px rgba(232,178,58,.45),0 0 8px rgba(232,178,58,.3);}}
+  .cr-card.levelup .cr-lv{color:#e8b23a;border-color:rgba(232,178,58,.6);}
+  /* built-in Claude Code agents: present but visually second-class to the user's own */
+  .cr-card.builtin .cr-role{color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+  .cr-card.builtin .cr-sprite{opacity:.85;}
   .pool-empty{color:var(--muted);font-size:11.5px;text-align:center;padding:26px 12px;line-height:1.55;}
   /* collapsed Crew: compact "now running" strip */
   .crew-mini{padding:4px 2px 2px;}
