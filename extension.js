@@ -862,7 +862,11 @@ class UsageViewProvider {
       backrooms: { name: 'Backrooms', dark: spriteUri('room-backrooms.png'), entry: [0.10, 0.86], desk: [0.30, 0.93] },
       liminal: { name: 'Liminal Office', dark: spriteUri('room-liminal.png'), entry: [0.12, 0.82], desk: [0.46, 0.95] },
       rootwood: { name: 'Rootwood Cabin', dark: spriteUri('room-rootwood.png'), entry: [0.28, 0.95], desk: [0.36, 0.75] },
-      pocketden: { name: 'Pocket Den', dark: spriteUri('room-pocketden.png'), entry: [0.72, 0.58], desk: [0.32, 0.62] }
+      pocketden: { name: 'Pocket Den', dark: spriteUri('room-pocketden.png'), entry: [0.72, 0.58], desk: [0.32, 0.62] },
+      office: { name: 'Corner Office', dark: spriteUri('room-office.png'), entry: [0.14, 0.72], desk: [0.38, 0.92] },
+      cell: { name: 'Cell Block', dark: spriteUri('room-cell.png'), entry: [0.14, 0.80], desk: [0.60, 0.92] },
+      neon: { name: 'Neon Loft', dark: spriteUri('room-neon.png'), entry: [0.88, 0.78], desk: [0.42, 0.93] },
+      coral: { name: 'Coral Vault', dark: spriteUri('room-coral.png'), entry: [0.16, 0.62], desk: [0.38, 0.90] }
     };
     const assetsJson = JSON.stringify({ rooms, npcs })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
