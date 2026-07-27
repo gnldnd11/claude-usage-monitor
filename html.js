@@ -95,7 +95,7 @@ function renderHtml(vars) {
   <div class="inner agents" id="panelAgents" style="display:none">
     <div class="ws-head">
       <div class="it">${IC.room} <span class="ws-title">Workroom</span></div>
-      <div class="ws-map"><select id="wsMap" title="맵 선택"><option value="cave">Blocky Cave</option><option value="backrooms">Backrooms</option><option value="liminal">Liminal Office</option></select></div>
+      <div class="ws-map"><select id="wsMap" title="Room theme"><option value="cave">Blocky Cave</option><option value="backrooms">Backrooms</option><option value="liminal">Liminal Office</option></select></div>
     </div>
     <div class="ws-room" id="wsRoom">
       <img class="ws-bg" id="wsBg" src="${roomMinecraftUri}" alt="Minecraft workspace"/>
@@ -137,14 +137,15 @@ function renderHtml(vars) {
   </div>
   <div class="sheet" id="agentModal" hidden>
     <div class="sheet-card">
-      <div class="sheet-head"><span id="amTitle">에이전트 설정</span><button class="sheet-x" id="amClose" title="닫기">${IC.chevron}</button></div>
-      <div class="sheet-row"><label for="amNick">별명</label><input id="amNick" type="text" maxlength="24" placeholder="이름"></div>
-      <div class="sheet-row"><label for="amRole">직업</label><input id="amRole" type="text" maxlength="24" placeholder="역할"></div>
-      <div class="sheet-row"><label for="amModel">모델</label>
+      <div class="sheet-head"><span id="amTitle">Agent settings</span><button class="sheet-x" id="amClose" title="Close">${IC.chevron}</button></div>
+      <div class="sheet-row"><label for="amNick">Nickname</label><input id="amNick" type="text" maxlength="24" placeholder="Name"></div>
+      <div class="sheet-row"><label for="amRole">Role</label><input id="amRole" type="text" maxlength="24" placeholder="Role"></div>
+      <div class="sheet-row"><label for="amModel">Model</label>
         <select id="amModel"><option value="opus">opus</option><option value="sonnet">sonnet</option><option value="haiku">haiku</option><option value="inherit">inherit</option></select>
       </div>
-      <div class="sheet-sec">외형</div>
+      <div class="sheet-sec">Appearance</div>
       <div class="am-appearance" id="amAppear"></div>
+      <button class="am-hide" id="amHide">Hide</button>
     </div>
   </div>
 <div id="cuc-assets" data-json='${assetsJson}' style="display:none"></div>

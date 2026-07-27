@@ -31,6 +31,7 @@ let extContext; // for persisting the last-good usage value across reloads
 let agentNicknames = {}; // agentName -> user nickname (persisted, editable in the panel)
 let agentRoles = {};     // agentName -> user role/title alias (persisted, editable)
 let agentAppearance = {}; // agentName -> chosen NPC sprite key (persisted, overrides auto-assignment)
+let agentHidden = {};     // agentName -> 1: display-only hide (roster + room + strip)
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
 const watchers = [];
@@ -321,11 +322,12 @@ let xpDirty = false;
 function xpForRun(tokens) { return 10 + Math.min(40, Math.round((tokens || 0) / 2000)); }
 function xpLevel(xp) { return Math.floor(Math.sqrt(Math.max(0, xp) / 20)) + 1; } // fast early, slow late
 
-function awardXp(agent, id, tokens) {
+function awardXp(agent, id, tokens, durMs) {
   if (!xpState || !agent || !id || xpState.seen[id]) return;
   xpState.seen[id] = 1;
-  const a = xpState.agents[agent] || (xpState.agents[agent] = { xp: 0, runs: 0, tokens: 0 });
+  const a = xpState.agents[agent] || (xpState.agents[agent] = { xp: 0, runs: 0, tokens: 0, ms: 0 });
   a.xp += xpForRun(tokens); a.runs += 1; a.tokens += tokens || 0;
+  a.ms = (a.ms || 0) + (durMs || 0); // active time: displayed in the profile, deliberately NOT part of XP (time is cost, not achievement)
   xpDirty = true;
 }
 
@@ -333,7 +335,7 @@ function saveXp() {
   if (!xpDirty || !xpState || !extContext) return;
   const ids = Object.keys(xpState.seen); // cap the dedup set (insertion order ≈ age)
   if (ids.length > 6000) for (let i = 0; i < ids.length - 4000; i++) delete xpState.seen[ids[i]];
-  extContext.globalState.update('agentXpV1', xpState);
+  extContext.globalState.update('agentXpV2', xpState);
   xpDirty = false;
 }
 
@@ -369,7 +371,8 @@ function backfillXp() {
         } else if (line.indexOf('subagent_tokens') >= 0) {
           const idm = line.match(/"tool_use_id":"(toolu_[^"]+)"/) || line.match(/<tool-use-id>(toolu_[^<]+)<\/tool-use-id>/);
           const tm = line.match(/subagent_tokens[":\s]+(\d+)/);
-          if (idm && byId[idm[1]]) awardXp(byId[idm[1]], idm[1], tm ? parseInt(tm[1], 10) : 0);
+          const dm = line.match(/duration_ms[":\s]+(\d+)/);
+          if (idm && byId[idm[1]]) awardXp(byId[idm[1]], idm[1], tm ? parseInt(tm[1], 10) : 0, dm ? parseInt(dm[1], 10) : 0);
         }
       }
     }
@@ -698,7 +701,7 @@ function xpSummary() {
   const out = {};
   if (xpState) for (const n in xpState.agents) {
     const a = xpState.agents[n];
-    out[n] = { xp: a.xp, level: xpLevel(a.xp), runs: a.runs, tokens: a.tokens };
+    out[n] = { xp: a.xp, level: xpLevel(a.xp), runs: a.runs, tokens: a.tokens, ms: a.ms || 0 };
   }
   return out;
 }
@@ -708,7 +711,7 @@ function collect() {
   // XP accrues the moment a completed run shows up in today's transcripts
   for (const c of tokens.agentCalls) {
     const r = tokens.agentResults[c.id];
-    if (r) awardXp(c.agent, c.id, r.tokens || 0);
+    if (r) awardXp(c.agent, c.id, r.tokens || 0, r.durMs || 0);
   }
   saveXp();
   // Context reflects THIS workspace's most recent turn; fall back to the global
@@ -732,6 +735,7 @@ function collect() {
     nicknames: agentNicknames,
     roles: agentRoles,
     appearance: agentAppearance,
+    hidden: agentHidden,
     xp: xpSummary()
   };
 }
@@ -794,6 +798,13 @@ class UsageViewProvider {
         const role = (m.role || '').trim().slice(0, 24);
         if (role && role !== m.name) agentRoles[m.name] = role; else delete agentRoles[m.name];
         if (extContext) extContext.globalState.update('agentRolesV1', agentRoles);
+        push();
+      }
+      else if (m.type === 'setHidden' && m.name) {
+        // display-only: a hidden agent still runs as usual, it just stays out of
+        // the roster, the room, and the collapsed strip until restored
+        if (m.hidden) agentHidden[m.name] = 1; else delete agentHidden[m.name];
+        if (extContext) extContext.globalState.update('agentHiddenV1', agentHidden);
         push();
       }
       else if (m.type === 'setAppearance' && m.name) {
@@ -875,7 +886,11 @@ function activate(context) {
   agentNicknames = context.globalState.get('agentNicknamesV1', {}) || {}; // restore agent nicknames
   agentRoles = context.globalState.get('agentRolesV1', {}) || {}; // restore agent role/title aliases
   agentAppearance = context.globalState.get('agentAppearanceV1', {}) || {}; // restore appearance overrides
-  xpState = context.globalState.get('agentXpV1') || { agents: {}, seen: {}, backfilled: false };
+  agentHidden = context.globalState.get('agentHiddenV1', {}) || {}; // restore display-only hides
+  // v2 adds active-time (ms) accumulation — a fresh backfill rebuilds everything from
+  // the transcripts, so v1 state is simply dropped rather than migrated
+  xpState = context.globalState.get('agentXpV2') || { agents: {}, seen: {}, backfilled: false };
+  context.globalState.update('agentXpV1', undefined); // clear the superseded v1 blob
   if (!xpState.backfilled) backfillXp(); // one-time historical sweep → earned levels from day one
   try {
     const saved = context.globalState.get('usageCacheV1');

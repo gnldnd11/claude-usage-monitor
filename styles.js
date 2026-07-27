@@ -164,6 +164,19 @@ module.exports = `
   .wk-role{bottom:100%;margin-bottom:3px;color:#ffcaa8;background:rgba(20,12,8,.82);}
   .wk-name{top:100%;margin-top:3px;color:#fff;background:rgba(20,12,8,.82);}
   .ws-stage.crowded .wk-role,.ws-stage.crowded .wk-name{display:none;}
+  /* working: a busy typing bob + a blinking "..." bubble so an agent at the desk
+     reads as WORKING, not just standing there */
+  .walker.working .wk-sprite{animation:wkBob .46s steps(2) infinite;}
+  @keyframes wkBob{0%,100%{transform:translateY(0);}50%{transform:translateY(-1.5px);}}
+  .wk-dots{display:none;position:absolute;bottom:100%;left:78%;margin-bottom:2px;padding:2px 5px;border-radius:7px;background:rgba(20,12,8,.82);box-shadow:0 1px 3px rgba(0,0,0,.5);white-space:nowrap;line-height:0;}
+  .walker.working .wk-dots{display:inline-flex;gap:2.5px;align-items:center;}
+  .walker.working .wk-role{display:none;} /* dots take the overhead slot while working */
+  .wk-dots i{width:3px;height:3px;border-radius:50%;background:#ffcaa8;display:inline-block;animation:wkDot 1.1s ease-in-out infinite;}
+  .wk-dots i:nth-child(2){animation-delay:.18s;}
+  .wk-dots i:nth-child(3){animation-delay:.36s;}
+  @keyframes wkDot{0%,60%,100%{opacity:.25;transform:translateY(0);}30%{opacity:1;transform:translateY(-1.5px);}}
+  .walker.stuck .wk-dots{display:none;} /* a wedged agent isn't typing */
+  .walker.stuck .wk-sprite{animation:none;}
   .cr-sprite{image-rendering:pixelated;cursor:pointer;}
   .pool{display:flex;flex-wrap:wrap;justify-content:center;row-gap:8px;padding:8px 2px 2px;overflow:hidden;max-height:600px;opacity:1;transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .24s ease;}
   .crew-mini{overflow:hidden;max-height:0;opacity:0;transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .24s ease;}
@@ -222,6 +235,39 @@ module.exports = `
   .cr-card.levelup{animation:crLevelUp 1.4s ease;}
   @keyframes crLevelUp{0%,100%{box-shadow:none;}25%{box-shadow:0 0 0 2px rgba(232,178,58,.9),0 0 14px rgba(232,178,58,.55);background:rgba(232,178,58,.10);}70%{box-shadow:0 0 0 2px rgba(232,178,58,.45),0 0 8px rgba(232,178,58,.3);}}
   .cr-card.levelup .cr-lv{color:#e8b23a;border-color:rgba(232,178,58,.6);}
+  /* hover profile: an employee-badge card — photo, name/role, XP bar, the level's receipts */
+  .inner.agents{position:relative;}
+  .prof-card{position:absolute;z-index:80;width:186px;background:var(--card);border:1px solid var(--iborder);border-radius:11px;padding:5px 11px 9px;box-shadow:0 8px 22px rgba(0,0,0,.4);pointer-events:none;opacity:0;transition:opacity .14s ease;font-size:10.5px;line-height:1.4;}
+  .prof-card.show{opacity:1;}
+  .pf-hole{width:24px;height:4px;border-radius:3px;background:var(--track);margin:2px auto 5px;}
+  .pf-band{display:flex;align-items:center;justify-content:space-between;font-size:7.5px;font-weight:800;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase;padding-bottom:5px;border-bottom:1px dashed var(--iborder);margin-bottom:7px;}
+  .pf-band .pf-lvl{font-size:10.5px;letter-spacing:.3px;color:#e8895a;}
+  .pf-main{display:flex;align-items:center;gap:9px;}
+  .pf-photo{flex:none;width:42px;height:46px;display:flex;align-items:center;justify-content:center;background:var(--inner);border:1px solid var(--iborder);border-radius:7px;}
+  .pf-id{min-width:0;}
+  .pf-nm{font-size:12px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pf-tag{flex:none;font-size:7px;font-weight:800;color:var(--muted);border:1px solid var(--iborder);border-radius:4px;padding:0 3px;letter-spacing:.5px;}
+  .pf-role{font-size:9.5px;font-weight:700;color:#e8895a;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pf-orig{font-size:8.5px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pf-xpbar{height:5px;border-radius:3px;background:var(--track);margin-top:8px;overflow:hidden;}
+  .pf-xpfill{height:100%;border-radius:3px;background:linear-gradient(90deg,#e8895a,#e8b23a);}
+  .pf-xptxt{font-size:8.5px;font-weight:700;color:var(--muted);text-align:right;margin-top:2px;font-variant-numeric:tabular-nums;}
+  .pf-stats{display:flex;margin-top:6px;border-top:1px dashed var(--iborder);padding-top:7px;}
+  .pf-stats>div{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0;}
+  .pf-stats b{font-size:11px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .pf-stats span{font-size:7.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
+  /* hidden agents: restore row + dimmed mini cards */
+  .hid-row{flex:1 1 100%;display:flex;align-items:center;gap:6px;margin-top:8px;padding:5px 8px;border-radius:8px;font-size:10.5px;font-weight:700;color:var(--muted);cursor:pointer;user-select:none;}
+  .hid-row:hover{background:var(--inner);}
+  .hid-chev{display:inline-block;transition:transform .18s ease;font-size:12px;line-height:1;}
+  .hid-chev.open{transform:rotate(90deg);}
+  .hid-pool{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:5px;padding:2px 4px 4px;}
+  .hid-card{display:flex;align-items:center;gap:6px;padding:3px 8px 3px 5px;border-radius:8px;background:var(--inner);border:1px solid var(--iborder);cursor:pointer;opacity:.62;transition:opacity .15s ease;}
+  .hid-card:hover{opacity:1;}
+  .hid-name{font-size:10px;font-weight:600;color:var(--text);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .hid-restore{font-size:9px;font-weight:700;color:#e8895a;text-transform:uppercase;letter-spacing:.4px;}
+  .am-hide{margin-top:10px;width:100%;padding:6px 0;border:1px solid var(--iborder);border-radius:8px;background:transparent;color:var(--muted);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;}
+  .am-hide:hover{color:#e5484d;border-color:rgba(229,72,77,.45);}
   /* built-in Claude Code agents: present but visually second-class to the user's own */
   .cr-card.builtin .cr-role{color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
   .cr-card.builtin .cr-sprite{opacity:.85;}

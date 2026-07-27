@@ -25,18 +25,21 @@ function buildNpcCatalog(spriteUri, bboxPath) {
   // 32px front-facing humanoids (Santa, Desert NPCs, Player) — verified 32px, row0 front
   [['santa', 'hum-santa', 192, 320, 6], ['santa_helper', 'hum-santa-helper', 256, 320, 8], ['desert1', 'hum-desert1', 192, 320, 6], ['desert2', 'hum-desert2', 192, 320, 6], ['desert3', 'hum-desert3', 192, 320, 6], ['desert4', 'hum-desert4', 192, 320, 6], ['player', 'hum-player', 192, 320, 6], ['pharaoh', 'hum-pharaoh', 256, 320, 8]]
     .forEach(([k, file, w, h, cols]) => { npcs[k] = D(Object.assign({ u: su(file + '.png'), w, h, cell: 32, cols, walkFrames: 6 }, FRONT)); });
-  // --- monster ---
-  npcs.slime = D({ u: su('mon-slime.png'), w: 512, h: 192, cell: 64, cols: 8, idleFrames: 4, walkRow: 1, walkFrames: 8, cat: 'monster' });
+  // --- monster --- (insertion order = picker order: grouped by family)
+  // slimes (directionless: idle row0 / move row1), 5 colours. The small green
+  // mon-slime duplicated slime_big_green on screen, so only the big set ships.
+  ['blue', 'green', 'pink', 'red', 'yellow'].forEach((c) => { npcs['slime_big_' + c] = D({ u: su('mon-slime-big-' + c + '.png'), w: 512, h: 256, cell: 64, cols: 8, idleFrames: 4, walkRow: 1, walkFrames: 8, cat: 'monster' }); });
+  // skeletons
   npcs.skeleton = D(Object.assign({ u: su('mon-skeleton.png'), w: 192, h: 320, cell: 32, cols: 6, walkFrames: 6, cat: 'monster' }, FRONT));
+  [['skel_bowman', 'mon-skel-bowman', 192, 416, 6], ['skel_mage', 'mon-skel-mage', 256, 416, 8], ['skel_swordman', 'mon-skel-swordman', 256, 512, 8]]
+    .forEach(([k, file, w, h, cols]) => { npcs[k] = D(Object.assign({ u: su(file + '.png'), w, h, cell: 32, cols, walkFrames: 6, cat: 'monster' }, FRONT)); });
+  // goblins
   npcs.goblin_thief = D(Object.assign({ u: su('mon-goblin-thief.png'), w: 192, h: 416, cell: 32, cols: 6, walkFrames: 4, cat: 'monster' }, FRONT));
   npcs.goblin_maceman = D(Object.assign({ u: su('mon-goblin-maceman.png'), w: 192, h: 416, cell: 32, cols: 6, walkFrames: 4, cat: 'monster' }, FRONT));
   npcs.goblin_archer = D(Object.assign({ u: su('mon-goblin-archer.png'), w: 288, h: 624, cell: 48, cols: 6, walkFrames: 4, cat: 'monster' }, FRONT));
   npcs.goblin_spearman = D(Object.assign({ u: su('mon-goblin-spearman.png'), w: 288, h: 624, cell: 48, cols: 6, walkFrames: 4, cat: 'monster' }, FRONT));
-  // 32px front-facing undead (skeleton variants, mummy)
-  [['skel_bowman', 'mon-skel-bowman', 192, 416, 6], ['skel_mage', 'mon-skel-mage', 256, 416, 8], ['skel_swordman', 'mon-skel-swordman', 256, 512, 8], ['mummy', 'mon-mummy', 192, 416, 6]]
-    .forEach(([k, file, w, h, cols]) => { npcs[k] = D(Object.assign({ u: su(file + '.png'), w, h, cell: 32, cols, walkFrames: 6, cat: 'monster' }, FRONT)); });
-  // big slimes (directionless: idle row0 / move row1), 5 colours
-  ['blue', 'green', 'pink', 'red', 'yellow'].forEach((c) => { npcs['slime_big_' + c] = D({ u: su('mon-slime-big-' + c + '.png'), w: 512, h: 256, cell: 64, cols: 8, idleFrames: 4, walkRow: 1, walkFrames: 8, cat: 'monster' }); });
+  // the rest
+  npcs.mummy = D(Object.assign({ u: su('mon-mummy.png'), w: 192, h: 416, cell: 32, cols: 6, walkFrames: 6, cat: 'monster' }, FRONT));
   // frog folded into monsters for now (animal category held back)
   npcs.frog = D({ u: su('ani-frog.png'), w: 320, h: 128, cell: 32, cols: 10, idleFrames: 2, walkRow: 1, walkFrames: 8, cat: 'monster' });
   // attach measured character bounding boxes ([x,y,w,h] in cell px) so the webview can crop to the character

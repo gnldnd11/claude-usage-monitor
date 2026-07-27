@@ -109,33 +109,51 @@
     var m = d.match(/^.*?[.。]/);
     return (m ? m[0] : d).slice(0, 110);
   }
+  function isHidden(name) { return !!(((lastData && lastData.hidden) || {})[name]); }
+  var _hiddenOpen = false; // Hidden (N) section expanded?
   function renderAgents(agents) {
     var pool = el('pool'); if (!pool) return;
     agents = agents || [];
-    var cnt = el('agCount'); if (cnt) cnt.textContent = agents.length;
-    buildSheetMap(agents); // collision-free NPC assignment for the whole roster
+    buildSheetMap(agents); // collision-free NPC assignment for the whole roster (hidden included — assignments stay stable)
+    var vis = agents.filter(function (a) { return !isHidden(a.name); });
+    var hid = agents.filter(function (a) { return isHidden(a.name); });
+    var cnt = el('agCount'); if (cnt) cnt.textContent = vis.length;
     var xpMap = (lastData && lastData.xp) || {};
     function lvOf(n) { var x = xpMap[n]; return x ? x.level : 1; }
-    var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + (a.builtin ? 'b' : '') + ':' + lvOf(a.name) + ':' + displayName(a.name) + ':' + displayRole(a.name) + ':' + SHEET_MAP[a.name]; }).join('|');
+    var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + (a.builtin ? 'b' : '') + ':' + (isHidden(a.name) ? 'h' : '') + ':' + lvOf(a.name) + ':' + displayName(a.name) + ':' + displayRole(a.name) + ':' + SHEET_MAP[a.name]; }).join('|') + (_hiddenOpen ? '+o' : '');
     if (pool._sig === sig) return; // roster unchanged — don't rebuild (keeps animations)
     pool._sig = sig;
     if (!agents.length) { pool.innerHTML = '<div class="pool-empty">No agents yet.<br>Create one with <b>/agents</b> in Claude Code.</div>'; return; }
     var html = '';
-    for (var i = 0; i < agents.length; i++) {
-      var a = agents[i];
-      var desc = firstSentence(a.description);
+    for (var i = 0; i < vis.length; i++) {
+      var a = vis[i];
       var sheet = agentSheet(a.name);
       var inner = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, ROSTER_T) + '"></div>' : '';
       var nick = displayName(a.name), role = displayRole(a.name);
       // built-ins have no custom role — label them as what they are
       if (a.builtin && !((lastData && lastData.roles) || {})[a.name]) role = 'built-in';
-      html += '<div class="cr-card' + (a.builtin ? ' builtin' : '') + '" data-agent="' + esc(a.name) + '" title="' + esc(a.name) + ' · ' + esc(a.model) + (desc ? ' — ' + esc(desc) : '') + '">'
-        + '<button class="cr-gear" title="설정">' + GEAR_SVG + '</button>'
+      html += '<div class="cr-card' + (a.builtin ? ' builtin' : '') + '" data-agent="' + esc(a.name) + '">'
+        + '<button class="cr-gear" title="Settings">' + GEAR_SVG + '</button>'
         + '<div class="cr-lv">Lv.' + lvOf(a.name) + '</div>'
         + '<div class="cr-badge"></div>'
         + '<div class="cr-body">' + inner + '</div>'
         + '<div class="cr-name">' + esc(nick) + '</div>'
         + '<div class="cr-role">' + esc(role) + '</div></div>';
+    }
+    if (hid.length) {
+      // hidden agents stay reachable: an always-visible restore row, never a dead end
+      html += '<div class="hid-row" id="hidRow"><span class="hid-chev' + (_hiddenOpen ? ' open' : '') + '">›</span>Hidden (' + hid.length + ')</div>';
+      if (_hiddenOpen) {
+        html += '<div class="hid-pool">';
+        for (var h = 0; h < hid.length; h++) {
+          var ha = hid[h], hs = agentSheet(ha.name);
+          html += '<div class="hid-card" data-agent="' + esc(ha.name) + '" title="' + esc(ha.name) + ' — click to restore">'
+            + (hs ? '<div class="cr-sprite" style="' + cropStyle(hs.meta, hs.meta.idleRow || 0, hs.meta.idleCol || 0, 26) + '"></div>' : '')
+            + '<span class="hid-name">' + esc(displayName(ha.name)) + '</span>'
+            + '<span class="hid-restore">show</span></div>';
+        }
+        html += '</div>';
+      }
     }
     pool.innerHTML = html;
     if (selectedAgent) { var sc = pool.querySelector('.cr-card[data-agent="' + selectedAgent + '"]'); if (sc) sc.classList.add('selected'); } // survive rebuilds
@@ -183,13 +201,6 @@
         else if (st && st.n > 1) badge.textContent = '×' + st.n;
         else badge.innerHTML = '';
       }
-      // today's per-agent stats live in the card tooltip only — as a visible line
-      // they read as "1× · 0" clutter whenever a run's usage stamp is missing
-      var ag = stats[name];
-      if (ag && ag.runs) {
-        if (!card._baseTitle) card._baseTitle = card.title;
-        card.title = card._baseTitle + '\nToday: ' + ag.runs + '× · ' + fmtTok(ag.tokens) + ' tok' + (ag.medMs ? ' · ~' + fmtDur(ag.medMs) : '');
-      }
     }
     pool.classList.toggle('has-active', anyActive);
   }
@@ -231,6 +242,74 @@
     for (var k in xp) _lastLv[k] = xp[k].level;
   }
 
+  // --- hover profile card: level + lifetime record on ~0.3s hover, so the level
+  // reads as the result of real activity, not decoration. Replaces the native
+  // title tooltip (which would double up with this).
+  var _profEl = null, _profT = null, _profFor = null;
+  function fmtActive(ms) {
+    var m = Math.round((ms || 0) / 60000);
+    if (m < 1) return '<1m'; if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60); return h + 'h ' + (m % 60) + 'm';
+  }
+  function hideProf() {
+    clearTimeout(_profT); _profT = null; _profFor = null;
+    if (_profEl) _profEl.classList.remove('show');
+  }
+  function showProf(card, name) {
+    var wrap = el('panelAgents'); if (!wrap) return;
+    if (!_profEl) { _profEl = document.createElement('div'); _profEl.className = 'prof-card'; wrap.appendChild(_profEl); }
+    var d = lastData || {};
+    var ag = ((d.agents) || []).filter(function (a) { return a.name === name; })[0] || {};
+    var x = (d.xp || {})[name] || { xp: 0, level: 1, runs: 0, tokens: 0, ms: 0 };
+    var nick = displayName(name), role = displayRole(name);
+    // XP progress within the current level: thresholds are 20·(L−1)² → 20·L²
+    var base = 20 * (x.level - 1) * (x.level - 1), next = 20 * x.level * x.level;
+    var into = Math.max(0, x.xp - base), span = next - base;
+    var pct = Math.min(100, Math.round(into / span * 100));
+    var sheet = agentSheet(name);
+    var photo = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, 34) + '"></div>' : '';
+    _profEl.innerHTML =
+      '<div class="pf-hole"></div>'
+      + '<div class="pf-band"><span>CREW CARD</span><span class="pf-lvl">Lv.' + x.level + '</span></div>'
+      + '<div class="pf-main">'
+      +   '<div class="pf-photo">' + photo + '</div>'
+      +   '<div class="pf-id">'
+      +     '<div class="pf-nm">' + esc(nick) + (ag.builtin ? '<span class="pf-tag">BUILT-IN</span>' : '') + '</div>'
+      +     '<div class="pf-role">' + esc(role) + '</div>'
+      +     '<div class="pf-orig">' + esc(nick !== name ? name + ' · ' : '') + esc(ag.model || '') + '</div>'
+      +   '</div>'
+      + '</div>'
+      + '<div class="pf-xpbar"><div class="pf-xpfill" style="width:' + pct + '%"></div></div>'
+      + '<div class="pf-xptxt">' + into + ' / ' + span + ' XP</div>'
+      + '<div class="pf-stats">'
+      +   '<div><b>' + x.runs + '</b><span>Tasks</span></div>'
+      +   '<div><b>' + fmtTok(x.tokens) + '</b><span>Tokens</span></div>'
+      +   '<div><b>' + fmtActive(x.ms) + '</b><span>Active</span></div>'
+      + '</div>';
+    // position above the card, clamped inside the panel
+    var wr = wrap.getBoundingClientRect(), cr = card.getBoundingClientRect();
+    _profEl.style.visibility = 'hidden'; _profEl.classList.add('show');
+    var pw = _profEl.offsetWidth, ph = _profEl.offsetHeight;
+    var left = Math.max(4, Math.min(cr.left - wr.left + cr.width / 2 - pw / 2, wr.width - pw - 4));
+    var top = cr.top - wr.top - ph - 6;
+    if (top < 2) top = cr.bottom - wr.top + 6; // no room above -> flip below
+    _profEl.style.left = left + 'px'; _profEl.style.top = top + 'px';
+    _profEl.style.visibility = '';
+  }
+  var _profPool = el('pool'); // (declared before _poolEl below — grab our own ref)
+  if (_profPool) {
+    _profPool.addEventListener('mouseover', function (e) {
+      var card = e.target.closest ? e.target.closest('.cr-card') : null;
+      if (!card) { hideProf(); return; }
+      var name = card.getAttribute('data-agent');
+      if (_profFor === name) return;
+      clearTimeout(_profT); _profFor = name;
+      _profT = setTimeout(function () { showProf(card, name); }, 300);
+    });
+    _profPool.addEventListener('mouseleave', hideProf);
+    _profPool.addEventListener('click', hideProf); // selection/gear: get out of the way
+  }
+
   // collapsed Crew: a compact "now running" strip showing active/just-done agents.
   // No real progress % exists for background subagents, so we show the task text +
   // an indeterminate bar + elapsed time (honest) instead of a fabricated percentage.
@@ -238,7 +317,7 @@
   function elapsedStr(since) { var s = Math.max(0, Math.floor((Date.now() - since) / 1000)); return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's'; }
   function renderCrewMini(activity) {
     var mini = el('crewMini'); if (!mini) return;
-    var rows = actInstances(activity).slice(); // one row per invocation, parallel runs included
+    var rows = actInstances(activity).filter(function (s) { return !isHidden(s.agent); }); // one row per invocation, parallel runs included
     if (!rows.length) { mini.innerHTML = '<div class="crew-idle">No agent running</div>'; return; }
     rows.sort(function (a, b) { if (a.state !== b.state) return (STATE_RANK[b.state] || 0) - (STATE_RANK[a.state] || 0); return b.since - a.since; });
     var html = '';
@@ -282,7 +361,8 @@
     var m = sheet.meta; sp.style.cssText = cropStyle(m, m.idleRow || 0, m.idleCol || 0, ROOM_T);
     var roleTag = document.createElement('div'); roleTag.className = 'wk-role'; roleTag.textContent = shortName(displayRole(name)); // job above
     var nameTag = document.createElement('div'); nameTag.className = 'wk-name'; nameTag.textContent = shortName(displayName(name)); // name below
-    root.appendChild(roleTag); root.appendChild(sp); root.appendChild(nameTag); stage.appendChild(root);
+    var dots = document.createElement('div'); dots.className = 'wk-dots'; dots.innerHTML = '<i></i><i></i><i></i>'; // working "typing" bubble
+    root.appendChild(roleTag); root.appendChild(sp); root.appendChild(nameTag); root.appendChild(dots); stage.appendChild(root);
     var wk = { root: root, sprite: sp, roleTag: roleTag, nameTag: nameTag, meta: sheet.meta, mode: 'walking', leaving: false, targetKey: '' };
     walkers[key] = wk;
     var _se = SPOT_ENTRY(); placeAt(wk, _se.x, _se.y); // spawn at the doorway
@@ -308,8 +388,9 @@
   }
   function updateRoom(activity) {
     var stage = el('wsStage'); if (!stage) return;
-    // one walker per INVOCATION — parallel calls of the same agent stand side by side
-    var present = actInstances(activity);
+    // one walker per INVOCATION — parallel calls of the same agent stand side by side.
+    // hidden agents are display-hidden everywhere, the room included.
+    var present = actInstances(activity).filter(function (s) { return !isHidden(s.agent); });
     var keys = {};
     for (var i = 0; i < present.length; i++) keys[present[i].key] = true;
     for (var k in walkers) { if (!keys[k]) leaveWalker(k); }
@@ -330,6 +411,7 @@
       var wk = walkers[name], m = wk.meta;
       var fp = framePos(m, wk.mode !== 'working');
       wk.sprite.style.backgroundPosition = frameBg(m, fp.row, fp.col, spriteScale(m, ROOM_T));
+      wk.root.classList.toggle('working', wk.mode === 'working' && !wk.leaving); // typing bob + dots bubble
     }
   }, 60);
   function switchTab(t) {
@@ -599,6 +681,10 @@
   }
   if (_poolEl) _poolEl.addEventListener('click', function (e) {
     var t = e.target; if (!t || !t.closest) return;
+    var hr = t.closest('.hid-row');
+    if (hr) { _hiddenOpen = !_hiddenOpen; _poolEl._sig = null; renderAgents((lastData && lastData.agents) || []); return; }
+    var hc = t.closest('.hid-card');
+    if (hc) { vscode.postMessage({ type: 'setHidden', name: hc.getAttribute('data-agent'), hidden: false }); return; }
     var card = t.closest('.cr-card'); if (!card) { deselectRoster(); return; } // empty area -> deselect
     var name = card.getAttribute('data-agent');
     if (t.closest('.cr-gear')) { openAgentModal(name); return; } // gear opens the settings modal
@@ -677,6 +763,12 @@
     var n = e.target.closest ? e.target.closest('.am-npc') : null; if (!n || !amAgent) return;
     vscode.postMessage({ type: 'setAppearance', name: amAgent, appearance: n.getAttribute('data-npc') });
     var kids = this.querySelectorAll('.am-npc'); for (var i = 0; i < kids.length; i++) kids[i].classList.toggle('on', kids[i] === n);
+  });
+  if (el('amHide')) el('amHide').addEventListener('click', function () {
+    if (!amAgent) return;
+    var n = amAgent;
+    closeAgentModal(); deselectRoster();
+    vscode.postMessage({ type: 'setHidden', name: n, hidden: true });
   });
   if (el('amClose')) el('amClose').addEventListener('click', closeAgentModal);
   if (el('agentModal')) el('agentModal').addEventListener('click', function (e) { if (e.target === this) closeAgentModal(); });
