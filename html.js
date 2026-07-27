@@ -104,9 +104,10 @@ function renderHtml(vars) {
       <div class="ws-hud-delta" id="wsHudDelta"></div>
       <div class="ws-stage" id="wsStage"></div>
     </div>
-    <div class="ihead" style="margin-top:13px">
+    <div class="ihead crew-head" style="margin-top:13px">
       <div class="it">${IC.users} Crew</div>
       <div class="upd"><span id="agCount">0</span> agents</div>
+      <button class="ws-fold" id="crewFold" title="Collapse / expand crew">${IC.chevron}</button>
     </div>
     <div class="pool" id="pool"></div>
     <div class="crew-mini" id="crewMini"></div>

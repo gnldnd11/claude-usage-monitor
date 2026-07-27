@@ -196,9 +196,9 @@
       // active = red pulsing outline; done = green check; stuck = amber "?"; ×N when running in parallel
       var badge = card.querySelector('.cr-badge');
       if (badge) {
-        if (state === 'done') badge.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
-        else if (state === 'stuck') badge.textContent = '?';
-        else if (st && st.n > 1) badge.textContent = '×' + st.n;
+        // done needs no sticker: the green ring pulse and the +XP pop already say it
+        if (state === 'stuck') badge.textContent = '?';
+        else if (state !== 'done' && st && st.n > 1) badge.textContent = '×' + st.n;
         else badge.innerHTML = '';
       }
     }
@@ -215,7 +215,12 @@
     p.className = 'xp-pop' + (cls ? ' ' + cls : '');
     p.textContent = text;
     card.appendChild(p);
-    setTimeout(function () { if (p.parentNode) p.parentNode.removeChild(p); }, 1600);
+    // the status badge sits on the same spot — hold it back until the pop has flown
+    card.classList.add('xp-flash');
+    setTimeout(function () {
+      if (p.parentNode) p.parentNode.removeChild(p);
+      card.classList.remove('xp-flash');
+    }, 1600);
   }
   function applyXpEffects(d) {
     var pool = el('pool'); if (!pool) return;
@@ -224,8 +229,10 @@
       var s = inst[i];
       if (s.state !== 'done' || _xpPopped[s.key]) continue;
       _xpPopped[s.key] = 1;
-      var card = pool.querySelector('.cr-card[data-agent="' + s.agent + '"]');
-      xpPop(card, '+' + xpForRunUi(s.tokens) + ' XP');
+      var gained = '+' + xpForRunUi(s.tokens) + ' XP';
+      xpPop(pool.querySelector('.cr-card[data-agent="' + s.agent + '"]'), gained);
+      var wk = walkers[s.key]; // and over the head of the character that earned it
+      if (wk && wk.root) xpPop(wk.root, gained, 'wk');
     }
     var xp = d.xp || {};
     if (_lastLv) {
@@ -235,7 +242,7 @@
       if (ups.length <= 3) for (var j = 0; j < ups.length; j++) {
         var c2 = pool.querySelector('.cr-card[data-agent="' + ups[j] + '"]');
         if (c2) { c2.classList.add('levelup'); (function (cc) { setTimeout(function () { cc.classList.remove('levelup'); }, 1500); })(c2); }
-        xpPop(c2, 'LEVEL UP', 'lvup');
+        xpPop(c2, 'LV UP', 'lvup'); // short enough to sit on a narrow card
       }
     }
     _lastLv = _lastLv || {};
@@ -405,6 +412,7 @@
       if (wk.roleTag) wk.roleTag.textContent = shortName(displayRole(name)); // reflect live edits
       if (wk.nameTag) wk.nameTag.textContent = shortName(displayName(name));
       wk.root.classList.toggle('stuck', st.state === 'stuck');
+      wk.root.classList.toggle('done', st.state === 'done'); // stops the typing bob + dots
       var off = (j - (present.length - 1) / 2) * 0.11; // fan out if several are working
       var _sd = SPOT_DESK(); goTo(wk, _sd.x + off, _sd.y, 'desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
     }
@@ -680,6 +688,15 @@
   }
   applyRoster(!!(vscode.getState() || {}).rosterCollapsed);
   updateToggleChevron();
+  // Crew folds from its own header, mirroring Room — driving it from the panel-level
+  // chevron next to the mascot put the control nowhere near the thing it collapsed
+  function applyCrewFold(c) { var f = el('crewFold'); if (f) f.classList.toggle('folded', !!c); }
+  applyCrewFold((vscode.getState() || {}).rosterCollapsed);
+  var _cf = el('crewFold');
+  if (_cf) _cf.addEventListener('click', function () {
+    var s = vscode.getState() || {}; s.rosterCollapsed = !s.rosterCollapsed; vscode.setState(s);
+    applyRoster(s.rosterCollapsed); applyCrewFold(s.rosterCollapsed); updateToggleChevron();
+  });
 
   // click a roster character -> select (border) + walk south (front-facing walk cycle)
   function resetRosterSprite(card, name) {

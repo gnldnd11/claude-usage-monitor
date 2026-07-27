@@ -155,6 +155,15 @@ module.exports = `
   .ws-fold:hover{background:var(--track);color:var(--text);}
   .ws-fold svg{width:14px;height:14px;transition:transform .3s ease;}
   .ws-fold.folded svg{transform:rotate(180deg);}
+  /* on the Agents tab both sections fold from their own headers, so the panel-level
+     chevron beside the mascot has nothing left to do there */
+  body.tab-agents .toggle{display:none;}
+  /* .ihead reserves 5px on the right for text; the Crew header ends in the same fold
+     button as Room, so drop it or the two chevrons sit on different columns */
+  .ihead.crew-head{padding-right:0;}
+  /* space-between with three children stranded "N agents" in the middle — let the
+     title eat the slack so the count sits next to the chevron it belongs with */
+  .ihead.crew-head .it{flex:1 1 auto;}
   .ws-run{display:inline-flex;align-items:center;gap:3px;margin-left:2px;font-size:9px;font-weight:800;color:#e5484d;flex:none;}
   .ws-run::before{content:'';width:6px;height:6px;border-radius:50%;background:#e5484d;box-shadow:0 0 4px #e5484d;animation:pulse 1.4s ease-in-out infinite;}
   #panelAgents:not(.room-collapsed) .ws-run{display:none;} /* redundant while the room itself is visible */
@@ -182,7 +191,7 @@ module.exports = `
      reads as WORKING, not just standing there */
   .walker.working .wk-sprite{animation:wkBob .46s steps(2) infinite;}
   @keyframes wkBob{0%,100%{transform:translateY(0);}50%{transform:translateY(-1.5px);}}
-  .wk-dots{display:none;position:absolute;bottom:100%;left:78%;margin-bottom:2px;padding:2px 5px;border-radius:7px;background:rgba(20,12,8,.82);box-shadow:0 1px 3px rgba(0,0,0,.5);white-space:nowrap;line-height:0;}
+  .wk-dots{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:3px;padding:2px 5px;border-radius:7px;background:rgba(20,12,8,.82);box-shadow:0 1px 3px rgba(0,0,0,.5);white-space:nowrap;line-height:0;}
   .walker.working .wk-dots{display:inline-flex;gap:2.5px;align-items:center;}
   .walker.working .wk-role{display:none;} /* dots take the overhead slot while working */
   .wk-dots i{width:3px;height:3px;border-radius:50%;background:#ffcaa8;display:inline-block;animation:wkDot 1.1s ease-in-out infinite;}
@@ -222,7 +231,7 @@ module.exports = `
   .cr-modelsel.m-other{background:rgba(127,127,127,.8);}
   .cr-badge{position:absolute;top:-3px;left:50%;transform:translateX(-50%) translateY(-4px);min-width:15px;height:15px;padding:0 2px;border-radius:8px;background:#4fae74;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s ease,transform .2s ease;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.4);z-index:5;font-size:9px;font-weight:800;color:#fff;line-height:1;}
   .cr-badge svg{width:10px;height:10px;}
-  .cr-card.done .cr-badge,.cr-card.stuck .cr-badge,.cr-card.active .cr-badge:not(:empty){opacity:1;transform:translateX(-50%) translateY(0);}
+  .cr-card.stuck .cr-badge,.cr-card.done .cr-badge:not(:empty),.cr-card.active .cr-badge:not(:empty){opacity:1;transform:translateX(-50%) translateY(0);}
   .cr-card.active .cr-badge{background:#e5484d;}
   .cr-card.stuck .cr-badge{background:#f5a623;}
   .cr-card.active{animation:crPulseR 1.1s ease-in-out infinite;}
@@ -243,9 +252,21 @@ module.exports = `
   .cr-role{font-size:clamp(7.5px, calc(9.5px * var(--cr-scale, 1)), 9.5px);font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   /* XP: level badge, "+N XP" float on completion, gold flash on level-up */
   .cr-lv{position:absolute;top:2px;right:3px;font-size:clamp(7px, calc(8.5px * var(--cr-scale, 1)), 8.5px);font-weight:800;color:var(--muted);background:var(--inner);border:1px solid var(--iborder);border-radius:6px;padding:1px 4px;line-height:1.2;pointer-events:none;z-index:4;font-variant-numeric:tabular-nums;}
-  .xp-pop{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#4fae74;text-shadow:0 1px 2px rgba(0,0,0,.25);pointer-events:none;z-index:6;white-space:nowrap;animation:xpFloat 1.5s ease-out forwards;}
-  .xp-pop.lvup{color:#e8b23a;font-size:10.5px;letter-spacing:.5px;}
-  @keyframes xpFloat{0%{opacity:0;transform:translateX(-50%) translateY(6px);}15%{opacity:1;}100%{opacity:0;transform:translateX(-50%) translateY(-16px);}}
+  /* rises straight up over the head. The status badge shares that seat, so it waits
+     out the 1.5s flash (.xp-flash) and lands after — a sequence, not a pile-up. */
+  .xp-pop{position:absolute;top:6px;left:50%;font-size:10px;font-weight:800;color:#4fae74;background:var(--card);padding:0 4px;border-radius:5px;box-shadow:0 1px 3px rgba(0,0,0,.22);pointer-events:none;z-index:6;white-space:nowrap;animation:xpFloat 1.5s ease-out forwards;}
+  .xp-pop.lvup{color:#e8b23a;letter-spacing:.4px;}
+  @keyframes xpFloat{0%{opacity:0;transform:translateX(-50%) translateY(7px);}15%{opacity:1;}100%{opacity:0;transform:translateX(-50%) translateY(-12px);}}
+  .cr-card.xp-flash .cr-badge{opacity:0;}
+  /* same pop over the room walker: sits above the head, where the role tag and the
+     typing dots live, so those step aside for the 1.5s it is on screen */
+  /* over the room art a filled chip reads as a sticker — bare text with a dark halo
+     stays legible on both the light and the dark rooms */
+  .xp-pop.wk{top:auto;bottom:100%;margin-bottom:5px;z-index:9;background:none;box-shadow:none;padding:0;font-size:11px;color:#7ee6a4;text-shadow:0 1px 3px rgba(0,0,0,.95),0 0 7px rgba(0,0,0,.8);}
+  .xp-pop.wk.lvup{color:#ffd166;}
+  .walker.xp-flash .wk-role,.walker.xp-flash .wk-dots{opacity:0;}
+  .walker.done .wk-dots{display:none;}
+  .walker.done .wk-sprite{animation:none;}
   .cr-card.levelup{animation:crLevelUp 1.4s ease;}
   @keyframes crLevelUp{0%,100%{box-shadow:none;}25%{box-shadow:0 0 0 2px rgba(232,178,58,.9),0 0 14px rgba(232,178,58,.55);background:rgba(232,178,58,.10);}70%{box-shadow:0 0 0 2px rgba(232,178,58,.45),0 0 8px rgba(232,178,58,.3);}}
   .cr-card.levelup .cr-lv{color:#e8b23a;border-color:rgba(232,178,58,.6);}

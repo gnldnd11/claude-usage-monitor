@@ -137,13 +137,25 @@ function parseLinesInto(s, chunk, startOfToday) {
           else if (txt.lastIndexOf('Async agent launched', 0) !== 0 && !s.results[b.tool_use_id]) s.results[b.tool_use_id] = { t: _ts };
         }
       }
-    } else if (o.type === 'user' && typeof _content === 'string' && _content.lastIndexOf('<task-notification>', 0) === 0) {
-      // background agents finish out-of-band; their completion lands as a task-notification
-      const idm = _content.match(/<tool-use-id>([^<]+)<\/tool-use-id>/);
-      const stm = _content.match(/<status>([^<]+)<\/status>/);
-      if (idm && stm && stm[1] !== 'running') {
-        const uu = parseSubUsage(_content);
-        s.results[idm[1]] = uu ? { t: _ts, tokens: uu.tokens, tools: uu.tools, durMs: uu.durMs } : { t: _ts };
+    } else {
+      // A background subagent never returns a tool_result — it finishes out of band and
+      // the harness writes a task-notification instead, in any of three record shapes.
+      // Reading only the plain user turn left background agents "running" until the
+      // 15-minute stale window expired, which is exactly the case this tab exists for.
+      const notif = (o.type === 'user' && typeof _content === 'string') ? _content
+        : (o.type === 'queue-operation' && typeof o.content === 'string') ? o.content
+        : (o.type === 'attachment' && o.attachment && typeof o.attachment.prompt === 'string') ? o.attachment.prompt
+        : '';
+      if (notif.lastIndexOf('<task-notification>', 0) === 0) {
+        const idm = notif.match(/<tool-use-id>([^<]+)<\/tool-use-id>/);
+        const stm = notif.match(/<status>([^<]+)<\/status>/);
+        if (idm && stm && stm[1] !== 'running') {
+          const uu = parseSubUsage(notif);
+          const next = uu ? { t: _ts, tokens: uu.tokens, tools: uu.tools, durMs: uu.durMs } : { t: _ts };
+          // the same notification is written up to three times; keep the one carrying usage
+          const prev = s.results[idm[1]];
+          if (!prev || (!prev.tokens && next.tokens)) s.results[idm[1]] = next;
+        }
       }
     }
     const u = (o.message && o.message.usage) || o.usage;
