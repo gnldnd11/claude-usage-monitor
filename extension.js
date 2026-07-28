@@ -856,7 +856,7 @@ class UsageViewProvider {
     const spriteSrc = (n) => spriteData[n] || spriteUri(n);
     const npcs = buildNpcCatalog(spriteSrc, path.join(this.extensionUri.fsPath, 'sprite-bbox.json'));
     // each room theme: image(s) + walker entry/desk spots (normalized 0..1 of the square image)
-    // spots are the walker's FEET, normalized 0..1 of the wide vignette
+    // entry/desk are the walker's FEET, normalized 0..1 of the wide vignette
     const rooms = {
       cave: { name: 'Blocky Cave', dark: spriteUri('room-minecraft.png'), light: spriteUri('room-minecraft-light.png'), entry: [0.22, 0.97], desk: [0.42, 0.90] },
       backrooms: { name: 'Backrooms', dark: spriteUri('room-backrooms.png'), entry: [0.10, 0.86], desk: [0.30, 0.93] },
