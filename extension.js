@@ -866,7 +866,14 @@ class UsageViewProvider {
       office: { name: 'Corner Office', dark: spriteUri('room-office.png'), entry: [0.14, 0.72], desk: [0.38, 0.92] },
       cell: { name: 'Cell Block', dark: spriteUri('room-cell.png'), entry: [0.14, 0.80], desk: [0.60, 0.92] },
       neon: { name: 'Neon Loft', dark: spriteUri('room-neon.png'), entry: [0.88, 0.78], desk: [0.42, 0.93] },
-      coral: { name: 'Coral Vault', dark: spriteUri('room-coral.png'), entry: [0.16, 0.62], desk: [0.38, 0.90] }
+      coral: { name: 'Coral Vault', dark: spriteUri('room-coral.png'), entry: [0.16, 0.62], desk: [0.38, 0.90] },
+      // the only standable ground is the tiled island; both spots sit on it, entry by the ladder
+      // walkers retreat to `entry` on the way out, so it has to be solid ground too —
+      // just off the island here and they walk on water while leaving
+      poolrooms: { name: 'Poolrooms', dark: spriteUri('room-poolrooms.png'), entry: [0.36, 0.85], desk: [0.47, 0.80] },
+      // low tables: standing spots sit on the mat/dirt beside the screen, not on the tabletop
+      tatami: { name: 'Tatami Room', dark: spriteUri('room-tatami.png'), entry: [0.08, 0.70], desk: [0.26, 0.60] },
+      burrow: { name: 'Lamplit Burrow', dark: spriteUri('room-burrow.png'), entry: [0.06, 0.70], desk: [0.20, 0.63] }
     };
     const assetsJson = JSON.stringify({ rooms, npcs })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');

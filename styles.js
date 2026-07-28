@@ -102,7 +102,9 @@ module.exports = `
   .sheet-check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text);cursor:pointer;padding:4px 0;}
   .sheet-check input{accent-color:#e8895a;cursor:pointer;width:14px;height:14px;flex:none;}
   .sparkle-hd{width:0;opacity:0;flex:none;object-fit:contain;transition:width .4s cubic-bezier(.34,1.56,.64,1),opacity .35s ease;}
-  .compact .sparkle-hd{width:32px;opacity:1;}
+  /* the small crab stands in for the mascot while compact hides it — both rules have to
+     bow out on the Agents tab together, or the two crabs show up side by side */
+  body:not(.tab-agents).compact .sparkle-hd{width:32px;opacity:1;}
   .card,.inner{transition:padding .4s cubic-bezier(.4,0,.2,1);}
   .body{transition:gap .4s cubic-bezier(.4,0,.2,1);}
   .ttl .t2,.ihead,.stats{overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s ease,margin .4s cubic-bezier(.4,0,.2,1);}
