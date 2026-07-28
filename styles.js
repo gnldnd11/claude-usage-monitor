@@ -308,7 +308,7 @@ module.exports = `
   /* built-in Claude Code agents: present but visually second-class to the user's own */
   .cr-card.builtin .cr-role{color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
   .cr-card.builtin .cr-sprite{opacity:.85;}
-  .pool-empty{color:var(--muted);font-size:11.5px;text-align:center;padding:26px 12px;line-height:1.55;}
+  .pool-empty{flex:1 1 100%;color:var(--muted);font-size:11.5px;text-align:center;padding:22px 12px 14px;line-height:1.55;}
   /* collapsed Crew: compact "now running" strip */
   .crew-mini{padding:4px 2px 2px;}
   .crew-idle{color:var(--muted);font-size:11px;text-align:center;padding:12px 8px;}

@@ -816,7 +816,10 @@ class UsageViewProvider {
         // display-only: a hidden agent still runs as usual, it just stays out of
         // the roster, the room, and the collapsed strip until restored
         if (m.hidden) agentHidden[m.name] = 1; else delete agentHidden[m.name];
-        if (extContext) extContext.globalState.update('agentHiddenV1', agentHidden);
+        // workspaceState, not globalState: nickname/appearance/XP say who an agent IS and
+        // travel with it, but hiding is a statement about THIS project's roster. Kept global
+        // it followed you into unrelated folders and emptied their Crew.
+        if (extContext) extContext.workspaceState.update('agentHiddenV1', agentHidden);
         push();
       }
       else if (m.type === 'setAppearance' && m.name) {
@@ -912,7 +915,16 @@ function activate(context) {
   agentNicknames = context.globalState.get('agentNicknamesV1', {}) || {}; // restore agent nicknames
   agentRoles = context.globalState.get('agentRolesV1', {}) || {}; // restore agent role/title aliases
   agentAppearance = context.globalState.get('agentAppearanceV1', {}) || {}; // restore appearance overrides
-  agentHidden = context.globalState.get('agentHiddenV1', {}) || {}; // restore display-only hides
+  // display-only hides are per workspace (see setHidden). One-time migration: the old global
+  // set seeds whichever workspace is open first, so the folder you set it up in keeps its
+  // hides and every other folder starts clean.
+  agentHidden = context.workspaceState.get('agentHiddenV1') || null;
+  if (!agentHidden) {
+    const legacyHidden = context.globalState.get('agentHiddenV1');
+    agentHidden = legacyHidden ? Object.assign({}, legacyHidden) : {};
+    context.workspaceState.update('agentHiddenV1', agentHidden);
+    context.globalState.update('agentHiddenV1', undefined); // only the first workspace inherits it
+  }
   // v2 adds active-time (ms) accumulation — a fresh backfill rebuilds everything from
   // the transcripts, so v1 state is simply dropped rather than migrated
   xpState = context.globalState.get('agentXpV2') || { agents: {}, seen: {}, backfilled: false };

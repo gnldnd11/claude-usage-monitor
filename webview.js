@@ -123,8 +123,14 @@
     var sig = agents.map(function (a) { return a.name + ':' + a.model + ':' + (a.builtin ? 'b' : '') + ':' + (isHidden(a.name) ? 'h' : '') + ':' + lvOf(a.name) + ':' + displayName(a.name) + ':' + displayRole(a.name) + ':' + SHEET_MAP[a.name]; }).join('|') + (_hiddenOpen ? '+o' : '');
     if (pool._sig === sig) return; // roster unchanged — don't rebuild (keeps animations)
     pool._sig = sig;
-    if (!agents.length) { pool.innerHTML = '<div class="pool-empty">No agents yet.<br>Create one with <b>/agents</b> in Claude Code.</div>'; return; }
     var html = '';
+    // Hides are global to the editor, so a workspace with no agents of its own inherits the
+    // hidden built-ins and the roster comes up blank. Say which of the two it is.
+    if (!vis.length) {
+      html += hid.length
+        ? '<div class="pool-empty">Every agent is hidden.<br>Open <b>Hidden</b> below to bring one back.</div>'
+        : '<div class="pool-empty">No agents yet.<br>Create one with <b>/agents</b> in Claude Code.</div>';
+    }
     for (var i = 0; i < vis.length; i++) {
       var a = vis[i];
       var sheet = agentSheet(a.name);
