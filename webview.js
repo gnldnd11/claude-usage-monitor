@@ -420,7 +420,11 @@
       wk.root.classList.toggle('stuck', st.state === 'stuck');
       wk.root.classList.toggle('done', st.state === 'done'); // stops the typing bob + dots
       var off = (j - (present.length - 1) / 2) * 0.11; // fan out if several are working
-      var _sd = SPOT_DESK(); goTo(wk, _sd.x + off, _sd.y, 'desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
+      // the room key has to be part of the target id: goTo() skips when the id is unchanged,
+      // so without it a walker keeps the spot from whichever room it arrived in and stands
+      // in mid-air (or on the tabletop) after a theme switch
+      var _sd = SPOT_DESK(), _rk = (vscode.getState() || {}).map || 'cave';
+      goTo(wk, _sd.x + off, _sd.y, _rk + ':desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
     }
   }
   // steady sprite-frame loop (idle slow, walking faster), independent of data pushes
@@ -684,7 +688,11 @@
   var _wsMap = el('wsMap');
   if (_wsMap) {
     _wsMap.value = (vscode.getState() || {}).map || 'cave';
-    _wsMap.addEventListener('change', function () { var s = vscode.getState() || {}; s.map = this.value; vscode.setState(s); applyRoom(); });
+    _wsMap.addEventListener('change', function () {
+      var s = vscode.getState() || {}; s.map = this.value; vscode.setState(s);
+      applyRoom();
+      updateRoom((lastData && lastData.agentActivity) || {}); // walk anyone present to the new room's spots now
+    });
   }
 
   // collapse / expand the roster — driven by the top-right chevron on the Agents tab

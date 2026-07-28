@@ -151,7 +151,10 @@ module.exports = `
   /* wide interior vignette: the art is cropped inside the room, so the frame fills edge to
      edge — no backdrop showing through (which is what made light mode look broken), and
      less than half the height of the old square. */
-  .ws-room{position:relative;width:100%;aspect-ratio:1.8/1;border-radius:11px;overflow:hidden;background:#0c0c0d;border:1px solid var(--iborder);transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .28s ease,border-width .34s ease;max-height:380px;}
+  /* isolate + z-index:0 pins every room child (walkers, HUD, pops) inside one stacking
+     context, so their z-index can never compete with panel-level overlays. Without it the
+     transformed walkers leaked out and painted over the hover card and the modal. */
+  .ws-room{position:relative;isolation:isolate;z-index:0;width:100%;aspect-ratio:1.8/1;border-radius:11px;overflow:hidden;background:#0c0c0d;border:1px solid var(--iborder);transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .28s ease,border-width .34s ease;max-height:380px;}
   .room-collapsed .ws-room{max-height:0;opacity:0;border-width:0;}
   .ws-fold{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;padding:3px;border-radius:6px;display:flex;line-height:0;}
   .ws-fold:hover{background:var(--track);color:var(--text);}
@@ -274,7 +277,7 @@ module.exports = `
   .cr-card.levelup .cr-lv{color:#e8b23a;border-color:rgba(232,178,58,.6);}
   /* hover profile: an employee-badge card — photo, name/role, XP bar, the level's receipts */
   .inner.agents{position:relative;}
-  .prof-card{position:absolute;z-index:80;width:186px;background:var(--card);border:1px solid var(--iborder);border-radius:11px;padding:5px 11px 9px;box-shadow:0 8px 22px rgba(0,0,0,.4);pointer-events:none;opacity:0;transition:opacity .14s ease;font-size:10.5px;line-height:1.4;}
+  .prof-card{position:absolute;z-index:900;width:186px;background:var(--card);border:1px solid var(--iborder);border-radius:11px;padding:5px 11px 9px;box-shadow:0 8px 22px rgba(0,0,0,.4);pointer-events:none;opacity:0;transition:opacity .14s ease;font-size:10.5px;line-height:1.4;}
   .prof-card.show{opacity:1;}
   .pf-hole{width:24px;height:4px;border-radius:3px;background:var(--track);margin:2px auto 5px;}
   .pf-band{display:flex;align-items:center;justify-content:space-between;font-size:7.5px;font-weight:800;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase;padding-bottom:5px;border-bottom:1px dashed var(--iborder);margin-bottom:7px;}
