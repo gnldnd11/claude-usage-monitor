@@ -878,6 +878,9 @@ class UsageViewProvider {
       tatami: { name: 'Tatami Room', dark: spriteUri('room-tatami.png'), entry: [0.08, 0.70], desk: [0.26, 0.60] },
       burrow: { name: 'Lamplit Burrow', dark: spriteUri('room-burrow.png'), entry: [0.06, 0.70], desk: [0.20, 0.63] }
     };
+    // small quantized still of each room for the picker grid — loading twelve full-size
+    // backgrounds at once just to choose one would stall the webview
+    for (const k in rooms) rooms[k].thumb = spriteUri('thumb-' + k + '.png');
     const assetsJson = JSON.stringify({ rooms, npcs })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
     return renderHtml({

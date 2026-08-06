@@ -685,15 +685,41 @@
   }
   applyRoom();
   if (window.MutationObserver) new MutationObserver(applyRoom).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  var _wsMap = el('wsMap');
-  if (_wsMap) {
-    _wsMap.value = (vscode.getState() || {}).map || 'cave';
-    _wsMap.addEventListener('change', function () {
-      var s = vscode.getState() || {}; s.map = this.value; vscode.setState(s);
-      applyRoom();
-      updateRoom((lastData && lastData.agentActivity) || {}); // walk anyone present to the new room's spots now
-    });
+  // room picker: a dropdown showed one name at a time, which hid the fact that there are
+  // twelve rooms at all. The grid shows them.
+  function currentMap() { return (vscode.getState() || {}).map || 'cave'; }
+  function syncMapName() {
+    var n = el('wsMapName'); if (!n) return;
+    var r = (CUC.rooms || {})[currentMap()];
+    n.textContent = (r && r.name) || 'Room';
   }
+  function buildRoomGrid() {
+    var g = el('roomGrid'); if (!g) return;
+    var rooms = CUC.rooms || {}, cur = currentMap(), html = '';
+    for (var k in rooms) {
+      var r = rooms[k];
+      html += '<button class="room-opt' + (k === cur ? ' on' : '') + '" data-room="' + k + '">'
+        + (r.thumb ? '<img src="' + r.thumb + '" alt="">' : '')
+        + '<span>' + esc(r.name || k) + '</span></button>';
+    }
+    g.innerHTML = html;
+  }
+  function pickRoom(k) {
+    var s = vscode.getState() || {}; s.map = k; vscode.setState(s);
+    applyRoom(); syncMapName();
+    updateRoom((lastData && lastData.agentActivity) || {}); // walk anyone present to the new room's spots now
+  }
+  syncMapName();
+  var _wsMap = el('wsMap');
+  if (_wsMap) _wsMap.addEventListener('click', function () { buildRoomGrid(); var sh = el('roomSheet'); if (sh) sh.hidden = false; });
+  if (el('roomClose')) el('roomClose').addEventListener('click', function () { el('roomSheet').hidden = true; });
+  if (el('roomSheet')) el('roomSheet').addEventListener('click', function (e) {
+    if (e.target === this) { this.hidden = true; return; }
+    var opt = e.target.closest ? e.target.closest('.room-opt') : null;
+    if (!opt) return;
+    pickRoom(opt.getAttribute('data-room'));
+    this.hidden = true;
+  });
 
   // collapse / expand the roster — driven by the top-right chevron on the Agents tab
   function applyRoster(collapsed) {

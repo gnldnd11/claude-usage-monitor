@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "See which Claude Code subagents are running, and spot the one that's stuck. Your agents as pixel characters in the sidebar, plus live session, weekly and context usage. Unofficial, read-only.",
-  "version": "1.12.2",
+  "version": "1.13.0",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",

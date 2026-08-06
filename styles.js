@@ -145,9 +145,18 @@ module.exports = `
   .ws-head .it svg{width:15px;height:15px;color:#e8895a;flex:none;}
   .ws-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   body.narrow .ws-title{display:none;}
-  .ws-map{display:flex;align-items:center;flex:none;max-width:60%;color:var(--muted);background:var(--inner);border:1px solid var(--iborder);border-radius:8px;padding:2px 5px;}
-  .ws-map select{background:transparent;border:0;color:var(--text);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;padding:1px 0;max-width:100%;}
-  .ws-map select:focus{outline:none;}
+  .ws-map{display:flex;align-items:center;gap:3px;flex:none;max-width:60%;color:var(--text);background:var(--inner);border:1px solid var(--iborder);border-radius:8px;padding:3px 5px 3px 8px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;line-height:1.2;}
+  .ws-map:hover{border-color:var(--track);}
+  .ws-map span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ws-map svg{width:13px;height:13px;flex:none;color:var(--muted);transform:rotate(180deg);}
+  .sheet-wide{max-width:340px;}
+  .room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:7px;}
+  .room-opt{display:flex;flex-direction:column;gap:4px;padding:0 0 5px;border:1px solid var(--iborder);border-radius:9px;background:var(--card);cursor:pointer;overflow:hidden;font-family:inherit;text-align:center;transition:border-color .15s ease,transform .15s ease;}
+  .room-opt:hover{border-color:#e8895a;transform:translateY(-1px);}
+  .room-opt.on{border-color:#e8895a;box-shadow:0 0 0 1px #e8895a inset;}
+  .room-opt img{width:100%;height:auto;display:block;image-rendering:pixelated;}
+  .room-opt span{font-size:9.5px;font-weight:700;color:var(--text);padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .room-opt.on span{color:#e8895a;}
   /* wide interior vignette: the art is cropped inside the room, so the frame fills edge to
      edge — no backdrop showing through (which is what made light mode look broken), and
      less than half the height of the old square. */
@@ -181,8 +190,7 @@ module.exports = `
   body.narrow .ws-hud{font-size:8px;padding:1px 6px;gap:4px;top:4px;left:5px;}
   body.narrow .ws-hud-delta{font-size:9.5px;top:19px;left:6px;}
   body.narrow .ws-head .it{display:none;}
-  body.narrow .ws-map{flex:1 1 auto;max-width:none;}
-  body.narrow .ws-map select{width:100%;}
+  body.narrow .ws-map{flex:1 1 auto;max-width:none;justify-content:space-between;}
   .ws-hud-sep{opacity:.45;font-weight:400;}
   .ws-hud-delta{position:absolute;top:26px;left:9px;z-index:8;font-size:11px;font-weight:800;color:#e8895a;letter-spacing:.2px;opacity:0;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.7);}
   .ws-hud-delta.show{animation:flash 1.9s ease forwards;}

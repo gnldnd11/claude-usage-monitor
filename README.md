@@ -19,7 +19,7 @@ A background subagent is a black box. You fire one off and then wonder whether i
   &nbsp;&nbsp;
   <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/agents-running.png" width="290" alt="A different room theme with the roster collapsed into a compact now-running strip" />
 </p>
-<p align="center"><sub>Agents walk in when invoked and type at the desk while they work. Fold the Crew and it becomes a compact "now running" strip with the task and elapsed time. Swap room themes from the dropdown.</sub></p>
+<p align="center"><sub>Agents walk in when invoked and type at the desk while they work. Fold the Crew and it becomes a compact "now running" strip with the task and elapsed time. Pick from twelve rooms in a thumbnail grid.</sub></p>
 
 - **Who is running**, as a character in the room, not a log line you have to go looking for. Parallel calls of the same agent stand side by side as separate characters.
 - **What it cost.** The harness stamps each finished subagent's tokens, tool calls and duration into the transcript, and the panel reads them back. "Which agent eats my weekly limit" is a fact here, not a guess.
@@ -84,6 +84,8 @@ The usage endpoint and the transcript format are both undocumented and may chang
 ## Getting started
 
 Install, then open the **Explorer** sidebar. The **Claude Usage** panel appears alongside your files with **Usage** and **Agents** tabs. The status bar item shows a compact summary and opens the panel on click.
+
+Don't want it on the left? Drag the **Claude Usage** view header into the secondary side bar on the right, or down into the bottom panel next to the Terminal. VS Code remembers where you put it.
 
 Agents appear automatically for any `.claude/agents/*.md` in the workspace or in `~/.claude/agents/`. No hooks, no config.
 

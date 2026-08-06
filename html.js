@@ -95,7 +95,7 @@ function renderHtml(vars) {
   <div class="inner agents" id="panelAgents" style="display:none">
     <div class="ws-head">
       <div class="it">${IC.room} <span class="ws-title">Room</span><span class="ws-run" id="wsRun" hidden></span></div>
-      <div class="ws-map"><select id="wsMap" title="Room theme"><option value="cave">Blocky Cave</option><option value="backrooms">Backrooms</option><option value="liminal">Liminal Office</option><option value="rootwood">Rootwood Cabin</option><option value="pocketden">Pocket Den</option><option value="office">Corner Office</option><option value="cell">Cell Block</option><option value="neon">Neon Loft</option><option value="coral">Coral Vault</option><option value="poolrooms">Poolrooms</option><option value="tatami">Tatami Room</option><option value="burrow">Lamplit Burrow</option></select></div>
+      <button class="ws-map" id="wsMap" title="Pick a room"><span id="wsMapName">Blocky Cave</span>${IC.chevron}</button>
       <button class="ws-fold" id="wsFold" title="Collapse / expand room">${IC.chevron}</button>
     </div>
     <div class="ws-room" id="wsRoom">
@@ -135,6 +135,12 @@ function renderHtml(vars) {
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="mascot" checked> Mascot</label>
       <div class="sheet-sec">Alerts</div>
       <label class="sheet-check"><input type="checkbox" id="cfgBurn" checked> Burn-rate warning</label>
+    </div>
+  </div>
+  <div class="sheet" id="roomSheet" hidden>
+    <div class="sheet-card sheet-wide">
+      <div class="sheet-head"><span>Room</span><button class="sheet-x" id="roomClose" title="Close">${IC.chevron}</button></div>
+      <div class="room-grid" id="roomGrid"></div>
     </div>
   </div>
   <div class="sheet" id="agentModal" hidden>
