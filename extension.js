@@ -62,16 +62,48 @@ function userText(msg) {
 }
 
 // Claude Code stores each launch dir's transcripts under projects/<path-with-slashes-as-dashes>/.
-// The active VS Code workspace(s) encode the same way, so we can tell which transcript folders
-// belong to this window — used to scope the Context gauge to this workspace, not every session.
-function activeProjectPrefixes() {
+// We hand fileInProject the workspace fsPaths RAW (not pre-encoded). That encoding is lossy,
+// '/' and '-' both become '-', and the original path is the only thing that can tell a parent
+// directory from a same-named sibling. Used to scope the Context gauge and the agent room to
+// this window's workspace instead of every session on the machine.
+function activeProjectPaths() {
   const folders = vscode.workspace.workspaceFolders || [];
-  return folders.map((f) => f.uri.fsPath.replace(/\//g, '-')).filter(Boolean);
+  return folders.map((f) => f.uri.fsPath).filter(Boolean);
 }
-function fileInProject(p, prefixes) {
+// What becomes a dash. POSIX turns '/' into one; Windows turns both '\\' and the drive colon
+// into one, so c:\\dev\\workspace lands as c--dev-workspace. Every replacement is 1:1 in length,
+// which the ancestor test below depends on.
+const PATH_SEP_RE = /[\\/:]/g;
+// Windows hands back the drive letter in whichever case the launcher used. One machine had
+// c--dev-workspace and C--Users-URP-... side by side, and fsPath is not guaranteed to agree
+// with either, so the comparison folds case there. POSIX paths stay case-sensitive.
+const FOLD_CASE = process.platform === 'win32';
+function foldPath(s) { return FOLD_CASE ? s.toLowerCase() : s; }
+
+function fileInProject(p, wsPaths) {
   const rel = path.relative(PROJECTS_DIR, p);
-  const folder = rel.split(path.sep)[0]; // top-level project folder under projects/
-  for (const pre of prefixes) { if (folder === pre || folder.startsWith(pre + '-')) return true; }
+  const folder = foldPath(rel.split(path.sep)[0]); // top-level project folder under projects/, dash-encoded
+  for (const ws of wsPaths) {
+    const pre = foldPath(ws.replace(PATH_SEP_RE, '-'));
+    // Session launched at the workspace root, or somewhere below it. The lossy encoding also lets
+    // a same-named SIBLING through here (/a/b/saegim matching /a/b/saegim-studio's transcripts),
+    // and the raw path cannot settle that one because the launch path is exactly what we lost.
+    // Left as is on purpose: the cost is a stray neighbour in the room, while any stricter test
+    // has to guess, and a wrong guess empties the room, which is the bug this all exists to fix.
+    if (folder === pre || folder.startsWith(pre + '-')) return true;
+    // Session launched in a PARENT dir of the workspace, the normal monorepo case (window opened
+    // on repo/projects/foo, Claude Code run at repo/). Without this the folder name is shorter
+    // than the encoded workspace, every file fails, and the room plus Crew stay empty forever.
+    // Encoding is 1:1 in length, so folder.length indexes straight into the raw workspace path:
+    // a real ancestor has '/' there, a sibling like /a/b/saegim vs /a/b/saegim-studio has '-'.
+    // Checking the raw character is what keeps the neighbour out.
+    // The separator is '/' on POSIX and '\\' on Windows. Folding case does not change length,
+    // so this still indexes straight into the raw path.
+    if (pre.startsWith(folder + '-')) {
+      const ch = ws.charAt(folder.length);
+      if (ch === '/' || ch === '\\') return true;
+    }
+  }
   return false;
 }
 
@@ -90,13 +122,22 @@ function toolResultText(b) {
 }
 
 // From transcript JSONL: today's tokens + latest message + today's request count.
-// projPrefixes scopes which transcripts count as "this workspace" for the context window.
+// wsPaths (raw workspace fsPaths) scopes which transcripts count as "this workspace".
 //
 // Transcripts are append-only and heavy sessions run to hundreds of MB, so re-reading
 // every file on each tick doesn't scale. Each file gets a persistent accumulator and
 // only the bytes appended since the last tick are parsed; a full re-parse happens only
 // when a file shrinks (rewrite) or the local day rolls over (the "today" sums move).
 const fileCache = {}; // path -> { mtimeMs, size, carry, dayKey, s: accumulator }
+
+// How far back a subagent run can still be considered live. Everything that reaches back past
+// midnight derives from this ONE number so the windows cannot drift apart: the transcript file
+// cut, the invocation cut, and NO_RESULT_MS in computeAgentActivity. Collecting calls the
+// activity pass would immediately discard is pure waste, and a file cut narrower than the call
+// cut silently drops the very runs the wider call cut was meant to keep.
+// Sized from measurement: over 965 completed runs the longest was 5056s (84 min), so 4 hours
+// clears the observed maximum with room to spare while keeping the pre-midnight re-read small.
+const AGENT_RUN_WINDOW_MS = 4 * 60 * 60 * 1000;
 
 function freshAcc() {
   return {
@@ -105,14 +146,16 @@ function freshAcc() {
     lastMsg: null,      // latest usage-bearing message in this file
     maxCtx: 0,          // this session's peak context — window tier is a session property
     lastUserText: '',   // latest real user prompt in this session file
-    calls: [],          // {agent, id, t, desc} — Agent/Task tool_use invocations (today)
+    calls: [],          // {agent, id, t, today, desc}: Agent/Task invocations back to AGENT_RUN_WINDOW_MS before midnight
     callIds: {},        // every Agent/Task tool_use id seen (any day) — results are only kept for these
     results: {},        // tool_use_id -> {t, tokens?, tools?, durMs?}
     peaks: []           // skyline of {t, total, prompt}: each entry's total beats everything after it
   };
 }
 
-function parseLinesInto(s, chunk, startOfToday) {
+// callsSince is the (earlier) cutoff for agent invocations; startOfToday still gates the
+// token/request sums and the per-call `today` flag.
+function parseLinesInto(s, chunk, startOfToday, callsSince) {
   for (const line of chunk) {
     if (!line) continue;
     let o;
@@ -126,7 +169,7 @@ function parseLinesInto(s, chunk, startOfToday) {
       for (const b of _content) {
         if (b && b.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task') && b.input && b.input.subagent_type) {
           s.callIds[b.id] = true;
-          if (_ts >= startOfToday) s.calls.push({ agent: b.input.subagent_type, id: b.id, t: _ts, desc: (b.input.description || '').slice(0, 60) });
+          if (_ts >= callsSince) s.calls.push({ agent: b.input.subagent_type, id: b.id, t: _ts, today: _ts >= startOfToday, desc: (b.input.description || '').slice(0, 60) });
         } else if (b && b.type === 'tool_result' && b.tool_use_id && s.callIds[b.tool_use_id]) {
           const txt = toolResultText(b);
           const uu = parseSubUsage(txt);
@@ -191,10 +234,11 @@ function parseLinesInto(s, chunk, startOfToday) {
   }
 }
 
-function readTokens(projPrefixes) {
-  projPrefixes = projPrefixes || [];
+function readTokens(wsPaths) {
+  wsPaths = wsPaths || [];
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const callsSince = startOfToday - AGENT_RUN_WINDOW_MS;
 
   const files = [];
   const stack = [PROJECTS_DIR];
@@ -208,7 +252,12 @@ function readTokens(projPrefixes) {
       if (!e.name.endsWith('.jsonl')) continue;
       try {
         const st = fs.statSync(p);
-        if (st.mtimeMs >= startOfToday) files.push({ p, st });
+        // Same cut as callsSince, not startOfToday. A session that launched a background agent
+        // at 23:50 and then sat waiting writes nothing more, so its mtime stays on yesterday;
+        // cutting the file list at midnight dropped it from `files`, and the `!live[p]` sweep
+        // below then discarded its cache entry too. The widened call window has to be backed by
+        // a matching file window or it keeps nothing.
+        if (st.mtimeMs >= callsSince) files.push({ p, st });
       } catch (e2) { /* skip */ }
     }
   }
@@ -233,7 +282,7 @@ function readTokens(projPrefixes) {
       } finally { fs.closeSync(fd); }
       const lines = text.split('\n');
       c.carry = lines.pop() || ''; // partial trailing line waits for the next append
-      parseLinesInto(c.s, lines, startOfToday);
+      parseLinesInto(c.s, lines, startOfToday, callsSince);
       c.mtimeMs = st.mtimeMs; c.size = st.size;
     } catch (e) { delete fileCache[p]; }
   }
@@ -252,7 +301,10 @@ function readTokens(projPrefixes) {
     const c = fileCache[f.p];
     if (!c) continue;
     const s = c.s;
-    const inProj = projPrefixes.length ? fileInProject(f.p, projPrefixes) : false;
+    // No folder open in this window: there is nothing to scope against, so scoping to nothing
+    // just empties the room. Treat every transcript as in-scope, matching the Context gauge,
+    // which already falls back from lastProj to last for exactly this case.
+    const inProj = wsPaths.length ? fileInProject(f.p, wsPaths) : true;
     today.input += s.today.input; today.output += s.today.output;
     today.cache_creation += s.today.cache_creation; today.cache_read += s.today.cache_read;
     count += s.count;
@@ -261,7 +313,7 @@ function readTokens(projPrefixes) {
       if (!last || msg.t > last.t) last = msg;
       if (inProj && (!lastProj || msg.t > lastProj.t)) lastProj = msg;
     }
-    for (const call of s.calls) agentCalls.push({ agent: call.agent, id: call.id, t: call.t, inProj, desc: call.desc });
+    for (const call of s.calls) agentCalls.push({ agent: call.agent, id: call.id, t: call.t, today: call.today, inProj, desc: call.desc });
     for (const id in s.results) agentResults[id] = s.results[id];
     // Freshness cut: a spike is only worth warning about while it's recent — an
     // undismissed one from a previous day would otherwise sit in the banner forever.
@@ -280,9 +332,18 @@ function readTokens(projPrefixes) {
 // visible long enough to actually see.
 function computeAgentActivity(calls, results) {
   const NOW = Date.now();
-  const MIN_ACTIVE = 6000;              // show "active" at least this long even on a fast result
-  const DONE_MS = 6000;                 // then flash "done" for this long
-  const NO_RESULT_MS = 60 * 60 * 1000;  // a call with no result older than this is from a dead session
+  // The panel is pushed every 10s, so a run visible for less than that can fall entirely
+  // between two ticks and never be drawn. MIN_ACTIVE + DONE_MS = 30s guarantees any run,
+  // however short, lands on at least two refreshes (measured: 32 runs finished under 12s).
+  const MIN_ACTIVE = 10000;             // show "active" at least this long even on a fast result
+  const DONE_MS = 20000;                // then flash "done" for this long
+  // A call with no result older than this is from a dead session. It used to be 1 hour, which
+  // erased the longest-running agents first: measured over 965 completed runs the max was
+  // 5056s (84 min) with 8 runs past 60 min, so an hour is inside the normal range, not outside.
+  // The stuck badge below (median*3, floor 10 min) still flags an over-long run well before this.
+  // Derived, not re-typed: readTokens collects calls over exactly this window, and a mismatch
+  // either collects calls nothing reads or drops calls that are still live.
+  const NO_RESULT_MS = AGENT_RUN_WINDOW_MS;
   const STUCK_FLOOR = 10 * 60 * 1000;   // never call an agent stuck before this much elapsed
 
   // Today's per-agent totals from completed runs — real numbers, straight from the
@@ -290,7 +351,9 @@ function computeAgentActivity(calls, results) {
   const stats = {};
   const durs = {};
   for (const c of calls) {
-    if (!c.inProj) continue;
+    // calls reach back before midnight so live runs survive the day roll; the daily
+    // totals must not, so anything stamped as not-today is skipped here only.
+    if (!c.inProj || c.today === false) continue;
     const r = results[c.id];
     if (!r) continue;
     const s = stats[c.agent] || (stats[c.agent] = { runs: 0, tokens: 0, medMs: 0 });
@@ -304,6 +367,8 @@ function computeAgentActivity(calls, results) {
 
   // One entry per INVOCATION (keyed by tool_use id), so parallel calls of the
   // same agent show as separate characters instead of collapsing into one.
+  // Unlike stats above, this loop deliberately looks at pre-midnight calls too: a run that
+  // started yesterday evening and is still going is exactly what the room should be showing.
   const instances = [];
   for (const c of calls) {
     if (!c.inProj || !c.t) continue; // scope to this workspace
@@ -719,7 +784,7 @@ function xpSummary() {
 }
 
 function collect() {
-  const tokens = readTokens(activeProjectPrefixes());
+  const tokens = readTokens(activeProjectPaths());
   // XP accrues the moment a completed run shows up in today's transcripts
   for (const c of tokens.agentCalls) {
     const r = tokens.agentResults[c.id];
