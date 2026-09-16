@@ -783,8 +783,29 @@ function xpSummary() {
   return out;
 }
 
+// Why a diagnostic and not another guess: the Windows report was "XP rises, nobody walks in",
+// which is exactly what a failed workspace match looks like, and the first fix (path encoding)
+// did not change it. One line per scan showing what the match actually saw beats theorising
+// about a machine this session cannot reach.
+let scopeLogged = false;
+function logScope(wsPaths, calls) {
+  if (!log || scopeLogged) return;
+  scopeLogged = true; // once per activation, not every 10s
+  let folders = [];
+  try { folders = fs.readdirSync(PROJECTS_DIR).slice(0, 8); } catch (e) { folders = ['<unreadable>']; }
+  const inProj = calls.filter((c) => c.inProj).length;
+  log.appendLine('[scope] platform=' + process.platform + ' sep=' + JSON.stringify(path.sep));
+  log.appendLine('[scope] workspace=' + JSON.stringify(wsPaths));
+  log.appendLine('[scope] encoded=' + JSON.stringify(wsPaths.map((w) => w.replace(PATH_SEP_RE, '-'))));
+  log.appendLine('[scope] projectsDir=' + PROJECTS_DIR);
+  log.appendLine('[scope] folders=' + JSON.stringify(folders));
+  log.appendLine('[scope] calls=' + calls.length + ' inProj=' + inProj);
+}
+
 function collect() {
-  const tokens = readTokens(activeProjectPaths());
+  const wsPaths = activeProjectPaths();
+  const tokens = readTokens(wsPaths);
+  logScope(wsPaths, tokens.agentCalls);
   // XP accrues the moment a completed run shows up in today's transcripts
   for (const c of tokens.agentCalls) {
     const r = tokens.agentResults[c.id];
