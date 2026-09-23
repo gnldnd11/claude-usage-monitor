@@ -8,12 +8,6 @@
   // ===========================================================================
   // 유틸리티: 숫자 포맷·카운트다운·색상·게이지 계산 헬퍼
   // ===========================================================================
-  function fmtTok(n) {
-    n = Math.round(n || 0);
-    if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
-    if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'k';
-    return String(n);
-  }
   function cd(r) {
     if (!r) return '';
     var rem = Math.floor(r - Date.now() / 1000);
@@ -182,7 +176,16 @@
     }
     return by;
   }
-  function fmtTok(n) { if (!n) return '0'; if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'; if (n >= 1000) return Math.round(n / 1000) + 'k'; return String(n); }
+  // Round before picking the unit, so 999,500 reads "1M" rather than "1000k". Whole millions drop
+  // the ".0". Tweens pass fractions, hence the rounding below 1k as well
+  function fmtTok(n) {
+    n = Math.round(n || 0);
+    if (!n) return '0';
+    var k = Math.round(n / 1000);
+    if (k >= 1000) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1000) return k + 'k';
+    return String(n);
+  }
   function fmtDur(ms) { var s = Math.round(ms / 1000); return s < 60 ? s + 's' : Math.round(s / 60) + 'm'; }
   // Overlay live state onto the existing cards (no rebuild → animations survive).
   function applyAgentStates(activity) {
@@ -436,17 +439,46 @@
       wk.root.classList.toggle('working', wk.mode === 'working' && !wk.leaving); // typing bob + dots bubble
     }
   }, 60);
-  function switchTab(t) {
-    var agents = t === 'agents';
-    document.body.classList.toggle('tab-agents', agents); // scopes compact-mode CSS to the Usage tab
-    var u = el('panelUsage'), g = el('panelAgents');
-    if (u) u.style.display = agents ? 'none' : '';
-    if (g) g.style.display = agents ? '' : 'none';
+  // three views: usage, agents, and the games area (no tab button: the header credits line opens it).
+  // Inside games there is the list, or one game's screen; body.tab-* scopes compact mode to Usage,
+  // hides the header crab in the games area, and game-bj scopes the blackjack shortcuts
+  function curTab() { return (vscode.getState() || {}).tab || 'usage'; }
+  function curGame() { return curTab() === 'games' ? ((vscode.getState() || {}).game || null) : null; }
+  function creditsHidden() { return (((lastData && lastData.cfg && lastData.cfg.panelHidden) || []).indexOf('credits') >= 0); }
+  function applyView() {
+    var t = curTab(), g = curGame(), b = document.body, hdc = el('hdCredits');
+    b.classList.toggle('tab-usage', t === 'usage');
+    b.classList.toggle('tab-agents', t === 'agents');
+    b.classList.toggle('tab-games', t === 'games');
+    b.classList.toggle('game-bj', g === 'blackjack');
+    var shown = { panelUsage: t === 'usage', panelAgents: t === 'agents', panelGames: t === 'games' && !g, panelTable: g === 'blackjack' };
+    for (var id in shown) { var p = el(id); if (p) p.style.display = shown[id] ? '' : 'none'; }
     var au = el('tabUsage'), ag = el('tabAgents');
-    if (au) au.classList.toggle('active', !agents);
-    if (ag) ag.classList.toggle('active', agents);
-    var s = vscode.getState() || {}; s.tab = t; vscode.setState(s);
+    if (au) au.classList.toggle('active', t === 'usage');
+    if (ag) ag.classList.toggle('active', t === 'agents');
+    if (hdc) hdc.setAttribute('aria-pressed', t === 'games' ? 'true' : 'false');
     if (typeof updateToggleChevron === 'function') updateToggleChevron();
+  }
+  // Entering a game screen asks the host for its state; entering the list just takes the focus
+  function enterGames() {
+    if (curGame() === 'blackjack') { bj.wantFocus = true; bjControls(bj.st, true); bjSend('open'); }
+    else { var first = document.querySelector('#panelGames .gm-row'); if (first) first.focus(); }
+  }
+  function switchTab(t) {
+    if (['usage', 'agents', 'games'].indexOf(t) < 0) t = 'usage'; // a stored tab this build does not know
+    if (t === 'games' && creditsHidden()) t = 'usage'; // Credits hidden in settings: no games either
+    var left = curTab() === 'games' && t !== 'games';
+    var s = vscode.getState() || {}; s.tab = t; if (t !== 'games') { s.lastTab = t; s.game = null; } vscode.setState(s);
+    if (left) bjLeave();
+    applyView();
+    if (t === 'games') enterGames();
+  }
+  // null goes back to the list
+  function openGame(g) {
+    var s = vscode.getState() || {}; s.game = g; vscode.setState(s);
+    if (!g) bjLeave();
+    applyView();
+    enterGames();
   }
 
   // ===========================================================================
@@ -469,6 +501,8 @@
     setVis('pm_ring', hid.indexOf('ring') < 0);
     setVis('pm_tiles', hid.indexOf('tiles') < 0);
     setVis('mascot', hid.indexOf('mascot') < 0);
+    setVis('hdCredits', hid.indexOf('credits') < 0);
+    if (hid.indexOf('credits') >= 0 && curTab() === 'games') switchTab((vscode.getState() || {}).lastTab || 'usage');
   }
   function setBar(id, p) { var e = el(id); if (e) { e.style.width = Math.min(p, 100) + '%'; e.style.background = grad(p); } }
 
@@ -476,8 +510,13 @@
   function tween(id, from, to, fmt) {
     var e = el(id); if (!e) return;
     if (from == null || from === to) { e.textContent = fmt(to); return; }
+    // the newest animation owns the element: an older loop still running stops instead of making
+    // writes the newer loop overwrites in the same frame anyway (rAF runs in request order).
+    // Taken only here, so a same-value push leaves a running count to finish on its own
+    var tok = e._tw = (e._tw || 0) + 1;
     var dur = 500, t0 = null;
     function step(ts) {
+      if (e._tw !== tok) return;
       if (t0 == null) t0 = ts;
       var k = Math.min((ts - t0) / dur, 1), ease = 1 - Math.pow(1 - k, 3);
       e.textContent = fmt(from + (to - from) * ease);
@@ -491,6 +530,374 @@
     e.textContent = txt; e.classList.remove('show'); void e.offsetWidth; e.classList.add('show');
     clearTimeout(e._ft); e._ft = setTimeout(function () { e.textContent = ''; e.classList.remove('show'); }, 2000);
   }
+
+  // --- credits: header second line. Balance + a coin that fills in 6 rows toward the next credit
+  var CC_ROWS = 6;
+  // pushes come at most every 10s (interval) or on a transcript write (200ms debounce), and even the heaviest stretch measured (118 lines/min) rarely earns 20 credits (20M tokens) between two, so a bigger jump is a sweep or another window's commit landing: count it up, don't celebrate it
+  var CC_LANDING_JUMP = 20;
+  var _ccRows = 0, _ccFlipT = null;
+  var _reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+  function setCoinRows(n) {
+    var rs = document.querySelectorAll('#hdCredits .cc-r');
+    for (var i = 0; i < rs.length; i++) rs[i].classList.toggle('on', Number(rs[i].getAttribute('data-r')) <= n);
+  }
+  // never show a clipped number: drop the word first, then the number (the tooltip still has it)
+  function fitCredits() {
+    var box = el('hdCredits'); if (!box) return;
+    box.classList.remove('fit1', 'fit2');
+    if (box.scrollWidth > box.clientWidth) box.classList.add('fit1');
+    if (box.scrollWidth > box.clientWidth) box.classList.add('fit2');
+  }
+  // drop the class once the flip has played: left on, it would replay the flip whenever the
+  // counting pulse (which outranks it) ends
+  var _ccCoinEl = document.querySelector('#hdCredits .cc-coin');
+  if (_ccCoinEl) _ccCoinEl.addEventListener('animationend', function (e) { if (e.animationName === 'ccFlip') _ccCoinEl.classList.remove('flip'); });
+  function flipCoin() {
+    setCoinRows(CC_ROWS); // show it full
+    _ccCoinEl.classList.remove('flip'); void _ccCoinEl.getBoundingClientRect(); _ccCoinEl.classList.add('flip');
+    clearTimeout(_ccFlipT);
+    _ccFlipT = setTimeout(function () { _ccFlipT = null; setCoinRows(_ccRows); }, 200); // edge-on at 200ms: fresh coin
+  }
+  function creditsTitle(c, bal, counting) {
+    if (counting) return 'Counting past sessions…\n' + fmtInt(bal) + ' credits so far\nClick for blackjack';
+    return fmtInt(bal) + ' credits · +' + fmtInt(c.today || 0) + ' today\n'
+      + '1 credit per ' + fmtTok(c.perCredit || 1e5) + ' tokens, weighted by API price\n'
+      + 'Click for blackjack';
+  }
+  function renderCredits(c) {
+    if (_bjHold) { _ccHeld = c; return; } // a hand is still being dealt: the header waits for the cards
+    var box = el('hdCredits'), balEl = el('ccBal'); if (!box || !balEl || !c) return;
+    var bal = Math.max(0, Math.floor(c.balance || 0));
+    var frac = Math.min(Math.max(c.frac || 0, 0), 0.999);
+    var counting = !!c.counting;
+    _ccRows = Math.floor(frac * CC_ROWS); // 0..5. All 6 rows only light up at the moment a credit mints
+    box.classList.toggle('counting', counting);
+    var was = prev.cr;
+    balEl.textContent = fmtInt(bal); // set the final (widest) text first so the fit check measures it
+    fitCredits();
+    if (was != null && was !== bal && !_reduceMotion) tween('ccBal', was, bal, fmtInt);
+    // a landing is not play: the first backfill (counting, or the push right after it) or a jump of CC_LANDING_JUMP or more gets no flip, no roll
+    var minted = was != null && bal > was && bal - was < CC_LANDING_JUMP && !counting && !prev.crCounting;
+    if (minted && !_reduceMotion && _ccCoinEl) { roll('ccBal'); flipCoin(); }
+    else if (!_ccFlipT) setCoinRows(_ccRows);
+    prev.cr = bal; prev.crCounting = counting;
+    box.title = creditsTitle(c, bal, counting);
+    if (curGame() === 'blackjack' && !bj.busy) bjRenderStakes();
+  }
+
+  // ===========================================================================
+  // Blackjack: third panel view, opened from the header credits line. The host judges;
+  // this only draws, and paces the cards the host already dealt (state.seq).
+  // ===========================================================================
+  var BJ_STAKES = [10, 100, 1000];
+  // cardIn and flip are the lengths of .bj-card.in and .bj-card.flip in styles.js: change them together
+  var BJ_T = { cardIn: 200, dealGap: 250, holeFirst: 150, holeLead: 600, flip: 300, dealerGap: 550, settle: 300, unlock: 50, noReply: 4000 };
+  // n: number of the request in flight (the host echoes it); wantFocus: move focus into the table at the next settle
+  var bj = { st: null, busy: false, op: null, n: 0, timers: [], to: null, wantFocus: false, focusPhase: null };
+  var _bjHold = false, _ccHeld = null;
+  var COIN_FULL = (el('bjCoin') || {}).innerHTML || '';
+
+  // --- cards: 16x22 cells at 2px, same pixel as the header coin and crab
+  var BJ_INK = '#1d1d1f', BJ_RED = '#c25a34';
+  var BJ_RANK = {
+    A: ['.#.', '#.#', '###', '#.#', '#.#'], '2': ['##.', '..#', '.#.', '#..', '###'], '3': ['##.', '..#', '.#.', '..#', '##.'],
+    '4': ['#.#', '#.#', '###', '..#', '..#'], '5': ['###', '#..', '##.', '..#', '##.'], '6': ['.##', '#..', '###', '#.#', '###'],
+    '7': ['###', '..#', '.#.', '.#.', '.#.'], '8': ['###', '#.#', '###', '#.#', '###'], '9': ['###', '#.#', '###', '..#', '##.'],
+    '10': ['#.###', '#.#.#', '#.#.#', '#.#.#', '#.###'],
+    J: ['..#', '..#', '..#', '#.#', '.#.'], Q: ['.#.', '#.#', '#.#', '##.', '.##'], K: ['#.#', '#.#', '##.', '#.#', '#.#']
+  };
+  var BJ_PIP5 = {
+    S: ['..#..', '.###.', '#####', '..#..', '.###.'], H: ['##.##', '#####', '#####', '.###.', '..#..'],
+    D: ['..#..', '.###.', '#####', '.###.', '..#..'], C: ['.###.', '.###.', '#####', '#.#.#', '.###.']
+  };
+  var BJ_PIP7 = {
+    S: ['...#...', '..###..', '.#####.', '#######', '#######', '.#.#.#.', '..###..'],
+    H: ['.##.##.', '#######', '#######', '#######', '.#####.', '..###..', '...#...'],
+    D: ['...#...', '..###..', '.#####.', '#######', '.#####.', '..###..', '...#...'],
+    C: ['..###..', '..###..', '##.#.##', '#######', '##.#.##', '...#...', '..###..']
+  };
+  var BJ_FRAME = '<path fill="#1d1d1f" fill-rule="evenodd" d="M1 0h14v1h1v20h-1v1h-14v-1h-1v-20h1zM1 1v20h14v-20z"/>';
+  function bmPath(bm, ox, oy) { var d = ''; for (var y = 0; y < bm.length; y++) for (var x = 0; x < bm[y].length; x++) if (bm[y][x] === '#') d += 'M' + (ox + x) + ' ' + (oy + y) + 'h1v1h-1z'; return d; }
+  function cardSvg(inner) { return '<svg viewBox="0 0 16 22" width="32" height="44" shape-rendering="crispEdges" aria-hidden="true">' + BJ_FRAME + inner + '</svg>'; }
+  function cardFace(c) {
+    if (!c || !BJ_RANK[c.r] || !BJ_PIP5[c.s]) return CARD_BACK; // a card this table cannot draw shows its back instead of breaking the table
+    var col = (c.s === 'H' || c.s === 'D') ? BJ_RED : BJ_INK;
+    return cardSvg('<rect x="1" y="1" width="14" height="20" fill="#fff"/><path fill="' + col + '" d="'
+      + bmPath(BJ_RANK[c.r], 2, 2) + bmPath(BJ_PIP5[c.s], 2, 8) + bmPath(BJ_PIP7[c.s], 7, 12) + '"/>');
+  }
+  var CARD_BACK = (function () {
+    var d = ''; for (var y = 2; y < 20; y++) for (var x = 2; x < 14; x++) if ((x + y) % 4 === 0 || (x - y) % 4 === 0) d += 'M' + x + ' ' + y + 'h1v1h-1z';
+    return cardSvg('<rect x="1" y="1" width="14" height="20" fill="#fff"/><rect x="2" y="2" width="12" height="18" fill="#e8895a"/><path fill="#c25a34" d="' + d + '"/>');
+  })();
+  function cardEl(svg, left, cls) { return '<div class="bj-card' + (cls ? ' ' + cls : '') + '" style="left:' + left + 'px">' + svg + '</div>'; }
+  // max 16px (8 cells) so the rank index always shows; squeeze to fit, never below 10px, even px only
+  function fanOffset(fan, n) { if (n < 2) return 0; var w = fan.clientWidth || 120; return Math.max(10, Math.min(16, Math.floor((w - 32) / (n - 1) / 2) * 2)); }
+
+  // --- which cards the sequence still has to bring in
+  // engine seq -> steps: {ev:'card',to:'player',hand} = a player card, {ev:'card',to:'dealer'} = a dealer card (card:null is the hole, drawn as a back), {ev:'reveal'} = the hole flip (face from the final dealer.cards[1]), {ev:'split'} = no step (the final state already has both hands)
+  function bjPending(seq) {
+    var p = { p: {}, d: 0, hole: false };
+    (seq || []).forEach(function (it) {
+      if (it.ev === 'card' && it.to === 'player') p.p[it.hand || 0] = (p.p[it.hand || 0] || 0) + 1;
+      else if (it.ev === 'card' && it.to === 'dealer') p.d++;
+      else if (it.ev === 'reveal') p.hole = true;
+    });
+    return p;
+  }
+  function bjDealer(st, pend) {
+    var fan = el('bjDFan'); if (!fan) return;
+    var d = (st && st.dealer) || { cards: [], hole: false };
+    var n = d.hole ? Math.max(d.cards.length, 2) : d.cards.length; // hole:true draws a back whether or not the host sent its rank
+    var off = fanOffset(fan, n), html = '';
+    for (var i = 0; i < n; i++) {
+      var down = i === 1 && (d.hole || pend.hole), c = d.cards[i];
+      html += cardEl(down || !c ? CARD_BACK : cardFace(c), i * off, (i >= n - pend.d ? 'pending' : '') + (down ? ' down' : ''));
+    }
+    fan.innerHTML = html;
+    if (pend.hole && d.cards[1] && fan.children[1]) fan.children[1]._face = cardFace(d.cards[1]);
+  }
+  // the player, sitting at the table: a still frame (idleRow/idleCol) of an agent sprite, never animated
+  var BJ_HERO_T = 44;         // card height
+  var BJ_HERO_KEY = 'player'; // hum-player: the "me" sprite, and outside NPC_ORDER so Crew never wears the same face
+  function bjHeroHtml() {
+    var m = (CUC.npcs || {})[BJ_HERO_KEY];
+    return m ? '<div class="bj-hero" style="' + cropStyle(m, m.idleRow || 0, m.idleCol || 0, BJ_HERO_T) + '"></div>' : '';
+  }
+  // one player however many hands: the sprite sits on the first row only, the stake under it
+  function bjRowHtml(hand, h) {
+    return '<div class="bj-row bj-p" data-h="' + h + '"><div class="bj-who">'
+      + (h === 0 ? bjHeroHtml() : '')
+      + '<span class="bj-stake' + (hand ? '' : ' preview') + '">' + COIN_FULL + '<b>' + fmtInt(hand ? hand.bet : bjStake()) + '</b></span></div>'
+      + '<div class="bj-hand"><div class="bj-fan" role="img"></div><div class="bj-line"></div></div></div>';
+  }
+  function bjHands(st, pend) {
+    var box = el('bjHands'); if (!box) return;
+    var hands = (st && st.hands) || [];
+    if (!hands.length) { box.innerHTML = bjRowHtml(null, 0); return; } // empty seat, stake preview
+    var html = ''; for (var h = 0; h < hands.length; h++) html += bjRowHtml(hands[h], h);
+    box.innerHTML = html;
+    for (h = 0; h < hands.length; h++) {
+      var fan = box.querySelector('.bj-p[data-h="' + h + '"] .bj-fan'), cs = hands[h].cards, p = pend.p[h] || 0, off = fanOffset(fan, cs.length), f = '';
+      for (var i = 0; i < cs.length; i++) f += cardEl(cardFace(cs[i]), i * off, i >= cs.length - p ? 'pending' : '');
+      fan.innerHTML = f;
+    }
+  }
+  // totals, chips and net change only at settle, never ahead of the cards
+  var RES_WORD = { blackjack: 'Blackjack', win: 'Win', lose: 'Lose', bust: 'Bust', push: 'Push' };
+  var RES_TINT = { blackjack: 'bj', win: 'win', lose: 'lose', bust: 'lose', push: '' };
+  function signed(n) { return (n > 0 ? '+' : n < 0 ? '−' : '') + fmtInt(Math.abs(n)); }
+  // still: a redraw of the same result (after a resize), so the chips do not pop in a second time
+  function bjLines(st, still) {
+    var d = st && st.dealer, dl = el('bjDTot'), pop = still ? ' still' : '';
+    if (dl) dl.innerHTML = (d && d.total != null) ? '<span class="bj-tot">' + d.total + '</span>' + (d.total > 21 ? '<span class="bj-chip' + pop + '">Bust</span>' : '') : '';
+    var dfan = el('bjDFan'), ranks = function (cs) { return cs.map(function (c) { return c.r; }).join(' '); };
+    if (dfan) dfan.setAttribute('aria-label', !(d && d.cards.length) ? 'Dealer' : d.hole ? 'Dealer: ' + ranks(d.cards) + ' and a card face down' : 'Dealer: ' + ranks(d.cards) + ', total ' + d.total);
+    var hands = (st && st.hands) || [], one = hands.length === 1;
+    for (var h = 0; h < hands.length; h++) {
+      var H = hands[h], row = document.querySelector('#bjHands .bj-p[data-h="' + h + '"]'); if (!row) continue;
+      var live = st.phase === 'player' && !H.done;
+      var tot = (H.soft && live && H.total < 21) ? '<span class="soft">' + (H.total - 10) + '/</span>' + H.total : String(H.total);
+      var chip = H.result ? '<span class="bj-chip ' + RES_TINT[H.result] + pop + '">' + RES_WORD[H.result] + (one && st.net ? ' ' + signed(st.net) : '') + '</span>' : '';
+      row.querySelector('.bj-line').innerHTML = '<span class="bj-tot">' + tot + '</span>' + chip;
+      row.querySelector('.bj-stake b').textContent = fmtInt(H.bet);
+      row.classList.toggle('dim', st.phase === 'player' && hands.length > 1 && h !== st.active);
+      row.querySelector('.bj-fan').setAttribute('aria-label', 'Hand ' + (h + 1) + ': ' + H.cards.map(function (c) { return c.r; }).join(' ') + ', total ' + H.total);
+    }
+    var net = el('bjNet');
+    if (net) { net.hidden = !(st && st.phase === 'done' && hands.length > 1); net.textContent = 'Net ' + signed((st && st.net) || 0); }
+  }
+
+  // --- pacing
+  function bjClearTimers() { bj.timers.forEach(clearTimeout); bj.timers = []; }
+  function bjRevealer(it) {
+    return function () {
+      var fan = it.to === 'dealer' ? el('bjDFan') : document.querySelector('#bjHands .bj-p[data-h="' + (it.hand || 0) + '"] .bj-fan');
+      var c = fan && fan.querySelector('.bj-card.pending'); if (!c) return;
+      c.classList.remove('pending'); c.classList.add('in');
+    };
+  }
+  function bjFlipHole() {
+    var fan = el('bjDFan'), c = fan && fan.children[1]; if (!c || !c._face) return;
+    c.classList.add('flip');
+    bj.timers.push(setTimeout(function () { c.innerHTML = c._face; c.classList.remove('down'); }, BJ_T.flip / 2)); // edge-on: swap
+  }
+  // same mapping as bjPending: card events become card steps (dealer ones spaced wider once the hole is turned), reveal becomes the flip, split adds no step
+  function bjSteps(seq) {
+    var out = [], t = null, dealerTurn = false;
+    (seq || []).forEach(function (it) {
+      if (it.ev === 'split') return;
+      if (it.ev === 'reveal') { t = t == null ? BJ_T.holeFirst : t + BJ_T.holeLead; out.push({ at: t, dur: BJ_T.flip, fn: bjFlipHole }); dealerTurn = true; return; }
+      t = t == null ? 0 : t + (dealerTurn ? BJ_T.dealerGap : BJ_T.dealGap);
+      out.push({ at: t, dur: BJ_T.cardIn, fn: bjRevealer(it) });
+    });
+    return out;
+  }
+
+  // Leaving the table (back to the list, or out of the games area): drop the pacing timers and let
+  // any held header push through, or the header number stays frozen at what it showed mid-deal
+  function bjLeave() {
+    bjClearTimers();
+    clearTimeout(bj.to);
+    bj.busy = false; bj.op = null;
+    _bjHold = false;
+    // same order as a settle: the number moves quietly first, so the hand's winnings are not
+    // celebrated as earned credits, and the push then fills in the title and the coin
+    if (_ccHeld) { var h = _ccHeld; _ccHeld = null; if (typeof h.balance === 'number') setCreditsQuiet(h.balance); renderCredits(h); }
+  }
+
+  // --- messages
+  function bjSend(op, extra) {
+    if (bj.busy) return;
+    bj.busy = true; bj.op = op; bj.n += 1;
+    if (op !== 'open') bjControls(bj.st, true);
+    vscode.postMessage(Object.assign({ type: 'bj', op: op, n: bj.n }, extra || {}));
+    clearTimeout(bj.to);
+    bj.to = setTimeout(function () { bj.busy = false; bj.op = null; bjError('The table didn’t respond. Try again.'); bjControls(bj.st, false); }, BJ_T.noReply);
+  }
+  // Draws a reply and returns its pacing steps. op is null for a reply that is not the one awaited
+  function bjDraw(m, op, prevSt) {
+    var st = bj.st;
+    var seq = (op && op !== 'open' && !_reduceMotion && st && st.seq) || null; // open, late replies and reduced motion: final state at once
+    var pend = bjPending(seq);
+    if (op === 'deal' && !m.error) { var dl = el('bjDTot'); if (dl) dl.innerHTML = ''; }
+    bjDealer(st, pend); bjHands(st, pend);
+    if (seq && op !== 'deal' && prevSt) bjLines(prevSt); // keep the old totals up until the new cards land
+    bjError(m.error || '');
+    bjControls(st, true);
+    return bjSteps(seq);
+  }
+  // A reply to the request in flight is paced. One that is not (a late reply after the no-reply
+  // timeout) is drawn as it stands, with no pacing and no reactions; an older reply arriving while
+  // a newer request waits is dropped, since the newer reply carries the latest state anyway
+  function bjReceive(m) {
+    var current = bj.op != null && m.n === bj.n;
+    if (!current && bj.op != null) return;
+    var op = current ? bj.op : null, prevSt = bj.st, steps = [], end = 0;
+    clearTimeout(bj.to); bjClearTimers();
+    bj.op = null; bj.st = m.state || null;
+    try { steps = bjDraw(m, op, prevSt); }
+    finally {
+      // whatever the drawing did, the settle has to be scheduled: it is what unlocks the table.
+      // The header waits for that settle even when nothing is paced: the host's data push sits right
+      // behind this reply, and if it landed before the quiet balance update a game win would be
+      // celebrated as an earning
+      _bjHold = true;
+      steps.forEach(function (s) { bj.timers.push(setTimeout(s.fn, s.at)); end = Math.max(end, s.at + s.dur); });
+      var lead = steps.length ? (bj.st && bj.st.phase === 'done' ? BJ_T.settle : BJ_T.unlock) : 0;
+      bj.timers.push(setTimeout(function () { bjSettle(m, current && op !== 'open'); }, end + lead));
+    }
+  }
+  // a game result is not an earning: move the header number quietly, then judge any held push against it
+  function setCreditsQuiet(bal) {
+    var balEl = el('ccBal'); if (!balEl) return;
+    bal = Math.max(0, Math.floor(bal));
+    var was = prev.cr; prev.cr = bal;
+    balEl.textContent = fmtInt(bal); fitCredits();
+    if (was != null && was !== bal && !_reduceMotion) tween('ccBal', was, bal, fmtInt);
+  }
+  // fresh: the reply to a move the player just made (not an open, not a late reply)
+  function bjSettle(m, fresh) {
+    bj.busy = false; _bjHold = false;
+    try {
+      if (typeof m.balance === 'number') setCreditsQuiet(m.balance);
+      if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
+      bjLines(bj.st);
+      if (fresh && bj.st && bj.st.phase === 'done') bjAnnounce(bj.st);
+    } finally {
+      bjControls(bj.st, false);
+      bjFocusAfter();
+    }
+  }
+  function bjAnnounce(st) {
+    var live = el('bjLive'); if (!live) return;
+    var one = st.hands.length === 1 ? st.hands[0] : null;
+    live.textContent = (one ? RES_WORD[one.result] + (st.net ? ' ' + signed(st.net) : '') : 'Net ' + signed(st.net || 0)) + '. Balance ' + fmtInt(prev.cr || 0) + '.';
+  }
+  // Keyboard focus follows the table: in on entry, to the first action when a hand starts, back to
+  // Deal when the bet controls return, and back in whenever it was left on something hidden or
+  // disabled. Otherwise it stays where the player put it. Left on the header credits button, Enter
+  // would press that button again and leave the table
+  function bjFocusAfter() {
+    if (curGame() !== 'blackjack') return;
+    var phase = bj.st ? bj.st.phase : 'bet', play = phase === 'player';
+    var swapped = bj.focusPhase != null && play !== (bj.focusPhase === 'player');
+    bj.focusPhase = phase;
+    var a = document.activeElement, table = el('panelTable');
+    var lost = !a || a === document.body || a.hidden || a.disabled || !(table && table.contains(a));
+    if (!bj.wantFocus && !swapped && !lost) return;
+    bj.wantFocus = false;
+    var target = play ? document.querySelector('#bjPlay [data-op]:not([hidden]):not([disabled])') : el('bjDeal');
+    if (target && !target.disabled) target.focus();
+  }
+
+  // --- controls
+  function bjStake() { var v = (vscode.getState() || {}).bjStake; return BJ_STAKES.indexOf(v) >= 0 ? v : BJ_STAKES[0]; }
+  function bjRenderStakes(locked) {
+    if (locked == null) locked = bj.busy;
+    var known = prev.cr != null, bal = known ? prev.cr : 0, want = bjStake(), pick = 0;
+    BJ_STAKES.forEach(function (v) { if (v <= bal && v <= want) pick = v; }); // largest affordable, not above the remembered stake
+    var bs = document.querySelectorAll('#bjStakes button');
+    for (var i = 0; i < bs.length; i++) {
+      var v = Number(bs[i].getAttribute('data-v'));
+      bs[i].disabled = locked || v > bal;
+      bs[i].title = v > bal ? 'Not enough credits' : '';
+      bs[i].classList.toggle('on', v === pick);
+      bs[i].setAttribute('aria-pressed', v === pick ? 'true' : 'false');
+    }
+    var deal = el('bjDeal'); if (deal) { deal.disabled = locked || !pick; deal.setAttribute('data-bet', String(pick)); }
+    var pv = document.querySelector('#bjHands .bj-stake.preview b'); if (pv) pv.textContent = fmtInt(pick || want);
+    var note = el('bjNote'); if (note) { note.hidden = !known || bal >= BJ_STAKES[0]; note.textContent = 'You need ' + BJ_STAKES[0] + ' credits to play.'; }
+  }
+  function bjControls(st, locked) {
+    var play = !!(st && st.phase === 'player'), can = (st && st.can) || {};
+    var bet = el('bjBet'), pl = el('bjPlay');
+    if (bet) bet.hidden = play; if (pl) pl.hidden = !play;
+    var ops = document.querySelectorAll('#bjPlay [data-op]');
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i].getAttribute('data-op');
+      ops[i].hidden = (op === 'double' || op === 'split') && !can[op];
+      ops[i].disabled = locked || !can[op];
+    }
+    if (!play) bjRenderStakes(locked);
+  }
+  function bjError(msg) {
+    var e = el('bjErr'); if (!e) return;
+    e.hidden = !msg;
+    if (msg) e.innerHTML = WARN_SVG + '<span class="wbmsg">' + esc(msg) + '</span>';
+  }
+
+  // --- wiring
+  bjHands(null, bjPending(null));
+  if (el('bjStakes')) el('bjStakes').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null; if (!b || b.disabled) return;
+    var s = vscode.getState() || {}; s.bjStake = Number(b.getAttribute('data-v')); vscode.setState(s);
+    bjRenderStakes();
+    var d = el('bjDeal'); if (d && !d.disabled) d.focus(); // so Enter right after picking a stake deals instead of picking it again
+  });
+  if (el('bjDeal')) el('bjDeal').addEventListener('click', function () {
+    var bet = Number(this.getAttribute('data-bet')); if (!bet) return;
+    bjSend('deal', { bet: bet });
+  });
+  if (el('bjPlay')) el('bjPlay').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-op]') : null; if (!b || b.disabled) return;
+    bjSend(b.getAttribute('data-op'));
+  });
+  document.addEventListener('keydown', function (e) {
+    // e.repeat: a held key must not keep playing hands that carry stakes
+    if (!document.body.classList.contains('game-bj') || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    var t = e.target; if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+    if (document.querySelector('.sheet:not([hidden])')) return;
+    var op = { h: 'hit', s: 'stand', d: 'double', p: 'split' }[String(e.key).toLowerCase()];
+    if (op) {
+      var b = document.querySelector('#bjPlay [data-op="' + op + '"]');
+      if (b && !el('bjPlay').hidden && !b.hidden && !b.disabled) { e.preventDefault(); b.click(); }
+      return;
+    }
+    if (e.key === 'Enter' && (!t || t.tagName !== 'BUTTON')) {
+      var d = el('bjDeal'); if (d && !el('bjBet').hidden && !d.disabled) { e.preventDefault(); d.click(); }
+    }
+  });
 
   // live tick every 1s: active time + countdowns + "Updated Ns ago"
   function tick() {
@@ -602,6 +1009,8 @@
     if (prev.req != null && rq > prev.req) { roll('st_req'); flash('req_delta', '+' + (rq - prev.req)); }
     prev.req = rq;
 
+    renderCredits(d.credits);
+
     if (el('upd')) { var _ua = d.usageAt || 0; el('upd').textContent = _ua ? agoText(_ua) : (d.usageLoading ? 'loading' : '—'); }
 
     // burn-rate: only 2 levels shown — mid(amber) / high(red). calm = no bubble at all.
@@ -632,6 +1041,7 @@
   window.addEventListener('message', function (e) {
     var m = e.data; if (!m) return;
     if (m.type === 'data') render(m.data);
+    else if (m.type === 'bj') bjReceive(m);
     else if (m.type === 'openSettings') { var s = el('settingsSheet'); if (s) s.hidden = !s.hidden; }
   });
 
@@ -674,6 +1084,15 @@
   var _tu = el('tabUsage'), _ta = el('tabAgents');
   if (_tu) _tu.addEventListener('click', function () { switchTab('usage'); });
   if (_ta) _ta.addEventListener('click', function () { switchTab('agents'); });
+  // the header credits line is the way into the table, and back out to the last tab
+  var _hdcBtn = el('hdCredits');
+  if (_hdcBtn) _hdcBtn.addEventListener('click', function () { switchTab(curTab() === 'games' ? ((vscode.getState() || {}).lastTab || 'usage') : 'games'); });
+  var _gmList = el('panelGames');
+  if (_gmList) _gmList.addEventListener('click', function (e) {
+    var row = e.target.closest ? e.target.closest('.gm-row') : null;
+    if (row) openGame(row.getAttribute('data-game'));
+  });
+  if (el('bjBack')) el('bjBack').addEventListener('click', function () { openGame(null); });
 
   // room theme: chosen via the map dropdown (persisted); light-theme variant used when it exists
   function currentRoom() { var rs = CUC.rooms || {}; return rs[(vscode.getState() || {}).map || 'cave'] || rs.cave; }
@@ -892,10 +1311,13 @@
     var colW = (contentW - 2 * 3) / 4; // 4 cols, ~2px gaps
     var scale = Math.max(0.5, Math.min(1, colW / 52)); // 52px = comfortable full-size card
     document.body.style.setProperty('--cr-scale', scale.toFixed(3));
+    if (typeof bj !== 'undefined' && bj.st && curGame() === 'blackjack' && !_bjHold) { var np = bjPending(null); bjDealer(bj.st, np); bjHands(bj.st, np); bjLines(bj.st, true); }
   }
   var _rzt;
   if (window.ResizeObserver) { new ResizeObserver(function () { clearTimeout(_rzt); _rzt = setTimeout(applyResponsive, 160); }).observe(document.body); }
   applyResponsive();
+  // watch the parent .ttl: the button is fit-content, so its own width follows its content and would never widen again
+  var _hdc = el('hdCredits'); if (_hdc && _hdc.parentNode && window.ResizeObserver) new ResizeObserver(fitCredits).observe(_hdc.parentNode);
 
   // click the warning bubble to reveal / hide the burn-rate detail banner
   var _mwClick = el('mwarn');

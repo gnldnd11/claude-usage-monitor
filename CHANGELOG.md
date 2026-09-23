@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.15.0: Credits and a crab dealer
+
+- **Credits**: every 100K weighted tokens you use earns 1 credit. Tokens are weighted like API prices: input 1, output 5, cache writes 1.25, cache reads 0.1, the same for every model. On first run, past sessions are counted once in the background, as far back as your transcripts go, so you start with what you have already earned. The balance sits in the header next to a coin that fills toward the next credit; hover for today's earnings. Hide it from the settings gear.
+- **Tokens and Requests now read about half of what they did**: Claude Code writes one transcript line per content block of a single response, and every line used to be counted. Each response is now counted once, so both tiles show the real numbers.
+- **Blackjack**: click the credits line to sit down at the crab's table and play your credits. Six decks, the dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once. The extension deals and judges; the panel only draws. Credits cannot be bought or cashed out, and a round abandoned by reloading the window is void.
+- **Header**: the "for Claude Code" tagline under the title is replaced by the credits line.
+
 ## 1.2.0 — Agents that report their cost
 
 - **Per-agent cost** — each finished subagent's tokens, tool calls and duration are read straight from the transcript; the roster shows today's runs · tokens · typical duration per agent.

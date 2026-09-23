@@ -23,7 +23,7 @@ function renderHtml(vars) {
       <img class="logo" src="${logoUri}" alt=""/>
       <div class="ttl">
         <div class="t1">Claude Usage</div>
-        <div class="t2">for Claude Code</div>
+        <button type="button" class="t2 cc" id="hdCredits" aria-pressed="false" title="Credits">${IC.coin}<span class="cc-bal" id="ccBal">–</span><span class="cc-unit">credits</span></button>
       </div>
     </div>
     <div class="hactions">
@@ -112,6 +112,46 @@ function renderHtml(vars) {
     <div class="pool" id="pool"></div>
     <div class="crew-mini" id="crewMini"></div>
   </div>
+  <div class="inner bj-games" id="panelGames" style="display:none">
+    <div class="ihead"><div class="it gm-it">${IC.coin} Games</div></div>
+    <button type="button" class="gm-row" data-game="blackjack">
+      <span class="gm-ic">${IC.cards}</span>
+      <span class="gm-txt"><span class="gm-nm">Blackjack</span><span class="gm-sub">Min bet 10</span></span>
+      <span class="gm-go">${IC.chevron}</span>
+    </button>
+  </div>
+  <div class="inner bj" id="panelTable" style="display:none">
+    <div class="ihead bj-head">
+      <button type="button" class="bj-back" id="bjBack" title="All games">${IC.chevron}</button>
+      <div class="it" title="6 decks · Dealer stands on soft 17 · Blackjack pays 3:2">${IC.cards} Blackjack</div>
+      <div class="bj-side" id="bjSide"></div><!-- stage 2: the Challenge button goes here -->
+    </div>
+    <div class="bj-felt">
+      <div class="bj-row bj-dealer">
+        <div class="bj-who">
+          <div class="bj-crab"><img id="bjCrab" src="${crabUri}" alt=""/></div>
+        </div>
+        <div class="bj-hand"><div class="bj-line" id="bjDTot"></div><div class="bj-fan" id="bjDFan" role="img" aria-label="Dealer"></div></div>
+      </div>
+      <div class="bj-rule"></div>
+      <div id="bjHands"></div>
+      <div class="bj-net" id="bjNet" hidden></div>
+    </div>
+    <div class="bj-sr" id="bjLive" aria-live="polite"></div>
+    <div class="bj-note" id="bjNote" hidden></div>
+    <div class="warnbar" id="bjErr" hidden></div>
+    <div class="bj-ctl" id="bjBet">
+      <div class="bj-stakes" id="bjStakes" role="group" aria-label="Bet"><button type="button" data-v="10">10</button><button type="button" data-v="100">100</button><button type="button" data-v="1000" aria-label="1,000">1K</button></div>
+      <button type="button" class="bj-btn primary" id="bjDeal" title="Deal (Enter)">Deal</button>
+    </div>
+    <div class="bj-ctl" id="bjPlay" hidden>
+      <button type="button" class="bj-btn" data-op="hit" title="Hit (H)">Hit</button>
+      <button type="button" class="bj-btn" data-op="stand" title="Stand (S)">Stand</button>
+      <button type="button" class="bj-btn" data-op="double" title="Double (D)">Double</button>
+      <button type="button" class="bj-btn" data-op="split" title="Split (P)">Split</button>
+    </div>
+    <template id="bjCoin">${IC.coin}</template>
+  </div>
 </div></div>
   <div class="sheet" id="settingsSheet" hidden>
     <div class="sheet-card">
@@ -133,6 +173,7 @@ function renderHtml(vars) {
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="ring" checked> Usage ring</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="tiles" checked> Stat tiles</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="mascot" checked> Mascot</label>
+      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="credits" checked> Credits</label>
       <div class="sheet-sec">Alerts</div>
       <label class="sheet-check"><input type="checkbox" id="cfgBurn" checked> Burn-rate warning</label>
     </div>

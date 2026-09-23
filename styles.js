@@ -5,7 +5,8 @@ module.exports = `
   body{margin:0;padding:0;background:transparent;color:var(--text);font-size:12px;
     font-family:var(--vscode-font-family),-apple-system,"SF Pro",sans-serif;
     --card:#232326;--inner:#191919;--track:#3a3a3d;--text:#ececec;--muted:#8b8b90;
-    --border:#303034;--iborder:#2c2c30;--ringtrack:#333;--bubble:#fff;--bubblebd:rgba(0,0,0,.06);}
+    --border:#303034;--iborder:#2c2c30;--ringtrack:#333;--bubble:#fff;--bubblebd:rgba(0,0,0,.06);
+    --felt:#17462f;--felt-lo:#0f3423;--felt-ink:#f2f6f3;--felt-dim:#9fb9a9;}
   body.vscode-light{--card:#ffffff;--inner:#f6f6f7;--track:#e4e4e7;--text:#1d1d1f;--muted:#78787f;
     --border:#e7e7ea;--iborder:#ededf0;--ringtrack:#e2e2e6;--bubble:#ffffff;--bubblebd:rgba(0,0,0,.14);}
   body.vscode-high-contrast{--card:#000;--inner:#000;--border:#6fc3df;--iborder:#6fc3df;--text:#fff;--track:#555;}
@@ -102,9 +103,9 @@ module.exports = `
   .sheet-check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text);cursor:pointer;padding:4px 0;}
   .sheet-check input{accent-color:#e8895a;cursor:pointer;width:14px;height:14px;flex:none;}
   .sparkle-hd{width:0;opacity:0;flex:none;object-fit:contain;transition:width .4s cubic-bezier(.34,1.56,.64,1),opacity .35s ease;}
-  /* the small crab stands in for the mascot while compact hides it — both rules have to
-     bow out on the Agents tab together, or the two crabs show up side by side */
-  body:not(.tab-agents).compact .sparkle-hd{width:32px;opacity:1;}
+  /* the small crab stands in for the mascot while compact hides it. Both rules are scoped to
+     the Usage tab (body.tab-usage) together, or the two crabs show up side by side elsewhere */
+  body.tab-usage.compact .sparkle-hd{width:32px;opacity:1;}
   .card,.inner{transition:padding .4s cubic-bezier(.4,0,.2,1);}
   .body{transition:gap .4s cubic-bezier(.4,0,.2,1);}
   .ttl .t2,.ihead,.stats{overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s ease,margin .4s cubic-bezier(.4,0,.2,1);}
@@ -112,14 +113,14 @@ module.exports = `
   .ttl .t2{max-height:20px;}
   .ihead{max-height:34px;}
   .stats{max-height:90px;}
-  /* compact mode is a Usage-tab concept (bars only). On the Agents tab it has nothing
-     to compress, so its header/section hiding is scoped out there — otherwise switching
-     tabs while compact leaves the title and Crew header mysteriously missing. */
-  body:not(.tab-agents).compact .mascot{display:none;}
-  body:not(.tab-agents).compact .ttl .t2{max-height:0;opacity:0;}
-  body:not(.tab-agents).compact .ihead{max-height:0;opacity:0;margin-bottom:0;}
-  body:not(.tab-agents).compact .stats{max-height:0;opacity:0;margin-top:0;}
-  body:not(.tab-agents).compact .ttl{display:none;}
+  /* compact mode is a Usage-tab concept (bars only). The Agents tab and the blackjack table
+     have nothing to compress, so the hiding below applies on body.tab-usage only; otherwise
+     switching views while compact leaves the title and section headers missing. */
+  body.tab-usage.compact .mascot{display:none;}
+  body.tab-usage.compact .ttl .t2{max-height:0;opacity:0;}
+  body.tab-usage.compact .ihead{max-height:0;opacity:0;margin-bottom:0;}
+  body.tab-usage.compact .stats{max-height:0;opacity:0;margin-top:0;}
+  body.tab-usage.compact .ttl{display:none;}
   .compact .ringbox{max-width:0;opacity:0;overflow:hidden;}
   .compact .body{gap:0;}
   .compact .card{padding:12px;}
@@ -171,7 +172,7 @@ module.exports = `
   .ws-fold.folded svg{transform:rotate(180deg);}
   /* on the Agents tab both sections fold from their own headers, so the panel-level
      chevron beside the mascot has nothing left to do there */
-  body.tab-agents .toggle{display:none;}
+  body:not(.tab-usage) .toggle{display:none;}
   /* .ihead reserves 5px on the right for text; the Crew header ends in the same fold
      button as Room, so drop it or the two chevrons sit on different columns */
   .ihead.crew-head{padding-right:0;}
@@ -340,4 +341,124 @@ module.exports = `
   .walker.stuck .wk-name{color:#f5a623;}
   .cm-time{flex:none;font-size:9.5px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums;}
   @keyframes cmSweep{0%{left:-40%;}100%{left:100%;}}
+  /* --- credits: header second line. The coin fills bottom-up in 6 rows toward the next credit --- */
+  .ttl .t2.cc{display:flex;align-items:center;gap:4px;margin-top:3px;font-size:12px;line-height:16px;}
+  .cc-coin{width:16px;height:16px;flex:none;display:block;shape-rendering:crispEdges;}
+  .cc-r{opacity:.3;transition:opacity .25s ease;}
+  .cc-r.on{opacity:1;}
+  .cc-bal{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .cc-unit{color:var(--muted);white-space:nowrap;}
+  .cc.counting .cc-bal{color:var(--muted);}
+  .cc.counting .cc-coin{animation:pulse 1.4s ease-in-out infinite;}
+  .cc-coin.flip{animation:ccFlip .4s ease-in-out;}
+  @keyframes ccFlip{0%,100%{transform:scaleX(1);}50%{transform:scaleX(.12);}}
+  /* the word goes by width, not by measurement, so it doesn't blink when switching tabs
+     (the Agents tab has no chevron and is 30px wider) */
+  @media (max-width:290px){.cc-unit{display:none;}}
+  .cc.fit1 .cc-unit{display:none;}
+  .cc.fit2 .cc-bal{display:none;}
+  @media (prefers-reduced-motion:reduce){.cc-coin.flip,.cc.counting .cc-coin{animation:none;}.cc-r{transition:none;}}
+  /* --- header credits: the way into the blackjack table --- */
+  button.cc{background:transparent;border:0;font-family:inherit;color:inherit;text-align:left;cursor:pointer;padding:1px 6px 1px 3px;border-radius:6px;width:fit-content;max-width:100%;}
+  button.cc:hover,button.cc[aria-pressed="true"]{background:var(--track);}
+  button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px #e8895a;} /* .ttl clips outside outlines */
+  body.tab-games .mascot{display:none;} /* the crab climbs down to deal */
+  /* --- blackjack table --- */
+  .inner.bj{padding:13px 13px 14px;}
+  .bj-row{display:grid;grid-template-columns:64px minmax(0,1fr);column-gap:8px;}
+  .bj-dealer{align-items:end;}
+  .bj-p{align-items:start;}
+  .bj-p + .bj-p{margin-top:10px;}
+  .bj-p.dim{opacity:.45;transition:opacity .2s ease;}
+  .bj-who{position:relative;height:48px;}
+  .bj-p .bj-who{height:auto;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;}
+  .bj-hand{min-width:0;}
+  .bj-fan{position:relative;height:44px;}
+  .bj-line{display:flex;align-items:center;gap:6px;min-height:20px;}
+  .bj-dealer .bj-line{margin-bottom:4px;}
+  .bj-p .bj-line{margin-top:4px;}
+  .bj-tot{font-size:16px;font-weight:700;line-height:20px;color:var(--text);font-variant-numeric:tabular-nums;}
+  .bj-tot .soft{color:var(--muted);font-weight:600;}
+  .bj-chip{font-size:10.5px;font-weight:700;color:var(--text);padding:1px 6px;border-radius:6px;background:var(--track);white-space:nowrap;animation:bjPop .16s ease-out both;}
+  .bj-chip.win{background:rgba(79,174,116,.22);}
+  .bj-chip.bj{background:rgba(232,178,58,.28);}
+  .bj-chip.lose{background:rgba(229,72,77,.16);}
+  .bj-chip.still{animation:none;} /* a redraw of a result already shown */
+  .bj-rule{height:1px;background:var(--iborder);margin:12px 0;}
+  .bj-net{margin:8px 0 0 72px;font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;} /* column 72 + gap 8 */
+  .bj-note{margin-top:10px;font-size:11px;color:var(--muted);}
+  .bj-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;} /* read out, not shown */
+  #bjErr{margin:12px 0 0;}
+  .bj-hero{flex:none;} /* the player, sitting: a still frame of an agent sprite */
+  .bj-stake{display:flex;flex-direction:row;align-items:center;gap:4px;white-space:nowrap;font-size:11px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
+  .bj-stake.preview{opacity:.5;}
+  .bj-stake .cc-r{opacity:1;}
+  /* the dealer: crab.png (the header crab), a still drawing standing on a shadow rather than glued
+     to the felt. max-width:none is required: the webview stylesheet caps every img at 100% */
+  .bj-crab{position:absolute;left:0;bottom:0;width:64px;height:52px;overflow:visible;pointer-events:none;}
+  .bj-crab img{position:absolute;z-index:1;left:6px;bottom:6px;width:52px;height:auto;max-width:none;image-rendering:pixelated;display:block;}
+  .bj-crab::after{content:'';position:absolute;left:12px;right:12px;bottom:4px;height:5px;
+    background:radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.38), rgba(0,0,0,0));}
+  .bj-card{position:absolute;top:0;width:32px;height:44px;line-height:0;}
+  .bj-card svg{display:block;width:32px;height:44px;}
+  .bj-card.pending{visibility:hidden;}
+  /* these two lengths are BJ_T.cardIn and BJ_T.flip in webview.js: change them together */
+  .bj-card.in{animation:bjIn .2s ease-out both;}
+  .bj-card.flip{animation:bjFlip .3s ease-in-out;}
+  @keyframes bjIn{from{opacity:0;transform:translate(10px,-8px);}to{opacity:1;transform:none;}}
+  @keyframes bjFlip{0%,100%{transform:scaleX(1);}50%{transform:scaleX(.06);}}
+  @keyframes bjPop{from{opacity:0;transform:scale(.85);}to{opacity:1;transform:none;}}
+  .bj-ctl{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
+  .bj-ctl[hidden],.bj-net[hidden],.bj-note[hidden],.bj-btn[hidden]{display:none;}
+  .bj-stakes{display:flex;gap:2px;padding:2px;flex:none;background:var(--inner);border:1px solid var(--iborder);border-radius:9px;}
+  .bj-stakes button{height:28px;padding:0 9px;border:0;border-radius:7px;background:transparent;font-family:inherit;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-variant-numeric:tabular-nums;}
+  .bj-stakes button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
+  .bj-stakes button:hover:not(.on):not(:disabled){color:var(--text);}
+  .bj-stakes button:disabled{opacity:.35;cursor:not-allowed;}
+  .bj-btn{flex:1 1 64px;height:34px;border:0;border-radius:8px;background:var(--track);color:var(--text);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;}
+  .bj-btn:hover:not(:disabled){box-shadow:inset 0 0 0 1px var(--muted);}
+  .bj-btn.primary{background:#e8895a;color:#1d1d1f;} /* white on this orange is 2.6:1 */
+  .bj-btn.primary:hover:not(:disabled){box-shadow:none;filter:brightness(1.07);}
+  .bj-btn:disabled{opacity:.4;cursor:default;}
+  .bj-stakes button:focus-visible,.bj-btn:focus-visible{outline:2px solid #e8895a;outline-offset:2px;}
+  .bj-btn.primary:focus-visible{outline-color:var(--text);}
+  @media (prefers-reduced-motion:reduce){.bj-card.in,.bj-card.flip,.bj-chip{animation:none;}.bj-p.dim{transition:none;}}
+  /* --- games list: the third view. A game screen (the table) opens from a row --- */
+  .bj-games .ihead{margin-bottom:8px;}
+  .gm-it svg{width:16px;height:16px;} /* the pixel coin needs its 2px grid */
+  .gm-row{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:0;border-radius:10px;background:transparent;font-family:inherit;text-align:left;cursor:pointer;}
+  .gm-row:hover{background:var(--track);}
+  .gm-row:focus-visible{outline:2px solid #e8895a;outline-offset:-2px;}
+  .gm-ic{flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--track);}
+  .gm-row:hover .gm-ic{background:var(--card);}
+  .gm-ic svg{width:17px;height:17px;color:#e8895a;display:block;}
+  .gm-txt{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;}
+  .gm-nm{font-size:12.5px;font-weight:700;color:var(--text);}
+  .gm-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .gm-go{flex:none;line-height:0;}
+  .gm-go svg{width:14px;height:14px;color:var(--muted);transform:rotate(90deg);display:block;}
+  .ihead.bj-head .it{flex:1 1 auto;}
+  .bj-back{flex:none;margin-right:2px;padding:3px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;display:flex;line-height:0;}
+  .bj-back:hover{background:var(--track);color:var(--text);}
+  .bj-back:focus-visible{outline:2px solid #e8895a;outline-offset:1px;}
+  .bj-back svg{width:14px;height:14px;transform:rotate(-90deg);}
+  /* --- the felt: the table surface itself (dealer, rule, hands, net). The heading, warnings and
+     the buttons sit outside it, in the room the table stands in. Woven look from 1px lines on a
+     2px period, the same grid the pixel cards and coin use. No image --- */
+  .bj-felt{padding:12px 10px;border-radius:12px;color:var(--felt-ink);
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 2px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.05) 0 1px, transparent 1px 2px),
+      radial-gradient(120% 100% at 50% 0%, var(--felt) 0%, var(--felt-lo) 100%);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.07);}
+  .bj-felt .bj-tot{color:var(--felt-ink);}
+  .bj-felt .bj-tot .soft{color:var(--felt-dim);}
+  .bj-felt .bj-stake{color:var(--felt-ink);}
+  .bj-felt .bj-net{color:var(--felt-ink);}
+  .bj-felt .bj-rule{background:rgba(255,255,255,.10);}
+  /* chips: a green tint cannot be read on green, so the colour moves to the text on a dark plate */
+  .bj-felt .bj-chip{background:rgba(0,0,0,.42);color:var(--felt-dim);}
+  .bj-felt .bj-chip.win{color:#7ee6a4;}
+  .bj-felt .bj-chip.bj{color:#ffd166;}
+  .bj-felt .bj-chip.lose{color:#f6836e;}
 `;

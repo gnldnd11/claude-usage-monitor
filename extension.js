@@ -3,9 +3,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const https = require('https');
+const crypto = require('crypto');
 const { AuthManager } = require('./auth');
 const { buildNpcCatalog } = require('./sprites');
 const spriteData = require('./sprite-data'); // character sprites as base64 (not shipped as raw png)
+const { lineUsage, usageKey, usageVec, addUsageOnce, localDayKey } = require('./usage');
+const credits = require('./credits');
+const blackjack = require('./blackjack');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const RATE_FILE = path.join(CLAUDE_DIR, 'usage-bar.json');
@@ -143,6 +147,10 @@ function freshAcc() {
   return {
     today: { input: 0, output: 0, cache_creation: 0, cache_read: 0 },
     count: 0,
+    // today's response key -> per-field max usage. It lives in the accumulator, so the next line
+    // of the same response is recognised even across incremental-parse boundaries. The whole
+    // accumulator is rebuilt when the day rolls, so only today's keys are ever held
+    seen: new Map(),
     lastMsg: null,      // latest usage-bearing message in this file
     maxCtx: 0,          // this session's peak context — window tier is a session property
     lastUserText: '',   // latest real user prompt in this session file
@@ -201,17 +209,15 @@ function parseLinesInto(s, chunk, startOfToday, callsSince) {
         }
       }
     }
-    const u = (o.message && o.message.usage) || o.usage;
+    const u = lineUsage(o);
     if (!u) continue;
     const t = o.timestamp ? Date.parse(o.timestamp) : NaN;
     if (isNaN(t)) continue;
-    if (t >= startOfToday) {
-      s.today.input += u.input_tokens || 0;
-      s.today.output += u.output_tokens || 0;
-      s.today.cache_creation += u.cache_creation_input_tokens || 0;
-      s.today.cache_read += u.cache_read_input_tokens || 0;
-      s.count += 1;
-    }
+    // One response is written as one line per content block; adding every line roughly doubles
+    // tokens and requests. Count each response once at its per-field max, and bump the request
+    // count only on first sight (usage.js). maxCtx, lastMsg and peaks below only look at maxima
+    // and the latest line, so the repeated lines do not change them
+    if (t >= startOfToday && addUsageOnce(s.today, s.seen, usageKey(o), usageVec(u))) s.count += 1;
     const ctxUsed = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
     if (ctxUsed > s.maxCtx) s.maxCtx = ctxUsed;
     if (!s.lastMsg || t > s.lastMsg.t) {
@@ -322,7 +328,10 @@ function readTokens(wsPaths) {
       if (pk.t > burnMin) { if (!peak || pk.total > peak.total) peak = pk; break; }
     }
   }
-  return { today, last, lastProj, count, peak, agentCalls, agentResults };
+  // dayStart: which day `today` sums. If the caller read the clock again, a tick straddling
+  // midnight would file yesterday's total under today (the ledger is a max merge, so a wrong
+  // entry can never be taken back)
+  return { today, dayStart: startOfToday, last, lastProj, count, peak, agentCalls, agentResults };
 }
 
 // Derive each agent's live state from its invocations (M2 MVP, hook-free — read
@@ -457,6 +466,148 @@ function backfillXp() {
     else { xpState.backfilled = true; xpDirty = true; saveXp(); try { push(); } catch (e) { /* view not ready */ } }
   };
   setTimeout(step, 3000); // let activation settle first
+}
+
+// --- credits -------------------------------------------------------------------
+// The ledger (credits.js) lives in globalState. Past days come from sweeps, today from every
+// collect. All reads and writes go through creditStore, which keeps this window's own copy and
+// max-merges it with storage (see createLedgerStore for why writes are throttled).
+let creditStore = null; // created in activate()
+let creditRun = null;   // sweep in progress, if any
+
+// A write rewrites every key of the extension (agentXpV2 alone is ~31KB), so at most one a minute.
+// A sweep result is written at once. The display always shows the merged in-memory ledger
+const CREDIT_WRITE_MS = 60 * 1000;
+// backfillXp starts at 3000ms and both sweeps cycle ~190ms (40ms of work, 150ms of rest).
+// Starting half a cycle later makes their slices alternate on first install instead of running
+// back to back as one 80ms block
+const CREDIT_SWEEP_DELAY_MS = 3000 + 95;
+
+function logLine(msg) {
+  if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] ' + msg);
+}
+
+function logSweep(sweep, since, startedAt) {
+  logLine('credits: swept ' + sweep.stats.files + ' files, ' + Math.round(sweep.stats.bytes / 1e6) + 'MB'
+    + (since ? ' since ' + localDayKey(since) : ' (full backfill)') + ', ' + ((Date.now() - startedAt) / 1000).toFixed(1) + 's'
+    + (sweep.stats.errors ? ', ' + sweep.stats.errors + ' unreadable' : ''));
+  // backfilled is still set: the files could not be read now and would not be read next time either
+  if (!since && sweep.stats.errors) logLine('credits: WARNING first backfill could not read ' + sweep.stats.errors + ' file(s); their history is missing from the balance');
+}
+
+// First run: full backfill. After that: catch up from the midnight before the last sweep's day.
+// A catch-up fills days Claude Code was used from the terminal with VS Code closed, and the
+// seconds between the last tick before midnight and midnight
+function startCreditSweep() {
+  const led = creditStore.read();
+  const since = led.backfilled ? credits.catchUpSince(led.sweptAt) : 0;
+  // Taken before the file list (and so each file's size) is fixed: lines appended after it are
+  // not in this sweep, so the next catch-up must start no later than here
+  const startedAt = Date.now();
+  const sweep = credits.createSweep(PROJECTS_DIR, since);
+  creditRun = credits.runSweep(sweep, { sliceMs: 40, gapMs: 150, startDelayMs: CREDIT_SWEEP_DELAY_MS }, (err) => {
+    creditRun = null;
+    if (err) {
+      // backfilled and sweptAt stay as they were, so the next activation sweeps the same range again
+      logLine('credits: sweep failed: ' + (err && err.message));
+    } else {
+      creditStore.record({ days: sweep.days, backfilled: true, sweptAt: startedAt }, true);
+      logSweep(sweep, since, startedAt);
+    }
+    try { push(); } catch (e) { logLine('credits: push after sweep failed: ' + (e && e.message)); }
+  });
+}
+
+// Raises today's cell with the live (de-duplicated) total and builds the webview summary.
+// "counting" only during the first backfill: a catch-up adds seconds to minutes of history,
+// not worth a "Counting past sessions" flash on every window open
+function syncCredits(tokens) {
+  if (!creditStore) return null;
+  const todayKey = localDayKey(tokens.dayStart);
+  const ledger = creditStore.record({ days: { [todayKey]: tokens.today } }, false);
+  return credits.creditSummary(ledger, todayKey, !!creditRun && !ledger.backfilled);
+}
+
+// --- blackjack (solo, crab dealer) ------------------------------------------------
+// The host owns the round and every ruling; the webview only sends a bet and an action.
+// The round lives in memory only. Stakes move only when a round settles, so reloading VS Code
+// mid-round voids that round and loses nothing. In solo mode that loophole (reload away a bad
+// hand) is accepted on purpose.
+// Results go to the ledger's bank as this activation's own grow-only counters (credits.js).
+// A round settles exactly once: only the deal or action that turns it to 'done' records it, and
+// every later action on a done round is refused before it gets that far.
+const BJ_MIN_BET = 10;
+let bjRound = null;                            // engine state: current round, or the last finished one
+let bjReplica = null;                          // this activation's bank key, made at the first bet
+const bjCount = { won: 0, lost: 0, hands: 0 }; // this replica's counters: they only ever grow
+// The seed is the whole shoe (face-down card included), so it stays in the host; the round id the
+// webview sees is a separate random value
+const bjRandom = () => crypto.randomBytes(12).toString('hex');
+let bjSeedSource = bjRandom;                   // tests swap this to pick the cards (_test.setBjSeeds)
+let bjReqN = null;                             // request number of the message being answered, echoed back
+
+function creditBalance() {
+  if (!creditStore) return 0;
+  return credits.creditSummary(creditStore.read(), localDayKey(Date.now()), false).balance;
+}
+
+// seq only in the reply to the action that produced it: an 'open' or a rejection replays nothing
+function bjReply(error, withSeq) {
+  const balance = creditBalance();
+  const state = blackjack.view(bjRound, balance);
+  if (!withSeq) state.seq = [];
+  const msg = { type: 'bj', state, balance };
+  if (bjReqN != null) msg.n = bjReqN; // lets the webview tell its reply from a late one
+  if (error) msg.error = error;
+  if (provider && provider.view) {
+    try { provider.view.webview.postMessage(msg); }
+    catch (e) { logLine('blackjack: reply failed: ' + (e && e.message)); }
+  }
+}
+
+// Records a settled round in the bank at once (not throttled: hands come at human speed)
+function bjSettle(round) {
+  if (round.net > 0) bjCount.won += round.net;
+  else if (round.net < 0) bjCount.lost -= round.net;
+  bjCount.hands += 1;
+  creditStore.record({ bank: { [bjReplica]: Object.assign({}, bjCount) } }, true);
+}
+
+// The reply goes first and the data push (header balance) after it: the other way round, the
+// header would show the result while the webview is still dealing the cards
+function bjAfterMove() {
+  const settled = bjRound.phase === 'done';
+  if (settled) bjSettle(bjRound);
+  bjReply(null, true);
+  if (settled) {
+    try { push(); } catch (e) { logLine('blackjack: push after settle failed: ' + (e && e.message)); }
+  }
+}
+
+// Comparisons are written as !(a <= b) so a NaN (a broken ledger, a bad bet) refuses
+function bjDeal(bet) {
+  if (bjRound && bjRound.phase === 'player') return bjReply('a round is already in progress');
+  if (!Number.isSafeInteger(bet) || !(bet >= BJ_MIN_BET)) return bjReply('bet must be a whole number of at least ' + BJ_MIN_BET);
+  if (!(bet <= creditBalance())) return bjReply('not enough credits');
+  if (!bjReplica) bjReplica = crypto.randomBytes(8).toString('hex');
+  bjRound = blackjack.newRound({ seed: bjSeedSource(), id: bjRandom(), bet });
+  bjAfterMove();
+}
+
+function bjAct(op) {
+  if (!bjRound || bjRound.phase !== 'player') return bjReply('no round in progress');
+  const reason = blackjack.whyNot(bjRound, op, creditBalance());
+  if (reason) return bjReply(reason);
+  bjRound = blackjack.act(bjRound, op);
+  bjAfterMove();
+}
+
+function handleBj(m) {
+  bjReqN = Number.isSafeInteger(m.n) ? m.n : null;
+  if (m.op === 'open') bjReply(null);
+  else if (m.op === 'deal') bjDeal(m.bet);
+  else if (blackjack.OPS.includes(m.op)) bjAct(m.op);
+  else bjReply('unknown action');
 }
 
 // --- agent roster (M1) -------------------------------------------------------
@@ -834,7 +985,8 @@ function collect() {
     roles: agentRoles,
     appearance: agentAppearance,
     hidden: agentHidden,
-    xp: xpSummary()
+    xp: xpSummary(),
+    credits: syncCredits(tokens)
   };
 }
 
@@ -881,6 +1033,7 @@ class UsageViewProvider {
     view.webview.onDidReceiveMessage((m) => {
       if (!m) return;
       if (m.type === 'ready') push();
+      else if (m.type === 'bj') handleBj(m);
       else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
       else if (m.type === 'setConfig' && m.key) {
         vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global).then(function () { push(); });
@@ -1019,6 +1172,12 @@ function activate(context) {
   xpState = context.globalState.get('agentXpV2') || { agents: {}, seen: {}, backfilled: false };
   context.globalState.update('agentXpV1', undefined); // clear the superseded v1 blob
   if (!xpState.backfilled) backfillXp(); // one-time historical sweep → earned levels from day one
+  creditStore = credits.createLedgerStore(context.globalState, {
+    minIntervalMs: CREDIT_WRITE_MS,
+    onError: (e) => logLine('credits: ledger write failed: ' + (e && e.message))
+  });
+  startCreditSweep(); // full backfill on first run, catch-up otherwise
+  context.subscriptions.push({ dispose: () => { if (creditRun) creditRun.cancel(); } });
   try {
     const saved = context.globalState.get('usageCacheV1');
     if (saved && saved.value && (saved.value.five_hour || saved.value.seven_day)) {
@@ -1150,7 +1309,14 @@ function activate(context) {
   }));
 }
 
-function deactivate() {}
+// One last forced write: the bank cannot be re-counted from transcripts, so if another window's
+// stale copy has overwritten storage since this window's last write, this puts it back
+function deactivate() {
+  if (creditStore) creditStore.record(null, true);
+}
 
 module.exports = { activate, deactivate };
-if (process.env.CUC_TEST) module.exports._test = { readTokens, computeAgentActivity, parseSubUsage, contextPct };
+if (process.env.CUC_TEST) module.exports._test = {
+  readTokens, parseLinesInto, freshAcc, collect, computeAgentActivity, parseSubUsage, contextPct,
+  setBjSeeds: (fn) => { bjSeedSource = fn || bjRandom; }
+};

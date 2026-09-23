@@ -10,3 +10,5 @@ hum-*.png
 mon-*.png
 ani-*.png
 docs/**
+.claude/**
+test/**
