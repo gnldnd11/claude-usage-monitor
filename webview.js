@@ -452,8 +452,9 @@
     b.classList.toggle('tab-games', t === 'games');
     b.classList.toggle('game-bj', g === 'blackjack');
     b.classList.toggle('game-hl', g === 'hilo');
+    b.classList.toggle('game-pk', g === 'poker');
     var shown = { panelUsage: t === 'usage', panelAgents: t === 'agents', panelGames: t === 'games' && !g,
-      panelTable: g === 'blackjack', panelHiLo: g === 'hilo' };
+      panelTable: g === 'blackjack', panelHiLo: g === 'hilo', panelPoker: g === 'poker' };
     for (var id in shown) { var p = el(id); if (p) p.style.display = shown[id] ? '' : 'none'; }
     var au = el('tabUsage'), ag = el('tabAgents');
     if (au) au.classList.toggle('active', t === 'usage');
@@ -466,6 +467,7 @@
     var g = curGame();
     if (g === 'blackjack') { bj.wantFocus = true; bjControls(bj.st, true); bjSend('open'); }
     else if (g === 'hilo') { hl.wantFocus = true; hlControls(hl.st, true); hlSend('open'); }
+    else if (g === 'poker') { pk.wantFocus = true; pkControls(pk.st, true); pkSend('open'); }
     else { var first = document.querySelector('#panelGames .gm-row'); if (first) first.focus(); }
   }
   function switchTab(t) {
@@ -589,6 +591,7 @@
     box.title = creditsTitle(c, bal, counting);
     if (curGame() === 'blackjack' && !bj.busy) bjRenderStakes();
     if (curGame() === 'hilo' && !hl.busy) { renderStakes(STAKE_UI.hl, false); hlControls(hl.st, false); }
+    if (curGame() === 'poker' && !pk.busy) { renderStakes(STAKE_UI.pk, false); pkControls(pk.st, false); }
   }
 
   // ===========================================================================
@@ -755,7 +758,6 @@
     bjClearTimers();
     clearTimeout(bj.to);
     bj.busy = false; bj.op = null;
-    releaseHeldHeader();
   }
 
   // --- messages
@@ -848,15 +850,19 @@
   // the chips, the Deal button and the "not enough credits" note: the same for every game,
   // each with its own remembered stake and its own elements
   var STAKE_UI = {
-    bj: { g: 'bj', other: 'High-Low', key: 'bjStake', box: 'bjStakes', chips: '#bjStakes button', deal: 'bjDeal', note: 'bjNote', preview: '#bjHands .bj-stake.preview b' },
-    hl: { g: 'hl', other: 'Blackjack', key: 'hlStake', box: 'hlStakes', chips: '#hlStakes button', deal: 'hlDeal', note: 'hlNote', preview: '#hlLine .hl-pot.preview b' }
+    bj: { g: 'bj', key: 'bjStake', box: 'bjStakes', chips: '#bjStakes button', deal: 'bjDeal', note: 'bjNote', preview: '#bjHands .bj-stake.preview b' },
+    hl: { g: 'hl', key: 'hlStake', box: 'hlStakes', chips: '#hlStakes button', deal: 'hlDeal', note: 'hlNote', preview: '#hlLine .hl-pot.preview b' },
+    pk: { g: 'pk', key: 'pkStake', box: 'pkStakes', chips: '#pkStakes button', deal: 'pkDeal', note: 'pkNote', preview: '#pkLine .hl-pot.preview b' }
   };
+  // With more than one other table open, which one is holding the credits is not something this
+  // screen can say, so it does not name names
+  var HELD_ELSEWHERE = 'Another table is holding these credits';
   // What the OTHER game still has riding, per game. Both games bet from one purse but a stake does
   // not leave the balance until its round settles, so the header number is not what this game may
   // bet: the host sends `free` with every reply and the difference from the balance is what is
   // spoken for. Kept as that difference rather than as `free` itself, so a credit minted while the
   // bet screen is up lights the chips at once instead of waiting for the next reply
-  var gameHeld = { bj: 0, hl: 0 };
+  var gameHeld = { bj: 0, hl: 0, pk: 0 };
   function setHeld(g, m) {
     if (typeof m.free === 'number' && typeof m.balance === 'number') gameHeld[g] = Math.max(0, m.balance - m.free);
   }
@@ -870,7 +876,7 @@
       var v = Number(bs[i].getAttribute('data-v')), short = v > bal;
       bs[i].disabled = locked || short;
       // a chip the header's balance covers but this game's share does not is the other game's doing
-      bs[i].title = !short ? '' : (known && v <= prev.cr ? ui.other + ' is holding these credits' : 'Not enough credits');
+      bs[i].title = !short ? '' : (known && v <= prev.cr ? HELD_ELSEWHERE : 'Not enough credits');
       bs[i].classList.toggle('on', v === pick);
       bs[i].setAttribute('aria-pressed', v === pick ? 'true' : 'false');
     }
@@ -882,7 +888,7 @@
     if (note) {
       note.hidden = !known || bal >= BJ_STAKES[0];
       note.textContent = known && prev.cr >= BJ_STAKES[0]
-        ? ui.other + ' is holding these credits.'
+        ? HELD_ELSEWHERE + '.'
         : 'You need ' + BJ_STAKES[0] + ' credits to play.';
     }
   }
@@ -938,13 +944,24 @@
     return true;
   }
   document.addEventListener('keydown', function (e) {
-    var body = document.body, atBj = body.classList.contains('game-bj'), atHl = body.classList.contains('game-hl');
-    if ((!atBj && !atHl) || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    var body = document.body, atBj = body.classList.contains('game-bj'),
+      atHl = body.classList.contains('game-hl'), atPk = body.classList.contains('game-pk');
+    if ((!atBj && !atHl && !atPk) || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
     var t = e.target; if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
     if (document.querySelector('.sheet:not([hidden])')) return;
     var k = String(e.key).toLowerCase();
     if (atBj) pressPanel(e, '#bjPlay', { h: 'hit', s: 'stand', d: 'double', p: 'split' }[k] || null, 'bjDeal', 'bjBet');
-    else pressPanel(e, '#hlPlay', { arrowup: 'higher', arrowdown: 'lower', c: 'cashout' }[k] || null, 'hlDeal', 'hlBet');
+    else if (atHl) pressPanel(e, '#hlPlay', { arrowup: 'higher', arrowdown: 'lower', c: 'cashout' }[k] || null, 'hlDeal', 'hlBet');
+    else {
+      // 1 to 5 mark a card to keep, Enter deals or draws. The key is only taken while there are
+      // cards to mark: on the bet screen nothing would happen, and a swallowed digit is one the
+      // rest of the page never sees
+      if (k >= '1' && k <= '5') {
+        if (pk.st && pk.st.phase === 'draw') { e.preventDefault(); pkToggle(Number(k) - 1); }
+        return;
+      }
+      pressPanel(e, '#pkPlay', null, 'pkDeal', 'pkBet');
+    }
   });
 
   // ===========================================================================
@@ -1070,9 +1087,9 @@
     hlClearTimers();
     clearTimeout(hl.to);
     hl.busy = false; hl.op = null;
-    releaseHeldHeader();
   }
-  function gameLeave() { bjLeave(); hlLeave(); }
+  // Each table stops its own clock; the held header is let go once, here
+  function gameLeave() { bjLeave(); hlLeave(); pkLeave(); releaseHeldHeader(); }
 
   function hlSend(op, extra) {
     if (hl.busy) return;
@@ -1136,6 +1153,234 @@
     hlSend(b.getAttribute('data-op'));
   });
   if (el('hlBack')) el('hlBack').addEventListener('click', function () { openGame(null); });
+
+
+  // ===========================================================================
+  // Draw Poker (jacks or better): the pay table is always on the felt, five cards under it.
+  // Holds are the webview's own: they travel with the draw, so there is no round trip per card.
+  // ===========================================================================
+  // cardIn and cardOut are the lengths of .pk-card.in and .pk-card.out in styles.js
+  var PK_T = { dealGap: 90, cardIn: 160, cardOut: 120, pressGap: 40, drawGap: 80, settle: 250, noReply: 4000 };
+  // A discard has to be gone before its replacement drops into the same slot, so the first card of
+  // a draw comes in just past the fade. Built on cardOut rather than written out, because the two
+  // are one length: retiming .pk-card.out alone would drop a card onto one still fading
+  PK_T.drawLead = PK_T.cardOut + 20;
+  var pk = { st: null, busy: false, op: null, n: 0, timers: [], to: null, wantFocus: false, phase: null, hold: [false, false, false, false, false], locked: false };
+  function pkClearTimers() { pk.timers.forEach(clearTimeout); pk.timers = []; }
+  var SUIT_WORD = { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' };
+  var RANK_WORD = { A: 'ace', J: 'jack', Q: 'queen', K: 'king' };
+  function cardWord(c) { return (RANK_WORD[c.r] || c.r) + ' of ' + SUIT_WORD[c.s]; }
+
+  // The pay table is the state's own: nine rows, five in the left column and four in the right,
+  // so the DOM order interleaves them (row 1 is Royal flush and Straight, and so on).
+  // The loop runs the longer column, so retuning the table in poker.js cannot quietly lose the
+  // bottom of one side: a tenth row would be left[5], which only the longer count reaches
+  function pkPays(st) {
+    var box = el('pkPays'); if (!box) return;
+    var pays = (st && st.pays) || [], half = Math.ceil(pays.length / 2);
+    var left = pays.slice(0, half), right = pays.slice(half), won = st && st.hand && st.hand.mult > 0 ? st.hand.name : null;
+    var row = function (p) { return !p ? '' : '<div class="pk-pay' + (p.name === won ? ' on' : '') + '"><span>' + esc(p.name) + '</span><b>' + p.mult + '</b></div>'; };
+    var html = '', rows = Math.max(left.length, right.length);
+    for (var i = 0; i < rows; i++) html += row(left[i]) + row(right[i]);
+    box.innerHTML = html;
+  }
+  // Slots are buttons: the card itself is the target, 32x60 including the HOLD label's place.
+  // The title carries the number key that marks it, which is the only place the shortcut is
+  // written down: the deal puts the focus on Draw, so there is nothing to tab past and find it on
+  function pkCards(st, plan, prevSt) {
+    var box = el('pkHand'); if (!box) return;
+    var cards = (st && st.cards) || [];
+    if (!cards.length) { box.innerHTML = ''; return; }
+    var out = (plan && plan.out) || [], hidden = (plan && plan.hidden) || [];
+    var html = '';
+    for (var i = 0; i < cards.length; i++) {
+      var shown = (out.indexOf(i) >= 0 && prevSt && prevSt.cards[i]) ? prevSt.cards[i] : cards[i];
+      var held = pkHeldAt(st, i);
+      html += '<button type="button" class="pk-slot' + (held ? ' held' : '') + '" data-i="' + i + '" aria-pressed="' + (held ? 'true' : 'false')
+        + '" title="Hold (' + (i + 1) + ')" aria-label="' + esc(cardWord(shown)) + (held ? ', held' : '') + '" style="left:' + (i * 28) + 'px">'
+        + '<span class="pk-card"' + (hidden.indexOf(i) >= 0 ? ' style="visibility:hidden"' : '') + '>' + cardFace(shown, 2) + '</span>'
+        + '<span class="pk-hold">HOLD</span></button>';
+    }
+    box.innerHTML = html;
+  }
+  function pkHeldAt(st, i) { return st && st.phase === 'done' ? !!(st.held && st.held[i]) : !!pk.hold[i]; }
+  function pkSlot(i) { return document.querySelector('#pkHand .pk-slot[data-i="' + i + '"]'); }
+  // Reveals one card: swaps in the real face if the old one was still showing, then drops it in
+  function pkReveal(i, st) {
+    var slot = pkSlot(i); if (!slot) return;
+    var card = slot.querySelector('.pk-card'); if (!card) return;
+    card.classList.remove('out');
+    card.innerHTML = cardFace(st.cards[i], 2);
+    card.style.visibility = '';
+    slot.setAttribute('aria-label', cardWord(st.cards[i]));
+    void card.getBoundingClientRect(); card.classList.add('in');
+  }
+  // What moves and when: a deal walks all five in, a draw drops the discards and brings those back
+  function pkPlan(prevSt, st, op) {
+    if (op === 'deal') return { hidden: [0, 1, 2, 3, 4], out: [], steps: [0, 1, 2, 3, 4].map(function (i, k) { return { i: i, at: k * PK_T.dealGap }; }), last: 4 * PK_T.dealGap + PK_T.cardIn, wait: PK_T.pressGap };
+    var changed = [];
+    for (var i = 0; i < 5; i++) if (st.held && !st.held[i]) changed.push(i);
+    return {
+      hidden: [], out: changed.slice(),
+      steps: changed.map(function (i, k) { return { i: i, at: PK_T.drawLead + k * PK_T.drawGap }; }),
+      last: changed.length ? PK_T.drawLead + (changed.length - 1) * PK_T.drawGap + PK_T.cardIn : 0, wait: PK_T.settle
+    };
+  }
+  function pkLine(st) {
+    var line = el('pkLine'); if (!line) return;
+    if (!st || st.phase === 'bet') { line.innerHTML = hlPot(gameStake(STAKE_UI.pk), true); return; }
+    if (st.phase === 'done') {
+      var hand = st.hand || { name: 'No win', mult: 0 };
+      var top = st.pays && st.pays[0] && hand.name === st.pays[0].name; // the house's best row gets the gold chip
+      var tint = hand.mult > 0 ? (top ? 'bj' : 'win') : 'lose';
+      line.innerHTML = '<span class="bj-chip ' + tint + '">' + esc(hand.name) + ' ' + signed(st.net || 0) + '</span>';
+      return;
+    }
+    line.innerHTML = hlPot(st.bet, false);
+  }
+  function pkDrawLabel(st) {
+    var b = el('pkDraw'); if (!b) return;
+    var n = 0;
+    for (var i = 0; i < 5; i++) if (!pk.hold[i]) n++;
+    b.textContent = n ? 'Draw ' + n : 'Keep all';
+  }
+  // The cards are the only control here that pkToggle turns away on its own, so they have to be
+  // disabled while it would: through the deal's pacing and once the hand is over. A button that
+  // takes a press and answers nothing is a button a keyboard and a screen reader are told to try
+  function pkSlotsLive(on) {
+    var slots = document.querySelectorAll('#pkHand .pk-slot');
+    for (var i = 0; i < slots.length; i++) slots[i].disabled = !on;
+  }
+  function pkLock() {
+    var all = document.querySelectorAll('#pkStakes button, #pkPlay .bj-btn');
+    for (var i = 0; i < all.length; i++) all[i].disabled = true;
+    var d = el('pkDeal'); if (d) d.disabled = true;
+    pkSlotsLive(false);
+    pk.locked = true;
+  }
+  function pkControls(st, locked) {
+    var play = !!(st && st.phase === 'draw'), can = (st && st.can) || {};
+    var bet = el('pkBet'), pl = el('pkPlay');
+    if (bet) bet.hidden = play; if (pl) pl.hidden = !play;
+    var draw = el('pkDraw'); if (draw) draw.disabled = locked || !can.draw;
+    pkSlotsLive(play && !locked);
+    pkDrawLabel(st);
+    pk.locked = !!locked;
+    if (!play) renderStakes(STAKE_UI.pk, locked);
+  }
+  function pkError(msg) {
+    var e = el('pkErr'); if (!e) return;
+    e.hidden = !msg;
+    if (msg) e.innerHTML = WARN_SVG + '<span class="wbmsg">' + esc(msg) + '</span>';
+  }
+  function pkAnnounce(st) {
+    var live = el('pkLive'); if (!live || !st) return;
+    var hand = st.hand || { name: 'No win' };
+    live.textContent = hand.name + ' ' + signed(st.net || 0) + '. Balance ' + fmtInt(prev.cr || 0) + '.';
+  }
+  function pkFocusAfter() {
+    if (curGame() !== 'poker') return;
+    var play = pk.st && pk.st.phase === 'draw';
+    var swapped = pk.phase != null && play !== (pk.phase === 'draw');
+    pk.phase = pk.st ? pk.st.phase : 'bet';
+    var a = document.activeElement, panel = el('panelPoker');
+    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
+    if (!pk.wantFocus && !swapped && !lost) return;
+    pk.wantFocus = false;
+    var target = play ? el('pkDraw') : el('pkDeal');
+    if (target && !target.disabled) target.focus();
+  }
+  // Marking a card to keep is local: nothing goes to the host until the draw
+  function pkToggle(i) {
+    if (!pk.st || pk.st.phase !== 'draw' || pk.locked || pk.busy) return;
+    pk.hold[i] = !pk.hold[i];
+    var slot = pkSlot(i);
+    if (slot) {
+      slot.classList.toggle('held', pk.hold[i]);
+      slot.setAttribute('aria-pressed', pk.hold[i] ? 'true' : 'false');
+      slot.setAttribute('aria-label', cardWord(pk.st.cards[i]) + (pk.hold[i] ? ', held' : ''));
+    }
+    pkDrawLabel(pk.st);
+  }
+  function pkLeave() {
+    pkClearTimers();
+    clearTimeout(pk.to);
+    pk.busy = false; pk.op = null;
+  }
+
+  function pkSend(op, extra) {
+    if (pk.busy) return;
+    pk.busy = true; pk.op = op; pk.n += 1;
+    if (op !== 'open') pkLock();
+    vscode.postMessage(Object.assign({ type: 'pk', op: op, n: pk.n }, extra || {}));
+    clearTimeout(pk.to);
+    pk.to = setTimeout(function () { pk.busy = false; pk.op = null; pkError('The table didn’t respond. Try again.'); pkControls(pk.st, false); }, PK_T.noReply);
+  }
+  // The cards land first and the verdict follows: a lit pay row or a result chip that moved early
+  // would say what the hand is before the last card is face up
+  function pkReceive(m) {
+    var current = pk.op != null && m.n === pk.n;
+    if (!current && pk.op != null) return;
+    var op = current ? pk.op : null;
+    clearTimeout(pk.to); pkClearTimers();
+    pk.op = null;
+    var prevSt = pk.st;
+    pk.st = m.state || null;
+    setHeld('pk', m);
+    if (op === 'deal' && !m.error) pk.hold = [false, false, false, false, false];
+    if (pk.st && pk.st.phase === 'bet') pk.hold = [false, false, false, false, false];
+    var fresh = current && op !== 'open' && !m.error && !_reduceMotion && pk.st && pk.st.cards.length === 5;
+    var plan = fresh ? pkPlan(prevSt, pk.st, op) : null;
+    try {
+      // A deal drops the last hand's verdict before anything else: the chip and the lit pay row
+      // judged the cards being replaced, and the verdict of these five is 560ms of pacing away.
+      // Blackjack clears its dealer total at the deal for the same reason
+      if (op === 'deal' && !m.error) { pkPays(pk.st); pkLine(pk.st); }
+      pkCards(pk.st, plan, prevSt);
+      pkError(m.error || '');
+      if (plan) {
+        pkLock();
+        plan.out.forEach(function (i) { var c = pkSlot(i) && pkSlot(i).querySelector('.pk-card'); if (c) c.classList.add('out'); });
+        plan.steps.forEach(function (st2) { pk.timers.push(setTimeout(function () { pkReveal(st2.i, pk.st); }, st2.at)); });
+      } else {
+        pkPays(pk.st); pkLine(pk.st); pkControls(pk.st, true);
+      }
+    } finally {
+      _bjHold = true; // the header waits for this reply's settle, like the other tables
+      var at = plan ? plan.last + plan.wait : 0; // the verdict and the controls land together, after the last card
+      pk.timers.push(setTimeout(function () { pkSettle(m, current && op !== 'open'); }, at));
+    }
+  }
+  function pkSettle(m, acted) {
+    pk.busy = false; _bjHold = false;
+    try {
+      if (typeof m.balance === 'number') setCreditsQuiet(m.balance);
+      if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
+      pkPays(pk.st); pkLine(pk.st);
+      if (acted && pk.st && pk.st.phase === 'done') pkAnnounce(pk.st);
+    } finally {
+      pkControls(pk.st, false);
+      pkFocusAfter();
+    }
+  }
+
+  // --- wiring
+  pkLine(null);
+  wireStakes(STAKE_UI.pk, function () { renderStakes(STAKE_UI.pk, pk.busy); });
+  if (el('pkDeal')) el('pkDeal').addEventListener('click', function () {
+    var bet = Number(this.getAttribute('data-bet')); if (!bet) return;
+    pkSend('deal', { bet: bet });
+  });
+  // the five flags go with the draw, in one message
+  if (el('pkDraw')) el('pkDraw').addEventListener('click', function () {
+    if (this.disabled) return;
+    pkSend('draw', { hold: pk.hold.map(function (h) { return !!h; }) });
+  });
+  if (el('pkHand')) el('pkHand').addEventListener('click', function (e) {
+    var slot = e.target.closest ? e.target.closest('.pk-slot') : null; if (!slot) return;
+    pkToggle(Number(slot.getAttribute('data-i')));
+  });
+  if (el('pkBack')) el('pkBack').addEventListener('click', function () { openGame(null); });
 
   // live tick every 1s: active time + countdowns + "Updated Ns ago"
   function tick() {
@@ -1281,6 +1526,7 @@
     if (m.type === 'data') render(m.data);
     else if (m.type === 'bj') bjReceive(m);
     else if (m.type === 'hl') hlReceive(m);
+    else if (m.type === 'pk') pkReceive(m);
     else if (m.type === 'openSettings') { var s = el('settingsSheet'); if (s) s.hidden = !s.hidden; }
   });
 

@@ -28,11 +28,19 @@ function mulberry32(a) {
   };
 }
 
-// An unshuffled shoe: DECKS full decks, in code order. Both games deal from six decks, so the count
-// is not a parameter: a deck count that only one game could pass is a difference waiting to appear
+// One unshuffled deck, in code order: the only place that knows a deck is 52 cards
+function freshDeck() {
+  const deck = [];
+  for (let c = 0; c < 52; c++) deck.push(c);
+  return deck;
+}
+
+// An unshuffled shoe: DECKS full decks, in code order. Blackjack and high-low deal from six decks
+// and draw poker from one, and neither count is a parameter: a deck count that only one game could
+// pass is a difference waiting to appear
 function freshShoe() {
   const shoe = [];
-  for (let d = 0; d < DECKS; d++) for (let c = 0; c < 52; c++) shoe.push(c);
+  for (let d = 0; d < DECKS; d++) for (const code of freshDeck()) shoe.push(code);
   return shoe;
 }
 
@@ -67,4 +75,4 @@ function cardOf(code) {
 
 // hashSeed and mulberry32 stay inside: the seeded shuffle is what the games need, and a PRNG on the
 // way out is an invitation to roll something else from the same seed
-module.exports = { RANKS, SUITS, DECKS, freshShoe, shuffle, shuffledShoe, codeOf, cardOf };
+module.exports = { RANKS, SUITS, DECKS, freshDeck, freshShoe, shuffle, shuffledShoe, codeOf, cardOf };

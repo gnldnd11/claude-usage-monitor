@@ -12,7 +12,7 @@ const ROOT = path.join(__dirname, '..');
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-host-'));
 fs.mkdirSync(path.join(HOME, '.claude', 'projects'), { recursive: true });
 process.env.HOME = HOME; // extension.js reads os.homedir() when it loads
-process.env.CUC_TEST = '1'; // exposes _test.setBjSeeds / setHlSeeds, used to pick the cards
+process.env.CUC_TEST = '1'; // exposes _test.setBjSeeds / setHlSeeds / setPkSeeds, used to pick the cards
 
 // --- fake vscode ------------------------------------------------------------------------
 const noop = () => ({ dispose() {} });
@@ -54,6 +54,7 @@ Module._load = function (req) { return req === 'vscode' ? vscode : origLoad.appl
 const ext = require(path.join(ROOT, 'extension.js'));
 const bj = require(path.join(ROOT, 'blackjack.js'));
 const hl = require(path.join(ROOT, 'highlow.js'));
+const pkmod = require(path.join(ROOT, 'poker.js'));
 // first seed (from a fixed list) whose deal matches `want`
 function findSeed(tag, want) {
   for (let i = 0; i < 5000; i++) { const seed = tag + i; if (want(bj.newRound({ seed, bet: 10 }))) return seed; }
@@ -387,6 +388,230 @@ test('hl: the shoe carries from one run into the next', () => {
   } finally { ext._test.setHlSeeds(null); }
 });
 
+// --- draw poker --------------------------------------------------------------------------
+// A hand is one deck and one draw, and nothing carries, so a seed names a hand on its own: unlike
+// pinHl above, this does not have to search against a deck the host is holding
+const PAT = [true, true, true, true, true];
+function pinPk(tag, want) {
+  for (let i = 0; i < 5000; i++) {
+    const seed = tag + i;
+    if (want(pkmod.newHand({ seed, bet: 100 }))) { ext._test.setPkSeeds(() => seed); return seed; }
+  }
+  throw new Error('no seed for ' + tag);
+}
+// A seed whose five dealt cards already pay the given row, so holding all five settles there and
+// the test knows the net before it deals
+const pinRow = (tag, row) => pinPk(tag, (st) => pkmod.rankOf(st.cards) === row);
+
+test('pk open with no hand: phase bet, the paytable, nothing on the table', () => {
+  const r = send({ type: 'pk', op: 'open' });
+  assert.equal(r.state.phase, 'bet');
+  assert.deepEqual(r.state.cards, []);
+  assert.equal(r.state.hand, null);
+  assert.equal(r.error, undefined);
+  assert.equal(r.balance, send({ type: 'bj', op: 'open' }).balance, 'one purse, one number');
+  // the screen takes its nine rows off every reply, bet screen included
+  assert.deepEqual(r.state.pays, pkmod.PAYS);
+  assert.equal('seq' in r.state, false, 'one draw a hand: there is nothing to pace');
+});
+
+test('pk bad bets are refused and change nothing', () => {
+  const hands = bankSum('hands');
+  const balance = send({ type: 'pk', op: 'open' }).balance;
+  for (const bet of [9, 10.5, '10', null, undefined, NaN, -10, Infinity, balance + 1]) {
+    const r = send({ type: 'pk', op: 'deal', bet });
+    assert.ok(r.error, 'bet ' + JSON.stringify(bet));
+    assert.equal(r.state.phase, 'bet');
+  }
+  assert.equal(bankSum('hands'), hands);
+  assert.equal(send({ type: 'pk', op: 'open' }).balance, balance);
+});
+
+test('pk hands settle once into the bank, the balance and the header', () => {
+  let expected = send({ type: 'pk', op: 'open' }).balance;
+  try {
+    for (let i = 0; i < 20; i++) {
+      // a payer and a loser in turn, so the bank is checked moving both ways and the purse ends
+      // where it started
+      const row = i % 2 === 0 ? pkmod.ROW.twoPair : pkmod.ROW.none;
+      pinRow('bank-' + i + '-', row);
+      const hands = bankSum('hands');
+      let r = send({ type: 'pk', op: 'deal', bet: 10 });
+      assert.equal(r.error, undefined);
+      assert.equal(r.state.phase, 'draw');
+      assert.equal(r.state.hand, null, 'nothing is paid before the draw');
+      assert.equal(r.balance, expected, 'the deal moves no credits');
+      assert.equal(bankSum('hands'), hands, 'a live hand has settled nothing');
+      r = send({ type: 'pk', op: 'draw', hold: PAT });
+      assert.equal(r.state.phase, 'done');
+      assert.equal(r.state.hand.name, row.name);
+      assert.equal(r.state.net, 10 * row.mult - 10);
+      expected += r.state.net;
+      assert.equal(r.balance, expected);
+      assert.equal(lastHeaderBalance(), expected);
+      assert.equal(bankSum('hands'), hands + 1);
+      // anything after settlement is refused and does not settle again
+      const again = send({ type: 'pk', op: 'draw', hold: PAT });
+      assert.equal(again.error, 'no hand in progress');
+      assert.equal(bankSum('hands'), hands + 1);
+    }
+  } finally { ext._test.setPkSeeds(null); }
+  assert.equal(Object.keys(bank()).length, 1, 'all three games share this activation\'s one bank key');
+  assert.equal(send({ type: 'pk', op: 'open' }).balance, expected);
+});
+
+test('pk: a deal during a hand is refused; open resumes it', () => {
+  pinRow('resume-', pkmod.ROW.jacks);
+  try {
+    const r = send({ type: 'pk', op: 'deal', bet: 10 });
+    assert.equal(r.state.phase, 'draw');
+    const refused = send({ type: 'pk', op: 'deal', bet: 10 });
+    assert.equal(refused.error, 'a hand is already in progress');
+    assert.deepEqual(refused.state.cards, r.state.cards);
+    const reopened = send({ type: 'pk', op: 'open' });
+    assert.deepEqual(reopened.state.cards, r.state.cards);
+    assert.deepEqual(reopened.state.held, [false, false, false, false, false]);
+    assert.deepEqual(reopened.state.can, { draw: true });
+    const out = send({ type: 'pk', op: 'draw', hold: PAT });
+    assert.equal(out.state.phase, 'done');
+    assert.equal(out.state.net, 0, 'a paid pair hands the bet straight back');
+  } finally { ext._test.setPkSeeds(null); }
+});
+
+test('pk: the hold flags are checked before a credit moves', () => {
+  pinRow('hold-', pkmod.ROW.jacks);
+  try {
+    const before = send({ type: 'pk', op: 'open' }).balance;
+    const hands = bankSum('hands');
+    const dealt = send({ type: 'pk', op: 'deal', bet: 10 });
+    assert.equal(dealt.state.phase, 'draw');
+    for (const hold of [undefined, null, [], PAT.slice(0, 4), PAT.concat([true]), [1, 0, 1, 0, 1],
+      [true, true, true, true, 'false'], 'hold', { 0: true }]) {
+      const r = send({ type: 'pk', op: 'draw', hold });
+      assert.equal(r.error, 'hold must be 5 true/false flags', JSON.stringify(hold));
+      assert.equal(r.state.phase, 'draw', 'the hand is still live');
+      assert.deepEqual(r.state.cards, dealt.state.cards, 'and no card moved');
+      assert.equal(r.balance, before);
+    }
+    assert.equal(bankSum('hands'), hands, 'a refused draw settles nothing');
+    // the flags the webview really sends come back as the mask the draw used
+    const out = send({ type: 'pk', op: 'draw', hold: [true, false, true, false, true] });
+    assert.equal(out.error, undefined);
+    assert.deepEqual(out.state.held, [true, false, true, false, true]);
+    assert.equal(bankSum('hands'), hands + 1);
+  } finally { ext._test.setPkSeeds(null); }
+});
+
+test('pk: a miss costs the bet, and the reply comes before the push', () => {
+  pinRow('miss-', pkmod.ROW.none);
+  try {
+    const before = send({ type: 'pk', op: 'open' }).balance;
+    send({ type: 'pk', op: 'deal', bet: 100 });
+    const from = posted.length;
+    const lost = send({ type: 'pk', op: 'draw', hold: PAT });
+    assert.equal(lost.state.phase, 'done');
+    assert.equal(lost.state.hand.name, 'No win');
+    assert.equal(lost.state.net, -100, 'only the bet goes');
+    assert.equal(lost.balance, before - 100);
+    const kinds = posted.slice(from).map((m) => m.type);
+    assert.ok(kinds.indexOf('pk') >= 0 && kinds.indexOf('data') > kinds.indexOf('pk'), 'order ' + kinds.join(','));
+  } finally { ext._test.setPkSeeds(null); }
+});
+
+// Ten hands, not more: these are real random hands at the minimum bet, held pat, which returns
+// about a third of what it stakes (test/poker.test.js measures it), so every pass is money out of
+// the one purse the tests below share. Ten is at worst 100 credits of the 1,000 START_CREDITS, and
+// the three-games test further down needs 60 left to open with
+test('pk: nothing a live reply carries re-deals the deck; the seed arrives at done', () => {
+  let live = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = send({ type: 'pk', op: 'deal', bet: 10 });
+    assert.equal(r.error, undefined);
+    assert.equal(r.state.phase, 'draw');
+    live++;
+    const leaves = [];
+    (function walk(x) { if (x == null) return; if (typeof x !== 'object') { leaves.push(String(x)); return; } for (const k in x) { leaves.push(k); walk(x[k]); } })(r);
+    assert.equal('seed' in r.state, false);
+    const out = send({ type: 'pk', op: 'draw', hold: PAT });
+    const real = JSON.stringify(pkmod.newHand({ seed: out.state.seed, bet: 10 }).deck.slice(0, 12));
+    assert.notEqual(out.state.id, out.state.seed);
+    for (const leaf of leaves) assert.notEqual(JSON.stringify(pkmod.newHand({ seed: leaf, bet: 10 }).deck.slice(0, 12)), real);
+  }
+  assert.equal(live, 10);
+});
+
+test('pk: the reply echoes the request number, and unknown ops are refused', () => {
+  assert.equal(send({ type: 'pk', op: 'open', n: 81 }).n, 81);
+  assert.equal(send({ type: 'pk', op: 'draw', hold: PAT, n: 82 }).n, 82);   // refused, still echoed
+  assert.equal('n' in send({ type: 'pk', op: 'open', n: 'x' }), false);     // not a number: nothing echoed
+  assert.equal(send({ type: 'pk', op: 'surrender' }).error, 'unknown action');
+  assert.equal(send({ type: 'pk', op: 'hold', i: 1 }).error, 'unknown action', 'holding is the webview\'s own doing');
+});
+
+// Three live stakes against one purse. Each game takes every credit the other two have not
+// reserved, which is the tightest the purse can be: with heldBy() blind to any one of them, two
+// losing rounds would take the balance under zero.
+// All three are pinned to outcomes that give the bet back (a blackjack push, a high-low call that
+// lands, a poker hand dealt a paid pair and held pat), so the purse ends each pass where it began
+// and twenty passes cannot dry it out
+test('three games, one purse: each is bet against what the other two left', () => {
+  const push = findSeed('push3-', (st) => {
+    if (st.phase !== 'player') return false;
+    const stood = bj.act(st, 'stand');
+    return stood.phase === 'done' && stood.net === 0;
+  });
+  let low = Infinity, all3 = 0;
+  const check = (r) => {
+    assert.ok(r.balance >= 0, 'the purse went to ' + r.balance);
+    assert.equal(r.balance, START_CREDITS + bankSum('won') - bankSum('lost'), 'balance is the bank');
+    low = Math.min(low, r.balance);
+    return r;
+  };
+  ext._test.setBjSeeds(() => push);
+  try {
+    for (let i = 0; i < 20; i++) {
+      const balance = check(send({ type: 'pk', op: 'open' })).balance;
+      assert.ok(balance >= 60, 'three stakes of at least ten need this much: ' + balance);
+      const third = Math.floor(balance / 3);
+      // blackjack holds a third open
+      let b = check(send({ type: 'bj', op: 'deal', bet: third }));
+      assert.equal(b.error, undefined);
+      assert.equal(b.state.phase, 'player', 'the pinned hand is live, so its stake stays held');
+      // high-low holds another third
+      pinWinner('three-hl-' + i);
+      let h = check(send({ type: 'hl', op: 'deal', bet: third }));
+      assert.equal(h.error, undefined);
+      assert.equal(h.state.phase, 'play');
+      // and poker may have exactly what the two of them left, not a credit more
+      const room = balance - third * 2;
+      assert.ok(room >= 10, 'room left for poker: ' + room);
+      assert.equal(check(send({ type: 'pk', op: 'deal', bet: room + 1 })).error, 'not enough credits');
+      pinRow('three-pk-' + i + '-', pkmod.ROW.jacks);
+      const p = check(send({ type: 'pk', op: 'deal', bet: room }));
+      assert.equal(p.error, undefined);
+      assert.equal(p.state.phase, 'draw');
+      if (b.state.phase === 'player' && h.state.phase === 'play') all3++;
+      // nothing at all is free now: blackjack cannot double into what the other two are holding
+      assert.equal(send({ type: 'bj', op: 'double' }).error, 'not enough credits');
+      assert.equal(send({ type: 'bj', op: 'open' }).state.can.double, false);
+      // what each one sees free is exactly its own stake, which is the whole purse accounted for
+      // three ways. Counting a game's own stake as held would take it out twice (see the double
+      // test above), and not counting the other two would offer credits the host is about to refuse
+      assert.equal(check(send({ type: 'hl', op: 'open' })).free, third);
+      assert.equal(send({ type: 'pk', op: 'open' }).free, room);
+      assert.equal(send({ type: 'bj', op: 'open' }).free, third);
+      // settle all three; none of them took credits another was holding
+      const out = check(send({ type: 'pk', op: 'draw', hold: PAT }));
+      assert.equal(out.state.net, 0, 'the pinned poker hand returns its bet');
+      h = check(send({ type: 'hl', op: safest(h.state) }));
+      if (h.state.phase === 'play') h = check(send({ type: 'hl', op: 'cashout' }));
+      while (b.state.phase === 'player') b = check(send({ type: 'bj', op: 'stand' }));
+    }
+  } finally { ext._test.setBjSeeds(null); ext._test.setHlSeeds(null); ext._test.setPkSeeds(null); }
+  assert.ok(all3 >= 15, 'the three ran at the same time only ' + all3 + ' times');
+  console.log('  purse: three games live at once ' + all3 + ' times, lowest balance seen ' + low);
+});
+
 test('the two games share one purse: a live round holds its stake back from the other', () => {
   let round;
   for (let i = 0; i < 50; i++) {
@@ -500,7 +725,9 @@ test('unknown ops are refused', () => {
 function closeRounds() {
   try {
     ext._test.setHlSeeds(null);
+    ext._test.setPkSeeds(null);
     for (let i = 0; i < 20 && send({ type: 'bj', op: 'open' }).state.phase === 'player'; i++) send({ type: 'bj', op: 'stand' });
+    if (send({ type: 'pk', op: 'open' }).state.phase === 'draw') send({ type: 'pk', op: 'draw', hold: [true, true, true, true, true] });
     for (let i = 0; i < 400; i++) {
       const st = send({ type: 'hl', op: 'open' }).state;
       if (st.phase !== 'play') break;

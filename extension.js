@@ -11,6 +11,7 @@ const { lineUsage, usageKey, usageVec, addUsageOnce, localDayKey } = require('./
 const credits = require('./credits');
 const blackjack = require('./blackjack');
 const highlow = require('./highlow');
+const poker = require('./poker');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const RATE_FILE = path.join(CLAUDE_DIR, 'usage-bar.json');
@@ -530,14 +531,14 @@ function syncCredits(tokens) {
 }
 
 // --- the crab's casino (solo, crab dealer) ----------------------------------------
-// Two games, one purse. The host owns every round and every ruling; the webview only sends a bet
+// Three games, one purse. The host owns every round and every ruling; the webview only sends a bet
 // and an action.
 // Rounds live in memory only. Stakes move only when a round settles, so reloading VS Code mid-round
 // voids that round and loses nothing. In solo mode that loophole (reload away a bad hand) is
 // accepted on purpose.
-// Results go to the ledger's bank as this activation's own grow-only counters (credits.js). Both
-// games share one set of counters: the balance is built from credits won and lost, which is the
-// same currency either way, and a key per game would have to be migrated into every window's
+// Results go to the ledger's bank as this activation's own grow-only counters (credits.js). All
+// three games share one set of counters: the balance is built from credits won and lost, which is
+// the same currency either way, and a key per game would have to be migrated into every window's
 // stored ledger to buy nothing.
 // A round settles exactly once: only the move that turns it to 'done' records it, and every later
 // action on a done round is refused before it gets that far.
@@ -552,17 +553,20 @@ function creditBalance() {
   return credits.creditSummary(creditStore.read(), localDayKey(Date.now()), false).balance;
 }
 
-// What a live round in the OTHER game still has a claim on. Both games may be live at the same
-// time, since they share nothing but the purse and making one wait on the other would be a rule the
-// player can feel for no reason. But a stake does not leave the balance until its round settles, so
-// without this the two rounds would be measured against the same credits and losing both would
-// overdraw. Each game is therefore bet against the balance minus what the other has riding.
+// What a live round in the OTHER games still has a claim on. All three may be live at the same
+// time, since they share nothing but the purse and making one wait on the others would be a rule
+// the player can feel for no reason. But a stake does not leave the balance until its round
+// settles, so without this the rounds would be measured against the same credits and losing them
+// all would overdraw. Each game is therefore bet against the balance minus what the others have
+// riding.
 // Blackjack's stake grows with a double or a split; high-low's is its opening bet, because the pot
-// it builds is the house's money until the player cashes out.
+// it builds is the house's money until the player cashes out; poker's is its bet from the deal to
+// the draw, which is the whole hand.
 function heldBy(game) {
   let held = 0;
   if (game !== 'bj' && bjRound && bjRound.phase === 'player') held += blackjack.stake(bjRound);
   if (game !== 'hl' && hlRun && hlRun.phase === 'play') held += hlRun.bet;
+  if (game !== 'pk' && pkHand && pkHand.phase === 'draw') held += pkHand.bet;
   return held;
 }
 
@@ -576,7 +580,8 @@ function budgetFor(game) {
 // `free` is the balance this game may actually stake: the other game's live round is spoken for, and
 // without it the chips would offer credits the host is about to refuse.
 // seq only in the reply to the action that produced it: an 'open' or a rejection replays nothing.
-// High-low has no seq at all (one card a move), so the field is cleared only where there is one
+// High-low and poker have no seq at all (one card a move there, one draw a hand here), so the field
+// is cleared only where there is one
 function gameReply(game, engine, round, reqN, error, withSeq) {
   const balance = creditBalance();
   const free = balance - heldBy(game);
@@ -696,6 +701,56 @@ function handleHl(m) {
   else if (m.op === 'deal') hlDeal(m.bet);
   else if (highlow.OPS.includes(m.op)) hlAct(m.op);
   else hlReply('unknown action');
+}
+
+// --- draw poker ---------------------------------------------------------------------
+// Jacks or Better. A hand is one deck, and the deck is thrown away with the hand, so there is no
+// shoe to carry the way high-low carries one.
+// A hand is two messages: the deal, and one draw carrying the five hold flags. The marks themselves
+// are the webview's own doing and never reach the host, so there is no round trip per card and no
+// order to get wrong between the marks and the draw they belong to. What the host does check is
+// that the array it is handed is really five flags (poker.whyNot), because that array is the move:
+// a short one cannot say which cards were kept, and a '1' or a null would be read as a keep or a
+// discard by whatever coerced it.
+const PK_MIN_BET = 10;
+let pkHand = null;            // engine state: current hand, or the last finished one
+let pkSeedSource = gameRandom; // tests swap this to pick the cards (_test.setPkSeeds)
+let pkReqN = null;
+
+function pkReply(error) {
+  gameReply('pk', poker, pkHand, pkReqN, error, false);
+}
+
+function pkAfterMove() {
+  afterMove(pkHand.phase === 'done', pkHand.net, pkReply, 'poker');
+}
+
+// Comparisons are written as !(a <= b) so a NaN (a broken ledger, a bad bet) refuses
+function pkDeal(bet) {
+  if (pkHand && pkHand.phase === 'draw') return pkReply('a hand is already in progress');
+  if (!Number.isSafeInteger(bet) || !(bet >= PK_MIN_BET)) return pkReply('bet must be a whole number of at least ' + PK_MIN_BET);
+  if (!(bet <= budgetFor('pk'))) return pkReply('not enough credits');
+  ensureReplica();
+  pkHand = poker.newHand({ seed: pkSeedSource(), id: gameRandom(), bet });
+  pkAfterMove();
+}
+
+function pkAct(op) {
+  if (!pkHand || pkHand.phase !== 'draw') return pkReply('no hand in progress');
+  const reason = poker.whyNot(pkHand, op, budgetFor('pk'));
+  if (reason) return pkReply(reason);
+  pkHand = poker.act(pkHand, op);
+  pkAfterMove();
+}
+
+function handlePk(m) {
+  pkReqN = Number.isSafeInteger(m.n) ? m.n : null;
+  if (m.op === 'open') pkReply(null);
+  else if (m.op === 'deal') pkDeal(m.bet);
+  // the hold flags travel with the draw, so the message is rebuilt here rather than passed on:
+  // nothing else off the wire belongs in an engine op
+  else if (poker.OPS.includes(m.op)) pkAct({ op: m.op, hold: m.hold });
+  else pkReply('unknown action');
 }
 
 // --- agent roster (M1) -------------------------------------------------------
@@ -1123,6 +1178,7 @@ class UsageViewProvider {
       if (m.type === 'ready') push();
       else if (m.type === 'bj') handleBj(m);
       else if (m.type === 'hl') handleHl(m);
+      else if (m.type === 'pk') handlePk(m);
       else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
       else if (m.type === 'setConfig' && m.key) {
         vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global).then(function () { push(); });
@@ -1409,6 +1465,7 @@ if (process.env.CUC_TEST) module.exports._test = {
   readTokens, parseLinesInto, freshAcc, collect, computeAgentActivity, parseSubUsage, contextPct,
   setBjSeeds: (fn) => { bjSeedSource = fn || gameRandom; },
   setHlSeeds: (fn) => { hlSeedSource = fn || gameRandom; },
+  setPkSeeds: (fn) => { pkSeedSource = fn || gameRandom; },
   // the deck the next run will shuffle. A seed only names a run together with this, because the
   // shoe carries: tests that want a particular run have to search the seed against it
   hlDeck: () => (hlShoe ? hlShoe.slice() : null)

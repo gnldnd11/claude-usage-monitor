@@ -124,6 +124,11 @@ function renderHtml(vars) {
       <span class="gm-txt"><span class="gm-nm">High-Low</span><span class="gm-sub">Min bet 10</span></span>
       <span class="gm-go">${IC.chevron}</span>
     </button>
+    <button type="button" class="gm-row" data-game="poker">
+      <span class="gm-ic">${IC.spade}</span>
+      <span class="gm-txt"><span class="gm-nm">Draw Poker</span><span class="gm-sub">Jacks or better</span></span>
+      <span class="gm-go">${IC.chevron}</span>
+    </button>
   </div>
   <div class="inner bj" id="panelTable" style="display:none">
     <div class="ihead bj-head">
@@ -181,6 +186,28 @@ function renderHtml(vars) {
       <button type="button" class="bj-btn hl-guess" data-op="higher" title="Higher (up arrow)"><span>Higher</span><b id="hlUp">—</b></button>
       <button type="button" class="bj-btn hl-guess" data-op="lower" title="Lower (down arrow)"><span>Lower</span><b id="hlDn">—</b></button>
       <button type="button" class="bj-btn hl-cash" data-op="cashout" title="Cash out (C)">Cash out <b id="hlCashAmt">0</b></button>
+    </div>
+  </div>
+  <div class="inner pk" id="panelPoker" style="display:none">
+    <div class="ihead bj-head">
+      <button type="button" class="bj-back" id="pkBack" title="All games">${IC.chevron}</button>
+      <div class="it" title="One deck, shuffled each hand · Hold what you want, draw once · A pair pays only from jacks up">${IC.spade} Draw Poker</div>
+      <div class="bj-side" id="pkSide"></div>
+    </div>
+    <div class="bj-felt">
+      <div class="pk-pays" id="pkPays"></div>
+      <div class="pk-hand" id="pkHand"></div>
+      <div class="hl-line" id="pkLine"></div>
+    </div>
+    <div class="bj-sr" id="pkLive" aria-live="polite"></div>
+    <div class="bj-note" id="pkNote" hidden></div>
+    <div class="warnbar" id="pkErr" hidden></div>
+    <div class="bj-ctl" id="pkBet">
+      <div class="bj-stakes" id="pkStakes" role="group" aria-label="Bet"><button type="button" data-v="10">10</button><button type="button" data-v="100">100</button><button type="button" data-v="1000" aria-label="1,000">1K</button></div>
+      <button type="button" class="bj-btn primary" id="pkDeal" title="Deal (Enter)">Deal</button>
+    </div>
+    <div class="bj-ctl" id="pkPlay" hidden>
+      <button type="button" class="bj-btn primary" id="pkDraw" style="flex:1 1 100%" title="Draw (Enter)">Draw</button>
     </div>
   </div>
 </div></div>

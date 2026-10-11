@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.17.0: Draw Poker joins the table
+
+- **Draw Poker**: a third game at the crab's table. Jacks or better: five cards come up face up, you mark the ones to keep and one draw replaces the rest. Keeping all five is allowed, a pair of tens or less is nothing, and a paid pair of jacks hands your bet straight back.
+- **The pay table is on the felt**: all nine rows sit above the cards, and the row you were paid for lights up once the last card is face up. It is an 8/5 table, so the royal pays 800 and the house keeps about 3%, the same band as the other two games. Every multiplier is a whole number, so nothing in the payout is rounded.
+- **Marking cards costs nothing**: click a card or press 1 to 5. The marks never leave the panel and travel with the draw as one move, so there is no round trip per card. Enter deals and draws.
+- **Games list**: three rows now. Blackjack and High-Low are unchanged.
+
 ## 1.16.0: High-Low joins the table
 
 - **High-Low**: a second game at the crab's table. One card lies face up and you call whether the next one beats it. Aces are high, a tie carries the pot on to the new card, and you can cash out after any call. A wrong call costs your opening bet and nothing else, because the pot it grew was the house's money all along.

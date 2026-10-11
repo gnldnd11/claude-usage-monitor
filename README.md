@@ -67,18 +67,20 @@ Because a background subagent has no knowable progress, running agents show an i
 
 The tokens you spend earn credits: one per 100K, weighted the way the API prices them, so output counts five times an input token and a cache read a tenth. On first run your past sessions are counted once in the background, so you start with what you have already earned. The balance sits under the title, next to a coin that fills toward the next credit.
 
-Click it for the games list, where the crab deals two games.
+Click it for the games list, where the crab deals three games.
 
 **Blackjack**: six decks, the dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once.
 
 **High-Low**: one card lies face up and you call whether the next one beats it. Aces are high, a tie carries the pot on to the new card, and you can cash out after any call. Each side is priced off the cards actually left in the shoe, so the odds move as the run goes on.
+
+**Draw Poker**: jacks or better. Five cards come up, you mark the ones to keep with a click or the 1 to 5 keys, and one draw replaces the rest; keeping all five is allowed. The nine-row pay table sits on the felt above the cards and the row you were paid for lights up. It is an 8/5 table, so the royal pays 800 and every multiplier is a whole number.
 
 The extension deals and judges, so a hand survives switching tabs; reloading the window voids it. Credits are earned by using Claude Code and nothing else. They cannot be bought, and they cash out to nothing.
 
 ## Features
 
 - **Agents (Beta).** Your subagents as distinct pixel characters that walk into a room when invoked, with levels, lifetime stats and per-agent nickname, role, character and model. Read-only, hook-free.
-- **Credits and games.** Your token spend becomes credits, and the crab deals you blackjack or high-low for them. Hide the whole thing from the settings gear if you would rather not have it.
+- **Credits and games.** Your token spend becomes credits, and the crab deals you blackjack, high-low or draw poker for them. Hide the whole thing from the settings gear if you would rather not have it.
 - **Session (5h) / Weekly (7d) / Fable (7d).** The same live numbers as Claude Code's built-in usage dialog.
 - **Context window.** How full the current conversation is, scoped to the workspace you are actually in, with the window tier detected per session.
 - **Today's tokens and requests.** Summed across your local Claude Code sessions, with a `+N k` delta after each response. Resets at local midnight.
