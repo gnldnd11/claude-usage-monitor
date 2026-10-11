@@ -23,54 +23,10 @@
 // `act()` never mutates its input and returns the very same object when the action is not allowed;
 // `whyNot()` says why.
 
-const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-const SUITS = ['S', 'H', 'D', 'C'];
-const DECKS = 6;
+// The shoe (seeded shuffle, card codes, DECKS) lives in cards.js, which high-low deals from too
+const { DECKS, shuffledShoe, codeOf, cardOf } = require('./cards');
+
 const OPS = ['hit', 'stand', 'double', 'split'];
-
-// --- seeded shoe -------------------------------------------------------------------
-
-// FNV-1a: seed string -> 32-bit integer
-function hashSeed(str) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
-  return h >>> 0;
-}
-
-// mulberry32: small, fast 32-bit PRNG, uniform in [0, 1)
-function mulberry32(a) {
-  return function () {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// Card codes 0..51: suit * 13 + rank index. Fisher-Yates over DECKS decks
-function shuffledShoe(seed) {
-  const rand = mulberry32(hashSeed(String(seed)));
-  const shoe = [];
-  for (let d = 0; d < DECKS; d++) for (let c = 0; c < 52; c++) shoe.push(c);
-  for (let i = shoe.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    const t = shoe[i]; shoe[i] = shoe[j]; shoe[j] = t;
-  }
-  return shoe;
-}
-
-// 'AS', '10H', 'KD' -> card code (a stacked shoe, for tests and replays)
-function codeOf(str) {
-  const s = String(str);
-  const r = RANKS.indexOf(s.slice(0, -1));
-  const u = SUITS.indexOf(s.slice(-1));
-  if (r < 0 || u < 0) throw new RangeError('bad card: ' + s);
-  return u * 13 + r;
-}
-
-function cardOf(code) {
-  return { r: RANKS[code % 13], s: SUITS[Math.floor(code / 13)] };
-}
 
 // --- hand arithmetic ------------------------------------------------------------------
 
