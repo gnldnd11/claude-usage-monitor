@@ -364,7 +364,7 @@ module.exports = `
   button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px #e8895a;} /* .ttl clips outside outlines */
   body.tab-games .mascot{display:none;} /* the crab climbs down to deal */
   /* --- blackjack table --- */
-  .inner.bj{padding:13px 13px 14px;}
+  .inner.bj,.inner.hl{padding:13px 13px 14px;}
   .bj-row{display:grid;grid-template-columns:64px minmax(0,1fr);column-gap:8px;}
   .bj-dealer{align-items:end;}
   .bj-p{align-items:start;}
@@ -461,4 +461,27 @@ module.exports = `
   .bj-felt .bj-chip.win{color:#7ee6a4;}
   .bj-felt .bj-chip.bj{color:#ffd166;}
   .bj-felt .bj-chip.lose{color:#f6836e;}
+  /* --- High-Low: one card is the hero. Felt, crab, cards and chips are the blackjack ones --- */
+  .hl-stage{display:flex;align-items:flex-end;gap:8px;}
+  .hl-stage .bj-crab{position:relative;left:auto;bottom:auto;width:52px;height:56px;flex:none;}
+  .hl-cards{position:relative;flex:none;width:82px;height:88px;}
+  .hl-card,.hl-prev{position:absolute;bottom:0;line-height:0;}
+  .hl-card{left:18px;width:64px;height:88px;}
+  .hl-card svg{display:block;width:64px;height:88px;}     /* 16x22 cells at 4px, the grid stays integer */
+  .hl-prev{left:0;width:32px;height:44px;opacity:.55;}
+  .hl-prev svg{display:block;width:32px;height:44px;}
+  .hl-card.in{animation:hlIn .14s ease-out both;}
+  .hl-prev.drop{animation:hlDrop .14s ease-out both;}
+  @keyframes hlIn{from{opacity:0;transform:translateX(22px);}to{opacity:1;transform:none;}}
+  @keyframes hlDrop{from{opacity:.9;transform:translate(26px,-18px) scale(1.6);}to{opacity:.55;transform:none;}}
+  .hl-line{display:flex;align-items:center;gap:6px;min-height:22px;margin-top:8px;}
+  .hl-pot{display:flex;align-items:center;gap:4px;font-size:16px;font-weight:700;color:var(--felt-ink);font-variant-numeric:tabular-nums;}
+  .hl-pot.preview{opacity:.55;}
+  .hl-pot .cc-r{opacity:1;}
+  .hl-guess{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;height:44px;}
+  .hl-guess span{font-size:12px;font-weight:600;color:var(--text);}
+  .hl-guess b{font-size:13px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+  .hl-cash{flex:1 1 100%;height:34px;}      /* its own row: never under the thumb that is tapping Higher */
+  .hl-cash b{font-variant-numeric:tabular-nums;}
+  @media (prefers-reduced-motion:reduce){.hl-card.in,.hl-prev.drop{animation:none;}}
 `;

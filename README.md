@@ -59,7 +59,7 @@ Because a background subagent has no knowable progress, running agents show an i
 </p>
 <p align="center"><sub>The crab reads your session usage: calm under 50%, heads-down at 50%, unravelling past 70%, flat-out near the limit.</sub></p>
 
-## Credits and blackjack
+## Credits and games
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/blackjack.png" width="300" alt="The credits balance under the panel title, and the blackjack table below it: a crab dealer, a pixel player, cards on dark green felt and the stake buttons" />
@@ -67,12 +67,18 @@ Because a background subagent has no knowable progress, running agents show an i
 
 The tokens you spend earn credits: one per 100K, weighted the way the API prices them, so output counts five times an input token and a cache read a tenth. On first run your past sessions are counted once in the background, so you start with what you have already earned. The balance sits under the title, next to a coin that fills toward the next credit.
 
-Click it for the games list. Blackjack is the first game, dealt by the crab: six decks, dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once. The extension deals and judges, so a hand survives switching tabs; reloading the window voids it. Credits are earned by using Claude Code and nothing else. They cannot be bought, and they cash out to nothing.
+Click it for the games list, where the crab deals two games.
+
+**Blackjack**: six decks, the dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once.
+
+**High-Low**: one card lies face up and you call whether the next one beats it. Aces are high, a tie carries the pot on to the new card, and you can cash out after any call. Each side is priced off the cards actually left in the shoe, so the odds move as the run goes on.
+
+The extension deals and judges, so a hand survives switching tabs; reloading the window voids it. Credits are earned by using Claude Code and nothing else. They cannot be bought, and they cash out to nothing.
 
 ## Features
 
 - **Agents (Beta).** Your subagents as distinct pixel characters that walk into a room when invoked, with levels, lifetime stats and per-agent nickname, role, character and model. Read-only, hook-free.
-- **Credits and blackjack.** Your token spend becomes credits, and the crab deals you a hand for them. Hide the whole thing from the settings gear if you would rather not have it.
+- **Credits and games.** Your token spend becomes credits, and the crab deals you blackjack or high-low for them. Hide the whole thing from the settings gear if you would rather not have it.
 - **Session (5h) / Weekly (7d) / Fable (7d).** The same live numbers as Claude Code's built-in usage dialog.
 - **Context window.** How full the current conversation is, scoped to the workspace you are actually in, with the window tier detected per session.
 - **Today's tokens and requests.** Summed across your local Claude Code sessions, with a `+N k` delta after each response. Resets at local midnight.

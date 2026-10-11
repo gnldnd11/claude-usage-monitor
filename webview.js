@@ -451,7 +451,9 @@
     b.classList.toggle('tab-agents', t === 'agents');
     b.classList.toggle('tab-games', t === 'games');
     b.classList.toggle('game-bj', g === 'blackjack');
-    var shown = { panelUsage: t === 'usage', panelAgents: t === 'agents', panelGames: t === 'games' && !g, panelTable: g === 'blackjack' };
+    b.classList.toggle('game-hl', g === 'hilo');
+    var shown = { panelUsage: t === 'usage', panelAgents: t === 'agents', panelGames: t === 'games' && !g,
+      panelTable: g === 'blackjack', panelHiLo: g === 'hilo' };
     for (var id in shown) { var p = el(id); if (p) p.style.display = shown[id] ? '' : 'none'; }
     var au = el('tabUsage'), ag = el('tabAgents');
     if (au) au.classList.toggle('active', t === 'usage');
@@ -461,7 +463,9 @@
   }
   // Entering a game screen asks the host for its state; entering the list just takes the focus
   function enterGames() {
-    if (curGame() === 'blackjack') { bj.wantFocus = true; bjControls(bj.st, true); bjSend('open'); }
+    var g = curGame();
+    if (g === 'blackjack') { bj.wantFocus = true; bjControls(bj.st, true); bjSend('open'); }
+    else if (g === 'hilo') { hl.wantFocus = true; hlControls(hl.st, true); hlSend('open'); }
     else { var first = document.querySelector('#panelGames .gm-row'); if (first) first.focus(); }
   }
   function switchTab(t) {
@@ -469,14 +473,14 @@
     if (t === 'games' && creditsHidden()) t = 'usage'; // Credits hidden in settings: no games either
     var left = curTab() === 'games' && t !== 'games';
     var s = vscode.getState() || {}; s.tab = t; if (t !== 'games') { s.lastTab = t; s.game = null; } vscode.setState(s);
-    if (left) bjLeave();
+    if (left) gameLeave();
     applyView();
     if (t === 'games') enterGames();
   }
   // null goes back to the list
   function openGame(g) {
     var s = vscode.getState() || {}; s.game = g; vscode.setState(s);
-    if (!g) bjLeave();
+    gameLeave(); // whichever game we were in stops pacing and lets a held header push through
     applyView();
     enterGames();
   }
@@ -560,10 +564,10 @@
     _ccFlipT = setTimeout(function () { _ccFlipT = null; setCoinRows(_ccRows); }, 200); // edge-on at 200ms: fresh coin
   }
   function creditsTitle(c, bal, counting) {
-    if (counting) return 'Counting past sessions…\n' + fmtInt(bal) + ' credits so far\nClick for blackjack';
+    if (counting) return 'Counting past sessions…\n' + fmtInt(bal) + ' credits so far\nClick for games';
     return fmtInt(bal) + ' credits · +' + fmtInt(c.today || 0) + ' today\n'
       + '1 credit per ' + fmtTok(c.perCredit || 1e5) + ' tokens, weighted by API price\n'
-      + 'Click for blackjack';
+      + 'Click for games';
   }
   function renderCredits(c) {
     if (_bjHold) { _ccHeld = c; return; } // a hand is still being dealt: the header waits for the cards
@@ -584,6 +588,7 @@
     prev.cr = bal; prev.crCounting = counting;
     box.title = creditsTitle(c, bal, counting);
     if (curGame() === 'blackjack' && !bj.busy) bjRenderStakes();
+    if (curGame() === 'hilo' && !hl.busy) { renderStakes(STAKE_UI.hl, false); hlControls(hl.st, false); }
   }
 
   // ===========================================================================
@@ -598,7 +603,7 @@
   var _bjHold = false, _ccHeld = null;
   var COIN_FULL = (el('bjCoin') || {}).innerHTML || '';
 
-  // --- cards: 16x22 cells at 2px, same pixel as the header coin and crab
+  // --- cards: 16x22 cells, 2px each at the blackjack table and 4px for the High-Low hero card
   var BJ_INK = '#1d1d1f', BJ_RED = '#c25a34';
   var BJ_RANK = {
     A: ['.#.', '#.#', '###', '#.#', '#.#'], '2': ['##.', '..#', '.#.', '#..', '###'], '3': ['##.', '..#', '.#.', '..#', '##.'],
@@ -619,12 +624,16 @@
   };
   var BJ_FRAME = '<path fill="#1d1d1f" fill-rule="evenodd" d="M1 0h14v1h1v20h-1v1h-14v-1h-1v-20h1zM1 1v20h14v-20z"/>';
   function bmPath(bm, ox, oy) { var d = ''; for (var y = 0; y < bm.length; y++) for (var x = 0; x < bm[y].length; x++) if (bm[y][x] === '#') d += 'M' + (ox + x) + ' ' + (oy + y) + 'h1v1h-1z'; return d; }
-  function cardSvg(inner) { return '<svg viewBox="0 0 16 22" width="32" height="44" shape-rendering="crispEdges" aria-hidden="true">' + BJ_FRAME + inner + '</svg>'; }
-  function cardFace(c) {
+  var CARD_CELL = 2; // px per cell; the grid stays integer at any whole multiple
+  function cardSvg(inner, cell) {
+    cell = cell || CARD_CELL;
+    return '<svg viewBox="0 0 16 22" width="' + (16 * cell) + '" height="' + (22 * cell) + '" shape-rendering="crispEdges" aria-hidden="true">' + BJ_FRAME + inner + '</svg>';
+  }
+  function cardFace(c, cell) {
     if (!c || !BJ_RANK[c.r] || !BJ_PIP5[c.s]) return CARD_BACK; // a card this table cannot draw shows its back instead of breaking the table
     var col = (c.s === 'H' || c.s === 'D') ? BJ_RED : BJ_INK;
     return cardSvg('<rect x="1" y="1" width="14" height="20" fill="#fff"/><path fill="' + col + '" d="'
-      + bmPath(BJ_RANK[c.r], 2, 2) + bmPath(BJ_PIP5[c.s], 2, 8) + bmPath(BJ_PIP7[c.s], 7, 12) + '"/>');
+      + bmPath(BJ_RANK[c.r], 2, 2) + bmPath(BJ_PIP5[c.s], 2, 8) + bmPath(BJ_PIP7[c.s], 7, 12) + '"/>', cell);
   }
   var CARD_BACK = (function () {
     var d = ''; for (var y = 2; y < 20; y++) for (var x = 2; x < 14; x++) if ((x + y) % 4 === 0 || (x - y) % 4 === 0) d += 'M' + x + ' ' + y + 'h1v1h-1z';
@@ -736,14 +745,17 @@
 
   // Leaving the table (back to the list, or out of the games area): drop the pacing timers and let
   // any held header push through, or the header number stays frozen at what it showed mid-deal
+  // Same order as a settle: the number moves quietly first, so winnings are not celebrated as
+  // earned credits, and the push then fills in the title and the coin
+  function releaseHeldHeader() {
+    _bjHold = false;
+    if (_ccHeld) { var h = _ccHeld; _ccHeld = null; if (typeof h.balance === 'number') setCreditsQuiet(h.balance); renderCredits(h); }
+  }
   function bjLeave() {
     bjClearTimers();
     clearTimeout(bj.to);
     bj.busy = false; bj.op = null;
-    _bjHold = false;
-    // same order as a settle: the number moves quietly first, so the hand's winnings are not
-    // celebrated as earned credits, and the push then fills in the title and the coin
-    if (_ccHeld) { var h = _ccHeld; _ccHeld = null; if (typeof h.balance === 'number') setCreditsQuiet(h.balance); renderCredits(h); }
+    releaseHeldHeader();
   }
 
   // --- messages
@@ -773,6 +785,7 @@
   function bjReceive(m) {
     var current = bj.op != null && m.n === bj.n;
     if (!current && bj.op != null) return;
+    setHeld('bj', m);
     var op = current ? bj.op : null, prevSt = bj.st, steps = [], end = 0;
     clearTimeout(bj.to); bjClearTimers();
     bj.op = null; bj.st = m.state || null;
@@ -832,23 +845,59 @@
   }
 
   // --- controls
-  function bjStake() { var v = (vscode.getState() || {}).bjStake; return BJ_STAKES.indexOf(v) >= 0 ? v : BJ_STAKES[0]; }
-  function bjRenderStakes(locked) {
-    if (locked == null) locked = bj.busy;
-    var known = prev.cr != null, bal = known ? prev.cr : 0, want = bjStake(), pick = 0;
+  // the chips, the Deal button and the "not enough credits" note: the same for every game,
+  // each with its own remembered stake and its own elements
+  var STAKE_UI = {
+    bj: { g: 'bj', other: 'High-Low', key: 'bjStake', box: 'bjStakes', chips: '#bjStakes button', deal: 'bjDeal', note: 'bjNote', preview: '#bjHands .bj-stake.preview b' },
+    hl: { g: 'hl', other: 'Blackjack', key: 'hlStake', box: 'hlStakes', chips: '#hlStakes button', deal: 'hlDeal', note: 'hlNote', preview: '#hlLine .hl-pot.preview b' }
+  };
+  // What the OTHER game still has riding, per game. Both games bet from one purse but a stake does
+  // not leave the balance until its round settles, so the header number is not what this game may
+  // bet: the host sends `free` with every reply and the difference from the balance is what is
+  // spoken for. Kept as that difference rather than as `free` itself, so a credit minted while the
+  // bet screen is up lights the chips at once instead of waiting for the next reply
+  var gameHeld = { bj: 0, hl: 0 };
+  function setHeld(g, m) {
+    if (typeof m.free === 'number' && typeof m.balance === 'number') gameHeld[g] = Math.max(0, m.balance - m.free);
+  }
+  function gameStake(ui) { var v = (vscode.getState() || {})[ui.key]; return BJ_STAKES.indexOf(v) >= 0 ? v : BJ_STAKES[0]; }
+  function renderStakes(ui, locked) {
+    var held = gameHeld[ui.g] || 0;
+    var known = prev.cr != null, bal = known ? Math.max(0, prev.cr - held) : 0, want = gameStake(ui), pick = 0;
     BJ_STAKES.forEach(function (v) { if (v <= bal && v <= want) pick = v; }); // largest affordable, not above the remembered stake
-    var bs = document.querySelectorAll('#bjStakes button');
+    var bs = document.querySelectorAll(ui.chips);
     for (var i = 0; i < bs.length; i++) {
-      var v = Number(bs[i].getAttribute('data-v'));
-      bs[i].disabled = locked || v > bal;
-      bs[i].title = v > bal ? 'Not enough credits' : '';
+      var v = Number(bs[i].getAttribute('data-v')), short = v > bal;
+      bs[i].disabled = locked || short;
+      // a chip the header's balance covers but this game's share does not is the other game's doing
+      bs[i].title = !short ? '' : (known && v <= prev.cr ? ui.other + ' is holding these credits' : 'Not enough credits');
       bs[i].classList.toggle('on', v === pick);
       bs[i].setAttribute('aria-pressed', v === pick ? 'true' : 'false');
     }
-    var deal = el('bjDeal'); if (deal) { deal.disabled = locked || !pick; deal.setAttribute('data-bet', String(pick)); }
-    var pv = document.querySelector('#bjHands .bj-stake.preview b'); if (pv) pv.textContent = fmtInt(pick || want);
-    var note = el('bjNote'); if (note) { note.hidden = !known || bal >= BJ_STAKES[0]; note.textContent = 'You need ' + BJ_STAKES[0] + ' credits to play.'; }
+    var deal = el(ui.deal); if (deal) { deal.disabled = locked || !pick; deal.setAttribute('data-bet', String(pick)); }
+    var pv = document.querySelector(ui.preview); if (pv) pv.textContent = fmtInt(pick || want);
+    // being broke and having the credits tied up in the other game are different problems, and a
+    // header reading 1,000 over a row of dead chips has to say which one this is
+    var note = el(ui.note);
+    if (note) {
+      note.hidden = !known || bal >= BJ_STAKES[0];
+      note.textContent = known && prev.cr >= BJ_STAKES[0]
+        ? ui.other + ' is holding these credits.'
+        : 'You need ' + BJ_STAKES[0] + ' credits to play.';
+    }
   }
+  // picking a chip hands the focus to Deal, so Enter right after it deals instead of picking again
+  function wireStakes(ui, redraw) {
+    var box = el(ui.box); if (!box) return;
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button') : null; if (!b || b.disabled) return;
+      var s = vscode.getState() || {}; s[ui.key] = Number(b.getAttribute('data-v')); vscode.setState(s);
+      redraw();
+      var d = el(ui.deal); if (d && !d.disabled) d.focus();
+    });
+  }
+  function bjStake() { return gameStake(STAKE_UI.bj); }
+  function bjRenderStakes(locked) { renderStakes(STAKE_UI.bj, locked == null ? bj.busy : locked); }
   function bjControls(st, locked) {
     var play = !!(st && st.phase === 'player'), can = (st && st.can) || {};
     var bet = el('bjBet'), pl = el('bjPlay');
@@ -869,12 +918,7 @@
 
   // --- wiring
   bjHands(null, bjPending(null));
-  if (el('bjStakes')) el('bjStakes').addEventListener('click', function (e) {
-    var b = e.target.closest ? e.target.closest('button') : null; if (!b || b.disabled) return;
-    var s = vscode.getState() || {}; s.bjStake = Number(b.getAttribute('data-v')); vscode.setState(s);
-    bjRenderStakes();
-    var d = el('bjDeal'); if (d && !d.disabled) d.focus(); // so Enter right after picking a stake deals instead of picking it again
-  });
+  wireStakes(STAKE_UI.bj, function () { bjRenderStakes(); });
   if (el('bjDeal')) el('bjDeal').addEventListener('click', function () {
     var bet = Number(this.getAttribute('data-bet')); if (!bet) return;
     bjSend('deal', { bet: bet });
@@ -883,21 +927,215 @@
     var b = e.target.closest ? e.target.closest('[data-op]') : null; if (!b || b.disabled) return;
     bjSend(b.getAttribute('data-op'));
   });
+  // Shortcuts belong to the open game only: the list and the other game never react.
+  // e.repeat: a held key must not keep playing hands that carry stakes
+  function pressPanel(e, panel, sel, deal, bet) {
+    var b = sel && document.querySelector(panel + ' [data-op="' + sel + '"]');
+    if (b && !el(panel.slice(1)).hidden && !b.hidden && !b.disabled) { e.preventDefault(); b.click(); return true; }
+    if (sel) return true; // a known key for this game, just not available now
+    var t = e.target, d = el(deal);
+    if (e.key === 'Enter' && (!t || t.tagName !== 'BUTTON') && d && !el(bet).hidden && !d.disabled) { e.preventDefault(); d.click(); }
+    return true;
+  }
   document.addEventListener('keydown', function (e) {
-    // e.repeat: a held key must not keep playing hands that carry stakes
-    if (!document.body.classList.contains('game-bj') || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    var body = document.body, atBj = body.classList.contains('game-bj'), atHl = body.classList.contains('game-hl');
+    if ((!atBj && !atHl) || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
     var t = e.target; if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
     if (document.querySelector('.sheet:not([hidden])')) return;
-    var op = { h: 'hit', s: 'stand', d: 'double', p: 'split' }[String(e.key).toLowerCase()];
-    if (op) {
-      var b = document.querySelector('#bjPlay [data-op="' + op + '"]');
-      if (b && !el('bjPlay').hidden && !b.hidden && !b.disabled) { e.preventDefault(); b.click(); }
+    var k = String(e.key).toLowerCase();
+    if (atBj) pressPanel(e, '#bjPlay', { h: 'hit', s: 'stand', d: 'double', p: 'split' }[k] || null, 'bjDeal', 'bjBet');
+    else pressPanel(e, '#hlPlay', { arrowup: 'higher', arrowdown: 'lower', c: 'cashout' }[k] || null, 'hlDeal', 'hlBet');
+  });
+
+  // ===========================================================================
+  // High-Low: guess whether the next card beats this one. The host judges and prices it;
+  // this draws one hero card, keeps the card just played as a pile, and paces the two.
+  // ===========================================================================
+  // inLead is the gap before the new card arrives; settle/unlock are when the numbers follow it and
+  // when the buttons come back, with deal/dealUnlock the shorter pair a fresh card needs
+  var HL_T = { inLead: 40, settle: 220, unlock: 240, deal: 180, dealUnlock: 200, noReply: 4000 };
+  var hl = { st: null, busy: false, op: null, n: 0, timers: [], to: null, wantFocus: false, phase: null };
+  // The price on a guess button is read back from the pot the host says a correct call pays, never
+  // worked out here from the odds: pots are whole credits, so a pot of 10 priced at 1.06x comes back
+  // unchanged and a printed x1.1 would be a promise the table does not keep. Floored for the same
+  // reason, so the button never asks for more than it gives
+  function hlPrice(pays, pot) {
+    if (pays == null || !(pot > 0)) return '—';
+    var m = pays / pot;
+    return '×' + (m >= 10 ? Math.floor(m) : (Math.floor(m * 10) / 10).toFixed(1));
+  }
+  function hlPot(v, preview) { return '<span class="hl-pot' + (preview ? ' preview' : '') + '">' + COIN_FULL + '<b>' + fmtInt(v) + '</b></span>'; }
+  function hlClearTimers() { hl.timers.forEach(clearTimeout); hl.timers = []; }
+
+  // The cards: the one just played slides down to the pile on the left, the new one comes in
+  function hlCards(st, animate) {
+    var prevEl = el('hlPrev'), cardEl = el('hlCard'); if (!prevEl || !cardEl) return;
+    var hist = (st && st.history) || [];
+    var last = hist.length ? hist[hist.length - 1].card : null; // only the latest: the pot and the streak say how far this run went
+    prevEl.innerHTML = last ? cardFace(last, 2) : '';
+    cardEl.innerHTML = (st && st.card) ? cardFace(st.card, 4) : '';
+    prevEl.classList.remove('drop'); cardEl.classList.remove('in');
+    if (!animate) return;
+    // the played card drops onto the pile first, the new one arrives just behind it
+    if (last) { void prevEl.getBoundingClientRect(); prevEl.classList.add('drop'); }
+    cardEl.style.visibility = 'hidden';
+    hl.timers.push(setTimeout(function () {
+      cardEl.style.visibility = '';
+      void cardEl.getBoundingClientRect(); cardEl.classList.add('in');
+    }, HL_T.inLead));
+  }
+  // What a screen reader is told. The hero card is the whole state of this game, so it carries its
+  // own name; the pile beside it is aria-hidden in the HTML and the line below names the card that
+  // was played instead
+  var HL_SUIT = { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' };
+  var HL_RANK = { A: 'ace', J: 'jack', Q: 'queen', K: 'king' };
+  function hlCardWord(c) { return c ? (HL_RANK[c.r] || c.r) + ' of ' + (HL_SUIT[c.s] || c.s) : 'no card'; }
+  function hlLabel(st) {
+    var c = el('hlCard'); if (!c) return;
+    c.setAttribute('aria-label', (st && st.card) ? 'Face up: ' + hlCardWord(st.card) : 'No card');
+  }
+  // One line per move, read out at the settle: a call turns a card over and moves the pot, and
+  // neither the label on the card nor the line under it is announced on its own
+  var HL_SAID = { win: 'right', lose: 'wrong', push: 'a tie, the pot rides' };
+  function hlAnnounce(st) {
+    var live = el('hlLive'); if (!live || !st) return;
+    var hist = st.history || [], last = hist.length ? hist[hist.length - 1] : null, said = [];
+    if (st.phase === 'done') {
+      said.push((st.ended === 'cashout' ? 'Cashed out ' : 'Wrong call, ') + signed(st.net || 0));
+      said.push('Balance ' + fmtInt(prev.cr || 0));
+    } else {
+      if (last) said.push((last.guess === 'higher' ? 'Higher' : 'Lower') + ': ' + HL_SAID[last.result]);
+      said.push(hlCardWord(st.card));
+      said.push('Pot ' + fmtInt(st.pot));
+    }
+    live.textContent = said.join('. ') + '.';
+  }
+  // The line under the cards: the pot while playing, the result once the round is over
+  function hlLine(st) {
+    hlLabel(st); // the card's name moves with the line, so it follows the card rather than leading it
+    var line = el('hlLine'); if (!line) return;
+    if (!st || st.phase === 'bet') { line.innerHTML = hlPot(gameStake(STAKE_UI.hl), true); return; }
+    if (st.phase === 'done') {
+      var won = st.ended === 'cashout';
+      line.innerHTML = '<span class="bj-chip ' + (won ? 'win' : 'lose') + '">' + (won ? 'Cashed out ' : 'Wrong ') + signed(st.net || 0) + '</span>';
       return;
     }
-    if (e.key === 'Enter' && (!t || t.tagName !== 'BUTTON')) {
-      var d = el('bjDeal'); if (d && !el('bjBet').hidden && !d.disabled) { e.preventDefault(); d.click(); }
+    line.innerHTML = hlPot(st.pot, false) + (st.streak > 1 ? '<span class="bj-chip">' + st.streak + ' in a row</span>' : '');
+  }
+  // Locks what is on screen without touching the numbers or swapping the rows: during a guess the
+  // old prices and pot must stay put until the card has landed
+  function hlLock() {
+    var all = document.querySelectorAll('#hlPlay [data-op], #hlStakes button');
+    for (var i = 0; i < all.length; i++) all[i].disabled = true;
+    var d = el('hlDeal'); if (d) d.disabled = true;
+  }
+  // the prices and the pot on the buttons: they change with the line, one step before the buttons
+  function hlNumbers(st) {
+    var pays = (st && st.pays) || {}, pot = (st && st.pot) || 0;
+    var up = el('hlUp'), dn = el('hlDn'), amt = el('hlCashAmt');
+    if (up) up.textContent = hlPrice(pays.higher, pot);
+    if (dn) dn.textContent = hlPrice(pays.lower, pot);
+    if (amt) amt.textContent = fmtInt(pot);
+  }
+  function hlControls(st, locked) {
+    var play = !!(st && st.phase === 'play'), can = (st && st.can) || {};
+    var bet = el('hlBet'), pl = el('hlPlay');
+    if (bet) bet.hidden = play; if (pl) pl.hidden = !play;
+    hlNumbers(st);
+    var ops = document.querySelectorAll('#hlPlay [data-op]');
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i].getAttribute('data-op');
+      ops[i].disabled = locked || !can[op];
     }
+    if (!play) renderStakes(STAKE_UI.hl, locked);
+  }
+  function hlError(msg) {
+    var e = el('hlErr'); if (!e) return;
+    e.hidden = !msg;
+    if (msg) e.innerHTML = WARN_SVG + '<span class="wbmsg">' + esc(msg) + '</span>';
+  }
+  function hlFocusAfter() {
+    if (curGame() !== 'hilo') return;
+    var play = hl.st && hl.st.phase === 'play';
+    var swapped = hl.phase != null && play !== (hl.phase === 'play');
+    hl.phase = hl.st ? hl.st.phase : 'bet';
+    var a = document.activeElement, panel = el('panelHiLo');
+    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
+    if (!hl.wantFocus && !swapped && !lost) return;
+    hl.wantFocus = false;
+    var target = play ? document.querySelector('#hlPlay [data-op="higher"]') : el('hlDeal');
+    if (target && !target.disabled) target.focus();
+  }
+  function hlLeave() {
+    hlClearTimers();
+    clearTimeout(hl.to);
+    hl.busy = false; hl.op = null;
+    releaseHeldHeader();
+  }
+  function gameLeave() { bjLeave(); hlLeave(); }
+
+  function hlSend(op, extra) {
+    if (hl.busy) return;
+    hl.busy = true; hl.op = op; hl.n += 1;
+    if (op !== 'open') hlControls(hl.st, true);
+    vscode.postMessage(Object.assign({ type: 'hl', op: op, n: hl.n }, extra || {}));
+    clearTimeout(hl.to);
+    hl.to = setTimeout(function () { hl.busy = false; hl.op = null; hlError('The table didn’t respond. Try again.'); hlControls(hl.st, false); }, HL_T.noReply);
+  }
+  // The cards move first and the numbers follow: a pot or a payout that changed early would give
+  // the result away before the card is on the felt
+  function hlReceive(m) {
+    var current = hl.op != null && m.n === hl.n;
+    if (!current && hl.op != null) return; // an older reply while a newer request waits
+    var op = current ? hl.op : null;
+    clearTimeout(hl.to); hlClearTimers();
+    setHeld('hl', m);
+    hl.op = null; hl.st = m.state || null;
+    // acted: the reply to a move the player just made. A refused move changed nothing, so there is
+    // nothing to pace and nothing to read out: the host answers it with the run exactly as it
+    // stands, and pacing that would drop the same card onto the felt a second time
+    var acted = current && op !== 'open' && !m.error;
+    var fresh = acted && !_reduceMotion;
+    var settleAt = 0, unlockAt = 0;
+    if (fresh && op === 'deal') { settleAt = HL_T.deal; unlockAt = HL_T.dealUnlock; }
+    else if (fresh) { settleAt = HL_T.settle; unlockAt = HL_T.unlock; }
+    try {
+      hlCards(hl.st, fresh);
+      hlError(m.error || '');
+      if (settleAt) hlLock();          // the numbers and the rows follow the card, at settle
+      else { hlControls(hl.st, true); hlLine(hl.st); }
+    } finally {
+      _bjHold = true; // the header waits for this reply's settle, like the blackjack table
+      if (settleAt) hl.timers.push(setTimeout(function () { hlLine(hl.st); hlNumbers(hl.st); }, settleAt));
+      hl.timers.push(setTimeout(function () { hlSettle(m, acted); }, unlockAt));
+    }
+  }
+  // acted: the reply to a move the player just made (not an open, not a refusal, not a late reply)
+  function hlSettle(m, acted) {
+    hl.busy = false; _bjHold = false;
+    try {
+      if (typeof m.balance === 'number') setCreditsQuiet(m.balance);
+      if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
+      hlLine(hl.st);
+      if (acted) hlAnnounce(hl.st); // after the balance, so the line can say where it landed
+    } finally {
+      hlControls(hl.st, false);
+      hlFocusAfter();
+    }
+  }
+
+  // --- wiring
+  hlLine(null);
+  wireStakes(STAKE_UI.hl, function () { renderStakes(STAKE_UI.hl, hl.busy); });
+  if (el('hlDeal')) el('hlDeal').addEventListener('click', function () {
+    var bet = Number(this.getAttribute('data-bet')); if (!bet) return;
+    hlSend('deal', { bet: bet });
   });
+  if (el('hlPlay')) el('hlPlay').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-op]') : null; if (!b || b.disabled) return;
+    hlSend(b.getAttribute('data-op'));
+  });
+  if (el('hlBack')) el('hlBack').addEventListener('click', function () { openGame(null); });
 
   // live tick every 1s: active time + countdowns + "Updated Ns ago"
   function tick() {
@@ -1042,6 +1280,7 @@
     var m = e.data; if (!m) return;
     if (m.type === 'data') render(m.data);
     else if (m.type === 'bj') bjReceive(m);
+    else if (m.type === 'hl') hlReceive(m);
     else if (m.type === 'openSettings') { var s = el('settingsSheet'); if (s) s.hidden = !s.hidden; }
   });
 

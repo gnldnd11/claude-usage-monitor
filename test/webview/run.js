@@ -6,7 +6,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const MODES = ['normal', 'reduce', 'poor50', 'poor5', 'compact', 'badtab', 'nohero', 'resume-list', 'resume-bj', 'header', 'header-reduce'];
+const MODES = ['normal', 'reduce', 'poor50', 'poor5', 'compact', 'badtab', 'nohero', 'resume-list', 'resume-bj', 'hilo', 'hilo-reduce', 'hilo-poor', 'header', 'header-reduce'];
 const TIMEOUT_MS = 60000;
 let failed = 0;
 for (const m of MODES) {

@@ -10,6 +10,7 @@ const spriteData = require('./sprite-data'); // character sprites as base64 (not
 const { lineUsage, usageKey, usageVec, addUsageOnce, localDayKey } = require('./usage');
 const credits = require('./credits');
 const blackjack = require('./blackjack');
+const highlow = require('./highlow');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const RATE_FILE = path.join(CLAUDE_DIR, 'usage-bar.json');
@@ -528,75 +529,117 @@ function syncCredits(tokens) {
   return credits.creditSummary(ledger, todayKey, !!creditRun && !ledger.backfilled);
 }
 
-// --- blackjack (solo, crab dealer) ------------------------------------------------
-// The host owns the round and every ruling; the webview only sends a bet and an action.
-// The round lives in memory only. Stakes move only when a round settles, so reloading VS Code
-// mid-round voids that round and loses nothing. In solo mode that loophole (reload away a bad
-// hand) is accepted on purpose.
-// Results go to the ledger's bank as this activation's own grow-only counters (credits.js).
-// A round settles exactly once: only the deal or action that turns it to 'done' records it, and
-// every later action on a done round is refused before it gets that far.
-const BJ_MIN_BET = 10;
-let bjRound = null;                            // engine state: current round, or the last finished one
-let bjReplica = null;                          // this activation's bank key, made at the first bet
-const bjCount = { won: 0, lost: 0, hands: 0 }; // this replica's counters: they only ever grow
-// The seed is the whole shoe (face-down card included), so it stays in the host; the round id the
-// webview sees is a separate random value
-const bjRandom = () => crypto.randomBytes(12).toString('hex');
-let bjSeedSource = bjRandom;                   // tests swap this to pick the cards (_test.setBjSeeds)
-let bjReqN = null;                             // request number of the message being answered, echoed back
+// --- the crab's casino (solo, crab dealer) ----------------------------------------
+// Two games, one purse. The host owns every round and every ruling; the webview only sends a bet
+// and an action.
+// Rounds live in memory only. Stakes move only when a round settles, so reloading VS Code mid-round
+// voids that round and loses nothing. In solo mode that loophole (reload away a bad hand) is
+// accepted on purpose.
+// Results go to the ledger's bank as this activation's own grow-only counters (credits.js). Both
+// games share one set of counters: the balance is built from credits won and lost, which is the
+// same currency either way, and a key per game would have to be migrated into every window's
+// stored ledger to buy nothing.
+// A round settles exactly once: only the move that turns it to 'done' records it, and every later
+// action on a done round is refused before it gets that far.
+let gameReplica = null;                          // this activation's bank key, made at the first bet
+const gameCount = { won: 0, lost: 0, hands: 0 }; // this replica's counters: they only ever grow
+// A seed is the whole shuffle (blackjack's face-down card included), so it stays in the host; the
+// round id the webview sees is a separate random value
+const gameRandom = () => crypto.randomBytes(12).toString('hex');
 
 function creditBalance() {
   if (!creditStore) return 0;
   return credits.creditSummary(creditStore.read(), localDayKey(Date.now()), false).balance;
 }
 
-// seq only in the reply to the action that produced it: an 'open' or a rejection replays nothing
-function bjReply(error, withSeq) {
+// What a live round in the OTHER game still has a claim on. Both games may be live at the same
+// time, since they share nothing but the purse and making one wait on the other would be a rule the
+// player can feel for no reason. But a stake does not leave the balance until its round settles, so
+// without this the two rounds would be measured against the same credits and losing both would
+// overdraw. Each game is therefore bet against the balance minus what the other has riding.
+// Blackjack's stake grows with a double or a split; high-low's is its opening bet, because the pot
+// it builds is the house's money until the player cashes out.
+function heldBy(game) {
+  let held = 0;
+  if (game !== 'bj' && bjRound && bjRound.phase === 'player') held += blackjack.stake(bjRound);
+  if (game !== 'hl' && hlRun && hlRun.phase === 'play') held += hlRun.bet;
+  return held;
+}
+
+function budgetFor(game) {
+  return creditBalance() - heldBy(game);
+}
+
+// One reply per message, for either game. The balance is read once and used as the engine's budget,
+// as what the header shows and as what the chips are lit against, so the three cannot disagree
+// inside a single reply.
+// `free` is the balance this game may actually stake: the other game's live round is spoken for, and
+// without it the chips would offer credits the host is about to refuse.
+// seq only in the reply to the action that produced it: an 'open' or a rejection replays nothing.
+// High-low has no seq at all (one card a move), so the field is cleared only where there is one
+function gameReply(game, engine, round, reqN, error, withSeq) {
   const balance = creditBalance();
-  const state = blackjack.view(bjRound, balance);
-  if (!withSeq) state.seq = [];
-  const msg = { type: 'bj', state, balance };
-  if (bjReqN != null) msg.n = bjReqN; // lets the webview tell its reply from a late one
+  const free = balance - heldBy(game);
+  const state = engine.view(round, free);
+  if (!withSeq && state.seq) state.seq = [];
+  const msg = { type: game, state, balance, free };
+  if (reqN != null) msg.n = reqN; // lets the webview tell its reply from a late one
   if (error) msg.error = error;
   if (provider && provider.view) {
     try { provider.view.webview.postMessage(msg); }
-    catch (e) { logLine('blackjack: reply failed: ' + (e && e.message)); }
+    catch (e) { logLine(game + ': reply failed: ' + (e && e.message)); }
   }
 }
 
 // Records a settled round in the bank at once (not throttled: hands come at human speed)
-function bjSettle(round) {
-  if (round.net > 0) bjCount.won += round.net;
-  else if (round.net < 0) bjCount.lost -= round.net;
-  bjCount.hands += 1;
-  creditStore.record({ bank: { [bjReplica]: Object.assign({}, bjCount) } }, true);
+function recordGameResult(net) {
+  if (net > 0) gameCount.won += net;
+  else if (net < 0) gameCount.lost -= net;
+  gameCount.hands += 1;
+  creditStore.record({ bank: { [gameReplica]: Object.assign({}, gameCount) } }, true);
+}
+
+function ensureReplica() {
+  if (!gameReplica) gameReplica = crypto.randomBytes(8).toString('hex');
 }
 
 // The reply goes first and the data push (header balance) after it: the other way round, the
 // header would show the result while the webview is still dealing the cards
-function bjAfterMove() {
-  const settled = bjRound.phase === 'done';
-  if (settled) bjSettle(bjRound);
-  bjReply(null, true);
+function afterMove(settled, net, reply, tag) {
+  if (settled) recordGameResult(net);
+  reply(null, true);
   if (settled) {
-    try { push(); } catch (e) { logLine('blackjack: push after settle failed: ' + (e && e.message)); }
+    try { push(); } catch (e) { logLine(tag + ': push after settle failed: ' + (e && e.message)); }
   }
+}
+
+// --- blackjack ---------------------------------------------------------------------
+const BJ_MIN_BET = 10;
+let bjRound = null;          // engine state: current round, or the last finished one
+let bjSeedSource = gameRandom; // tests swap this to pick the cards (_test.setBjSeeds)
+let bjReqN = null;           // request number of the message being answered, echoed back
+
+function bjReply(error, withSeq) {
+  gameReply('bj', blackjack, bjRound, bjReqN, error, withSeq);
+}
+
+function bjAfterMove() {
+  afterMove(bjRound.phase === 'done', bjRound.net, bjReply, 'blackjack');
 }
 
 // Comparisons are written as !(a <= b) so a NaN (a broken ledger, a bad bet) refuses
 function bjDeal(bet) {
   if (bjRound && bjRound.phase === 'player') return bjReply('a round is already in progress');
   if (!Number.isSafeInteger(bet) || !(bet >= BJ_MIN_BET)) return bjReply('bet must be a whole number of at least ' + BJ_MIN_BET);
-  if (!(bet <= creditBalance())) return bjReply('not enough credits');
-  if (!bjReplica) bjReplica = crypto.randomBytes(8).toString('hex');
-  bjRound = blackjack.newRound({ seed: bjSeedSource(), id: bjRandom(), bet });
+  if (!(bet <= budgetFor('bj'))) return bjReply('not enough credits');
+  ensureReplica();
+  bjRound = blackjack.newRound({ seed: bjSeedSource(), id: gameRandom(), bet });
   bjAfterMove();
 }
 
 function bjAct(op) {
   if (!bjRound || bjRound.phase !== 'player') return bjReply('no round in progress');
-  const reason = blackjack.whyNot(bjRound, op, creditBalance());
+  const reason = blackjack.whyNot(bjRound, op, budgetFor('bj'));
   if (reason) return bjReply(reason);
   bjRound = blackjack.act(bjRound, op);
   bjAfterMove();
@@ -608,6 +651,51 @@ function handleBj(m) {
   else if (m.op === 'deal') bjDeal(m.bet);
   else if (blackjack.OPS.includes(m.op)) bjAct(m.op);
   else bjReply('unknown action');
+}
+
+// --- high-low ----------------------------------------------------------------------
+// One shoe is carried from run to run, so the payouts are priced off what has actually come out;
+// highlow.js reshuffles it at a new run once it gets short. It lives in memory for the same reason
+// the rounds do: a reload starts a clean shoe and nobody is owed anything.
+const HL_MIN_BET = 10;
+let hlRun = null;            // engine state: current run, or the last finished one
+let hlShoe = null;           // cards the last run left, or null for a fresh shoe
+let hlSeedSource = gameRandom; // tests swap this to pick the cards (_test.setHlSeeds)
+let hlReqN = null;
+
+function hlReply(error, withSeq) {
+  gameReply('hl', highlow, hlRun, hlReqN, error, withSeq);
+}
+
+function hlAfterMove() {
+  const settled = hlRun.phase === 'done';
+  if (settled) hlShoe = highlow.remaining(hlRun); // what is left carries into the next run
+  afterMove(settled, hlRun.net, hlReply, 'highlow');
+}
+
+function hlDeal(bet) {
+  if (hlRun && hlRun.phase === 'play') return hlReply('a run is already in progress');
+  if (!Number.isSafeInteger(bet) || !(bet >= HL_MIN_BET)) return hlReply('bet must be a whole number of at least ' + HL_MIN_BET);
+  if (!(bet <= budgetFor('hl'))) return hlReply('not enough credits');
+  ensureReplica();
+  hlRun = highlow.newRun({ seed: hlSeedSource(), id: gameRandom(), bet, deck: hlShoe });
+  hlAfterMove();
+}
+
+function hlAct(op) {
+  if (!hlRun || hlRun.phase !== 'play') return hlReply('no run in progress');
+  const reason = highlow.whyNot(hlRun, op, budgetFor('hl'));
+  if (reason) return hlReply(reason);
+  hlRun = highlow.act(hlRun, op);
+  hlAfterMove();
+}
+
+function handleHl(m) {
+  hlReqN = Number.isSafeInteger(m.n) ? m.n : null;
+  if (m.op === 'open') hlReply(null);
+  else if (m.op === 'deal') hlDeal(m.bet);
+  else if (highlow.OPS.includes(m.op)) hlAct(m.op);
+  else hlReply('unknown action');
 }
 
 // --- agent roster (M1) -------------------------------------------------------
@@ -1034,6 +1122,7 @@ class UsageViewProvider {
       if (!m) return;
       if (m.type === 'ready') push();
       else if (m.type === 'bj') handleBj(m);
+      else if (m.type === 'hl') handleHl(m);
       else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
       else if (m.type === 'setConfig' && m.key) {
         vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global).then(function () { push(); });
@@ -1318,5 +1407,9 @@ function deactivate() {
 module.exports = { activate, deactivate };
 if (process.env.CUC_TEST) module.exports._test = {
   readTokens, parseLinesInto, freshAcc, collect, computeAgentActivity, parseSubUsage, contextPct,
-  setBjSeeds: (fn) => { bjSeedSource = fn || bjRandom; }
+  setBjSeeds: (fn) => { bjSeedSource = fn || gameRandom; },
+  setHlSeeds: (fn) => { hlSeedSource = fn || gameRandom; },
+  // the deck the next run will shuffle. A seed only names a run together with this, because the
+  // shoe carries: tests that want a particular run have to search the seed against it
+  hlDeck: () => (hlShoe ? hlShoe.slice() : null)
 };

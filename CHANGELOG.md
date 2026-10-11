@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.16.0: High-Low joins the table
+
+- **High-Low**: a second game at the crab's table. One card lies face up and you call whether the next one beats it. Aces are high, a tie carries the pot on to the new card, and you can cash out after any call. A wrong call costs your opening bet and nothing else, because the pot it grew was the house's money all along.
+- **Prices that come from the shoe**: each side is priced off the cards actually left in the six decks, less the house's 3%, so the odds move as the run goes on and no card and no side is ever the better bet. A call that cannot lose returns the pot instead of shrinking it, and what a run leaves is carried into the next one.
+- **Games list**: the credits line opens a list with both games on it. Blackjack is unchanged.
+
 ## 1.15.0: Credits and a crab dealer
 
 - **Credits**: every 100K weighted tokens you use earns 1 credit. Tokens are weighted like API prices: input 1, output 5, cache writes 1.25, cache reads 0.1, the same for every model. On first run, past sessions are counted once in the background, as far back as your transcripts go, so you start with what you have already earned. The balance sits in the header next to a coin that fills toward the next credit; hover for today's earnings. Hide it from the settings gear.
