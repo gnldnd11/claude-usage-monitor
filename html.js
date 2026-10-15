@@ -9,7 +9,8 @@ function renderHtml(vars) {
   const {
     csp, scriptUri, logoUri, crabUri, sparkleUri,
     mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
-    roomMinecraftUri, assetsJson
+    roomMinecraftUri, assetsJson,
+    gameBlackjackUri, gameHiloUri, gamePokerUri, gameForgeUri
   } = vars;
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
@@ -37,7 +38,7 @@ function renderHtml(vars) {
   </div>
   <div class="tabs">
     <button class="tab active" id="tabUsage" data-tab="usage">Usage</button>
-    <button class="tab" id="tabAgents" data-tab="agents">Agents<span class="tab-beta">BETA</span></button>
+    <button class="tab" id="tabAgents" data-tab="agents">Agents</button>
   </div>
   <div class="inner" id="panelUsage">
     <div class="warnbar" id="warnbar" hidden></div>
@@ -115,18 +116,23 @@ function renderHtml(vars) {
   <div class="inner bj-games" id="panelGames" style="display:none">
     <div class="ihead"><div class="it gm-it">${IC.coin} Games</div></div>
     <button type="button" class="gm-row" data-game="blackjack">
-      <span class="gm-ic">${IC.cards}</span>
+      <span class="gm-ic">${IC.cards}<img src="${gameBlackjackUri}" alt=""/></span>
       <span class="gm-txt"><span class="gm-nm">Blackjack</span><span class="gm-sub">Min bet 10</span></span>
       <span class="gm-go">${IC.chevron}</span>
     </button>
     <button type="button" class="gm-row" data-game="hilo">
-      <span class="gm-ic">${IC.updown}</span>
+      <span class="gm-ic">${IC.updown}<img src="${gameHiloUri}" alt=""/></span>
       <span class="gm-txt"><span class="gm-nm">High-Low</span><span class="gm-sub">Min bet 10</span></span>
       <span class="gm-go">${IC.chevron}</span>
     </button>
     <button type="button" class="gm-row" data-game="poker">
-      <span class="gm-ic">${IC.spade}</span>
+      <span class="gm-ic">${IC.spade}<img src="${gamePokerUri}" alt=""/></span>
       <span class="gm-txt"><span class="gm-nm">Draw Poker</span><span class="gm-sub">Jacks or better</span></span>
+      <span class="gm-go">${IC.chevron}</span>
+    </button>
+    <button type="button" class="gm-row" data-game="forge" title="Sword Forge">
+      <span class="gm-ic">${IC.sword}<img src="${gameForgeUri}" alt=""/></span>
+      <span class="gm-txt"><span class="gm-nm">Forge</span><span class="gm-sub">Enhance or sell</span></span>
       <span class="gm-go">${IC.chevron}</span>
     </button>
   </div>
@@ -208,6 +214,30 @@ function renderHtml(vars) {
     </div>
     <div class="bj-ctl" id="pkPlay" hidden>
       <button type="button" class="bj-btn primary" id="pkDraw" style="flex:1 1 100%" title="Draw (Enter)">Draw</button>
+    </div>
+  </div>
+  <div class="inner fg" id="panelForge" style="display:none">
+    <div class="ihead bj-head">
+      <button type="button" class="bj-back" id="fgBack" title="All games">${IC.chevron}</button>
+      <div class="it" title="Enhance to Lv 10 · it can break from the level the glow starts">${IC.sword} Sword Forge</div>
+      <div class="bj-side" id="fgSide"></div><!-- Best N -->
+    </div>
+    <div class="fg-anvil" id="fgAnvil">
+      <div class="fg-stage">
+        <div class="bj-crab"><img src="${crabUri}" alt=""/></div>
+        <div class="fg-sword" id="fgSword"></div>
+        <div class="fg-lv"><b id="fgLv">0</b><span id="fgMax">/ 10</span></div>
+      </div>
+      <div class="fg-bar" id="fgBar"></div>
+      <div class="fg-odds"><span id="fgSucc"></span><span id="fgRisk"></span></div>
+      <div class="hl-line" id="fgLine"></div>
+    </div>
+    <div class="bj-sr" id="fgLive" aria-live="polite"></div>
+    <div class="bj-note" id="fgNote" hidden></div>
+    <div class="warnbar" id="fgErr" hidden></div>
+    <div class="bj-ctl">
+      <button type="button" class="bj-btn primary" id="fgEnhance" style="flex:1 1 100%" title="Enhance (E)">Enhance</button>
+      <button type="button" class="bj-btn" id="fgSell" style="flex:1 1 100%" title="Sell (S, twice)">Sell</button>
     </div>
   </div>
 </div></div>

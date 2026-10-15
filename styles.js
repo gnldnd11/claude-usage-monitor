@@ -6,7 +6,8 @@ module.exports = `
     font-family:var(--vscode-font-family),-apple-system,"SF Pro",sans-serif;
     --card:#232326;--inner:#191919;--track:#3a3a3d;--text:#ececec;--muted:#8b8b90;
     --border:#303034;--iborder:#2c2c30;--ringtrack:#333;--bubble:#fff;--bubblebd:rgba(0,0,0,.06);
-    --felt:#17462f;--felt-lo:#0f3423;--felt-ink:#f2f6f3;--felt-dim:#9fb9a9;}
+    --felt:#17462f;--felt-lo:#0f3423;--felt-ink:#f2f6f3;--felt-dim:#9fb9a9;
+    --forge:#2b2320;--forge-lo:#15100e;--forge-ink:#f4efe9;--forge-dim:#b7a79c;}
   body.vscode-light{--card:#ffffff;--inner:#f6f6f7;--track:#e4e4e7;--text:#1d1d1f;--muted:#78787f;
     --border:#e7e7ea;--iborder:#ededf0;--ringtrack:#e2e2e6;--bubble:#ffffff;--bubblebd:rgba(0,0,0,.14);}
   body.vscode-high-contrast{--card:#000;--inner:#000;--border:#6fc3df;--iborder:#6fc3df;--text:#fff;--track:#555;}
@@ -138,8 +139,6 @@ module.exports = `
   .tab{position:relative;flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:transparent;border:0;color:var(--muted);font-size:12px;font-weight:600;padding:6px 8px;border-radius:7px;cursor:pointer;font-family:inherit;transition:color .15s ease,background .15s ease;}
   .tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
   .tab:hover:not(.active){color:var(--text);}
-  .tab-beta{flex:none;font-size:7.5px;font-weight:800;letter-spacing:.5px;line-height:1;padding:2px 4px;border-radius:5px;color:#fff;background:linear-gradient(135deg,#e8895a,#e5686a);box-shadow:0 1px 2px rgba(0,0,0,.25);transform:translateY(-0.5px);}
-  body.narrow .tab-beta{display:none;}
   .inner.agents{padding:11px 11px 14px;}
   .ws-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;min-width:0;}
   .ws-head .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);min-width:0;overflow:hidden;flex:1 1 auto;}
@@ -426,18 +425,24 @@ module.exports = `
   /* --- games list: the third view. A game screen (the table) opens from a row --- */
   .bj-games .ihead{margin-bottom:8px;}
   .gm-it svg{width:16px;height:16px;} /* the pixel coin needs its 2px grid */
-  .gm-row{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:0;border-radius:10px;background:transparent;font-family:inherit;text-align:left;cursor:pointer;}
+  .gm-row{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:10px;background:transparent;font-family:inherit;text-align:left;cursor:pointer;}
   .gm-row:hover{background:var(--track);}
   .gm-row:focus-visible{outline:2px solid #e8895a;outline-offset:-2px;}
-  .gm-ic{flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--track);}
+  /* 48px is 96's own half, so the art lands on whole pixels. The tile covers the glyph rather
+     than replacing it: an alt="" image that fails to load draws nothing and the glyph shows through */
+  .gm-ic{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:8px;background:var(--track);overflow:hidden;}
   .gm-row:hover .gm-ic{background:var(--card);}
-  .gm-ic svg{width:17px;height:17px;color:#e8895a;display:block;}
+  .gm-ic svg{width:20px;height:20px;color:#e8895a;display:block;}
+  .gm-ic img{position:absolute;inset:0;width:48px;height:48px;max-width:none;display:block;image-rendering:pixelated;}
+  /* brightness only: a border fights the rounded corners baked into the art and a scale blurs the grid */
+  .gm-row:hover .gm-ic img{filter:brightness(1.1);}
   .gm-txt{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;}
-  .gm-nm{font-size:12.5px;font-weight:700;color:var(--text);}
-  .gm-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .gm-nm{font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .gm-sub{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .gm-go{flex:none;line-height:0;}
   .gm-go svg{width:14px;height:14px;color:var(--muted);transform:rotate(90deg);display:block;}
   .ihead.bj-head .it{flex:1 1 auto;}
+  .bj-side{flex:none;font-size:10.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
   .bj-back{flex:none;margin-right:2px;padding:3px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;display:flex;line-height:0;}
   .bj-back:hover{background:var(--track);color:var(--text);}
   .bj-back:focus-visible{outline:2px solid #e8895a;outline-offset:1px;}
@@ -463,7 +468,7 @@ module.exports = `
   .bj-felt .bj-chip.lose{color:#f6836e;}
   /* --- High-Low: one card is the hero. Felt, crab, cards and chips are the blackjack ones --- */
   .hl-stage{display:flex;align-items:flex-end;gap:8px;}
-  .hl-stage .bj-crab{position:relative;left:auto;bottom:auto;width:52px;height:56px;flex:none;}
+  .hl-stage .bj-crab,.fg-stage .bj-crab{position:relative;left:auto;bottom:auto;width:52px;height:56px;flex:none;}
   .hl-cards{position:relative;flex:none;width:82px;height:88px;}
   .hl-card,.hl-prev{position:absolute;bottom:0;line-height:0;}
   .hl-card{left:18px;width:64px;height:88px;}
@@ -507,4 +512,46 @@ module.exports = `
   @keyframes pkIn{from{opacity:0;transform:translateY(-10px);}to{opacity:1;transform:none;}}
   @keyframes pkOut{from{opacity:1;}to{opacity:0;transform:translateY(10px);}}
   @media (prefers-reduced-motion:reduce){.pk-card.in,.pk-card.out{animation:none;}.pk-card{transition:none;}}
+  /* --- Sword Forge: the same structure as the felt with the colours swapped, lit from below.
+     Contrast on this surface: ink 13.5:1, dim 6.5:1, the break red 6.1:1, the success green 10:1 --- */
+  .fg-anvil{padding:12px 10px;border-radius:12px;color:var(--forge-ink);
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 2px),
+      radial-gradient(90% 60% at 50% 108%, rgba(232,137,90,.22) 0%, rgba(232,137,90,0) 70%),
+      radial-gradient(120% 100% at 50% 0%, var(--forge) 0%, var(--forge-lo) 100%);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);}
+  .fg-stage{display:flex;align-items:flex-end;gap:8px;}
+  .fg-sword{position:relative;flex:none;width:48px;height:88px;line-height:0;}  /* 24x44 cells at 2px: 4 rows of headroom for the +10 flames */
+  .fg-sword svg{display:block;}
+  .fg-sword.beat{animation:fgBeat .27s steps(1) both;}
+  .fg-sword.pop{animation:fgPop .18s ease-out both;}
+  .fg-sword.drop{animation:fgDrop .16s ease-out both;}
+  .fg-sword.gone{opacity:0;transition:opacity .12s linear;}
+  .fg-sword.arrive{animation:fgArrive .2s ease-out both;}   /* the shop's replacement: FG_T.arriveIn */
+  .fg-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;}
+  .fg-flash.on{animation:fgFlash .18s ease-out both;}
+  .fg-shard{position:absolute;left:22px;top:38px;width:4px;height:4px;pointer-events:none;animation:fgShard .42s ease-out both;}
+  .fg-anvil.broke{animation:fgBroke .16s ease-out;}   /* this length is FG_T.brFlash in webview.js */
+  .fg-lv{flex:1 1 auto;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;padding-bottom:6px;}
+  .fg-lv b{font-size:22px;font-weight:800;line-height:1;color:var(--forge-ink);font-variant-numeric:tabular-nums;}
+  .fg-lv span{font-size:11px;color:var(--forge-dim);margin-top:2px;}
+  .fg-bar{display:flex;height:8px;margin-top:10px;border-radius:4px;overflow:hidden;background:rgba(0,0,0,.35);}
+  .fg-bar i{display:block;height:100%;box-shadow:inset -1px 0 0 rgba(0,0,0,.35);}
+  .fg-odds{display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .fg-odds span:first-child{color:var(--forge-ink);}
+  .fg-odds span:last-child{color:#f6836e;}
+  .fg-anvil .bj-chip{background:rgba(0,0,0,.45);color:var(--forge-dim);}
+  .fg-anvil .bj-chip.win{color:#7ee6a4;} .fg-anvil .bj-chip.lose{color:#f6836e;}
+  /* the price on a button: the pixel coin at its own 2px grid, every row lit */
+  .fg-cost{display:inline-flex;align-items:center;gap:3px;vertical-align:-3px;font-variant-numeric:tabular-nums;}
+  .fg-cost .cc-coin{width:14px;height:14px;}
+  .fg-cost .cc-r{opacity:1;}
+  @keyframes fgBeat{0%,100%{transform:none;}16%{transform:translateX(-1.5px);}33%{transform:translateX(1.5px);}50%{transform:translateX(-1.5px);}66%{transform:translateX(1.5px);}83%{transform:translateX(-1px);}}
+  @keyframes fgPop{0%{transform:scale(1);}45%{transform:scale(1.05);}100%{transform:scale(1);}}
+  @keyframes fgDrop{from{transform:translateY(-4px);}to{transform:none;}}
+  @keyframes fgArrive{from{opacity:0;}to{opacity:1;}}
+  @keyframes fgFlash{from{opacity:.35;}to{opacity:0;}}
+  @keyframes fgShard{from{transform:none;opacity:1;}to{transform:translate(var(--dx),var(--dy)) rotate(var(--rot));opacity:0;}}
+  @keyframes fgBroke{0%{box-shadow:inset 0 0 0 1px rgba(0,0,0,.55), inset 0 0 0 999px rgba(229,72,77,.18);}100%{box-shadow:inset 0 0 0 1px rgba(0,0,0,.55);}}
+  @media (prefers-reduced-motion:reduce){.fg-sword.beat,.fg-sword.pop,.fg-sword.drop,.fg-sword.arrive,.fg-flash.on,.fg-shard,.fg-anvil.broke{animation:none;}.fg-sword.gone{transition:none;}}
 `;

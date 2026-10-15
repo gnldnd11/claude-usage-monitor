@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.18.0: The sword forge, and art on the list
+
+- **Sword Forge**: the crab is a blacksmith at this table. Pay the fee and the sword goes up a level, or stays where it is, or drops back one, and from the level its blade starts to glow a failed strike can break it and take the whole thing. Ten levels. A broken sword is gone and a fresh one costs nothing, so what you lose is everything you fed the old one.
+- **Selling is the other half of the game**: the price is on the button before you press anything, and it climbs faster than the odds fall. A +10 sword fetches eight times a +9. Every way of choosing where to stop returns between 96.2% and 97.0%, the same band the card games keep, and no single level can be farmed.
+- **The sword is kept**: unlike a hand of cards it survives reloads and windows. Two windows forging the same sword settle on one of them, and a sale that loses that settlement pays nothing and hands the sword back rather than paying twice.
+- **The games list has art**: each of the four rows carries its own tile.
+- **Agents is no longer marked Beta.**
+
 ## 1.17.0: Draw Poker joins the table
 
 - **Draw Poker**: a third game at the crab's table. Jacks or better: five cards come up face up, you mark the ones to keep and one draw replaces the rest. Keeping all five is allowed, a pair of tens or less is nothing, and a paid pair of jacks hands your bet straight back.

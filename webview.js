@@ -453,8 +453,9 @@
     b.classList.toggle('game-bj', g === 'blackjack');
     b.classList.toggle('game-hl', g === 'hilo');
     b.classList.toggle('game-pk', g === 'poker');
+    b.classList.toggle('game-fg', g === 'forge');
     var shown = { panelUsage: t === 'usage', panelAgents: t === 'agents', panelGames: t === 'games' && !g,
-      panelTable: g === 'blackjack', panelHiLo: g === 'hilo', panelPoker: g === 'poker' };
+      panelTable: g === 'blackjack', panelHiLo: g === 'hilo', panelPoker: g === 'poker', panelForge: g === 'forge' };
     for (var id in shown) { var p = el(id); if (p) p.style.display = shown[id] ? '' : 'none'; }
     var au = el('tabUsage'), ag = el('tabAgents');
     if (au) au.classList.toggle('active', t === 'usage');
@@ -468,6 +469,7 @@
     if (g === 'blackjack') { bj.wantFocus = true; bjControls(bj.st, true); bjSend('open'); }
     else if (g === 'hilo') { hl.wantFocus = true; hlControls(hl.st, true); hlSend('open'); }
     else if (g === 'poker') { pk.wantFocus = true; pkControls(pk.st, true); pkSend('open'); }
+    else if (g === 'forge') { fg.wantFocus = true; fgLock(true); fgSend('open'); }
     else { var first = document.querySelector('#panelGames .gm-row'); if (first) first.focus(); }
   }
   function switchTab(t) {
@@ -862,7 +864,7 @@
   // bet: the host sends `free` with every reply and the difference from the balance is what is
   // spoken for. Kept as that difference rather than as `free` itself, so a credit minted while the
   // bet screen is up lights the chips at once instead of waiting for the next reply
-  var gameHeld = { bj: 0, hl: 0, pk: 0 };
+  var gameHeld = { bj: 0, hl: 0, pk: 0, fg: 0 };
   function setHeld(g, m) {
     if (typeof m.free === 'number' && typeof m.balance === 'number') gameHeld[g] = Math.max(0, m.balance - m.free);
   }
@@ -945,14 +947,15 @@
   }
   document.addEventListener('keydown', function (e) {
     var body = document.body, atBj = body.classList.contains('game-bj'),
-      atHl = body.classList.contains('game-hl'), atPk = body.classList.contains('game-pk');
-    if ((!atBj && !atHl && !atPk) || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      atHl = body.classList.contains('game-hl'), atPk = body.classList.contains('game-pk'),
+      atFg = body.classList.contains('game-fg');
+    if ((!atBj && !atHl && !atPk && !atFg) || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
     var t = e.target; if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
     if (document.querySelector('.sheet:not([hidden])')) return;
     var k = String(e.key).toLowerCase();
     if (atBj) pressPanel(e, '#bjPlay', { h: 'hit', s: 'stand', d: 'double', p: 'split' }[k] || null, 'bjDeal', 'bjBet');
     else if (atHl) pressPanel(e, '#hlPlay', { arrowup: 'higher', arrowdown: 'lower', c: 'cashout' }[k] || null, 'hlDeal', 'hlBet');
-    else {
+    else if (atPk) {
       // 1 to 5 mark a card to keep, Enter deals or draws. The key is only taken while there are
       // cards to mark: on the bet screen nothing would happen, and a swallowed digit is one the
       // rest of the page never sees
@@ -961,6 +964,13 @@
         return;
       }
       pressPanel(e, '#pkPlay', null, 'pkDeal', 'pkBet');
+    } else {
+      // E enhances, S twice sells, Enter enhances unless the focus is already on a button (then
+      // that button has it). The forge has no panel of [data-op] actions, so it presses its own
+      var hit = k === 'e' ? el('fgEnhance') : k === 's' ? el('fgSell') : null;
+      if (hit) { e.preventDefault(); if (!hit.disabled && !hit.hidden) hit.click(); return; }
+      var t2 = e.target, enh = el('fgEnhance');
+      if (e.key === 'Enter' && (!t2 || t2.tagName !== 'BUTTON') && enh && !enh.disabled) { e.preventDefault(); enh.click(); }
     }
   });
 
@@ -1089,7 +1099,7 @@
     hl.busy = false; hl.op = null;
   }
   // Each table stops its own clock; the held header is let go once, here
-  function gameLeave() { bjLeave(); hlLeave(); pkLeave(); releaseHeldHeader(); }
+  function gameLeave() { bjLeave(); hlLeave(); pkLeave(); fgLeave(); releaseHeldHeader(); }
 
   function hlSend(op, extra) {
     if (hl.busy) return;
@@ -1382,6 +1392,371 @@
   });
   if (el('pkBack')) el('pkBack').addEventListener('click', function () { openGame(null); });
 
+  // ===========================================================================
+  // Sword Forge: one sword, a level at a time. The sword outlives the window, so this screen owns
+  // nothing about it: it draws the state the host sends back and paces what just happened.
+  // ===========================================================================
+  // No bet and no round here: a press settles at once, and what is paced is only the verdict.
+  // The one outcome with a story is the break, and its figures are counted from the END OF THE BEAT
+  // (the shards fly, the anvil stands empty, and only then does the shop's replacement arrive), so
+  // the press itself is beat + 1000ms long. Everything else is verdict + unlock.
+  // arriveIn is the length of .fg-sword.arrive in styles.js
+  var FG_T = {
+    beat: 270,            // three hammer taps open every attempt
+    unlock: 150,          // the buttons come back this long after the verdict lands
+    brGone: 300, brCleared: 460, brArrive: 760, arriveIn: 200, brFlash: 160,  // a break, from the end of the beat
+    // reduced motion drops the beat and the shards but keeps the empty anvil: the size of the
+    // event is then left in time alone
+    rmEmpty: 400,
+    sellArm: 3000,        // how long the sale's second tap stays available
+    noReply: 4000
+  };
+  // The buttons come back a beat after the replacement is fully there, so this is built on the
+  // fade rather than written out: retiming .fg-sword.arrive alone would hand a press back mid-arrival
+  FG_T.brUnlock = FG_T.brArrive + FG_T.arriveIn + 40;
+  var fg = { st: null, busy: false, op: null, n: 0, timers: [], to: null, arm: null, armed: false, wantFocus: false, locked: false, chip: null, shown: null };
+  function fgClearTimers() { fg.timers.forEach(clearTimeout); fg.timers = []; }
+
+  // --- the sword: one frame; level drives length, colour tier, guard, gem and heat glow
+  var FG_TIER = [
+    { core: '#8c94a0', edge: '#c3c9d2', shade: '#5f6670', gem: null },      // Lv 0-2 iron
+    { core: '#c6d0dd', edge: '#f2f7ff', shade: '#8f9aa8', gem: null },      // Lv 3-5 steel
+    { core: '#e8895a', edge: '#ffd166', shade: '#c25a34', gem: '#e8b23a' }, // Lv 6-8 hot
+    { core: '#ffe9b0', edge: '#ffffff', shade: '#e8b23a', gem: '#ffd166' }  // Lv 9-10 white hot
+  ];
+  // dx, dy, rot: where the eight pieces of a broken sword go
+  var FG_SHARDS = [[-18, -10, -40], [-10, -16, -18], [-3, -20, 12], [6, -16, 28], [14, -9, 46], [-14, 2, -62], [12, 4, 58], [0, -4, 0]];
+  function fgTier(level) { return FG_TIER[level <= 2 ? 0 : level <= 5 ? 1 : level <= 8 ? 2 : 3]; }
+  function fgCells(cells, color, op) {
+    var d = '';
+    for (var i = 0; i < cells.length; i++) { var c = cells[i]; d += 'M' + c[0] + ' ' + c[1] + 'h' + c[2] + 'v' + c[3] + 'h-' + c[2] + 'z'; }
+    return '<path fill="' + color + '"' + (op ? ' opacity="' + op + '"' : '') + ' d="' + d + '"/>';
+  }
+  function swordSvg(level, riskFrom, cell) {
+    var t = fgTier(level);
+    var bb = 26, bt = bb - (12 + level), o = '';
+    function ring(p, op) {   // hugs the blade silhouette. A plain rectangle reads as a picture frame
+      o += fgCells([[11 - p, bt - p, 2 + 2 * p, p], [10 - p, bt, p, 1], [13, bt, p, 1],
+        [9 - p, bt + 1, p, 1], [14, bt + 1, p, 1], [9 - p, bt + 2, p, bb - bt - 2], [15, bt + 2, p, bb - bt - 2]], '#e8895a', op);
+    }
+    if (level >= riskFrom) { ring(1, .5); if (level >= 9) ring(2, .28); }
+    if (level >= 10) {
+      o += fgCells([[11, bt - 5, 2, 2], [10, bt - 4, 1, 1], [13, bt - 4, 1, 1]], '#ffd166');
+      o += fgCells([[11, bt - 7, 2, 2], [10, bt - 6, 1, 1], [13, bt - 6, 1, 1]], '#e8895a');
+    }
+    o += fgCells([[9, bt + 2, 6, bb - bt - 2], [10, bt + 1, 4, 1], [11, bt, 2, 1]], t.core);   // blade, tapered point
+    o += fgCells([[9, bt + 2, 1, bb - bt - 2], [10, bt + 1, 1, 1], [11, bt, 1, 1]], t.edge);   // lit edge
+    o += fgCells([[13, bt + 2, 2, bb - bt - 2], [13, bt + 1, 1, 1]], t.shade);
+    var gw = level >= 6 ? 14 : 12, gx = 12 - gw / 2;
+    o += fgCells([[gx, 26, gw, 2], [gx + 1, 28, 1, 1], [gx + gw - 2, 28, 1, 1]], '#6b7078');
+    o += fgCells([[gx, 26, gw, 1]], '#9aa0a8');
+    o += fgCells([[11, 28, 2, 8]], '#5a3b28');
+    o += fgCells([[11, 29, 2, 1], [11, 31, 2, 1], [11, 33, 2, 1]], '#7a523a');
+    o += fgCells([[10, 36, 4, 3], [9, 37, 1, 1], [14, 37, 1, 1]], '#6b7078');
+    if (t.gem) o += fgCells([[11, 37, 2, 1]], t.gem);
+    // 4 rows of headroom: a +10 blade reaches y=4 and its flames are drawn above the grid's own top
+    return '<svg viewBox="0 -4 24 44" width="' + (24 * cell) + '" height="' + (44 * cell) + '" shape-rendering="crispEdges" aria-hidden="true">' + o + '</svg>';
+  }
+
+  // --- drawing
+  // The sword and the white flash that belongs to it. cls carries the one-shot animation, so the
+  // redraw is also what clears the beat the press started
+  function fgDrawSword(level, riskFrom, cls) {
+    var box = el('fgSword'); if (!box) return;
+    box.className = 'fg-sword';
+    box.innerHTML = swordSvg(level, riskFrom == null ? Infinity : riskFrom, 2) + '<span class="fg-flash"></span>';
+    if (cls) { void box.offsetWidth; box.classList.add(cls); }
+    box.setAttribute('role', 'img');
+    box.setAttribute('aria-label', 'Sword +' + level);
+  }
+  function fgEmptyAnvil() {
+    var box = el('fgSword'); if (!box) return;
+    box.className = 'fg-sword';
+    box.innerHTML = '';
+    box.setAttribute('aria-label', 'No sword');
+  }
+  function fgFlash() { var f = document.querySelector('#fgSword .fg-flash'); if (f) f.classList.add('on'); }
+  function fgPct(v, den) { return Math.round(v * 100 / (den || 100)); }
+  // The bar is the odds themselves, in the table's own order. A slice that cannot happen is not
+  // drawn at all, so below the level the glow starts there is simply no red on it
+  var FG_SLICE = [
+    { k: 'up', c: '#7ee6a4', w: 'success' },
+    { k: 'keep', c: 'var(--forge-dim)', o: '.45', w: 'no change' },
+    { k: 'down', c: '#f7c46a', w: 'down a level' },
+    { k: 'break', c: '#e5484d', w: 'destroyed' }
+  ];
+  function fgBar(st) {
+    var box = el('fgBar'); if (!box) return;
+    var odds = st && st.odds, den = (st && st.den) || 100, html = '', words = [];
+    if (odds) {
+      FG_SLICE.forEach(function (s) {
+        var v = odds[s.k] || 0; if (!v) return;
+        html += '<i data-k="' + s.k + '" style="width:' + (v * 100 / den) + '%;background:' + s.c + (s.o ? ';opacity:' + s.o : '') + '"></i>';
+        words.push(fgPct(v, den) + '% ' + s.w);
+      });
+    }
+    box.innerHTML = html;
+    box.title = words.join(' · ');
+  }
+  // Only the two that decide a press are spelled out: what it pays and what it costs
+  function fgOdds(st) {
+    var odds = st && st.odds, den = (st && st.den) || 100;
+    var su = el('fgSucc'), rk = el('fgRisk');
+    if (su) su.textContent = odds ? fgPct(odds.up, den) + '% success' : '';
+    if (rk) rk.textContent = odds && odds.break ? fgPct(odds.break, den) + '% destroy' : '';
+  }
+  function fgLv(st) {
+    var lv = el('fgLv'), mx = el('fgMax');
+    if (lv) lv.textContent = String(st ? st.level : 0);
+    if (mx) mx.textContent = '/ ' + (st ? st.max : 10);
+  }
+  // The best is worth seeing every press; the attempts behind it are not, so they go in the title
+  function fgSide(st) {
+    var s = el('fgSide'); if (!s || !st) return;
+    s.textContent = 'Best ' + st.best;
+    s.title = st.best + ' best · ' + fmtInt(st.tries) + ' attempts';
+  }
+  function fgCoin(v) { return '<span class="fg-cost">' + COIN_FULL + '<b>' + fmtInt(v) + '</b></span>'; }
+  function fgButtons(st, locked) {
+    var can = (st && st.can) || {}, cost = st ? st.cost : null, price = st ? st.sell : 0;
+    var enh = el('fgEnhance'), sl = el('fgSell');
+    fg.shown = st ? st.level : null;   // the level these two figures belong to (see fgSend)
+    if (enh) {
+      enh.hidden = !st;        // before the first reply there is no sword and no fee to name
+      enh.innerHTML = 'Enhance' + (cost == null ? '' : ' ' + fgCoin(cost)); // null at the top: nothing left to price
+      enh.disabled = !!locked || !can.enhance;
+    }
+    if (sl) {
+      sl.hidden = !can.sell;    // a +0 sword is the one the shop gives away, so there is no row
+      sl.innerHTML = fg.armed ? 'Tap again to sell' : 'Sell' + (price ? ' ' + fgCoin(price) : '');
+      sl.disabled = !!locked || !can.sell;
+    }
+    fgNote(st);
+  }
+  // Being broke and having the credits tied up at another table are different problems, and the
+  // forge can hit either: its fee is measured against what the card games have left riding
+  function fgNote(st) {
+    var note = el('fgNote'); if (!note) return;
+    var cost = st ? st.cost : null, can = (st && st.can) || {};
+    var short = cost != null && !can.enhance;   // the only reason an attempt below the top is refused
+    note.hidden = !short;
+    if (short) {
+      note.textContent = (prev.cr != null && prev.cr >= cost)
+        ? HELD_ELSEWHERE + '.'
+        : 'You need ' + fmtInt(cost) + ' credits to enhance.';
+    }
+  }
+  function fgFace(st) { fgLv(st); fgBar(st); fgOdds(st); fgSide(st); fgButtons(st, fg.locked); }
+  function fgPaint(st) {
+    var anvil = el('fgAnvil'); if (anvil) anvil.classList.remove('broke');
+    fgDrawSword(st ? st.level : 0, st ? st.riskFrom : null);
+    fgFace(st);
+  }
+  // The chip is the move just made, so it is kept here rather than read back out of the state: an
+  // open carries the last move too, and re-entering the forge is not that move happening again
+  function fgChip(st) {
+    var last = st && st.last; if (!last) { fg.chip = null; return; }
+    var o = last.outcome;
+    fg.chip = {
+      text: o === 'up' ? 'Success · Lv ' + last.to
+        : o === 'keep' ? 'No change'
+          : o === 'down' ? 'Down to Lv ' + last.to
+            : o === 'break' ? 'Destroyed'
+              : 'Sold ' + signed(st.net || last.paid),
+      tint: o === 'up' || o === 'sold' ? 'win' : (o === 'down' || o === 'break') ? 'lose' : ''
+    };
+  }
+  function fgLine() {
+    var line = el('fgLine'); if (!line) return;
+    if (!fg.chip) { line.innerHTML = ''; return; }
+    line.innerHTML = '<span class="bj-chip' + (fg.chip.tint ? ' ' + fg.chip.tint : '') + '">' + esc(fg.chip.text) + '</span>';
+  }
+  function fgError(msg) {
+    var e = el('fgErr'); if (!e) return;
+    e.hidden = !msg;
+    if (msg) e.innerHTML = WARN_SVG + '<span class="wbmsg">' + esc(msg) + '</span>';
+  }
+  function fgAnnounce(st) {
+    var live = el('fgLive'); if (!live || !st) return;
+    var last = st.last; if (!last) return;
+    var o = last.outcome;
+    var what = o === 'break' ? 'Destroyed. A new +0 sword'
+      : o === 'sold' ? 'Sold for ' + fmtInt(last.paid) + '. A new +0 sword'
+        : (o === 'up' ? 'Success' : o === 'keep' ? 'No change' : 'Down a level') + '. Sword +' + last.to;
+    live.textContent = what + '. ' + signed(st.net || 0) + '. Balance ' + fmtInt(prev.cr || 0) + '.';
+  }
+
+  // --- the beats of one attempt
+  function fgBeat() {
+    var box = el('fgSword'); if (!box) return;
+    box.className = 'fg-sword';           // and the last verdict's one-shot class goes with it
+    var f = box.querySelector('.fg-flash'); if (f) f.className = 'fg-flash';   // as does its flash
+    void box.offsetWidth; box.classList.add('beat');
+  }
+  // The verdict for the three outcomes that leave a sword on the anvil
+  function fgLand(out, st) {
+    fgDrawSword(st.level, st.riskFrom, _reduceMotion ? '' : (out === 'up' ? 'pop' : out === 'down' ? 'drop' : ''));
+    if (out === 'up' && !_reduceMotion) fgFlash();
+    fgFace(st);
+    fgLine();
+  }
+  // The break: the anvil flinches, the pieces fly, and the sword itself is still there to fade out
+  function fgShatter(from) {
+    var box = el('fgSword');
+    fgLine();
+    if (_reduceMotion) { fgEmptyAnvil(); return; }
+    if (box) {
+      box.classList.remove('beat');
+      var t = fgTier(from), html = '';
+      FG_SHARDS.forEach(function (s, i) {
+        html += '<span class="fg-shard" style="background:' + (i % 2 ? t.edge : t.core)
+          + ';--dx:' + s[0] + 'px;--dy:' + s[1] + 'px;--rot:' + s[2] + 'deg"></span>';
+      });
+      box.innerHTML = box.innerHTML + html;
+    }
+    var anvil = el('fgAnvil');
+    if (anvil) {
+      anvil.classList.remove('broke'); void anvil.offsetWidth; anvil.classList.add('broke');
+      fg.timers.push(setTimeout(function () { anvil.classList.remove('broke'); }, FG_T.brFlash));
+    }
+  }
+  function fgSwordGone() { var box = el('fgSword'); if (box) box.classList.add('gone'); }
+
+  // What a reply makes happen, and when. An open, an error and a late reply land at once; an
+  // attempt opens with the beat; a break then takes the long way round
+  function fgSteps(m, op) {
+    var st = fg.st, last = st && st.last;
+    var moved = !m.error && last && op && op !== 'open' && last.op === op;
+    if (!moved) return { steps: [{ at: 0, fn: function () { fgPaint(st); } }], unlock: 0 };
+    fgChip(st);
+    if (op === 'sell') return { steps: [{ at: 0, fn: function () { fgPaint(st); fgLine(); } }], unlock: FG_T.unlock };
+    var beat = _reduceMotion ? 0 : FG_T.beat, out = last.outcome, from = last.from;
+    var steps = [];
+    if (!_reduceMotion) steps.push({ at: 0, fn: fgBeat });
+    if (out !== 'break') return { steps: steps.concat([{ at: beat, fn: function () { fgLand(out, st); } }]), unlock: beat + FG_T.unlock };
+    var arrive = function () { fgDrawSword(st.level, st.riskFrom, _reduceMotion ? '' : 'arrive'); fgFace(st); };
+    steps.push({ at: beat, fn: function () { fgShatter(from); } });
+    if (_reduceMotion) return { steps: steps.concat([{ at: FG_T.rmEmpty, fn: arrive }]), unlock: FG_T.rmEmpty + FG_T.unlock };
+    return {
+      steps: steps.concat([
+        { at: beat + FG_T.brGone, fn: fgSwordGone },
+        { at: beat + FG_T.brCleared, fn: fgEmptyAnvil },
+        { at: beat + FG_T.brArrive, fn: arrive }
+      ]),
+      unlock: beat + FG_T.brUnlock
+    };
+  }
+
+  // --- the two buttons
+  function fgLock(locked) { fg.locked = !!locked; fgButtons(fg.st, fg.locked); }
+  // Selling asks twice: the sword is the one thing the player owns here, and a stray tap on a +9
+  // would be the whole climb. An attempt does not ask twice, because an attempt is the game
+  function fgArmSell() {
+    fg.armed = true;
+    fgButtons(fg.st, fg.locked);
+    clearTimeout(fg.arm);
+    fg.arm = setTimeout(function () { fgDisarmSell(); }, FG_T.sellArm);
+  }
+  function fgDisarmSell(quiet) {
+    clearTimeout(fg.arm);
+    if (!fg.armed) return;
+    fg.armed = false;
+    if (!quiet) fgButtons(fg.st, fg.locked);
+  }
+  function fgLeave() {
+    fgClearTimers();
+    clearTimeout(fg.to);
+    fgDisarmSell(true);
+    fg.busy = false; fg.op = null;
+  }
+  function fgFocusAfter() {
+    if (curGame() !== 'forge') return;
+    var a = document.activeElement, panel = el('panelForge');
+    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
+    if (!fg.wantFocus && !lost) return;
+    fg.wantFocus = false;
+    var enh = el('fgEnhance'), sl = el('fgSell');
+    var target = enh && !enh.disabled ? enh : (sl && !sl.disabled && !sl.hidden ? sl : null);
+    if (target) target.focus();
+  }
+
+  // --- messages
+  function fgSend(op) {
+    if (fg.busy) return;
+    fg.busy = true; fg.op = op; fg.n += 1;
+    if (op !== 'open') fgLock(true);
+    var msg = { type: 'fg', op: op, n: fg.n };
+    if (op !== 'open' && typeof fg.shown === 'number') msg.level = fg.shown;
+    vscode.postMessage(msg);
+    clearTimeout(fg.to);
+    fg.to = setTimeout(function () {
+      fg.busy = false; fg.op = null;
+      fgError('The forge didn’t respond. Try again.');
+      fgLock(false);
+    }, FG_T.noReply);
+  }
+  function fgReceive(m) {
+    var current = fg.op != null && m.n === fg.n;
+    if (!current && fg.op != null) return;   // an older reply while a newer request waits
+    var op = current ? fg.op : null;
+    clearTimeout(fg.to); fgClearTimers();
+    fg.op = null;
+    fgDisarmSell(true);                      // a reply closes the sell's second-tap window
+    fg.st = m.state || null;
+    setHeld('fg', m);
+    fg.chip = null;
+    fgLine();                                // the last verdict goes now; this one lands with its step
+    var plan = null;
+    try {
+      plan = fgSteps(m, op);                 // which sets the chip again when this reply is a move
+      fgError(m.error || '');
+      fgLock(true);
+    } finally {
+      // the header waits for this reply's settle, like the other tables: the host's data push is
+      // right behind it, and a fee paid or a sword sold is not a credit earned
+      _bjHold = true;
+      var sc = plan || { steps: [{ at: 0, fn: function () { fgPaint(fg.st); } }], unlock: 0 };
+      sc.steps.forEach(function (s) { fg.timers.push(setTimeout(s.fn, s.at)); });
+      fg.timers.push(setTimeout(function () { fgSettle(m, current && op !== 'open' && !m.error); }, sc.unlock));
+    }
+  }
+  function fgSettle(m, fresh) {
+    fg.busy = false; _bjHold = false;
+    try {
+      if (typeof m.balance === 'number') setCreditsQuiet(m.balance);
+      if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
+      fgLine();
+      if (fresh) fgAnnounce(fg.st);
+    } finally {
+      fgLock(false);
+      fgFocusAfter();
+    }
+  }
+
+  function fgBlank() {
+    fgEmptyAnvil();
+    var lv = el('fgLv'), mx = el('fgMax');
+    if (lv) lv.textContent = '';
+    if (mx) mx.textContent = '';
+    fgBar(null); fgOdds(null); fgLine();
+  }
+
+  // --- wiring
+  fgBlank();
+  fgLock(true);
+  if (el('fgEnhance')) el('fgEnhance').addEventListener('click', function () {
+    if (this.disabled) return;
+    fgDisarmSell();
+    fgSend('enhance');
+  });
+  if (el('fgSell')) el('fgSell').addEventListener('click', function () {
+    if (this.disabled || this.hidden) return;
+    if (!fg.armed) { fgArmSell(); return; }
+    fgDisarmSell(true);
+    fgSend('sell');
+  });
+  if (el('fgBack')) el('fgBack').addEventListener('click', function () { openGame(null); });
+
   // live tick every 1s: active time + countdowns + "Updated Ns ago"
   function tick() {
     if (lastData) {
@@ -1527,6 +1902,7 @@
     else if (m.type === 'bj') bjReceive(m);
     else if (m.type === 'hl') hlReceive(m);
     else if (m.type === 'pk') pkReceive(m);
+    else if (m.type === 'fg') fgReceive(m);
     else if (m.type === 'openSettings') { var s = el('settingsSheet'); if (s) s.hidden = !s.hidden; }
   });
 
