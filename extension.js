@@ -12,6 +12,7 @@ const credits = require('./credits');
 const blackjack = require('./blackjack');
 const highlow = require('./highlow');
 const poker = require('./poker');
+const forge = require('./forge');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const RATE_FILE = path.join(CLAUDE_DIR, 'usage-bar.json');
@@ -531,13 +532,14 @@ function syncCredits(tokens) {
 }
 
 // --- the crab's casino (solo, crab dealer) ----------------------------------------
-// Three games, one purse. The host owns every round and every ruling; the webview only sends a bet
+// Four games, one purse. The host owns every round and every ruling; the webview only sends a bet
 // and an action.
 // Rounds live in memory only. Stakes move only when a round settles, so reloading VS Code mid-round
 // voids that round and loses nothing. In solo mode that loophole (reload away a bad hand) is
-// accepted on purpose.
+// accepted on purpose. The forge is the exception and has to be: a sword is not a round but a
+// thing the player owns, so it is stored (see the forge section).
 // Results go to the ledger's bank as this activation's own grow-only counters (credits.js). All
-// three games share one set of counters: the balance is built from credits won and lost, which is
+// four games share one set of counters: the balance is built from credits won and lost, which is
 // the same currency either way, and a key per game would have to be migrated into every window's
 // stored ledger to buy nothing.
 // A round settles exactly once: only the move that turns it to 'done' records it, and every later
@@ -553,15 +555,17 @@ function creditBalance() {
   return credits.creditSummary(creditStore.read(), localDayKey(Date.now()), false).balance;
 }
 
-// What a live round in the OTHER games still has a claim on. All three may be live at the same
-// time, since they share nothing but the purse and making one wait on the others would be a rule
-// the player can feel for no reason. But a stake does not leave the balance until its round
+// What a live round in the OTHER games still has a claim on. All three card games may be live at
+// the same time, since they share nothing but the purse and making one wait on the others would be
+// a rule the player can feel for no reason. But a stake does not leave the balance until its round
 // settles, so without this the rounds would be measured against the same credits and losing them
 // all would overdraw. Each game is therefore bet against the balance minus what the others have
 // riding.
 // Blackjack's stake grows with a double or a split; high-low's is its opening bet, because the pot
 // it builds is the house's money until the player cashes out; poker's is its bet from the deal to
-// the draw, which is the whole hand.
+// the draw, which is the whole hand. The forge has nothing here in either direction: its fee is
+// gone the instant it is paid, so it never holds credits back from the other three, and it is
+// measured against what they have left like everything else.
 function heldBy(game) {
   let held = 0;
   if (game !== 'bj' && bjRound && bjRound.phase === 'player') held += blackjack.stake(bjRound);
@@ -596,12 +600,17 @@ function gameReply(game, engine, round, reqN, error, withSeq) {
   }
 }
 
-// Records a settled round in the bank at once (not throttled: hands come at human speed)
-function recordGameResult(net) {
+// Records a settled round in the bank at once (not throttled: hands come at human speed).
+// `extra` is other ledger keys that belong to this same settlement, and it goes in the SAME write:
+// the forge's sword moves and its fee is paid by one move, and two writes could leave a window
+// crashing between them with the money gone and the sword not saved (or the other way round)
+// Returns the merged ledger the write settled on, which is how the forge finds out whether the move
+// it just made is the one every window will see (fgSettle)
+function recordGameResult(net, extra) {
   if (net > 0) gameCount.won += net;
   else if (net < 0) gameCount.lost -= net;
   gameCount.hands += 1;
-  creditStore.record({ bank: { [gameReplica]: Object.assign({}, gameCount) } }, true);
+  return creditStore.record(Object.assign({ bank: { [gameReplica]: Object.assign({}, gameCount) } }, extra), true);
 }
 
 function ensureReplica() {
@@ -610,8 +619,8 @@ function ensureReplica() {
 
 // The reply goes first and the data push (header balance) after it: the other way round, the
 // header would show the result while the webview is still dealing the cards
-function afterMove(settled, net, reply, tag) {
-  if (settled) recordGameResult(net);
+function afterMove(settled, net, reply, tag, extra) {
+  if (settled) recordGameResult(net, extra);
   reply(null, true);
   if (settled) {
     try { push(); } catch (e) { logLine(tag + ': push after settle failed: ' + (e && e.message)); }
@@ -751,6 +760,114 @@ function handlePk(m) {
   // nothing else off the wire belongs in an engine op
   else if (poker.OPS.includes(m.op)) pkAct({ op: m.op, hold: m.hold });
   else pkReply('unknown action');
+}
+
+// --- the forge ---------------------------------------------------------------------
+// The sword, and the one thing in the casino that outlives the window. The three card games keep a
+// round in memory and a reload voids it; a sword is the player's property, so it is stored in the
+// credit ledger next to the bank (credits.js) and every window shares the one sword.
+//
+// Why the state is re-read before every message. memento.update rewrites and broadcasts all of the
+// extension's keys at once, so another window's write lands here, and that window may have forged
+// the sword since the last message this one answered. Acting on the copy in memory would spend the
+// fee on an attempt the merge then throws away, so every message starts from whichever record is
+// further along (credits.forgeNewer). A reload is the same thing taken to its limit: nothing in
+// memory, everything in storage.
+//
+// Why there is no live stake. An attempt IS the settlement: the fee goes the instant it is paid,
+// whatever it rolls, and a sale arrives at once. So heldBy() has nothing to hold back here, and one
+// recordGameResult per move carries the money and the saved sword in a single write.
+let fgSword = null;            // the sword, rebuilt from the ledger whenever storage is ahead of it
+let fgSeedSource = gameRandom; // tests swap this to pick the rolls (_test.setFgSeeds)
+let fgReqN = null;
+
+// The sword as it stands, carrying the id of whichever window last wrote it
+function fgSaved() {
+  return forge.save(fgSword);
+}
+
+// ...and the record THIS window writes when it moves the sword: its own id settles a merge tie
+// (credits.forgeNewer), so a record without one loses every tie, which is the right way round: a
+// window that has not played has nothing to defend
+function fgRecord() {
+  return Object.assign(fgSaved(), { by: gameReplica || '' });
+}
+
+// Takes the stored sword when it is further along than the one in memory. Returns true if the
+// sword in memory changed, which is what a redraw hangs on
+function fgSync() {
+  const stored = creditStore ? creditStore.read().forge : null;
+  if (!fgSword || credits.forgeNewer(stored, fgSaved())) {
+    fgSword = forge.load(stored);
+    return true;
+  }
+  return false;
+}
+
+function fgReply(error) {
+  gameReply('fg', forge, fgSword, fgReqN, error, false);
+}
+
+// One forced write carries the whole move: the sword, and the fee if there was one. What comes back
+// is the merged ledger, so this also finds out whether the move survived.
+//
+// Only the FEE rides the bank's grow-only counters. A window that paid for an attempt paid for it,
+// whichever sword the merge then keeps. What a SALE pays does not go there: it is `earned` inside
+// the record, so a sale whose record is dropped pays nothing and two windows selling one sword are
+// paid for it once (see credits.js). That is the only reason this is not just afterMove().
+//
+// A move that was dropped is shown as what it is: the sword another window moved, with no chip on
+// it and a line saying why. The fee for a dropped attempt is not refunded
+function fgSettle() {
+  const mine = fgRecord();
+  const fee = fgSword.last.op === 'sell' ? 0 : fgSword.net;
+  const ledger = recordGameResult(fee, { forge: mine });
+  const landed = ledger && ledger.forge;
+  const dropped = !landed || landed.moves !== mine.moves || landed.by !== mine.by;
+  if (dropped) fgSword = forge.load(landed);
+  // the merge may have raised a lifetime figure, and `by` is now this window's: take both, so the
+  // sword in memory says exactly what storage says and the next sync has nothing to do
+  else fgSword = Object.assign({}, fgSword, { by: landed.by, tries: landed.tries, best: landed.best });
+  fgReply(dropped ? 'another window moved the sword first' : null);
+  try { push(); } catch (e) { logLine('forge: push after settle failed: ' + (e && e.message)); }
+}
+
+function handleFg(m) {
+  fgReqN = Number.isSafeInteger(m.n) ? m.n : null;
+  fgSync();
+  if (m.op === 'open') return fgReply(null);
+  if (!forge.OPS.includes(m.op)) return fgReply('unknown action');
+  // What the screen was showing when the button was pressed. Another window can move the sword
+  // between two messages, and the broadcast that says so arrives with no message of its own, so a
+  // panel can be looking at a +0 sword the shop has since taken to +9. Forging it anyway would
+  // charge a fee the screen never showed, so the level the screen drew comes with the move and
+  // anything else is refused and redrawn. A message without one is taken as it was before (the
+  // field is optional, so an older webview keeps working)
+  if (Number.isSafeInteger(m.level) && m.level !== fgSword.level) {
+    return fgReply('the sword has moved: it is +' + fgSword.level + ' now');
+  }
+  // The seed is made here and never leaves the host: one attempt, one seed, one roll. Nothing the
+  // webview holds between two messages can say what the next attempt will do, because the seed it
+  // will be rolled from does not exist yet
+  const op = m.op === 'enhance' ? { op: m.op, seed: fgSeedSource() } : { op: m.op };
+  const reason = forge.whyNot(fgSword, op, budgetFor('fg'));
+  if (reason) return fgReply(reason);
+  ensureReplica();
+  fgSword = forge.act(fgSword, op);
+  fgSettle(); // every accepted move settles, so this records exactly once per message
+}
+
+// A sword another window moved reaches this one as a globalState broadcast, which carries no
+// message to answer, so without this the panel would go on drawing the sword it last saw and
+// offering the fee of a level the sword has left. Every data push therefore checks the stored
+// record and redraws the forge if it has moved. The push already runs on a timer and on every
+// transcript write, so it costs nothing of its own, and it says nothing when nothing moved.
+// This narrows the gap; it does not close it, which is what the level on the message is for
+function fgPushIfMoved() {
+  if (!fgSword || !provider || !provider.view) return; // a panel that never opened the forge
+  if (!fgSync()) return;
+  fgReqN = null; // nothing asked for this one
+  fgReply(null);
 }
 
 // --- agent roster (M1) -------------------------------------------------------
@@ -1179,6 +1296,7 @@ class UsageViewProvider {
       else if (m.type === 'bj') handleBj(m);
       else if (m.type === 'hl') handleHl(m);
       else if (m.type === 'pk') handlePk(m);
+      else if (m.type === 'fg') handleFg(m);
       else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
       else if (m.type === 'setConfig' && m.key) {
         vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global).then(function () { push(); });
@@ -1238,6 +1356,11 @@ class UsageViewProvider {
     const mascotDespairUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-despair.png'));
     const mascotWorkingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-working.png'));
     const roomMinecraftUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft.png'));
+    // the games list's tiles: 96px art drawn at 48, so they live in the published root (media/** is not)
+    const gameBlackjackUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'game-blackjack.png'));
+    const gameHiloUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'game-hilo.png'));
+    const gamePokerUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'game-poker.png'));
+    const gameForgeUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'game-forge.png'));
     const spriteUri = (n) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, n)).toString();
     // sprites resolve to embedded base64 (data URI); room images stay as file URIs (own assets)
     const spriteSrc = (n) => spriteData[n] || spriteUri(n);
@@ -1271,7 +1394,8 @@ class UsageViewProvider {
       csp: webview.cspSource,
       scriptUri, logoUri, crabUri, sparkleUri,
       mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
-      roomMinecraftUri, assetsJson
+      roomMinecraftUri, assetsJson,
+      gameBlackjackUri, gameHiloUri, gamePokerUri, gameForgeUri
     });
   }
 }
@@ -1283,6 +1407,7 @@ function push() {
   data.cfg = { statusBar: _cfg.get('statusBar.show', 'session+weekly'), panelHidden: _cfg.get('panel.hidden', []), burnRate: _cfg.get('burnRate.enabled', true) };
   if (statusItem) renderStatusBar(data);
   if (provider) provider.post(data);
+  fgPushIfMoved(); // the data push carries no game state, and the sword is shared (see the forge)
 }
 
 function scheduleRefresh() {
@@ -1466,6 +1591,7 @@ if (process.env.CUC_TEST) module.exports._test = {
   setBjSeeds: (fn) => { bjSeedSource = fn || gameRandom; },
   setHlSeeds: (fn) => { hlSeedSource = fn || gameRandom; },
   setPkSeeds: (fn) => { pkSeedSource = fn || gameRandom; },
+  setFgSeeds: (fn) => { fgSeedSource = fn || gameRandom; },
   // the deck the next run will shuffle. A seed only names a run together with this, because the
   // shoe carries: tests that want a particular run have to search the seed against it
   hlDeck: () => (hlShoe ? hlShoe.slice() : null)

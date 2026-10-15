@@ -31,16 +31,37 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // --- ledger --------------------------------------------------------------------
 // Shape: { days: { 'YYYY-MM-DD': {input, output, cache_creation, cache_read} }, backfilled, sweptAt,
-//          bank: { [replicaId]: { won, lost, hands } } }
+//          bank: { [replicaId]: { won, lost, hands } },
+//          forge: { by, level, moves, tries, spent, best, earned } }
 // Raw tokens per day are stored, not credits, so a changed rate or weighting also re-prices the past.
 // `bank` holds game results. They can go down as well as up, which a per-day max merge cannot
 // express, so each window (replica) keeps its own won/lost/hands counters that only grow and only
 // that window raises: a grow-only counter per replica, merged field by field with max like days.
 // One key per activation that played at least one hand; keys are never removed (no path deletes them).
 // Replica ids are 16 hex characters (extension.js makes them): anything else, "__proto__" included, is dropped.
+// `forge` holds the sword (forge.js): the one thing in the casino that outlives a window, so it is
+// stored rather than kept in memory like a round. Its level goes up AND down, so neither a max nor
+// a grow-only counter can carry it, and there is one record rather than one per replica because the
+// player has one sword: a sword per window would be four swords.
+// It merges as a register instead: the copy with more `moves` wins WHOLE, `moves` being a count of
+// accepted moves that only ever grows, with `tries` and `best` maxed across both so a lifetime
+// figure never falls back. What a true collision costs (two windows forging in the same instant) is
+// the losing window's attempt: that level change is dropped.
+// The FEE for that dropped attempt is not given back, and should not be: it is in `bank`, where
+// every window has grow-only counters of its own, and the window really did pay to make the
+// attempt. A SALE is the other way round. Its payout is `earned` INSIDE this record, so it is
+// adopted with the record and dropped with it. Counted in the bank instead, it would be money from
+// nowhere twice over: two windows selling one sword would each bank a payout, and a sale whose
+// sword came back would leave the player holding both the sword and the price of it. The balance
+// reads `earned` straight out of the surviving record (creditSummary), so one sword pays once.
 // Other future keys go next to these; the merge below keeps unknown keys.
 const REPLICA_RE = /^[0-9a-f]{16}$/;
 const BANK_FIELDS = ['won', 'lost', 'hands'];
+const FORGE_FIELDS = ['level', 'moves', 'tries', 'spent', 'best', 'earned'];
+// The lifetime figures, maxed rather than adopted with the winning record. `earned` is deliberately
+// NOT one of them: maxing it is the bug this field was moved out of the bank to fix, because it
+// would keep a dropped sale's money next to the sword that sale did not take
+const FORGE_MAX_FIELDS = ['tries', 'best'];
 
 function cleanTokens(t) {
   const out = U.zeroTokens();
@@ -66,6 +87,60 @@ function cleanBank(b) {
   return out;
 }
 
+// A stored sword, field by field, or null for a player who has never forged. Only these fields
+// travel: anything else a future version puts in a record is dropped here rather than carried into
+// another window's sword, and the record is rebuilt rather than copied, so a "__proto__" in the
+// stored JSON cannot ride along.
+// What a level means is forge.js's business (it pulls one above its own ladder back to the top);
+// this is only the shape
+function cleanForge(f) {
+  if (!f || typeof f !== 'object') return null;
+  const out = { by: REPLICA_RE.test(f.by) ? f.by : '' };
+  for (const k of FORGE_FIELDS) out[k] = (Number.isSafeInteger(f[k]) && f[k] > 0) ? f[k] : 0;
+  return out;
+}
+
+// Is `inc` the later of two swords? More moves is later, full stop: a move only ever adds one and
+// never takes it back, so this is a clock that cannot run backwards.
+// A tie goes to the larger writer id, which is random per activation (extension.js makes it) and so
+// favours neither window and neither outcome: a player who forges in two windows at the same instant
+// gets one of the two rolls, not the better of them.
+// (moves, by) names a record on its own under any play, because a window makes exactly one record
+// per move count. The last two comparisons only ever separate two records that a hand-edited store
+// put under the same pair, and they are here so the merge settles on one of them instead of two
+// windows writing each other's copy back and forth forever
+function forgeNewer(inc, cur) {
+  if (!inc) return false;
+  if (!cur) return true;
+  if (inc.moves !== cur.moves) return inc.moves > cur.moves;
+  if (inc.by !== cur.by) return inc.by > cur.by;
+  if (inc.level !== cur.level) return inc.level > cur.level;
+  return inc.spent > cur.spent;
+}
+
+function sameForge(a, b) {
+  if (!a || !b) return a === b;
+  if (a.by !== b.by) return false;
+  for (const k of FORGE_FIELDS) if (a[k] !== b[k]) return false;
+  return true;
+}
+
+// The later record, whole, with the lifetime figures raised to the highest either side has seen.
+// Raising them cannot upset the order: it never touches `moves` or `by`, so the result is still the
+// later of the two and merging it again with either input changes nothing (idempotent, and the same
+// whichever order the two arrive in)
+function mergeForge(cur, inc) {
+  if (!inc) return cur || null;
+  const out = Object.assign({}, forgeNewer(inc, cur) ? inc : cur);
+  for (const k of FORGE_MAX_FIELDS) {
+    if (cur && cur[k] > out[k]) out[k] = cur[k];
+    if (inc[k] > out[k]) out[k] = inc[k];
+  }
+  // a best that is below the sword in hand would be a record high that never happened
+  if (out.level > out.best) out.best = out.level;
+  return out;
+}
+
 // What comes out of globalState may have been written by another version. Fix the shape at the boundary
 function normalizeLedger(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
@@ -73,7 +148,7 @@ function normalizeLedger(raw) {
   const days = {};
   for (const k in srcDays) if (DAY_RE.test(k)) days[k] = cleanTokens(srcDays[k]);
   const sweptAt = (typeof src.sweptAt === 'number' && isFinite(src.sweptAt)) ? src.sweptAt : 0;
-  return Object.assign({}, src, { days, backfilled: src.backfilled === true, sweptAt, bank: cleanBank(src.bank) });
+  return Object.assign({}, src, { days, backfilled: src.backfilled === true, sweptAt, bank: cleanBank(src.bank), forge: cleanForge(src.forge) });
 }
 
 // Field-wise max of `inc` over `cur` (both clean). Returns the merged copy, or null if nothing grew
@@ -105,6 +180,11 @@ function mergeLedger(stored, patch) {
     const next = maxFields(out.bank[id] || cleanCounter(null), pBank[id], BANK_FIELDS);
     if (next) { out.bank[id] = next; changed = true; }
   }
+  const pForge = cleanForge(patch && patch.forge);
+  if (pForge) {
+    const next = mergeForge(out.forge, pForge);
+    if (!sameForge(next, out.forge)) { out.forge = next; changed = true; }
+  }
   if (patch && patch.backfilled === true && !out.backfilled) { out.backfilled = true; changed = true; }
   if (patch && typeof patch.sweptAt === 'number' && patch.sweptAt > out.sweptAt) { out.sweptAt = patch.sweptAt; changed = true; }
   return { ledger: out, changed };
@@ -124,6 +204,14 @@ function bankNet(bank) {
   return net;
 }
 
+// What the shop has paid for swords sold. It comes out of the one surviving sword record rather
+// than out of per-window counters, which is what stops a sale being paid for twice (see the forge
+// note above). It can therefore go DOWN, once, when a collision drops the sale that earned it: that
+// is the sale not having happened, and the sword is back in the player's hands to prove it
+function forgeEarned(forge) {
+  return forge ? forge.earned : 0;
+}
+
 // Summary for the webview. `ledger` has been through normalizeLedger.
 // balance = credits earned from tokens + game net. today and frac are about earning only
 function creditSummary(ledger, todayKey, counting) {
@@ -133,7 +221,7 @@ function creditSummary(ledger, todayKey, counting) {
   const todayW = ledger.days[todayKey] ? weightedScaled(ledger.days[todayKey]) : 0;
   const earned = Math.floor(total / unit);
   return {
-    balance: earned + bankNet(ledger.bank || {}),
+    balance: earned + bankNet(ledger.bank || {}) + forgeEarned(ledger.forge),
     today: earned - Math.floor((total - todayW) / unit),
     frac: (total % unit) / unit,
     perCredit: CREDIT_UNIT,
@@ -338,5 +426,8 @@ function runSweep(sweep, opts, onDone) {
 module.exports = {
   CREDIT_UNIT, WEIGHT_NUM, WEIGHT_DEN, LEDGER_KEY, SWEEP_CHUNK_BYTES,
   normalizeLedger, mergeLedger, creditSummary, catchUpSince, createLedgerStore,
-  createSweep, runSweep
+  createSweep, runSweep,
+  // the sword's storage rules. forgeNewer is also what the host asks before it trusts the sword in
+  // its own memory: another window may have moved it on since the last message
+  cleanForge, forgeNewer, mergeForge, forgeEarned, FORGE_FIELDS
 };

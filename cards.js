@@ -60,6 +60,16 @@ function shuffledShoe(seed) {
   return shuffle(freshShoe(), seed);
 }
 
+// A seeded stream of uniform [0, 1) values, for a game that rolls odds instead of dealing cards
+// (the forge). It is here and not in that game because this is where the one seeded source lives:
+// a second copy of mulberry32 in the repo is how the two copies drift apart, which is the same
+// reason the deck moved out of blackjack.js.
+// One rule comes with it: a seed is either a shuffle's or a roll's, never both. A seed that names
+// a deck must not also be rolled against, or the roll is a window onto cards still face down.
+function rollsFrom(seed) {
+  return mulberry32(hashSeed(String(seed)));
+}
+
 // 'AS', '10H', 'KD' -> card code (a stacked shoe, for tests and replays)
 function codeOf(str) {
   const s = String(str);
@@ -73,6 +83,6 @@ function cardOf(code) {
   return { r: RANKS[code % 13], s: SUITS[Math.floor(code / 13)] };
 }
 
-// hashSeed and mulberry32 stay inside: the seeded shuffle is what the games need, and a PRNG on the
-// way out is an invitation to roll something else from the same seed
-module.exports = { RANKS, SUITS, DECKS, freshDeck, freshShoe, shuffle, shuffledShoe, codeOf, cardOf };
+// hashSeed and mulberry32 stay inside: what a game needs is a shuffle or a stream of rolls, and a
+// raw PRNG on the way out is an invitation to roll something else from a seed that is already a deck
+module.exports = { RANKS, SUITS, DECKS, freshDeck, freshShoe, shuffle, shuffledShoe, rollsFrom, codeOf, cardOf };

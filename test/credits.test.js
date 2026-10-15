@@ -186,6 +186,152 @@ test('bank: malformed entries are dropped or zeroed at the boundary', () => {
   assert.equal(credits.creditSummary(poisoned, 'x', false).balance, 0);
 });
 
+// --- forge: one sword, ordered by the moves made on it ----------------------------------------
+// The sword is the only stored thing that goes DOWN as well as up, so it cannot merge field by
+// field with max the way the days and the bank do: a window holding a +0 sword that just broke and
+// a window holding the +6 it was before would max into a +6 that nothing paid for.
+// It merges as a register instead, on `moves`: a count of accepted moves that only ever grows, so
+// of two copies the one with more of them is the later one and wins WHOLE.
+// `earned` is the credits the shop has paid this save for swords sold. It is the one money figure
+// that is NOT a grow-only counter in the bank, and the tests below are why
+const SW = (by, level, moves, tries, spent, best, earned) => ({ by, level, moves, tries, spent, best, earned: earned || 0 });
+const PRICE9 = 186000; // what a +9 fetches (forge.js), spelled out so these tests read on their own
+
+test('forge: the copy with more moves wins whole, and a stale one never pulls the sword back', () => {
+  const early = SW(RA, 3, 5, 5, 850, 3);
+  const later = SW(RA, 0, 6, 6, 0, 3); // the next attempt broke it
+  const a = credits.mergeLedger(null, { forge: early });
+  assert.equal(a.changed, true);
+  assert.deepEqual(a.ledger.forge, early);
+  const b = credits.mergeLedger(a.ledger, { forge: later });
+  assert.equal(b.changed, true);
+  assert.deepEqual(b.ledger.forge, later, 'the break has to survive: a max merge would undo it');
+  // the earlier copy arriving late (another window's throttled write) changes nothing
+  assert.equal(credits.mergeLedger(b.ledger, { forge: early }).changed, false);
+  assert.deepEqual(credits.mergeLedger(b.ledger, { forge: early }).ledger.forge, later);
+  // and merging the same record twice is the same as once
+  assert.equal(credits.mergeLedger(b.ledger, { forge: later }).changed, false);
+});
+
+test('forge: two windows that forged at the same instant settle on the same sword', () => {
+  // Both windows were on the same +5 and both made their sixth move, so neither record is the
+  // later one. The tie goes to the larger writer id, which is random per activation: the player
+  // gets one of the two rolls rather than the better of them
+  const mine = SW(RA, 6, 6, 6, 2560, 6);   // went up
+  const theirs = SW(RB, 4, 6, 6, 2560, 5); // dropped
+  const ab = credits.mergeLedger(credits.mergeLedger(null, { forge: mine }).ledger, { forge: theirs }).ledger;
+  const ba = credits.mergeLedger(credits.mergeLedger(null, { forge: theirs }).ledger, { forge: mine }).ledger;
+  assert.deepEqual(ab.forge, ba.forge, 'the two windows would hold different swords');
+  assert.equal(ab.forge.by, RB, 'the larger id takes the tie');
+  assert.equal(ab.forge.level, 4);
+  // a record high is the one thing that is not dropped with the losing record
+  assert.equal(ab.forge.best, 6);
+  assert.equal(ab.forge.tries, 6);
+  // and whichever way the two arrive, merging again settles (no window writes the other back)
+  assert.equal(credits.mergeLedger(ab, { forge: mine }).changed, false);
+  assert.equal(credits.mergeLedger(ab, { forge: theirs }).changed, false);
+  assert.equal(credits.mergeLedger(ab, { forge: ab.forge }).changed, false);
+});
+
+test('forge: the lifetime figures are maxed, so neither can fall back on a collision', () => {
+  const mine = SW(RA, 2, 9, 9, 410, 7);
+  const theirs = SW(RB, 5, 9, 8, 1560, 5);
+  const out = credits.mergeForge(mine, theirs);
+  assert.equal(out.by, RB);
+  assert.equal(out.level, 5, 'the whole record came from the winner');
+  assert.equal(out.spent, 1560);
+  assert.equal(out.tries, 9, 'the higher attempt count is kept');
+  assert.equal(out.best, 7, 'and so is the record high');
+  // raising them cannot upset the order, so merging the result again settles at once
+  assert.deepEqual(credits.mergeForge(out, mine), out);
+  assert.deepEqual(credits.mergeForge(out, theirs), out);
+  assert.deepEqual(credits.mergeForge(mine, out), out);
+  // nothing to merge leaves what is in hand
+  assert.deepEqual(credits.mergeForge(mine, null), mine);
+  assert.deepEqual(credits.mergeForge(null, mine), mine);
+  // a best below the sword in hand would be a record high that never happened
+  assert.equal(credits.mergeForge(null, SW(RA, 6, 2, 2, 10, 1)).best, 6);
+});
+
+test('forge: ordering reads moves first, then the writer id', () => {
+  assert.equal(credits.forgeNewer(SW(RA, 0, 7, 7, 0, 9), SW(RB, 9, 6, 6, 5, 9)), true, 'more moves is later');
+  assert.equal(credits.forgeNewer(SW(RB, 9, 6, 6, 5, 9), SW(RA, 0, 7, 7, 0, 9)), false);
+  assert.equal(credits.forgeNewer(SW(RB, 1, 4, 4, 0, 1), SW(RA, 1, 4, 4, 0, 1)), true, 'the larger id takes a tie');
+  assert.equal(credits.forgeNewer(SW(RA, 1, 4, 4, 0, 1), SW(RB, 1, 4, 4, 0, 1)), false);
+  assert.equal(credits.forgeNewer(SW(RA, 1, 4, 4, 0, 1), SW(RA, 1, 4, 4, 0, 1)), false, 'the same record is not later');
+  // a window that has never played has no id, so it loses every tie: it has nothing to defend
+  assert.equal(credits.forgeNewer(SW(RA, 1, 0, 0, 0, 0), SW('', 0, 0, 0, 0, 0)), true);
+  assert.equal(credits.forgeNewer(null, SW(RA, 1, 1, 1, 0, 1)), false);
+  assert.equal(credits.forgeNewer(SW(RA, 1, 1, 1, 0, 1), null), true);
+});
+
+// --- forge: a sale is paid out of the record that survives ------------------------------------
+// A sale turns the sword into credits, and the sword is a register: of two windows moving it at the
+// same move count, one copy is dropped. So a sale CANNOT be a grow-only counter in the bank. The
+// bank is per window and only ever adds, which is right for a fee (a window that paid for an
+// attempt paid for it, whichever sword the merge keeps) and exactly wrong for a payout: it would
+// pay twice for two windows selling the same sword, and pay for a sale whose sword came back.
+// So the money a sale pays is `earned`, carried IN the record and adopted with it.
+const soldBalance = (led) => credits.creditSummary(credits.normalizeLedger(led), 'x', false).balance;
+
+test('forge: two windows selling the same sword are paid for it once', () => {
+  // both were on the same +9 at move 20 and both pressed sell, so both made move 21
+  const mine = SW(RA, 0, 21, 21, 0, 9, PRICE9);
+  const theirs = SW(RB, 0, 21, 21, 0, 9, PRICE9);
+  const ab = credits.mergeLedger(credits.mergeLedger(null, { forge: mine }).ledger, { forge: theirs }).ledger;
+  const ba = credits.mergeLedger(credits.mergeLedger(null, { forge: theirs }).ledger, { forge: mine }).ledger;
+  assert.deepEqual(ab.forge, ba.forge);
+  assert.equal(ab.forge.earned, PRICE9, 'one sword, one payout');
+  assert.equal(soldBalance(ab), PRICE9);
+  // and the bank each window keeps carries no part of a sale, so it cannot add a second one
+  const withBanks = credits.mergeLedger(ab, { bank: { [RA]: W(0, 6500, 1), [RB]: W(0, 6500, 1) } }).ledger;
+  assert.equal(soldBalance(withBanks), PRICE9 - 13000, 'the two fees are both paid, the one sale once');
+});
+
+test('forge: a sale that loses the merge pays nothing, because the sword came back', () => {
+  // one window held the +9 and attempted (it stayed at +9), the other sold it. Same move count,
+  // so one of the two is dropped, and the tie goes to the larger writer id
+  const keeper = SW(RB, 9, 21, 21, 7500, 9, 0);
+  const seller = SW(RA, 0, 21, 21, 0, 9, PRICE9);
+  const ab = credits.mergeLedger(credits.mergeLedger(null, { forge: seller }).ledger, { forge: keeper }).ledger;
+  const ba = credits.mergeLedger(credits.mergeLedger(null, { forge: keeper }).ledger, { forge: seller }).ledger;
+  assert.deepEqual(ab.forge, ba.forge);
+  assert.equal(ab.forge.level, 9, 'the keeper took the tie');
+  assert.equal(ab.forge.earned, 0, 'so the sale did not happen, and nothing was paid for it');
+  assert.equal(soldBalance(ab), 0);
+  // the seller's window sells the sword it has been handed back: now it is paid, once
+  const again = credits.mergeLedger(ab, { forge: SW(RA, 0, 22, 21, 0, 9, PRICE9) }).ledger;
+  assert.equal(soldBalance(again), PRICE9);
+});
+
+test('forge: `earned` is adopted with the record and never maxed', () => {
+  // Maxing it is the whole bug: it would keep the dropped sale's money next to the kept sword.
+  // `tries` and `best` are maxed because they are figures for the screen and cost nothing
+  const keeper = SW(RB, 9, 21, 25, 7500, 9, 0);
+  const seller = SW(RA, 0, 21, 21, 0, 9, PRICE9);
+  const out = credits.mergeForge(seller, keeper);
+  assert.equal(out.earned, 0, 'a payout cannot outlive the record that paid it');
+  assert.equal(out.tries, 25);
+  assert.equal(out.best, 9);
+  // and an older copy never pulls a payout back
+  assert.equal(credits.mergeForge(SW(RA, 0, 30, 30, 0, 9, PRICE9), SW(RB, 2, 4, 4, 0, 2, 0)).earned, PRICE9);
+});
+
+test('forge: a stored record is rebuilt at the boundary, never carried over as it stands', () => {
+  const n = credits.normalizeLedger({ forge: { by: 'not an id', level: 4, moves: 2.5, tries: -1, spent: 'x', best: 4, junk: 1 } });
+  assert.deepEqual(n.forge, SW('', 4, 0, 0, 0, 4), 'only the fields the merge knows travel');
+  assert.equal('junk' in n.forge, false, 'a field a later version added is not carried into this one');
+  assert.equal(credits.normalizeLedger({}).forge, null, 'a player who has never forged has no record');
+  assert.equal(credits.normalizeLedger({ forge: 'nope' }).forge, null);
+  assert.equal(credits.normalizeLedger({ forge: 7 }).forge, null);
+  // the record is built, not copied, so a "__proto__" in the stored JSON cannot ride along
+  const poisoned = credits.normalizeLedger(JSON.parse('{"forge":{"__proto__":{"level":9},"level":2,"moves":3,"tries":3,"spent":1,"best":2,"by":"' + RA + '"}}'));
+  assert.deepEqual(poisoned.forge, SW(RA, 2, 3, 3, 1, 2));
+  assert.equal(Object.getPrototypeOf(poisoned.forge), Object.prototype);
+  // and the sword is not money: it never moves the balance by itself
+  assert.equal(credits.creditSummary(credits.normalizeLedger({ forge: SW(RA, 10, 99, 99, 10000, 10) }), 'x', false).balance, 0);
+});
+
 // --- de-duplication -------------------------------------------------------------------
 function permutations(a) {
   if (a.length <= 1) return [a];
@@ -405,6 +551,46 @@ test('two windows: a backfill clobbered by the other window heals on the next wr
     assert.equal(v.value.days['2026-09-01'].cache_read, 500);
     assert.equal(v.value.days['2026-09-21'].cache_read, 4);
   }
+});
+
+test('forge: two windows forging the same sword converge, and a stale copy heals', () => {
+  const shared = sharedStorage();
+  const va = shared.view();
+  const vb = shared.view();
+  let clock = 0;
+  const A = credits.createLedgerStore(va, { minIntervalMs: 60000, now: () => clock });
+  const B = credits.createLedgerStore(vb, { minIntervalMs: 60000, now: () => clock });
+  // A forges the sword up to +3 over three moves. Both halves of a settlement go in ONE forced
+  // write, the way the host sends them: the fee is a grow-only counter in the bank (so what is
+  // sent is the running total, not what this move cost) and the sword is the record beside it
+  const FEES = [0, 100, 260, 510]; // what the climb has cost by move m
+  for (let m = 1; m <= 3; m++) A.record({ forge: SW(RA, m, m, m, FEES[m], m), bank: { [RA]: W(0, FEES[m], m) } }, true);
+  // B settles a blackjack hand before A's write reaches it: B has never forged, so it sends no sword
+  B.record({ bank: { [RB]: W(50, 0, 1) } }, true);
+  shared.deliver(); // each view now holds the other's copy
+  // B's write had no sword in it, so storage lost A's for a moment; A's next write puts it back
+  clock = 1000;
+  A.record(null, true);
+  shared.deliver();
+  for (const v of [va, vb]) {
+    assert.deepEqual(credits.normalizeLedger(v.value).forge, SW(RA, 3, 3, 3, 510, 3), 'the sword did not heal');
+    assert.equal(credits.creditSummary(credits.normalizeLedger(v.value), 'x', false).balance, 50 - 510);
+  }
+  // now B reads the sword, forges it once itself, and A's older copy must not pull it back
+  const seen = credits.normalizeLedger(vb.value).forge;
+  B.record({ forge: SW(RB, seen.level + 1, seen.moves + 1, seen.tries + 1, 910, 4), bank: { [RB]: W(50, 400, 2) } }, true);
+  shared.deliver();
+  clock = 2000;
+  A.record(null, true); // A still holds its own +3 locally
+  shared.deliver();
+  for (const v of [va, vb]) {
+    const f = credits.normalizeLedger(v.value).forge;
+    assert.equal(f.level, 4, 'A pulled the sword back to its own copy');
+    assert.equal(f.moves, 4);
+    assert.equal(f.by, RB);
+  }
+  // the money is untouched by any of it: it rides the bank's own counters, one per window
+  assert.equal(credits.creditSummary(credits.normalizeLedger(va.value), 'x', false).balance, 50 - 510 - 400);
 });
 
 // --- run --------------------------------------------------------------------------------

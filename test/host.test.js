@@ -720,6 +720,329 @@ test('unknown ops are refused', () => {
   assert.equal(send({ type: 'bj', op: 'surrender' }).error, 'unknown action');
 });
 
+// --- the forge --------------------------------------------------------------------------
+// The sword is not a round: it is stored, so these tests watch the ledger as well as the reply.
+const fgmod = require(path.join(ROOT, 'forge.js'));
+const FG_DAY = '2026-09-01';
+
+// A forge fee is hundreds of credits where a card bet is ten, so these tests say what they need.
+// Raising the stored token count for a past day IS more credits earned, because the ledger merges
+// days field by field with max (credits.js) and every window would agree on the figure. The card
+// tests above usually leave plenty behind; this is here so a change to them cannot quietly turn a
+// forge test into a refusal about money
+function needCredits(want) {
+  const have = send({ type: 'fg', op: 'open' }).free;
+  if (have < want) gs.data[LEDGER].days[FG_DAY].input += (want - have + 1000) * 100000;
+  return send({ type: 'fg', op: 'open' }).free;
+}
+const storedSword = () => (gs.data[LEDGER] || {}).forge;
+
+// The first seed (from a fixed list) that rolls `outcome` at `level`, the way pinPk searches a deal
+function fgSeedFor(level, outcome) {
+  for (let i = 0; i < 20000; i++) {
+    const seed = 'host-' + level + outcome + i;
+    if (fgmod.outcomeAt(level, fgmod.rollOf(seed)) === outcome) return seed;
+  }
+  throw new Error('no seed rolls ' + outcome + ' at +' + level);
+}
+// ...and hands it to the host as the seed it would have made for itself
+function pinFg(level, outcome) {
+  const seed = fgSeedFor(level, outcome);
+  ext._test.setFgSeeds(() => seed);
+  return seed;
+}
+
+// Puts a sword into storage as if ANOTHER window had just forged it there, with a move count past
+// anything this window has done. The next message has to adopt it (extension.js fgSync), which is
+// the same path a reload takes: nothing in memory, everything in storage
+// `earned` is part of the record, so placing one also says what the shop has paid this save: these
+// tests place swords that have earned nothing, which keeps the balance arithmetic below readable
+let fgMoves = 100;
+function placeSword(level) {
+  fgMoves += 10;
+  gs.data[LEDGER].forge = { by: 'ffffffffffffffff', level, moves: fgMoves, tries: fgMoves, spent: 0, best: level, earned: 0 };
+  return send({ type: 'fg', op: 'open' }).state;
+}
+
+test('fg open: the free +0 sword, the whole ladder, and nothing pressed yet', () => {
+  const r = send({ type: 'fg', op: 'open' });
+  assert.equal(r.error, undefined);
+  assert.equal(r.state.level, 0);
+  assert.equal(r.state.sell, 0);
+  assert.equal(r.state.cost, fgmod.costAt(0));
+  assert.deepEqual(r.state.table, fgmod.TABLE, 'the screen takes the ladder off every reply');
+  assert.equal(r.state.max, fgmod.MAX_LEVEL);
+  assert.equal(r.state.riskFrom, fgmod.RISK_FROM);
+  assert.equal(r.state.last, null);
+  assert.equal('seq' in r.state, false, 'one roll a move: there is nothing to pace');
+  assert.equal('seed' in r.state, false);
+  assert.equal(r.balance, send({ type: 'bj', op: 'open' }).balance, 'one purse, one number');
+  assert.ok(!storedSword(), 'opening the screen does not write a sword');
+});
+
+test('fg: an attempt pays the fee and is banked once, whatever it rolls', () => {
+  needCredits(1500);
+  try {
+    for (const outcome of ['up', 'keep', 'up', 'up', 'down']) {
+      const before = send({ type: 'fg', op: 'open' });
+      const level = before.state.level;
+      const fee = fgmod.costAt(level);
+      const hands = bankSum('hands');
+      pinFg(level, outcome);
+      const r = send({ type: 'fg', op: 'enhance' });
+      assert.equal(r.error, undefined, outcome + ' at +' + level);
+      assert.equal(r.state.last.outcome, outcome);
+      assert.equal(r.state.level, fgmod.levelAfter(level, outcome));
+      assert.equal(r.state.net, -fee, 'the fee goes whatever it rolls');
+      assert.equal(r.balance, before.balance - fee);
+      assert.equal(lastHeaderBalance(), r.balance);
+      assert.equal(bankSum('hands'), hands + 1, 'one settlement a move, not two');
+      // and the sword is in the ledger, written with the fee rather than after it
+      assert.equal(storedSword().level, r.state.level);
+      assert.equal(storedSword().tries, r.state.tries);
+      assert.match(storedSword().by, /^[0-9a-f]{16}$/);
+    }
+  } finally { ext._test.setFgSeeds(null); }
+});
+
+test('fg: a break takes the sword back to +0 and pays nothing', () => {
+  needCredits(2000);
+  try {
+    placeSword(fgmod.RISK_FROM);
+    const before = send({ type: 'fg', op: 'open' });
+    assert.equal(before.state.level, fgmod.RISK_FROM, 'another window\'s sword is the one on the screen');
+    assert.ok(before.state.odds.break > 0, 'the risk starts here');
+    const fee = fgmod.costAt(fgmod.RISK_FROM);
+    pinFg(fgmod.RISK_FROM, 'break');
+    const r = send({ type: 'fg', op: 'enhance' });
+    assert.equal(r.state.level, 0);
+    assert.equal(r.state.last.outcome, 'break');
+    assert.equal(r.state.net, -fee, 'only the fee moved: a break is not a sale');
+    assert.equal(r.balance, before.balance - fee);
+    assert.equal(r.state.best, fgmod.RISK_FROM, 'the record high is not undone');
+    assert.equal(storedSword().level, 0);
+    assert.equal(storedSword().best, fgmod.RISK_FROM);
+  } finally { ext._test.setFgSeeds(null); }
+});
+
+test('fg: a sale pays the table price, starts a fresh +0, and the reply comes before the push', () => {
+  placeSword(6);
+  const before = send({ type: 'fg', op: 'open' });
+  assert.equal(before.state.sell, fgmod.priceAt(6), 'the price is on the screen before the button');
+  const hands = bankSum('hands');
+  const from = posted.length;
+  const r = send({ type: 'fg', op: 'sell' });
+  assert.equal(r.error, undefined);
+  assert.equal(r.state.level, 0);
+  assert.equal(r.state.last.paid, fgmod.priceAt(6));
+  assert.equal(r.state.net, fgmod.priceAt(6));
+  assert.equal(r.balance, before.balance + fgmod.priceAt(6));
+  assert.equal(lastHeaderBalance(), r.balance);
+  assert.equal(bankSum('hands'), hands + 1);
+  assert.equal(storedSword().level, 0);
+  const kinds = posted.slice(from).map((m) => m.type);
+  assert.ok(kinds.indexOf('fg') >= 0 && kinds.indexOf('data') > kinds.indexOf('fg'), 'order ' + kinds.join(','));
+  // a +0 sword is the one the shop gives away, so there is nothing left to sell
+  const again = send({ type: 'fg', op: 'sell' });
+  assert.equal(again.error, 'a +0 sword is the one the shop gives away');
+  assert.equal(bankSum('hands'), hands + 1, 'a refused move settles nothing');
+});
+
+test('fg: the fee is measured against what the card games have riding, and a short purse refuses', () => {
+  // The forge holds nothing itself, but a live card round does, and the fee is paid out of what is
+  // left. The poker hand here is pinned to a paid pair and held pat, so it hands its bet straight
+  // back and the purse ends where it started however big the bet was
+  pinRow('fg-held-', pkmod.ROW.jacks);
+  try {
+    placeSword(9);
+    const fee = fgmod.costAt(9);
+    const free = needCredits(fee + 100);
+    const bet = free - fee + 1; // leaves the forge one credit short of its fee
+    const dealt = send({ type: 'pk', op: 'deal', bet });
+    assert.equal(dealt.error, undefined, 'the poker deal was refused: ' + dealt.error);
+    const held = send({ type: 'fg', op: 'open' });
+    assert.equal(held.balance, free, 'a live stake has not left the balance');
+    assert.equal(held.free, free - bet, 'but it is spoken for');
+    assert.equal(held.state.can.enhance, false, 'the screen would offer a fee the host refuses');
+    const hands = bankSum('hands');
+    const r = send({ type: 'fg', op: 'enhance' });
+    assert.equal(r.error, 'not enough credits');
+    assert.equal(r.state.level, 9, 'the sword is untouched');
+    assert.equal(r.balance, free);
+    assert.equal(bankSum('hands'), hands, 'a refused move settles nothing');
+    assert.equal(storedSword().by, 'ffffffffffffffff', 'and nothing was written over it');
+    // selling is not a stake, so nothing the card games hold can stop it
+    assert.equal(r.state.can.sell, true);
+    // once the hand settles, the fee is payable again
+    const out = send({ type: 'pk', op: 'draw', hold: PAT });
+    assert.equal(out.state.net, 0, 'the pinned hand was supposed to hand the bet back');
+    assert.equal(send({ type: 'fg', op: 'open' }).state.can.enhance, true);
+  } finally { ext._test.setPkSeeds(null); }
+});
+
+test('fg: the sword outlives the window, and another window\'s is adopted on the next message', () => {
+  needCredits(4000);
+  try {
+    // this window forges a sword of its own and it reaches storage
+    placeSword(0);
+    pinFg(0, 'up');
+    const mine = send({ type: 'fg', op: 'enhance' });
+    assert.equal(mine.error, undefined);
+    assert.equal(mine.state.level, 1);
+    const rec = JSON.parse(JSON.stringify(storedSword()));
+    assert.equal(rec.level, 1);
+    // another window moves the same sword further along: more moves, so it is the later copy
+    gs.data[LEDGER].forge = { by: 'ffffffffffffffff', level: 7, moves: rec.moves + 1, tries: rec.tries + 1, spent: 24000, best: 7 };
+    const seen = send({ type: 'fg', op: 'open' }).state;
+    assert.equal(seen.level, 7, 'the window kept forging the copy in its own memory');
+    assert.equal(seen.spent, 24000);
+    // the record high is maxed across every copy rather than adopted with one, so it can stand
+    // above the sword in hand: an earlier test in this file reached +9
+    assert.ok(seen.best >= 7, 'best came back as ' + seen.best);
+    // and an older copy appearing in storage (a stale write from a window that has fallen behind)
+    // does not pull the sword back
+    gs.data[LEDGER].forge = { by: 'ffffffffffffffff', level: 1, moves: 2, tries: 2, spent: 100, best: 1 };
+    assert.equal(send({ type: 'fg', op: 'open' }).state.level, 7, 'a stale copy took the sword back');
+    // the next move carries on from the sword that was adopted, not from the stale one
+    pinFg(7, 'keep');
+    const after = send({ type: 'fg', op: 'enhance' });
+    assert.equal(after.error, undefined);
+    assert.equal(after.state.level, 7);
+    assert.equal(storedSword().level, 7);
+    assert.equal(storedSword().moves, rec.moves + 2);
+    assert.match(storedSword().by, /^[0-9a-f]{16}$/, 'and it is this window that wrote it');
+  } finally { ext._test.setFgSeeds(null); }
+});
+
+test('fg: deactivate writes the sword back over a stale copy', () => {
+  needCredits(1500);
+  try {
+    placeSword(4);
+    pinFg(4, 'up');
+    const r = send({ type: 'fg', op: 'enhance' });
+    assert.equal(r.state.level, 5);
+    const mine = JSON.parse(JSON.stringify(storedSword()));
+    // another window's copy, written without a sword in it at all (an older version, say)
+    gs.data[LEDGER] = { days: gs.data[LEDGER].days, bank: gs.data[LEDGER].bank, backfilled: true, sweptAt: 1 };
+    ext.deactivate();
+    assert.deepEqual(storedSword(), mine);
+  } finally { ext._test.setFgSeeds(null); }
+});
+
+// Another window's write does not reach this one the moment it is made: globalState broadcasts, and
+// a broadcast takes as long as it takes. This is that broadcast arriving AFTER this window has
+// already written its own move, which is the only way two windows can be at the same move count
+const creditsMod = require(path.join(ROOT, 'credits.js'));
+function otherWindowWrote(patch) {
+  gs.data[LEDGER] = creditsMod.mergeLedger(gs.data[LEDGER], patch).ledger;
+}
+const OTHER = 'ffffffffffffffff'; // larger than any replica id, so it takes every tie
+
+test('fg: a sale the merge drops pays nothing, and cannot be sold a second time', () => {
+  needCredits(1000);
+  placeSword(9);
+  const before = send({ type: 'fg', op: 'open' });
+  assert.equal(before.state.level, 9);
+  const sold = send({ type: 'fg', op: 'sell' });
+  assert.equal(sold.state.net, fgmod.priceAt(9));
+  const mine = JSON.parse(JSON.stringify(storedSword()));
+  assert.equal(mine.level, 0);
+  // Now the other window's broadcast lands: it was holding the same +9 at the same move count and
+  // its attempt only held the sword where it was, so its copy takes the tie and the sword is back.
+  // It never sold anything, so what it says the shop has paid is what it was before this sale
+  otherWindowWrote({ forge: { by: OTHER, level: 9, moves: mine.moves, tries: mine.tries, spent: 7500, best: 9, earned: mine.earned - fgmod.priceAt(9) } });
+  const after = send({ type: 'fg', op: 'open' });
+  assert.equal(after.state.level, 9, 'the sword came back, as the merge says it must');
+  assert.equal(after.balance, before.balance, 'but the sale was paid for a sword the player still has');
+  // and the sword can now be sold for real, once
+  const resold = send({ type: 'fg', op: 'sell' });
+  assert.equal(resold.state.level, 0);
+  assert.equal(resold.balance, before.balance + fgmod.priceAt(9), 'one sword, one payout');
+});
+
+test('fg: two windows selling the same sword are paid for it once', () => {
+  needCredits(1000);
+  placeSword(9);
+  const before = send({ type: 'fg', op: 'open' });
+  const won = bankSum('won');
+  const sold = send({ type: 'fg', op: 'sell' });
+  assert.equal(sold.balance, before.balance + fgmod.priceAt(9));
+  assert.equal(bankSum('won'), won, 'a sale is not a grow-only counter: it is paid out of the record');
+  const mine = JSON.parse(JSON.stringify(storedSword()));
+  assert.equal(mine.earned, before.state.earned + fgmod.priceAt(9));
+  // The other window sold the very same sword at the same move count. Its record says the same
+  // thing about the money, because both windows counted the one sale off the same history, and its
+  // bank carries no part of the sale at all: that is the rule being tested
+  otherWindowWrote({
+    forge: { by: OTHER, level: 0, moves: mine.moves, tries: mine.tries, spent: 0, best: 9, earned: mine.earned },
+    bank: { [OTHER]: { won: 0, lost: 0, hands: 1 } }
+  });
+  const after = send({ type: 'fg', op: 'open' });
+  assert.equal(after.state.level, 0);
+  assert.equal(after.balance, before.balance + fgmod.priceAt(9), 'one sword cannot pay twice');
+});
+
+test('fg: a sword another window moved is redrawn, and a stale screen cannot be charged', () => {
+  needCredits(8000);
+  placeSword(0);
+  const drew = send({ type: 'fg', op: 'open' });
+  assert.equal(drew.state.level, 0);
+  assert.equal(drew.state.cost, fgmod.costAt(0), 'the screen is showing the +0 fee');
+  // another window climbs the sword to +9 while this panel sits there
+  const now = JSON.parse(JSON.stringify(storedSword() || { moves: 0, tries: 0, earned: 0 }));
+  otherWindowWrote({ forge: { by: OTHER, level: 9, moves: now.moves + 5, tries: now.tries + 5, spent: 15000, best: 9, earned: now.earned } });
+  // the data push every window makes anyway notices and redraws the forge, with no request number
+  // on it: it answers nothing the webview asked for
+  const from = posted.length;
+  onMessage({ type: 'ready' });
+  const unsolicited = posted.slice(from).filter((m) => m.type === 'fg');
+  assert.equal(unsolicited.length, 1, 'the panel was left drawing a sword that had moved');
+  assert.equal(unsolicited[0].state.level, 9);
+  assert.equal(unsolicited[0].state.cost, fgmod.costAt(9));
+  assert.equal('n' in unsolicited[0], false);
+  // a second push changes nothing, so it says nothing
+  const quiet = posted.length;
+  onMessage({ type: 'ready' });
+  assert.equal(posted.slice(quiet).filter((m) => m.type === 'fg').length, 0);
+  // and a message from a screen that is still drawing the old sword is refused rather than charged
+  // at the new level: it says which level it drew, and the host will not forge any other
+  placeSword(0);
+  const balance = send({ type: 'fg', op: 'open' }).balance;
+  otherWindowWrote({ forge: { by: OTHER, level: 9, moves: fgMoves + 5, tries: fgMoves + 5, spent: 15000, best: 9, earned: 0 } });
+  const hands = bankSum('hands');
+  const stale = send({ type: 'fg', op: 'enhance', level: 0 });
+  assert.equal(stale.error, 'the sword has moved: it is +9 now');
+  assert.equal(stale.state.level, 9, 'and the reply carries the sword as it really is');
+  assert.equal(stale.balance, balance, 'nothing was charged');
+  assert.equal(bankSum('hands'), hands);
+  // the same message with the level the screen has just been given goes through
+  try {
+    pinFg(9, 'keep');
+    const ok = send({ type: 'fg', op: 'enhance', level: 9 });
+    assert.equal(ok.error, undefined);
+    assert.equal(ok.balance, balance - fgmod.costAt(9));
+  } finally { ext._test.setFgSeeds(null); }
+});
+
+test('fg: the seed is the host\'s, and the reply echoes the request number', () => {
+  needCredits(1500);
+  try {
+    placeSword(0); // whatever the test before left on the anvil
+    assert.equal(send({ type: 'fg', op: 'open', n: 91 }).n, 91);
+    assert.equal(send({ type: 'fg', op: 'sell', n: 92 }).error, 'a +0 sword is the one the shop gives away');
+    assert.equal(send({ type: 'fg', op: 'sell', n: 92 }).n, 92);          // refused, still echoed
+    assert.equal('n' in send({ type: 'fg', op: 'open', n: 'x' }), false); // not a number: nothing echoed
+    assert.equal(send({ type: 'fg', op: 'repair' }).error, 'unknown action');
+    // A seed off the wire is not a seed. The message carries one that would hold the sword where it
+    // is, the host's own rolls it up a level, and what happens is the host's
+    placeSword(0);
+    pinFg(0, 'up');
+    const r = send({ type: 'fg', op: 'enhance', seed: fgSeedFor(0, 'keep') });
+    assert.equal(r.error, undefined);
+    assert.equal(r.state.level, 1, 'the webview picked the roll');
+  } finally { ext._test.setFgSeeds(null); }
+});
+
 // A test that throws mid-round leaves that round live, and every test after it then fails on
 // 'a round is already in progress'. Closing what is open keeps one fault from being reported as four
 function closeRounds() {
