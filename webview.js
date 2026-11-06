@@ -38,9 +38,9 @@
   // ===========================================================================
   function hashStr(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h; }
   // --- NPC sprite pool (Kenmi NPCs) — distinct character per agent, deterministic ---
-  var CUC = { npcs: {} };
-  try { var _ae = document.getElementById('cuc-assets'); if (_ae) CUC = JSON.parse(_ae.getAttribute('data-json')) || CUC; } catch (e) { /* no assets → roster bodies render empty (assets are always bundled, so this is not a normal path) */ }
-  var NPC_KEYS = Object.keys(CUC.npcs);
+  var ASSETS = { npcs: {} };
+  try { var _ae = document.getElementById('cuc-assets'); if (_ae) ASSETS = JSON.parse(_ae.getAttribute('data-json')) || ASSETS; } catch (e) { /* no assets → roster bodies render empty (assets are always bundled, so this is not a normal path) */ }
+  var NPC_KEYS = Object.keys(ASSETS.npcs);
   // per-sprite metadata drives everything (packs differ in cell size & layout).
   // Rendering crops to the measured character bbox [x,y,w,h] (cell px) so every sprite
   // shows at a consistent size regardless of how much padding its sheet cell has.
@@ -71,13 +71,13 @@
   var SHEET_MAP = {};                // agentName -> npc key (built from the full roster, collision-free)
   function buildSheetMap(agents) {
     if (!NPC_KEYS.length) return;
-    var pool = NPC_ORDER.filter(function (k) { return CUC.npcs[k]; });
+    var pool = NPC_ORDER.filter(function (k) { return ASSETS.npcs[k]; });
     if (!pool.length) pool = NPC_KEYS.slice();
     var used = {}, map = {};
     var overrides = (lastData && lastData.appearance) || {};
     var names = (agents || []).map(function (a) { return a.name; }).slice().sort(); // stable order → stable probing
     // pin user-chosen appearances first (these win, may repeat by choice)
-    for (var p = 0; p < names.length; p++) { var ov = overrides[names[p]]; if (ov && CUC.npcs[ov]) { map[names[p]] = ov; used[ov] = true; } }
+    for (var p = 0; p < names.length; p++) { var ov = overrides[names[p]]; if (ov && ASSETS.npcs[ov]) { map[names[p]] = ov; used[ov] = true; } }
     // auto-assign the rest collision-free
     for (var i = 0; i < names.length; i++) {
       var name = names[i]; if (map[name]) continue;
@@ -91,7 +91,7 @@
   function agentSheet(name) {
     if (!NPC_KEYS.length) return null;
     var k = SHEET_MAP[name] || NPC_KEYS[hashStr(name + '|npc') % NPC_KEYS.length];
-    return { key: k, meta: CUC.npcs[k] };
+    return { key: k, meta: ASSETS.npcs[k] };
   }
   function shortName(n) { n = String(n); return n.length > 13 ? n.slice(0, 12) + '…' : n; }
   function displayName(name) { var nn = (lastData && lastData.nicknames) || {}; return nn[name] || name; }
@@ -357,7 +357,7 @@
   // 방 워커: 작업 중인 에이전트만 방에 입장해 책상으로 걸어가 일하고 나간다.
   // Sprite frames cycle in a steady loop independent of pushes.
   // ===========================================================================
-  function roomSpots() { var r = (CUC.rooms || {})[(vscode.getState() || {}).map || 'cave'] || (CUC.rooms || {}).cave || {}; return { entry: r.entry || [0.26, 0.80], desk: r.desk || [0.50, 0.735] }; }
+  function roomSpots() { var r = (ASSETS.rooms || {})[(vscode.getState() || {}).map || 'cave'] || (ASSETS.rooms || {}).cave || {}; return { entry: r.entry || [0.26, 0.80], desk: r.desk || [0.50, 0.735] }; }
   function SPOT_ENTRY() { var e = roomSpots().entry; return { x: e[0], y: e[1] }; }
   function SPOT_DESK() { var d = roomSpots().desk; return { x: d[0], y: d[1] }; }
   var TRAVEL_MS = 1650;
@@ -440,23 +440,26 @@
     }
   }, 60);
   // three views: usage, agents, and the games area (no tab button: the header credits line opens it).
-  // Inside games there is the list, or one game's screen; body.tab-* scopes compact mode to Usage,
-  // hides the header crab in the games area, and game-bj scopes the blackjack shortcuts
+  // Inside games there is the list, or one game's screen; body.tab-* scopes compact mode to Usage
+  // and hides the header crab in the games area. body.game-<key> says which game is open
   function curTab() { return (vscode.getState() || {}).tab || 'usage'; }
   function curGame() { return curTab() === 'games' ? ((vscode.getState() || {}).game || null) : null; }
   function creditsHidden() { return (((lastData && lastData.cfg && lastData.cfg.panelHidden) || []).indexOf('credits') >= 0); }
   function applyView() {
-    var t = curTab(), g = curGame(), b = document.body, hdc = el('hdCredits');
+    var t = curTab(), g = curGame(), b = document.body, hdc = el('hdCredits'), id;
     b.classList.toggle('tab-usage', t === 'usage');
     b.classList.toggle('tab-agents', t === 'agents');
     b.classList.toggle('tab-games', t === 'games');
-    b.classList.toggle('game-bj', g === 'blackjack');
-    b.classList.toggle('game-hl', g === 'hilo');
-    b.classList.toggle('game-pk', g === 'poker');
-    b.classList.toggle('game-fg', g === 'forge');
-    var shown = { panelUsage: t === 'usage', panelAgents: t === 'agents', panelGames: t === 'games' && !g,
-      panelTable: g === 'blackjack', panelHiLo: g === 'hilo', panelPoker: g === 'poker', panelForge: g === 'forge' };
-    for (var id in shown) { var p = el(id); if (p) p.style.display = shown[id] ? '' : 'none'; }
+    setVis('panelUsage', t === 'usage');
+    setVis('panelAgents', t === 'agents');
+    setVis('panelGames', t === 'games' && !g);
+    if (g) buildPanel(g); // the first time this game is opened, its markup is made here
+    // every registered game, not a list of four: the open one shows, the rest hide, and one that
+    // has never been opened has nothing to hide
+    for (id in PANELS) {
+      b.classList.toggle('game-' + PANELS[id].key, id === g);
+      if (PANELS[id].node) PANELS[id].node.style.display = (id === g) ? '' : 'none';
+    }
     var au = el('tabUsage'), ag = el('tabAgents');
     if (au) au.classList.toggle('active', t === 'usage');
     if (ag) ag.classList.toggle('active', t === 'agents');
@@ -465,11 +468,8 @@
   }
   // Entering a game screen asks the host for its state; entering the list just takes the focus
   function enterGames() {
-    var g = curGame();
-    if (g === 'blackjack') { bj.wantFocus = true; bjControls(bj.st, true); bjSend('open'); }
-    else if (g === 'hilo') { hl.wantFocus = true; hlControls(hl.st, true); hlSend('open'); }
-    else if (g === 'poker') { pk.wantFocus = true; pkControls(pk.st, true); pkSend('open'); }
-    else if (g === 'forge') { fg.wantFocus = true; fgLock(true); fgSend('open'); }
+    var def = PANELS[curGame()];
+    if (def) { if (def.node && def.enter) def.enter(); }
     else { var first = document.querySelector('#panelGames .gm-row'); if (first) first.focus(); }
   }
   function switchTab(t) {
@@ -574,7 +574,7 @@
       + 'Click for games';
   }
   function renderCredits(c) {
-    if (_bjHold) { _ccHeld = c; return; } // a hand is still being dealt: the header waits for the cards
+    if (_hold) { _ccHeld = c; return; } // a round is still being paced: the header waits for the cards
     var box = el('hdCredits'), balEl = el('ccBal'); if (!box || !balEl || !c) return;
     var bal = Math.max(0, Math.floor(c.balance || 0));
     var frac = Math.min(Math.max(c.frac || 0, 0), 0.999);
@@ -591,307 +591,211 @@
     else if (!_ccFlipT) setCoinRows(_ccRows);
     prev.cr = bal; prev.crCounting = counting;
     box.title = creditsTitle(c, bal, counting);
-    if (curGame() === 'blackjack' && !bj.busy) bjRenderStakes();
-    if (curGame() === 'hilo' && !hl.busy) { renderStakes(STAKE_UI.hl, false); hlControls(hl.st, false); }
-    if (curGame() === 'poker' && !pk.busy) { renderStakes(STAKE_UI.pk, false); pkControls(pk.st, false); }
+    // a credit minted while a bet screen is up lights its chips at once
+    var open = PANELS[curGame()];
+    if (open && open.node && open.credits) open.credits();
   }
 
   // ===========================================================================
-  // Blackjack: third panel view, opened from the header credits line. The host judges;
-  // this only draws, and paces the cards the host already dealt (state.seq).
+  // The casino's shared floor: window.CUC.
+  //
+  // Everything a game's screen is built out of lives here, and nothing that belongs to one game.
+  // The games themselves are games/<id>/panel.js, loaded after this file and registered with
+  // window.CUC.game(). A panel's markup is built the first time that game is opened, so a register
+  // of fourteen games costs fourteen list rows and one panel.
+  //
+  // The rules a panel may not break (they are the ones reviews check):
+  //   - the host judges and prices. A panel draws the state it is sent and never works a result out
+  //   - a panel never sees the seed of a round in progress, so it cannot know what is coming
+  //   - the header balance waits for the cards: hold() before the pacing, settle() at the end
   // ===========================================================================
-  var BJ_STAKES = [10, 100, 1000];
-  // cardIn and flip are the lengths of .bj-card.in and .bj-card.flip in styles.js: change them together
-  var BJ_T = { cardIn: 200, dealGap: 250, holeFirst: 150, holeLead: 600, flip: 300, dealerGap: 550, settle: 300, unlock: 50, noReply: 4000 };
-  // n: number of the request in flight (the host echoes it); wantFocus: move focus into the table at the next settle
-  var bj = { st: null, busy: false, op: null, n: 0, timers: [], to: null, wantFocus: false, focusPhase: null };
-  var _bjHold = false, _ccHeld = null;
-  var COIN_FULL = (el('bjCoin') || {}).innerHTML || '';
+  var PANELS = {};        // game id -> the definition its panel.js registered
+  var PANEL_BY_KEY = {};  // message type -> the same definition
+  var ASSET_UI = ASSETS.ui || {};
+  var GAME_ROWS = {};     // game id -> its row of the register (title, hint, glyph)
+  (ASSET_UI.games || []).forEach(function (g) { GAME_ROWS[g.id] = g; });
+  var COIN_FULL = (el('cucCoin') || {}).innerHTML || '';
+  var STAKES = [10, 100, 1000];
+  // With more than one other table open, which one is holding the credits is not something this
+  // screen can say, so it does not name names
+  var HELD_ELSEWHERE = 'Another table is holding these credits';
+  var _hold = false, _ccHeld = null;  // the header waits for a reply's settle (see renderCredits)
+  var _reqN = {};                     // per game: the number of the last request sent
+  // What the OTHER games still have riding, per game. Every game bets from one purse but a stake
+  // does not leave the balance until its round settles, so the header number is not what this game
+  // may bet: the host sends `free` with every reply and the difference from the balance is what is
+  // spoken for. Kept as that difference rather than as `free` itself, so a credit minted while the
+  // bet screen is up lights the chips at once instead of waiting for the next reply
+  var gameHeld = {};
 
-  // --- cards: 16x22 cells, 2px each at the blackjack table and 4px for the High-Low hero card
-  var BJ_INK = '#1d1d1f', BJ_RED = '#c25a34';
-  var BJ_RANK = {
+  function signed(n) { return (n > 0 ? '+' : n < 0 ? '−' : '') + fmtInt(Math.abs(n)); }
+
+  // --- the pixel cards: 16x22 cells, 2px each at a table and 4px for a hero card
+  var CARD_INK = '#1d1d1f', CARD_RED = '#c25a34';
+  var CARD_RANK = {
     A: ['.#.', '#.#', '###', '#.#', '#.#'], '2': ['##.', '..#', '.#.', '#..', '###'], '3': ['##.', '..#', '.#.', '..#', '##.'],
     '4': ['#.#', '#.#', '###', '..#', '..#'], '5': ['###', '#..', '##.', '..#', '##.'], '6': ['.##', '#..', '###', '#.#', '###'],
     '7': ['###', '..#', '.#.', '.#.', '.#.'], '8': ['###', '#.#', '###', '#.#', '###'], '9': ['###', '#.#', '###', '..#', '##.'],
     '10': ['#.###', '#.#.#', '#.#.#', '#.#.#', '#.###'],
     J: ['..#', '..#', '..#', '#.#', '.#.'], Q: ['.#.', '#.#', '#.#', '##.', '.##'], K: ['#.#', '#.#', '##.', '#.#', '#.#']
   };
-  var BJ_PIP5 = {
+  var CARD_PIP5 = {
     S: ['..#..', '.###.', '#####', '..#..', '.###.'], H: ['##.##', '#####', '#####', '.###.', '..#..'],
     D: ['..#..', '.###.', '#####', '.###.', '..#..'], C: ['.###.', '.###.', '#####', '#.#.#', '.###.']
   };
-  var BJ_PIP7 = {
+  var CARD_PIP7 = {
     S: ['...#...', '..###..', '.#####.', '#######', '#######', '.#.#.#.', '..###..'],
     H: ['.##.##.', '#######', '#######', '#######', '.#####.', '..###..', '...#...'],
     D: ['...#...', '..###..', '.#####.', '#######', '.#####.', '..###..', '...#...'],
     C: ['..###..', '..###..', '##.#.##', '#######', '##.#.##', '...#...', '..###..']
   };
-  var BJ_FRAME = '<path fill="#1d1d1f" fill-rule="evenodd" d="M1 0h14v1h1v20h-1v1h-14v-1h-1v-20h1zM1 1v20h14v-20z"/>';
+  var CARD_FRAME = '<path fill="#1d1d1f" fill-rule="evenodd" d="M1 0h14v1h1v20h-1v1h-14v-1h-1v-20h1zM1 1v20h14v-20z"/>';
   function bmPath(bm, ox, oy) { var d = ''; for (var y = 0; y < bm.length; y++) for (var x = 0; x < bm[y].length; x++) if (bm[y][x] === '#') d += 'M' + (ox + x) + ' ' + (oy + y) + 'h1v1h-1z'; return d; }
   var CARD_CELL = 2; // px per cell; the grid stays integer at any whole multiple
   function cardSvg(inner, cell) {
     cell = cell || CARD_CELL;
-    return '<svg viewBox="0 0 16 22" width="' + (16 * cell) + '" height="' + (22 * cell) + '" shape-rendering="crispEdges" aria-hidden="true">' + BJ_FRAME + inner + '</svg>';
+    return '<svg viewBox="0 0 16 22" width="' + (16 * cell) + '" height="' + (22 * cell) + '" shape-rendering="crispEdges" aria-hidden="true">' + CARD_FRAME + inner + '</svg>';
   }
   function cardFace(c, cell) {
-    if (!c || !BJ_RANK[c.r] || !BJ_PIP5[c.s]) return CARD_BACK; // a card this table cannot draw shows its back instead of breaking the table
-    var col = (c.s === 'H' || c.s === 'D') ? BJ_RED : BJ_INK;
+    if (!c || !CARD_RANK[c.r] || !CARD_PIP5[c.s]) return CARD_BACK; // a card this table cannot draw shows its back instead of breaking the table
+    var col = (c.s === 'H' || c.s === 'D') ? CARD_RED : CARD_INK;
     return cardSvg('<rect x="1" y="1" width="14" height="20" fill="#fff"/><path fill="' + col + '" d="'
-      + bmPath(BJ_RANK[c.r], 2, 2) + bmPath(BJ_PIP5[c.s], 2, 8) + bmPath(BJ_PIP7[c.s], 7, 12) + '"/>', cell);
+      + bmPath(CARD_RANK[c.r], 2, 2) + bmPath(CARD_PIP5[c.s], 2, 8) + bmPath(CARD_PIP7[c.s], 7, 12) + '"/>', cell);
   }
   var CARD_BACK = (function () {
     var d = ''; for (var y = 2; y < 20; y++) for (var x = 2; x < 14; x++) if ((x + y) % 4 === 0 || (x - y) % 4 === 0) d += 'M' + x + ' ' + y + 'h1v1h-1z';
     return cardSvg('<rect x="1" y="1" width="14" height="20" fill="#fff"/><rect x="2" y="2" width="12" height="18" fill="#e8895a"/><path fill="#c25a34" d="' + d + '"/>');
   })();
-  function cardEl(svg, left, cls) { return '<div class="bj-card' + (cls ? ' ' + cls : '') + '" style="left:' + left + 'px">' + svg + '</div>'; }
-  // max 16px (8 cells) so the rank index always shows; squeeze to fit, never below 10px, even px only
-  function fanOffset(fan, n) { if (n < 2) return 0; var w = fan.clientWidth || 120; return Math.max(10, Math.min(16, Math.floor((w - 32) / (n - 1) / 2) * 2)); }
+  // What a screen reader is told. The cards are drawn as bare divs over aria-hidden art, so
+  // whatever shows a card has to carry its name
+  var SUIT_WORD = { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' };
+  var RANK_WORD = { A: 'ace', J: 'jack', Q: 'queen', K: 'king' };
+  function cardWord(c) { return c ? (RANK_WORD[c.r] || c.r) + ' of ' + (SUIT_WORD[c.s] || c.s) : 'no card'; }
 
-  // --- which cards the sequence still has to bring in
-  // engine seq -> steps: {ev:'card',to:'player',hand} = a player card, {ev:'card',to:'dealer'} = a dealer card (card:null is the hole, drawn as a back), {ev:'reveal'} = the hole flip (face from the final dealer.cards[1]), {ev:'split'} = no step (the final state already has both hands)
-  function bjPending(seq) {
-    var p = { p: {}, d: 0, hole: false };
-    (seq || []).forEach(function (it) {
-      if (it.ev === 'card' && it.to === 'player') p.p[it.hand || 0] = (p.p[it.hand || 0] || 0) + 1;
-      else if (it.ev === 'card' && it.to === 'dealer') p.d++;
-      else if (it.ev === 'reveal') p.hole = true;
-    });
-    return p;
-  }
-  function bjDealer(st, pend) {
-    var fan = el('bjDFan'); if (!fan) return;
-    var d = (st && st.dealer) || { cards: [], hole: false };
-    var n = d.hole ? Math.max(d.cards.length, 2) : d.cards.length; // hole:true draws a back whether or not the host sent its rank
-    var off = fanOffset(fan, n), html = '';
-    for (var i = 0; i < n; i++) {
-      var down = i === 1 && (d.hole || pend.hole), c = d.cards[i];
-      html += cardEl(down || !c ? CARD_BACK : cardFace(c), i * off, (i >= n - pend.d ? 'pending' : '') + (down ? ' down' : ''));
-    }
-    fan.innerHTML = html;
-    if (pend.hole && d.cards[1] && fan.children[1]) fan.children[1]._face = cardFace(d.cards[1]);
-  }
-  // the player, sitting at the table: a still frame (idleRow/idleCol) of an agent sprite, never animated
-  var BJ_HERO_T = 44;         // card height
-  var BJ_HERO_KEY = 'player'; // hum-player: the "me" sprite, and outside NPC_ORDER so Crew never wears the same face
-  function bjHeroHtml() {
-    var m = (CUC.npcs || {})[BJ_HERO_KEY];
-    return m ? '<div class="bj-hero" style="' + cropStyle(m, m.idleRow || 0, m.idleCol || 0, BJ_HERO_T) + '"></div>' : '';
-  }
-  // one player however many hands: the sprite sits on the first row only, the stake under it
-  function bjRowHtml(hand, h) {
-    return '<div class="bj-row bj-p" data-h="' + h + '"><div class="bj-who">'
-      + (h === 0 ? bjHeroHtml() : '')
-      + '<span class="bj-stake' + (hand ? '' : ' preview') + '">' + COIN_FULL + '<b>' + fmtInt(hand ? hand.bet : bjStake()) + '</b></span></div>'
-      + '<div class="bj-hand"><div class="bj-fan" role="img"></div><div class="bj-line"></div></div></div>';
-  }
-  function bjHands(st, pend) {
-    var box = el('bjHands'); if (!box) return;
-    var hands = (st && st.hands) || [];
-    if (!hands.length) { box.innerHTML = bjRowHtml(null, 0); return; } // empty seat, stake preview
-    var html = ''; for (var h = 0; h < hands.length; h++) html += bjRowHtml(hands[h], h);
-    box.innerHTML = html;
-    for (h = 0; h < hands.length; h++) {
-      var fan = box.querySelector('.bj-p[data-h="' + h + '"] .bj-fan'), cs = hands[h].cards, p = pend.p[h] || 0, off = fanOffset(fan, cs.length), f = '';
-      for (var i = 0; i < cs.length; i++) f += cardEl(cardFace(cs[i]), i * off, i >= cs.length - p ? 'pending' : '');
-      fan.innerHTML = f;
-    }
-  }
-  // totals, chips and net change only at settle, never ahead of the cards
-  var RES_WORD = { blackjack: 'Blackjack', win: 'Win', lose: 'Lose', bust: 'Bust', push: 'Push' };
-  var RES_TINT = { blackjack: 'bj', win: 'win', lose: 'lose', bust: 'lose', push: '' };
-  function signed(n) { return (n > 0 ? '+' : n < 0 ? '−' : '') + fmtInt(Math.abs(n)); }
-  // still: a redraw of the same result (after a resize), so the chips do not pop in a second time
-  function bjLines(st, still) {
-    var d = st && st.dealer, dl = el('bjDTot'), pop = still ? ' still' : '';
-    if (dl) dl.innerHTML = (d && d.total != null) ? '<span class="bj-tot">' + d.total + '</span>' + (d.total > 21 ? '<span class="bj-chip' + pop + '">Bust</span>' : '') : '';
-    var dfan = el('bjDFan'), ranks = function (cs) { return cs.map(function (c) { return c.r; }).join(' '); };
-    if (dfan) dfan.setAttribute('aria-label', !(d && d.cards.length) ? 'Dealer' : d.hole ? 'Dealer: ' + ranks(d.cards) + ' and a card face down' : 'Dealer: ' + ranks(d.cards) + ', total ' + d.total);
-    var hands = (st && st.hands) || [], one = hands.length === 1;
-    for (var h = 0; h < hands.length; h++) {
-      var H = hands[h], row = document.querySelector('#bjHands .bj-p[data-h="' + h + '"]'); if (!row) continue;
-      var live = st.phase === 'player' && !H.done;
-      var tot = (H.soft && live && H.total < 21) ? '<span class="soft">' + (H.total - 10) + '/</span>' + H.total : String(H.total);
-      var chip = H.result ? '<span class="bj-chip ' + RES_TINT[H.result] + pop + '">' + RES_WORD[H.result] + (one && st.net ? ' ' + signed(st.net) : '') + '</span>' : '';
-      row.querySelector('.bj-line').innerHTML = '<span class="bj-tot">' + tot + '</span>' + chip;
-      row.querySelector('.bj-stake b').textContent = fmtInt(H.bet);
-      row.classList.toggle('dim', st.phase === 'player' && hands.length > 1 && h !== st.active);
-      row.querySelector('.bj-fan').setAttribute('aria-label', 'Hand ' + (h + 1) + ': ' + H.cards.map(function (c) { return c.r; }).join(' ') + ', total ' + H.total);
-    }
-    var net = el('bjNet');
-    if (net) { net.hidden = !(st && st.phase === 'done' && hands.length > 1); net.textContent = 'Net ' + signed((st && st.net) || 0); }
-  }
-
-  // --- pacing
-  function bjClearTimers() { bj.timers.forEach(clearTimeout); bj.timers = []; }
-  function bjRevealer(it) {
-    return function () {
-      var fan = it.to === 'dealer' ? el('bjDFan') : document.querySelector('#bjHands .bj-p[data-h="' + (it.hand || 0) + '"] .bj-fan');
-      var c = fan && fan.querySelector('.bj-card.pending'); if (!c) return;
-      c.classList.remove('pending'); c.classList.add('in');
-    };
-  }
-  function bjFlipHole() {
-    var fan = el('bjDFan'), c = fan && fan.children[1]; if (!c || !c._face) return;
-    c.classList.add('flip');
-    bj.timers.push(setTimeout(function () { c.innerHTML = c._face; c.classList.remove('down'); }, BJ_T.flip / 2)); // edge-on: swap
-  }
-  // same mapping as bjPending: card events become card steps (dealer ones spaced wider once the hole is turned), reveal becomes the flip, split adds no step
-  function bjSteps(seq) {
-    var out = [], t = null, dealerTurn = false;
-    (seq || []).forEach(function (it) {
-      if (it.ev === 'split') return;
-      if (it.ev === 'reveal') { t = t == null ? BJ_T.holeFirst : t + BJ_T.holeLead; out.push({ at: t, dur: BJ_T.flip, fn: bjFlipHole }); dealerTurn = true; return; }
-      t = t == null ? 0 : t + (dealerTurn ? BJ_T.dealerGap : BJ_T.dealGap);
-      out.push({ at: t, dur: BJ_T.cardIn, fn: bjRevealer(it) });
-    });
-    return out;
-  }
-
-  // Leaving the table (back to the list, or out of the games area): drop the pacing timers and let
-  // any held header push through, or the header number stays frozen at what it showed mid-deal
-  // Same order as a settle: the number moves quietly first, so winnings are not celebrated as
-  // earned credits, and the push then fills in the title and the coin
-  function releaseHeldHeader() {
-    _bjHold = false;
-    if (_ccHeld) { var h = _ccHeld; _ccHeld = null; if (typeof h.balance === 'number') setCreditsQuiet(h.balance); renderCredits(h); }
-  }
-  function bjLeave() {
-    bjClearTimers();
-    clearTimeout(bj.to);
-    bj.busy = false; bj.op = null;
-  }
-
-  // --- messages
-  function bjSend(op, extra) {
-    if (bj.busy) return;
-    bj.busy = true; bj.op = op; bj.n += 1;
-    if (op !== 'open') bjControls(bj.st, true);
-    vscode.postMessage(Object.assign({ type: 'bj', op: op, n: bj.n }, extra || {}));
-    clearTimeout(bj.to);
-    bj.to = setTimeout(function () { bj.busy = false; bj.op = null; bjError('The table didn’t respond. Try again.'); bjControls(bj.st, false); }, BJ_T.noReply);
-  }
-  // Draws a reply and returns its pacing steps. op is null for a reply that is not the one awaited
-  function bjDraw(m, op, prevSt) {
-    var st = bj.st;
-    var seq = (op && op !== 'open' && !_reduceMotion && st && st.seq) || null; // open, late replies and reduced motion: final state at once
-    var pend = bjPending(seq);
-    if (op === 'deal' && !m.error) { var dl = el('bjDTot'); if (dl) dl.innerHTML = ''; }
-    bjDealer(st, pend); bjHands(st, pend);
-    if (seq && op !== 'deal' && prevSt) bjLines(prevSt); // keep the old totals up until the new cards land
-    bjError(m.error || '');
-    bjControls(st, true);
-    return bjSteps(seq);
-  }
-  // A reply to the request in flight is paced. One that is not (a late reply after the no-reply
-  // timeout) is drawn as it stands, with no pacing and no reactions; an older reply arriving while
-  // a newer request waits is dropped, since the newer reply carries the latest state anyway
-  function bjReceive(m) {
-    var current = bj.op != null && m.n === bj.n;
-    if (!current && bj.op != null) return;
-    setHeld('bj', m);
-    var op = current ? bj.op : null, prevSt = bj.st, steps = [], end = 0;
-    clearTimeout(bj.to); bjClearTimers();
-    bj.op = null; bj.st = m.state || null;
-    try { steps = bjDraw(m, op, prevSt); }
-    finally {
-      // whatever the drawing did, the settle has to be scheduled: it is what unlocks the table.
-      // The header waits for that settle even when nothing is paced: the host's data push sits right
-      // behind this reply, and if it landed before the quiet balance update a game win would be
-      // celebrated as an earning
-      _bjHold = true;
-      steps.forEach(function (s) { bj.timers.push(setTimeout(s.fn, s.at)); end = Math.max(end, s.at + s.dur); });
-      var lead = steps.length ? (bj.st && bj.st.phase === 'done' ? BJ_T.settle : BJ_T.unlock) : 0;
-      bj.timers.push(setTimeout(function () { bjSettle(m, current && op !== 'open'); }, end + lead));
-    }
-  }
-  // a game result is not an earning: move the header number quietly, then judge any held push against it
-  function setCreditsQuiet(bal) {
-    var balEl = el('ccBal'); if (!balEl) return;
-    bal = Math.max(0, Math.floor(bal));
-    var was = prev.cr; prev.cr = bal;
-    balEl.textContent = fmtInt(bal); fitCredits();
-    if (was != null && was !== bal && !_reduceMotion) tween('ccBal', was, bal, fmtInt);
-  }
-  // fresh: the reply to a move the player just made (not an open, not a late reply)
-  function bjSettle(m, fresh) {
-    bj.busy = false; _bjHold = false;
-    try {
-      if (typeof m.balance === 'number') setCreditsQuiet(m.balance);
-      if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
-      bjLines(bj.st);
-      if (fresh && bj.st && bj.st.phase === 'done') bjAnnounce(bj.st);
-    } finally {
-      bjControls(bj.st, false);
-      bjFocusAfter();
-    }
-  }
-  function bjAnnounce(st) {
-    var live = el('bjLive'); if (!live) return;
-    var one = st.hands.length === 1 ? st.hands[0] : null;
-    live.textContent = (one ? RES_WORD[one.result] + (st.net ? ' ' + signed(st.net) : '') : 'Net ' + signed(st.net || 0)) + '. Balance ' + fmtInt(prev.cr || 0) + '.';
-  }
-  // Keyboard focus follows the table: in on entry, to the first action when a hand starts, back to
-  // Deal when the bet controls return, and back in whenever it was left on something hidden or
-  // disabled. Otherwise it stays where the player put it. Left on the header credits button, Enter
-  // would press that button again and leave the table
-  function bjFocusAfter() {
-    if (curGame() !== 'blackjack') return;
-    var phase = bj.st ? bj.st.phase : 'bet', play = phase === 'player';
-    var swapped = bj.focusPhase != null && play !== (bj.focusPhase === 'player');
-    bj.focusPhase = phase;
-    var a = document.activeElement, table = el('panelTable');
-    var lost = !a || a === document.body || a.hidden || a.disabled || !(table && table.contains(a));
-    if (!bj.wantFocus && !swapped && !lost) return;
-    bj.wantFocus = false;
-    var target = play ? document.querySelector('#bjPlay [data-op]:not([hidden]):not([disabled])') : el('bjDeal');
-    if (target && !target.disabled) target.focus();
-  }
-
-  // --- controls
-  // the chips, the Deal button and the "not enough credits" note: the same for every game,
-  // each with its own remembered stake and its own elements
-  var STAKE_UI = {
-    bj: { g: 'bj', key: 'bjStake', box: 'bjStakes', chips: '#bjStakes button', deal: 'bjDeal', note: 'bjNote', preview: '#bjHands .bj-stake.preview b' },
-    hl: { g: 'hl', key: 'hlStake', box: 'hlStakes', chips: '#hlStakes button', deal: 'hlDeal', note: 'hlNote', preview: '#hlLine .hl-pot.preview b' },
-    pk: { g: 'pk', key: 'pkStake', box: 'pkStakes', chips: '#pkStakes button', deal: 'pkDeal', note: 'pkNote', preview: '#pkLine .hl-pot.preview b' }
+  // --- the ten sea symbols' names (the slots, the scratch card).
+  //
+  // Same rule as cardWord above, for the same reason: the drawings are aria-hidden art
+  // (games/symbols.js), so whatever shows a symbol has to carry its name. `n` is how many of them
+  // are being named, and it is NOT an 's' rule: four of the ten do not take one, which is why the
+  // exceptions are a set here rather than a second table of ten strings
+  var SYM_WORD = {
+    crab: 'crab', pearl: 'pearl', anchor: 'anchor', starfish: 'starfish', shell: 'shell',
+    kelp: 'kelp', urchin: 'urchin', jellyfish: 'jellyfish', bottle: 'bottle', coral: 'coral'
   };
-  // With more than one other table open, which one is holding the credits is not something this
-  // screen can say, so it does not name names
-  var HELD_ELSEWHERE = 'Another table is holding these credits';
-  // What the OTHER game still has riding, per game. Both games bet from one purse but a stake does
-  // not leave the balance until its round settles, so the header number is not what this game may
-  // bet: the host sends `free` with every reply and the difference from the balance is what is
-  // spoken for. Kept as that difference rather than as `free` itself, so a credit minted while the
-  // bet screen is up lights the chips at once instead of waiting for the next reply
-  var gameHeld = { bj: 0, hl: 0, pk: 0, fg: 0 };
-  function setHeld(g, m) {
-    if (typeof m.free === 'number' && typeof m.balance === 'number') gameHeld[g] = Math.max(0, m.balance - m.free);
+  var SYM_NO_S = { starfish: 1, jellyfish: 1, kelp: 1, coral: 1 };
+  function symWord(sym, n) {
+    var one = SYM_WORD[sym];
+    if (!one) return String(sym);
+    return (n === 1 || SYM_NO_S[sym]) ? one : one + 's';
   }
-  function gameStake(ui) { var v = (vscode.getState() || {})[ui.key]; return BJ_STAKES.indexOf(v) >= 0 ? v : BJ_STAKES[0]; }
+
+  // --- a multiplier, printed. The host's own figure (the payout over the bet) and never recomputed:
+  // these two only choose the form.
+  //
+  // `xMult` takes the ratio as it arrives (the plinko cup, the wheel's wedge). Two decimals, because
+  // an odd bet can leave a remainder with the house and the figure printed has to be the one the
+  // balance moved by.
+  // `xMult100` takes the same figure sent as HUNDREDTHS (the minefield's rung, the tower's floor):
+  // those engines read it back out of the payout they will really pay (mines.js's mult100Of), so
+  // this only moves the decimal point and no float touches it. The crash keeps its own copy of this
+  // shape on purpose: its dial runs to 1000x and it drops the decimals above 100x to stay inside the
+  // felt, which is a different rule rather than the same one with a number in it
+  function xMult(m) {
+    if (m == null) return '';
+    var r = Math.round(m * 100) / 100;
+    return '×' + (r === Math.floor(r) ? fmtInt(r) : String(r));
+  }
+  // No thousands separator here, and that is deliberate rather than an oversight: this one's
+  // readers are the ladder columns, and the tower's is 39px wide because that is what its largest
+  // rung (x57277, the hard tower's top floor) measures at 10.5px. Grouping it would push the widest
+  // row out of the column it was sized for. xMult's readers are chips on a line that can wrap, so
+  // it groups
+  function xMult100(m100) {
+    if (m100 == null) return '';
+    if (m100 >= 1000) return '×' + Math.floor(m100 / 100);
+    return '×' + Math.floor(m100 / 100) + '.' + ('0' + (m100 % 100)).slice(-2);
+  }
+
+  // --- the pot line, and the pixel coin on it
+  function potHtml(v, preview) { return '<span class="hl-pot' + (preview ? ' preview' : '') + '">' + COIN_FULL + '<b>' + fmtInt(v) + '</b></span>'; }
+
+  // --- a still frame of an agent sprite, for whoever sits at a table
+  function npcStyle(key, target) {
+    var m = (ASSETS.npcs || {})[key];
+    return m ? cropStyle(m, m.idleRow || 0, m.idleCol || 0, target) : null;
+  }
+
+  // --- the chips, the Deal button and the "not enough credits" note: the same for every game,
+  // each with its own remembered stake and its own elements. A game describes its own with
+  // CUC.stakeUi(key) and the rest is here.
+  //
+  // `min` is THIS TABLE'S FLOOR, which is the engine's MIN_BET. The chips are 10/100/1000 for
+  // everyone, and a table that will not take 10 (the minefield and the tower, whose payouts are
+  // floored to whole credits: at a bet of ten the flooring alone costs the player more than the
+  // house's own 3%, so the return band breaks downwards. The figure is in mines.js's header) has to
+  // close that chip rather than leave it lit. Without it the first Deal of a new install goes out at
+  // 10 and the host refuses it: a live button, a dead round and a sentence underneath.
+  // A panel is webview-side and cannot require the engine, so the figure is passed in; what used to
+  // be a layer per panel over the top of these controls is now this one field
+  function stakeUi(key, extra) {
+    return Object.assign({
+      g: key, key: key + 'Stake', box: key + 'Stakes', chips: '#' + key + 'Stakes button',
+      deal: key + 'Deal', note: key + 'Note', preview: '#' + key + 'Line .hl-pot.preview b'
+    }, extra || {});
+  }
+  function stakeFloor(ui) { return (ui && ui.min > 0) ? ui.min : STAKES[0]; }
+  // The lowest chip this table will take: a floor of 100 makes 100 the stake the screen opens on,
+  // and the sentence under a purse too small to play says 100 rather than 10
+  function stakeBase(ui) {
+    var f = stakeFloor(ui);
+    for (var i = 0; i < STAKES.length; i++) if (STAKES[i] >= f) return STAKES[i];
+    return STAKES[STAKES.length - 1];
+  }
+  function stakesHtml(key) {
+    return '<div class="bj-stakes" id="' + key + 'Stakes" role="group" aria-label="Bet">'
+      + STAKES.map(function (v) {
+        var label = v >= 1000 ? (v / 1000) + 'K' : String(v);
+        return '<button type="button" data-v="' + v + '"' + (v >= 1000 ? ' aria-label="' + fmtInt(v) + '"' : '') + '>' + label + '</button>';
+      }).join('')
+      + '</div>';
+  }
+  // The remembered stake, clamped to the table's floor rather than written back to storage: a chip
+  // under the floor is closed below, so nothing this screen can press ever stores one, and reading
+  // it back through the floor also fixes a value some older build left behind
+  function gameStake(ui) {
+    var v = (vscode.getState() || {})[ui.key];
+    return (STAKES.indexOf(v) >= 0 && v >= stakeFloor(ui)) ? v : stakeBase(ui);
+  }
   function renderStakes(ui, locked) {
     var held = gameHeld[ui.g] || 0;
     var known = prev.cr != null, bal = known ? Math.max(0, prev.cr - held) : 0, want = gameStake(ui), pick = 0;
-    BJ_STAKES.forEach(function (v) { if (v <= bal && v <= want) pick = v; }); // largest affordable, not above the remembered stake
+    var floor = stakeFloor(ui), base = stakeBase(ui);
+    // largest affordable, not above the remembered stake and never below the table's floor
+    STAKES.forEach(function (v) { if (v >= floor && v <= bal && v <= want) pick = v; });
     var bs = document.querySelectorAll(ui.chips);
     for (var i = 0; i < bs.length; i++) {
-      var v = Number(bs[i].getAttribute('data-v')), short = v > bal;
-      bs[i].disabled = locked || short;
-      // a chip the header's balance covers but this game's share does not is the other game's doing
-      bs[i].title = !short ? '' : (known && v <= prev.cr ? HELD_ELSEWHERE : 'Not enough credits');
+      var v = Number(bs[i].getAttribute('data-v')), under = v < floor, short = !under && v > bal;
+      bs[i].disabled = locked || under || short;
+      // THREE different reasons a chip is closed, and they are three different problems: this table
+      // does not take that bet at all, the credits are riding on another table, or there are none.
+      // A chip the header's balance covers but this game's share does not is another game's doing
+      bs[i].title = under ? 'This table starts at ' + fmtInt(base)
+        : !short ? ''
+          : (known && v <= prev.cr ? HELD_ELSEWHERE : 'Not enough credits');
       bs[i].classList.toggle('on', v === pick);
       bs[i].setAttribute('aria-pressed', v === pick ? 'true' : 'false');
     }
     var deal = el(ui.deal); if (deal) { deal.disabled = locked || !pick; deal.setAttribute('data-bet', String(pick)); }
     var pv = document.querySelector(ui.preview); if (pv) pv.textContent = fmtInt(pick || want);
-    // being broke and having the credits tied up in the other game are different problems, and a
-    // header reading 1,000 over a row of dead chips has to say which one this is
+    // being broke and having the credits tied up in another game are different problems, and a
+    // header reading 1,000 over a row of dead chips has to say which one this is. The figure is the
+    // table's own lowest chip, so an expensive table asks for its own price and not for ten
     var note = el(ui.note);
     if (note) {
-      note.hidden = !known || bal >= BJ_STAKES[0];
-      note.textContent = known && prev.cr >= BJ_STAKES[0]
+      note.hidden = !known || bal >= base;
+      note.textContent = known && prev.cr >= base
         ? HELD_ELSEWHERE + '.'
-        : 'You need ' + BJ_STAKES[0] + ' credits to play.';
+        : 'You need ' + fmtInt(base) + ' credits to play.';
     }
   }
   // picking a chip hands the focus to Deal, so Enter right after it deals instead of picking again
@@ -904,38 +808,110 @@
       var d = el(ui.deal); if (d && !d.disabled) d.focus();
     });
   }
-  function bjStake() { return gameStake(STAKE_UI.bj); }
-  function bjRenderStakes(locked) { renderStakes(STAKE_UI.bj, locked == null ? bj.busy : locked); }
-  function bjControls(st, locked) {
-    var play = !!(st && st.phase === 'player'), can = (st && st.can) || {};
-    var bet = el('bjBet'), pl = el('bjPlay');
-    if (bet) bet.hidden = play; if (pl) pl.hidden = !play;
-    var ops = document.querySelectorAll('#bjPlay [data-op]');
-    for (var i = 0; i < ops.length; i++) {
-      var op = ops[i].getAttribute('data-op');
-      ops[i].hidden = (op === 'double' || op === 'split') && !can[op];
-      ops[i].disabled = locked || !can[op];
-    }
-    if (!play) bjRenderStakes(locked);
+  function setHeld(g, m) {
+    if (typeof m.free === 'number' && typeof m.balance === 'number') gameHeld[g] = Math.max(0, m.balance - m.free);
   }
-  function bjError(msg) {
-    var e = el('bjErr'); if (!e) return;
+
+  // --- the one figure a list row may carry, on the right of the row.
+  //
+  // Only two games have one (the market's open profit, the forge's sword level) and the reason is
+  // that the figure's whole job is to have MOVED while the panel was shut. Fourteen figures would
+  // be fourteen numbers, and then the one that moved is invisible.
+  //
+  // This writes into the row, not into the panel, so it works for a game whose screen has never
+  // been built: the rows exist from the first paint. `dir` is 'up', 'down' or nothing, and nothing
+  // is the ordinary muted colour (the forge's level is not good or bad news, it is a level)
+  function rowFig(id, text, dir) {
+    var e = el('fig-' + id); if (!e) return;
+    e.textContent = text == null ? '' : String(text);
+    e.classList.toggle('gm-up', dir === 'up');
+    e.classList.toggle('gm-dn', dir === 'down');
+  }
+
+  // --- the small shared drawing jobs every panel has
+  function setLive(id, text) { var e = el(id); if (e) e.textContent = text; }
+  function setErr(id, msg) {
+    var e = el(id); if (!e) return;
     e.hidden = !msg;
     if (msg) e.innerHTML = WARN_SVG + '<span class="wbmsg">' + esc(msg) + '</span>';
   }
+  function setNote(id, text) {
+    var e = el(id); if (!e) return;
+    e.hidden = !text;
+    if (text) e.textContent = text;
+  }
+  // --- the folded paytable's toggle (games/casino.js, .bj-why and .bj-pays).
+  //
+  // Nine screens had this same five-line body in their init(), which is nine places for one rule:
+  // the button says whether the box is open and the box is hidden or it is not. The pair is wired
+  // once, here, and a tenth screen with a table to fold is one call rather than another copy.
+  // aria-controls is set from the box's own id, so the two cannot drift apart the way two of the
+  // nine already had (the market's and Red Dog's buttons controlled nothing at all)
+  function wireWhy(whyId, paysId) {
+    var b = el(whyId), box = el(paysId); if (!b || !box) return;
+    b.setAttribute('aria-controls', paysId);
+    b.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
+    b.addEventListener('click', function () {
+      var open = box.hidden;
+      box.hidden = !open;
+      b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+  // one bag of pacing timers per panel: a game drops its own clock when it is left
+  function timers() {
+    var a = [];
+    return {
+      at: function (ms, fn) { a.push(setTimeout(fn, ms)); },
+      clear: function () { for (var i = 0; i < a.length; i++) clearTimeout(a[i]); a = []; }
+    };
+  }
+  // a game result is not an earning: move the header number quietly, then judge any held push
+  // against it
+  function setCreditsQuiet(bal) {
+    var balEl = el('ccBal'); if (!balEl) return;
+    bal = Math.max(0, Math.floor(bal));
+    var was = prev.cr; prev.cr = bal;
+    balEl.textContent = fmtInt(bal); fitCredits();
+    if (was != null && was !== bal && !_reduceMotion) tween('ccBal', was, bal, fmtInt);
+  }
+  // Leaving a game (back to the list, or out of the games area): let any held header push through,
+  // or the header number stays frozen at what it showed mid-deal.
+  // Same order as a settle: the number moves quietly first, so winnings are not celebrated as
+  // earned credits, and the push then fills in the title and the coin
+  function releaseHeldHeader() {
+    _hold = false;
+    if (_ccHeld) { var h = _ccHeld; _ccHeld = null; if (typeof h.balance === 'number') setCreditsQuiet(h.balance); renderCredits(h); }
+  }
+  // What every panel does at the end of a reply's pacing: take the balance that came with the
+  // reply, then let through whatever data push was waiting behind it
+  function settleHeader(m) {
+    _hold = false;
+    if (m && typeof m.balance === 'number') setCreditsQuiet(m.balance);
+    if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
+  }
 
-  // --- wiring
-  bjHands(null, bjPending(null));
-  wireStakes(STAKE_UI.bj, function () { bjRenderStakes(); });
-  if (el('bjDeal')) el('bjDeal').addEventListener('click', function () {
-    var bet = Number(this.getAttribute('data-bet')); if (!bet) return;
-    bjSend('deal', { bet: bet });
-  });
-  if (el('bjPlay')) el('bjPlay').addEventListener('click', function (e) {
-    var b = e.target.closest ? e.target.closest('[data-op]') : null; if (!b || b.disabled) return;
-    bjSend(b.getAttribute('data-op'));
-  });
-  // Shortcuts belong to the open game only: the list and the other game never react.
+  // --- messages to the host. The request number is this file's to keep: a panel only has to tell
+  // its reply from a late one, and a game that numbered its own would be a game that can get it
+  // wrong
+  function postGame(key, op, extra) {
+    var n = _reqN[key] = (_reqN[key] || 0) + 1;
+    vscode.postMessage(Object.assign({ type: key, op: op, n: n }, extra || {}));
+    return n;
+  }
+
+  // --- a game's heading: the back arrow, the title with its glyph, and a corner the game fills
+  // with one figure of its own (best level, streak, whatever it has)
+  function frameHtml(id) {
+    var row = GAME_ROWS[id] || {}, key = row.key || id;
+    return '<div class="ihead bj-head">'
+      + '<button type="button" class="bj-back" id="' + key + 'Back" title="All games">' + (ASSET_UI.chevron || '') + '</button>'
+      + '<div class="it" title="' + esc(row.hint || '') + '">' + (row.icon || '') + ' ' + esc(row.title || row.name || '') + '</div>'
+      + '<div class="bj-side" id="' + key + 'Side"></div></div>';
+  }
+
+  // --- keyboard. Shortcuts belong to the OPEN game only: the list and every other game never
+  // react. One body class per game told four games apart; fourteen cannot be read that way, so the
+  // open game is asked for its own handler and nobody else is called
   // e.repeat: a held key must not keep playing hands that carry stakes
   function pressPanel(e, panel, sel, deal, bet) {
     var b = sel && document.querySelector(panel + ' [data-op="' + sel + '"]');
@@ -946,816 +922,90 @@
     return true;
   }
   document.addEventListener('keydown', function (e) {
-    var body = document.body, atBj = body.classList.contains('game-bj'),
-      atHl = body.classList.contains('game-hl'), atPk = body.classList.contains('game-pk'),
-      atFg = body.classList.contains('game-fg');
-    if ((!atBj && !atHl && !atPk && !atFg) || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    var g = curGame(); if (!g) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
     var t = e.target; if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
     if (document.querySelector('.sheet:not([hidden])')) return;
-    var k = String(e.key).toLowerCase();
-    if (atBj) pressPanel(e, '#bjPlay', { h: 'hit', s: 'stand', d: 'double', p: 'split' }[k] || null, 'bjDeal', 'bjBet');
-    else if (atHl) pressPanel(e, '#hlPlay', { arrowup: 'higher', arrowdown: 'lower', c: 'cashout' }[k] || null, 'hlDeal', 'hlBet');
-    else if (atPk) {
-      // 1 to 5 mark a card to keep, Enter deals or draws. The key is only taken while there are
-      // cards to mark: on the bet screen nothing would happen, and a swallowed digit is one the
-      // rest of the page never sees
-      if (k >= '1' && k <= '5') {
-        if (pk.st && pk.st.phase === 'draw') { e.preventDefault(); pkToggle(Number(k) - 1); }
-        return;
-      }
-      pressPanel(e, '#pkPlay', null, 'pkDeal', 'pkBet');
-    } else {
-      // E enhances, S twice sells, Enter enhances unless the focus is already on a button (then
-      // that button has it). The forge has no panel of [data-op] actions, so it presses its own
-      var hit = k === 'e' ? el('fgEnhance') : k === 's' ? el('fgSell') : null;
-      if (hit) { e.preventDefault(); if (!hit.disabled && !hit.hidden) hit.click(); return; }
-      var t2 = e.target, enh = el('fgEnhance');
-      if (e.key === 'Enter' && (!t2 || t2.tagName !== 'BUTTON') && enh && !enh.disabled) { e.preventDefault(); enh.click(); }
-    }
+    var def = PANELS[g];
+    if (def && def.node && def.keys) def.keys(e);
   });
 
-  // ===========================================================================
-  // High-Low: guess whether the next card beats this one. The host judges and prices it;
-  // this draws one hero card, keeps the card just played as a pile, and paces the two.
-  // ===========================================================================
-  // inLead is the gap before the new card arrives; settle/unlock are when the numbers follow it and
-  // when the buttons come back, with deal/dealUnlock the shorter pair a fresh card needs
-  var HL_T = { inLead: 40, settle: 220, unlock: 240, deal: 180, dealUnlock: 200, noReply: 4000 };
-  var hl = { st: null, busy: false, op: null, n: 0, timers: [], to: null, wantFocus: false, phase: null };
-  // The price on a guess button is read back from the pot the host says a correct call pays, never
-  // worked out here from the odds: pots are whole credits, so a pot of 10 priced at 1.06x comes back
-  // unchanged and a printed x1.1 would be a promise the table does not keep. Floored for the same
-  // reason, so the button never asks for more than it gives
-  function hlPrice(pays, pot) {
-    if (pays == null || !(pot > 0)) return '—';
-    var m = pays / pot;
-    return '×' + (m >= 10 ? Math.floor(m) : (Math.floor(m * 10) / 10).toFixed(1));
-  }
-  function hlPot(v, preview) { return '<span class="hl-pot' + (preview ? ' preview' : '') + '">' + COIN_FULL + '<b>' + fmtInt(v) + '</b></span>'; }
-  function hlClearTimers() { hl.timers.forEach(clearTimeout); hl.timers = []; }
-
-  // The cards: the one just played slides down to the pile on the left, the new one comes in
-  function hlCards(st, animate) {
-    var prevEl = el('hlPrev'), cardEl = el('hlCard'); if (!prevEl || !cardEl) return;
-    var hist = (st && st.history) || [];
-    var last = hist.length ? hist[hist.length - 1].card : null; // only the latest: the pot and the streak say how far this run went
-    prevEl.innerHTML = last ? cardFace(last, 2) : '';
-    cardEl.innerHTML = (st && st.card) ? cardFace(st.card, 4) : '';
-    prevEl.classList.remove('drop'); cardEl.classList.remove('in');
-    if (!animate) return;
-    // the played card drops onto the pile first, the new one arrives just behind it
-    if (last) { void prevEl.getBoundingClientRect(); prevEl.classList.add('drop'); }
-    cardEl.style.visibility = 'hidden';
-    hl.timers.push(setTimeout(function () {
-      cardEl.style.visibility = '';
-      void cardEl.getBoundingClientRect(); cardEl.classList.add('in');
-    }, HL_T.inLead));
-  }
-  // What a screen reader is told. The hero card is the whole state of this game, so it carries its
-  // own name; the pile beside it is aria-hidden in the HTML and the line below names the card that
-  // was played instead
-  var HL_SUIT = { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' };
-  var HL_RANK = { A: 'ace', J: 'jack', Q: 'queen', K: 'king' };
-  function hlCardWord(c) { return c ? (HL_RANK[c.r] || c.r) + ' of ' + (HL_SUIT[c.s] || c.s) : 'no card'; }
-  function hlLabel(st) {
-    var c = el('hlCard'); if (!c) return;
-    c.setAttribute('aria-label', (st && st.card) ? 'Face up: ' + hlCardWord(st.card) : 'No card');
-  }
-  // One line per move, read out at the settle: a call turns a card over and moves the pot, and
-  // neither the label on the card nor the line under it is announced on its own
-  var HL_SAID = { win: 'right', lose: 'wrong', push: 'a tie, the pot rides' };
-  function hlAnnounce(st) {
-    var live = el('hlLive'); if (!live || !st) return;
-    var hist = st.history || [], last = hist.length ? hist[hist.length - 1] : null, said = [];
-    if (st.phase === 'done') {
-      said.push((st.ended === 'cashout' ? 'Cashed out ' : 'Wrong call, ') + signed(st.net || 0));
-      said.push('Balance ' + fmtInt(prev.cr || 0));
-    } else {
-      if (last) said.push((last.guess === 'higher' ? 'Higher' : 'Lower') + ': ' + HL_SAID[last.result]);
-      said.push(hlCardWord(st.card));
-      said.push('Pot ' + fmtInt(st.pot));
+  // --- the panels themselves. A game's markup is built once, the first time it is opened, and
+  // kept: a panel that has never been opened has no elements at all, which is what lets the
+  // register grow without the first paint growing with it
+  function buildPanel(id) {
+    var def = PANELS[id]; if (!def) return null;
+    if (!def.node) {
+      var host = el('gameStage'); if (!host) return null;
+      var node = document.createElement('div');
+      node.setAttribute('class', 'inner ' + (def.cls || def.key));
+      node.setAttribute('id', def.panelId);
+      node.style.display = 'none';
+      node.innerHTML = def.markup();
+      host.appendChild(node);
+      def.node = node;
+      if (def.init) def.init();
     }
-    live.textContent = said.join('. ') + '.';
+    return def;
   }
-  // The line under the cards: the pot while playing, the result once the round is over
-  function hlLine(st) {
-    hlLabel(st); // the card's name moves with the line, so it follows the card rather than leading it
-    var line = el('hlLine'); if (!line) return;
-    if (!st || st.phase === 'bet') { line.innerHTML = hlPot(gameStake(STAKE_UI.hl), true); return; }
-    if (st.phase === 'done') {
-      var won = st.ended === 'cashout';
-      line.innerHTML = '<span class="bj-chip ' + (won ? 'win' : 'lose') + '">' + (won ? 'Cashed out ' : 'Wrong ') + signed(st.net || 0) + '</span>';
-      return;
-    }
-    line.innerHTML = hlPot(st.pot, false) + (st.streak > 1 ? '<span class="bj-chip">' + st.streak + ' in a row</span>' : '');
+  // Each game stops its own clock; the held header is let go once, here
+  function gameLeave() {
+    for (var id in PANELS) { var def = PANELS[id]; if (def.node && def.leave) def.leave(); }
+    releaseHeldHeader();
   }
-  // Locks what is on screen without touching the numbers or swapping the rows: during a guess the
-  // old prices and pot must stay put until the card has landed
-  function hlLock() {
-    var all = document.querySelectorAll('#hlPlay [data-op], #hlStakes button');
-    for (var i = 0; i < all.length; i++) all[i].disabled = true;
-    var d = el('hlDeal'); if (d) d.disabled = true;
-  }
-  // the prices and the pot on the buttons: they change with the line, one step before the buttons
-  function hlNumbers(st) {
-    var pays = (st && st.pays) || {}, pot = (st && st.pot) || 0;
-    var up = el('hlUp'), dn = el('hlDn'), amt = el('hlCashAmt');
-    if (up) up.textContent = hlPrice(pays.higher, pot);
-    if (dn) dn.textContent = hlPrice(pays.lower, pot);
-    if (amt) amt.textContent = fmtInt(pot);
-  }
-  function hlControls(st, locked) {
-    var play = !!(st && st.phase === 'play'), can = (st && st.can) || {};
-    var bet = el('hlBet'), pl = el('hlPlay');
-    if (bet) bet.hidden = play; if (pl) pl.hidden = !play;
-    hlNumbers(st);
-    var ops = document.querySelectorAll('#hlPlay [data-op]');
-    for (var i = 0; i < ops.length; i++) {
-      var op = ops[i].getAttribute('data-op');
-      ops[i].disabled = locked || !can[op];
-    }
-    if (!play) renderStakes(STAKE_UI.hl, locked);
-  }
-  function hlError(msg) {
-    var e = el('hlErr'); if (!e) return;
-    e.hidden = !msg;
-    if (msg) e.innerHTML = WARN_SVG + '<span class="wbmsg">' + esc(msg) + '</span>';
-  }
-  function hlFocusAfter() {
-    if (curGame() !== 'hilo') return;
-    var play = hl.st && hl.st.phase === 'play';
-    var swapped = hl.phase != null && play !== (hl.phase === 'play');
-    hl.phase = hl.st ? hl.st.phase : 'bet';
-    var a = document.activeElement, panel = el('panelHiLo');
-    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
-    if (!hl.wantFocus && !swapped && !lost) return;
-    hl.wantFocus = false;
-    var target = play ? document.querySelector('#hlPlay [data-op="higher"]') : el('hlDeal');
-    if (target && !target.disabled) target.focus();
-  }
-  function hlLeave() {
-    hlClearTimers();
-    clearTimeout(hl.to);
-    hl.busy = false; hl.op = null;
-  }
-  // Each table stops its own clock; the held header is let go once, here
-  function gameLeave() { bjLeave(); hlLeave(); pkLeave(); fgLeave(); releaseHeldHeader(); }
-
-  function hlSend(op, extra) {
-    if (hl.busy) return;
-    hl.busy = true; hl.op = op; hl.n += 1;
-    if (op !== 'open') hlControls(hl.st, true);
-    vscode.postMessage(Object.assign({ type: 'hl', op: op, n: hl.n }, extra || {}));
-    clearTimeout(hl.to);
-    hl.to = setTimeout(function () { hl.busy = false; hl.op = null; hlError('The table didn’t respond. Try again.'); hlControls(hl.st, false); }, HL_T.noReply);
-  }
-  // The cards move first and the numbers follow: a pot or a payout that changed early would give
-  // the result away before the card is on the felt
-  function hlReceive(m) {
-    var current = hl.op != null && m.n === hl.n;
-    if (!current && hl.op != null) return; // an older reply while a newer request waits
-    var op = current ? hl.op : null;
-    clearTimeout(hl.to); hlClearTimers();
-    setHeld('hl', m);
-    hl.op = null; hl.st = m.state || null;
-    // acted: the reply to a move the player just made. A refused move changed nothing, so there is
-    // nothing to pace and nothing to read out: the host answers it with the run exactly as it
-    // stands, and pacing that would drop the same card onto the felt a second time
-    var acted = current && op !== 'open' && !m.error;
-    var fresh = acted && !_reduceMotion;
-    var settleAt = 0, unlockAt = 0;
-    if (fresh && op === 'deal') { settleAt = HL_T.deal; unlockAt = HL_T.dealUnlock; }
-    else if (fresh) { settleAt = HL_T.settle; unlockAt = HL_T.unlock; }
-    try {
-      hlCards(hl.st, fresh);
-      hlError(m.error || '');
-      if (settleAt) hlLock();          // the numbers and the rows follow the card, at settle
-      else { hlControls(hl.st, true); hlLine(hl.st); }
-    } finally {
-      _bjHold = true; // the header waits for this reply's settle, like the blackjack table
-      if (settleAt) hl.timers.push(setTimeout(function () { hlLine(hl.st); hlNumbers(hl.st); }, settleAt));
-      hl.timers.push(setTimeout(function () { hlSettle(m, acted); }, unlockAt));
-    }
-  }
-  // acted: the reply to a move the player just made (not an open, not a refusal, not a late reply)
-  function hlSettle(m, acted) {
-    hl.busy = false; _bjHold = false;
-    try {
-      if (typeof m.balance === 'number') setCreditsQuiet(m.balance);
-      if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
-      hlLine(hl.st);
-      if (acted) hlAnnounce(hl.st); // after the balance, so the line can say where it landed
-    } finally {
-      hlControls(hl.st, false);
-      hlFocusAfter();
-    }
-  }
-
-  // --- wiring
-  hlLine(null);
-  wireStakes(STAKE_UI.hl, function () { renderStakes(STAKE_UI.hl, hl.busy); });
-  if (el('hlDeal')) el('hlDeal').addEventListener('click', function () {
-    var bet = Number(this.getAttribute('data-bet')); if (!bet) return;
-    hlSend('deal', { bet: bet });
+  // one listener for every game's back arrow: the panels are all inside the stage
+  var _stage = el('gameStage');
+  if (_stage) _stage.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.bj-back') : null;
+    if (b) openGame(null);
   });
-  if (el('hlPlay')) el('hlPlay').addEventListener('click', function (e) {
-    var b = e.target.closest ? e.target.closest('[data-op]') : null; if (!b || b.disabled) return;
-    hlSend(b.getAttribute('data-op'));
-  });
-  if (el('hlBack')) el('hlBack').addEventListener('click', function () { openGame(null); });
 
+  window.CUC = {
+    // --- registration. id is the list row and the stored view; def.key is the message type
+    game: function (id, def) {
+      def.id = id;
+      def.panelId = def.panelId || ('panel-' + id);
+      PANELS[id] = def;
+      PANEL_BY_KEY[def.key] = def;
+    },
+    crab: function () { return ASSET_UI.crab || ''; },
+    frame: frameHtml,
+    stakesHtml: stakesHtml,
 
-  // ===========================================================================
-  // Draw Poker (jacks or better): the pay table is always on the felt, five cards under it.
-  // Holds are the webview's own: they travel with the draw, so there is no round trip per card.
-  // ===========================================================================
-  // cardIn and cardOut are the lengths of .pk-card.in and .pk-card.out in styles.js
-  var PK_T = { dealGap: 90, cardIn: 160, cardOut: 120, pressGap: 40, drawGap: 80, settle: 250, noReply: 4000 };
-  // A discard has to be gone before its replacement drops into the same slot, so the first card of
-  // a draw comes in just past the fade. Built on cardOut rather than written out, because the two
-  // are one length: retiming .pk-card.out alone would drop a card onto one still fading
-  PK_T.drawLead = PK_T.cardOut + 20;
-  var pk = { st: null, busy: false, op: null, n: 0, timers: [], to: null, wantFocus: false, phase: null, hold: [false, false, false, false, false], locked: false };
-  function pkClearTimers() { pk.timers.forEach(clearTimeout); pk.timers = []; }
-  var SUIT_WORD = { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' };
-  var RANK_WORD = { A: 'ace', J: 'jack', Q: 'queen', K: 'king' };
-  function cardWord(c) { return (RANK_WORD[c.r] || c.r) + ' of ' + SUIT_WORD[c.s]; }
+    // --- elements, text and numbers
+    el: el, esc: esc, fmtInt: fmtInt, signed: signed,
+    coin: function () { return COIN_FULL; },
+    pot: potHtml,
 
-  // The pay table is the state's own: nine rows, five in the left column and four in the right,
-  // so the DOM order interleaves them (row 1 is Royal flush and Straight, and so on).
-  // The loop runs the longer column, so retuning the table in poker.js cannot quietly lose the
-  // bottom of one side: a tenth row would be left[5], which only the longer count reaches
-  function pkPays(st) {
-    var box = el('pkPays'); if (!box) return;
-    var pays = (st && st.pays) || [], half = Math.ceil(pays.length / 2);
-    var left = pays.slice(0, half), right = pays.slice(half), won = st && st.hand && st.hand.mult > 0 ? st.hand.name : null;
-    var row = function (p) { return !p ? '' : '<div class="pk-pay' + (p.name === won ? ' on' : '') + '"><span>' + esc(p.name) + '</span><b>' + p.mult + '</b></div>'; };
-    var html = '', rows = Math.max(left.length, right.length);
-    for (var i = 0; i < rows; i++) html += row(left[i]) + row(right[i]);
-    box.innerHTML = html;
-  }
-  // Slots are buttons: the card itself is the target, 32x60 including the HOLD label's place.
-  // The title carries the number key that marks it, which is the only place the shortcut is
-  // written down: the deal puts the focus on Draw, so there is nothing to tab past and find it on
-  function pkCards(st, plan, prevSt) {
-    var box = el('pkHand'); if (!box) return;
-    var cards = (st && st.cards) || [];
-    if (!cards.length) { box.innerHTML = ''; return; }
-    var out = (plan && plan.out) || [], hidden = (plan && plan.hidden) || [];
-    var html = '';
-    for (var i = 0; i < cards.length; i++) {
-      var shown = (out.indexOf(i) >= 0 && prevSt && prevSt.cards[i]) ? prevSt.cards[i] : cards[i];
-      var held = pkHeldAt(st, i);
-      html += '<button type="button" class="pk-slot' + (held ? ' held' : '') + '" data-i="' + i + '" aria-pressed="' + (held ? 'true' : 'false')
-        + '" title="Hold (' + (i + 1) + ')" aria-label="' + esc(cardWord(shown)) + (held ? ', held' : '') + '" style="left:' + (i * 28) + 'px">'
-        + '<span class="pk-card"' + (hidden.indexOf(i) >= 0 ? ' style="visibility:hidden"' : '') + '>' + cardFace(shown, 2) + '</span>'
-        + '<span class="pk-hold">HOLD</span></button>';
-    }
-    box.innerHTML = html;
-  }
-  function pkHeldAt(st, i) { return st && st.phase === 'done' ? !!(st.held && st.held[i]) : !!pk.hold[i]; }
-  function pkSlot(i) { return document.querySelector('#pkHand .pk-slot[data-i="' + i + '"]'); }
-  // Reveals one card: swaps in the real face if the old one was still showing, then drops it in
-  function pkReveal(i, st) {
-    var slot = pkSlot(i); if (!slot) return;
-    var card = slot.querySelector('.pk-card'); if (!card) return;
-    card.classList.remove('out');
-    card.innerHTML = cardFace(st.cards[i], 2);
-    card.style.visibility = '';
-    slot.setAttribute('aria-label', cardWord(st.cards[i]));
-    void card.getBoundingClientRect(); card.classList.add('in');
-  }
-  // What moves and when: a deal walks all five in, a draw drops the discards and brings those back
-  function pkPlan(prevSt, st, op) {
-    if (op === 'deal') return { hidden: [0, 1, 2, 3, 4], out: [], steps: [0, 1, 2, 3, 4].map(function (i, k) { return { i: i, at: k * PK_T.dealGap }; }), last: 4 * PK_T.dealGap + PK_T.cardIn, wait: PK_T.pressGap };
-    var changed = [];
-    for (var i = 0; i < 5; i++) if (st.held && !st.held[i]) changed.push(i);
-    return {
-      hidden: [], out: changed.slice(),
-      steps: changed.map(function (i, k) { return { i: i, at: PK_T.drawLead + k * PK_T.drawGap }; }),
-      last: changed.length ? PK_T.drawLead + (changed.length - 1) * PK_T.drawGap + PK_T.cardIn : 0, wait: PK_T.settle
-    };
-  }
-  function pkLine(st) {
-    var line = el('pkLine'); if (!line) return;
-    if (!st || st.phase === 'bet') { line.innerHTML = hlPot(gameStake(STAKE_UI.pk), true); return; }
-    if (st.phase === 'done') {
-      var hand = st.hand || { name: 'No win', mult: 0 };
-      var top = st.pays && st.pays[0] && hand.name === st.pays[0].name; // the house's best row gets the gold chip
-      var tint = hand.mult > 0 ? (top ? 'bj' : 'win') : 'lose';
-      line.innerHTML = '<span class="bj-chip ' + tint + '">' + esc(hand.name) + ' ' + signed(st.net || 0) + '</span>';
-      return;
-    }
-    line.innerHTML = hlPot(st.bet, false);
-  }
-  function pkDrawLabel(st) {
-    var b = el('pkDraw'); if (!b) return;
-    var n = 0;
-    for (var i = 0; i < 5; i++) if (!pk.hold[i]) n++;
-    b.textContent = n ? 'Draw ' + n : 'Keep all';
-  }
-  // The cards are the only control here that pkToggle turns away on its own, so they have to be
-  // disabled while it would: through the deal's pacing and once the hand is over. A button that
-  // takes a press and answers nothing is a button a keyboard and a screen reader are told to try
-  function pkSlotsLive(on) {
-    var slots = document.querySelectorAll('#pkHand .pk-slot');
-    for (var i = 0; i < slots.length; i++) slots[i].disabled = !on;
-  }
-  function pkLock() {
-    var all = document.querySelectorAll('#pkStakes button, #pkPlay .bj-btn');
-    for (var i = 0; i < all.length; i++) all[i].disabled = true;
-    var d = el('pkDeal'); if (d) d.disabled = true;
-    pkSlotsLive(false);
-    pk.locked = true;
-  }
-  function pkControls(st, locked) {
-    var play = !!(st && st.phase === 'draw'), can = (st && st.can) || {};
-    var bet = el('pkBet'), pl = el('pkPlay');
-    if (bet) bet.hidden = play; if (pl) pl.hidden = !play;
-    var draw = el('pkDraw'); if (draw) draw.disabled = locked || !can.draw;
-    pkSlotsLive(play && !locked);
-    pkDrawLabel(st);
-    pk.locked = !!locked;
-    if (!play) renderStakes(STAKE_UI.pk, locked);
-  }
-  function pkError(msg) {
-    var e = el('pkErr'); if (!e) return;
-    e.hidden = !msg;
-    if (msg) e.innerHTML = WARN_SVG + '<span class="wbmsg">' + esc(msg) + '</span>';
-  }
-  function pkAnnounce(st) {
-    var live = el('pkLive'); if (!live || !st) return;
-    var hand = st.hand || { name: 'No win' };
-    live.textContent = hand.name + ' ' + signed(st.net || 0) + '. Balance ' + fmtInt(prev.cr || 0) + '.';
-  }
-  function pkFocusAfter() {
-    if (curGame() !== 'poker') return;
-    var play = pk.st && pk.st.phase === 'draw';
-    var swapped = pk.phase != null && play !== (pk.phase === 'draw');
-    pk.phase = pk.st ? pk.st.phase : 'bet';
-    var a = document.activeElement, panel = el('panelPoker');
-    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
-    if (!pk.wantFocus && !swapped && !lost) return;
-    pk.wantFocus = false;
-    var target = play ? el('pkDraw') : el('pkDeal');
-    if (target && !target.disabled) target.focus();
-  }
-  // Marking a card to keep is local: nothing goes to the host until the draw
-  function pkToggle(i) {
-    if (!pk.st || pk.st.phase !== 'draw' || pk.locked || pk.busy) return;
-    pk.hold[i] = !pk.hold[i];
-    var slot = pkSlot(i);
-    if (slot) {
-      slot.classList.toggle('held', pk.hold[i]);
-      slot.setAttribute('aria-pressed', pk.hold[i] ? 'true' : 'false');
-      slot.setAttribute('aria-label', cardWord(pk.st.cards[i]) + (pk.hold[i] ? ', held' : ''));
-    }
-    pkDrawLabel(pk.st);
-  }
-  function pkLeave() {
-    pkClearTimers();
-    clearTimeout(pk.to);
-    pk.busy = false; pk.op = null;
-  }
+    // --- cards, sea symbols and multiples: what a drawing is CALLED, and how a figure is printed
+    cardFace: cardFace, cardBack: function () { return CARD_BACK; }, cardWord: cardWord,
+    symWord: symWord, xMult: xMult, xMult100: xMult100,
+    npc: npcStyle,
 
-  function pkSend(op, extra) {
-    if (pk.busy) return;
-    pk.busy = true; pk.op = op; pk.n += 1;
-    if (op !== 'open') pkLock();
-    vscode.postMessage(Object.assign({ type: 'pk', op: op, n: pk.n }, extra || {}));
-    clearTimeout(pk.to);
-    pk.to = setTimeout(function () { pk.busy = false; pk.op = null; pkError('The table didn’t respond. Try again.'); pkControls(pk.st, false); }, PK_T.noReply);
-  }
-  // The cards land first and the verdict follows: a lit pay row or a result chip that moved early
-  // would say what the hand is before the last card is face up
-  function pkReceive(m) {
-    var current = pk.op != null && m.n === pk.n;
-    if (!current && pk.op != null) return;
-    var op = current ? pk.op : null;
-    clearTimeout(pk.to); pkClearTimers();
-    pk.op = null;
-    var prevSt = pk.st;
-    pk.st = m.state || null;
-    setHeld('pk', m);
-    if (op === 'deal' && !m.error) pk.hold = [false, false, false, false, false];
-    if (pk.st && pk.st.phase === 'bet') pk.hold = [false, false, false, false, false];
-    var fresh = current && op !== 'open' && !m.error && !_reduceMotion && pk.st && pk.st.cards.length === 5;
-    var plan = fresh ? pkPlan(prevSt, pk.st, op) : null;
-    try {
-      // A deal drops the last hand's verdict before anything else: the chip and the lit pay row
-      // judged the cards being replaced, and the verdict of these five is 560ms of pacing away.
-      // Blackjack clears its dealer total at the deal for the same reason
-      if (op === 'deal' && !m.error) { pkPays(pk.st); pkLine(pk.st); }
-      pkCards(pk.st, plan, prevSt);
-      pkError(m.error || '');
-      if (plan) {
-        pkLock();
-        plan.out.forEach(function (i) { var c = pkSlot(i) && pkSlot(i).querySelector('.pk-card'); if (c) c.classList.add('out'); });
-        plan.steps.forEach(function (st2) { pk.timers.push(setTimeout(function () { pkReveal(st2.i, pk.st); }, st2.at)); });
-      } else {
-        pkPays(pk.st); pkLine(pk.st); pkControls(pk.st, true);
-      }
-    } finally {
-      _bjHold = true; // the header waits for this reply's settle, like the other tables
-      var at = plan ? plan.last + plan.wait : 0; // the verdict and the controls land together, after the last card
-      pk.timers.push(setTimeout(function () { pkSettle(m, current && op !== 'open'); }, at));
-    }
-  }
-  function pkSettle(m, acted) {
-    pk.busy = false; _bjHold = false;
-    try {
-      if (typeof m.balance === 'number') setCreditsQuiet(m.balance);
-      if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
-      pkPays(pk.st); pkLine(pk.st);
-      if (acted && pk.st && pk.st.phase === 'done') pkAnnounce(pk.st);
-    } finally {
-      pkControls(pk.st, false);
-      pkFocusAfter();
-    }
-  }
+    // --- bets
+    stakeUi: stakeUi, stake: gameStake, renderStakes: renderStakes, wireStakes: wireStakes,
+    setHeld: setHeld, heldElsewhere: HELD_ELSEWHERE,
+    balance: function () { return prev.cr; },
 
-  // --- wiring
-  pkLine(null);
-  wireStakes(STAKE_UI.pk, function () { renderStakes(STAKE_UI.pk, pk.busy); });
-  if (el('pkDeal')) el('pkDeal').addEventListener('click', function () {
-    var bet = Number(this.getAttribute('data-bet')); if (!bet) return;
-    pkSend('deal', { bet: bet });
-  });
-  // the five flags go with the draw, in one message
-  if (el('pkDraw')) el('pkDraw').addEventListener('click', function () {
-    if (this.disabled) return;
-    pkSend('draw', { hold: pk.hold.map(function (h) { return !!h; }) });
-  });
-  if (el('pkHand')) el('pkHand').addEventListener('click', function (e) {
-    var slot = e.target.closest ? e.target.closest('.pk-slot') : null; if (!slot) return;
-    pkToggle(Number(slot.getAttribute('data-i')));
-  });
-  if (el('pkBack')) el('pkBack').addEventListener('click', function () { openGame(null); });
+    // --- notices, and the one toggle every folded paytable shares
+    live: setLive, err: setErr, note: setNote, rowFig: rowFig, why: wireWhy,
 
-  // ===========================================================================
-  // Sword Forge: one sword, a level at a time. The sword outlives the window, so this screen owns
-  // nothing about it: it draws the state the host sends back and paces what just happened.
-  // ===========================================================================
-  // No bet and no round here: a press settles at once, and what is paced is only the verdict.
-  // The one outcome with a story is the break, and its figures are counted from the END OF THE BEAT
-  // (the shards fly, the anvil stands empty, and only then does the shop's replacement arrive), so
-  // the press itself is beat + 1000ms long. Everything else is verdict + unlock.
-  // arriveIn is the length of .fg-sword.arrive in styles.js
-  var FG_T = {
-    beat: 270,            // three hammer taps open every attempt
-    unlock: 150,          // the buttons come back this long after the verdict lands
-    brGone: 300, brCleared: 460, brArrive: 760, arriveIn: 200, brFlash: 160,  // a break, from the end of the beat
-    // reduced motion drops the beat and the shards but keeps the empty anvil: the size of the
-    // event is then left in time alone
-    rmEmpty: 400,
-    sellArm: 3000,        // how long the sale's second tap stays available
-    noReply: 4000
+    // --- the host
+    post: postGame,
+    hold: function () { _hold = true; },
+    settle: settleHeader,
+
+    // --- pacing and keys
+    timers: timers,
+    reduceMotion: function () { return _reduceMotion; },
+    press: pressPanel,
+
+    // --- the open game, and the panel's only door to the webview's own memory (a game with a
+    // remembered choice of its own needs this, the way the stakes remember theirs)
+    current: curGame,
+    state: function () { return vscode.getState() || {}; },
+    setState: function (s) { vscode.setState(s); }
   };
-  // The buttons come back a beat after the replacement is fully there, so this is built on the
-  // fade rather than written out: retiming .fg-sword.arrive alone would hand a press back mid-arrival
-  FG_T.brUnlock = FG_T.brArrive + FG_T.arriveIn + 40;
-  var fg = { st: null, busy: false, op: null, n: 0, timers: [], to: null, arm: null, armed: false, wantFocus: false, locked: false, chip: null, shown: null };
-  function fgClearTimers() { fg.timers.forEach(clearTimeout); fg.timers = []; }
-
-  // --- the sword: one frame; level drives length, colour tier, guard, gem and heat glow
-  var FG_TIER = [
-    { core: '#8c94a0', edge: '#c3c9d2', shade: '#5f6670', gem: null },      // Lv 0-2 iron
-    { core: '#c6d0dd', edge: '#f2f7ff', shade: '#8f9aa8', gem: null },      // Lv 3-5 steel
-    { core: '#e8895a', edge: '#ffd166', shade: '#c25a34', gem: '#e8b23a' }, // Lv 6-8 hot
-    { core: '#ffe9b0', edge: '#ffffff', shade: '#e8b23a', gem: '#ffd166' }  // Lv 9-10 white hot
-  ];
-  // dx, dy, rot: where the eight pieces of a broken sword go
-  var FG_SHARDS = [[-18, -10, -40], [-10, -16, -18], [-3, -20, 12], [6, -16, 28], [14, -9, 46], [-14, 2, -62], [12, 4, 58], [0, -4, 0]];
-  function fgTier(level) { return FG_TIER[level <= 2 ? 0 : level <= 5 ? 1 : level <= 8 ? 2 : 3]; }
-  function fgCells(cells, color, op) {
-    var d = '';
-    for (var i = 0; i < cells.length; i++) { var c = cells[i]; d += 'M' + c[0] + ' ' + c[1] + 'h' + c[2] + 'v' + c[3] + 'h-' + c[2] + 'z'; }
-    return '<path fill="' + color + '"' + (op ? ' opacity="' + op + '"' : '') + ' d="' + d + '"/>';
-  }
-  function swordSvg(level, riskFrom, cell) {
-    var t = fgTier(level);
-    var bb = 26, bt = bb - (12 + level), o = '';
-    function ring(p, op) {   // hugs the blade silhouette. A plain rectangle reads as a picture frame
-      o += fgCells([[11 - p, bt - p, 2 + 2 * p, p], [10 - p, bt, p, 1], [13, bt, p, 1],
-        [9 - p, bt + 1, p, 1], [14, bt + 1, p, 1], [9 - p, bt + 2, p, bb - bt - 2], [15, bt + 2, p, bb - bt - 2]], '#e8895a', op);
-    }
-    if (level >= riskFrom) { ring(1, .5); if (level >= 9) ring(2, .28); }
-    if (level >= 10) {
-      o += fgCells([[11, bt - 5, 2, 2], [10, bt - 4, 1, 1], [13, bt - 4, 1, 1]], '#ffd166');
-      o += fgCells([[11, bt - 7, 2, 2], [10, bt - 6, 1, 1], [13, bt - 6, 1, 1]], '#e8895a');
-    }
-    o += fgCells([[9, bt + 2, 6, bb - bt - 2], [10, bt + 1, 4, 1], [11, bt, 2, 1]], t.core);   // blade, tapered point
-    o += fgCells([[9, bt + 2, 1, bb - bt - 2], [10, bt + 1, 1, 1], [11, bt, 1, 1]], t.edge);   // lit edge
-    o += fgCells([[13, bt + 2, 2, bb - bt - 2], [13, bt + 1, 1, 1]], t.shade);
-    var gw = level >= 6 ? 14 : 12, gx = 12 - gw / 2;
-    o += fgCells([[gx, 26, gw, 2], [gx + 1, 28, 1, 1], [gx + gw - 2, 28, 1, 1]], '#6b7078');
-    o += fgCells([[gx, 26, gw, 1]], '#9aa0a8');
-    o += fgCells([[11, 28, 2, 8]], '#5a3b28');
-    o += fgCells([[11, 29, 2, 1], [11, 31, 2, 1], [11, 33, 2, 1]], '#7a523a');
-    o += fgCells([[10, 36, 4, 3], [9, 37, 1, 1], [14, 37, 1, 1]], '#6b7078');
-    if (t.gem) o += fgCells([[11, 37, 2, 1]], t.gem);
-    // 4 rows of headroom: a +10 blade reaches y=4 and its flames are drawn above the grid's own top
-    return '<svg viewBox="0 -4 24 44" width="' + (24 * cell) + '" height="' + (44 * cell) + '" shape-rendering="crispEdges" aria-hidden="true">' + o + '</svg>';
-  }
-
-  // --- drawing
-  // The sword and the white flash that belongs to it. cls carries the one-shot animation, so the
-  // redraw is also what clears the beat the press started
-  function fgDrawSword(level, riskFrom, cls) {
-    var box = el('fgSword'); if (!box) return;
-    box.className = 'fg-sword';
-    box.innerHTML = swordSvg(level, riskFrom == null ? Infinity : riskFrom, 2) + '<span class="fg-flash"></span>';
-    if (cls) { void box.offsetWidth; box.classList.add(cls); }
-    box.setAttribute('role', 'img');
-    box.setAttribute('aria-label', 'Sword +' + level);
-  }
-  function fgEmptyAnvil() {
-    var box = el('fgSword'); if (!box) return;
-    box.className = 'fg-sword';
-    box.innerHTML = '';
-    box.setAttribute('aria-label', 'No sword');
-  }
-  function fgFlash() { var f = document.querySelector('#fgSword .fg-flash'); if (f) f.classList.add('on'); }
-  function fgPct(v, den) { return Math.round(v * 100 / (den || 100)); }
-  // The bar is the odds themselves, in the table's own order. A slice that cannot happen is not
-  // drawn at all, so below the level the glow starts there is simply no red on it
-  var FG_SLICE = [
-    { k: 'up', c: '#7ee6a4', w: 'success' },
-    { k: 'keep', c: 'var(--forge-dim)', o: '.45', w: 'no change' },
-    { k: 'down', c: '#f7c46a', w: 'down a level' },
-    { k: 'break', c: '#e5484d', w: 'destroyed' }
-  ];
-  function fgBar(st) {
-    var box = el('fgBar'); if (!box) return;
-    var odds = st && st.odds, den = (st && st.den) || 100, html = '', words = [];
-    if (odds) {
-      FG_SLICE.forEach(function (s) {
-        var v = odds[s.k] || 0; if (!v) return;
-        html += '<i data-k="' + s.k + '" style="width:' + (v * 100 / den) + '%;background:' + s.c + (s.o ? ';opacity:' + s.o : '') + '"></i>';
-        words.push(fgPct(v, den) + '% ' + s.w);
-      });
-    }
-    box.innerHTML = html;
-    box.title = words.join(' · ');
-  }
-  // Only the two that decide a press are spelled out: what it pays and what it costs
-  function fgOdds(st) {
-    var odds = st && st.odds, den = (st && st.den) || 100;
-    var su = el('fgSucc'), rk = el('fgRisk');
-    if (su) su.textContent = odds ? fgPct(odds.up, den) + '% success' : '';
-    if (rk) rk.textContent = odds && odds.break ? fgPct(odds.break, den) + '% destroy' : '';
-  }
-  function fgLv(st) {
-    var lv = el('fgLv'), mx = el('fgMax');
-    if (lv) lv.textContent = String(st ? st.level : 0);
-    if (mx) mx.textContent = '/ ' + (st ? st.max : 10);
-  }
-  // The best is worth seeing every press; the attempts behind it are not, so they go in the title
-  function fgSide(st) {
-    var s = el('fgSide'); if (!s || !st) return;
-    s.textContent = 'Best ' + st.best;
-    s.title = st.best + ' best · ' + fmtInt(st.tries) + ' attempts';
-  }
-  function fgCoin(v) { return '<span class="fg-cost">' + COIN_FULL + '<b>' + fmtInt(v) + '</b></span>'; }
-  function fgButtons(st, locked) {
-    var can = (st && st.can) || {}, cost = st ? st.cost : null, price = st ? st.sell : 0;
-    var enh = el('fgEnhance'), sl = el('fgSell');
-    fg.shown = st ? st.level : null;   // the level these two figures belong to (see fgSend)
-    if (enh) {
-      enh.hidden = !st;        // before the first reply there is no sword and no fee to name
-      enh.innerHTML = 'Enhance' + (cost == null ? '' : ' ' + fgCoin(cost)); // null at the top: nothing left to price
-      enh.disabled = !!locked || !can.enhance;
-    }
-    if (sl) {
-      sl.hidden = !can.sell;    // a +0 sword is the one the shop gives away, so there is no row
-      sl.innerHTML = fg.armed ? 'Tap again to sell' : 'Sell' + (price ? ' ' + fgCoin(price) : '');
-      sl.disabled = !!locked || !can.sell;
-    }
-    fgNote(st);
-  }
-  // Being broke and having the credits tied up at another table are different problems, and the
-  // forge can hit either: its fee is measured against what the card games have left riding
-  function fgNote(st) {
-    var note = el('fgNote'); if (!note) return;
-    var cost = st ? st.cost : null, can = (st && st.can) || {};
-    var short = cost != null && !can.enhance;   // the only reason an attempt below the top is refused
-    note.hidden = !short;
-    if (short) {
-      note.textContent = (prev.cr != null && prev.cr >= cost)
-        ? HELD_ELSEWHERE + '.'
-        : 'You need ' + fmtInt(cost) + ' credits to enhance.';
-    }
-  }
-  function fgFace(st) { fgLv(st); fgBar(st); fgOdds(st); fgSide(st); fgButtons(st, fg.locked); }
-  function fgPaint(st) {
-    var anvil = el('fgAnvil'); if (anvil) anvil.classList.remove('broke');
-    fgDrawSword(st ? st.level : 0, st ? st.riskFrom : null);
-    fgFace(st);
-  }
-  // The chip is the move just made, so it is kept here rather than read back out of the state: an
-  // open carries the last move too, and re-entering the forge is not that move happening again
-  function fgChip(st) {
-    var last = st && st.last; if (!last) { fg.chip = null; return; }
-    var o = last.outcome;
-    fg.chip = {
-      text: o === 'up' ? 'Success · Lv ' + last.to
-        : o === 'keep' ? 'No change'
-          : o === 'down' ? 'Down to Lv ' + last.to
-            : o === 'break' ? 'Destroyed'
-              : 'Sold ' + signed(st.net || last.paid),
-      tint: o === 'up' || o === 'sold' ? 'win' : (o === 'down' || o === 'break') ? 'lose' : ''
-    };
-  }
-  function fgLine() {
-    var line = el('fgLine'); if (!line) return;
-    if (!fg.chip) { line.innerHTML = ''; return; }
-    line.innerHTML = '<span class="bj-chip' + (fg.chip.tint ? ' ' + fg.chip.tint : '') + '">' + esc(fg.chip.text) + '</span>';
-  }
-  function fgError(msg) {
-    var e = el('fgErr'); if (!e) return;
-    e.hidden = !msg;
-    if (msg) e.innerHTML = WARN_SVG + '<span class="wbmsg">' + esc(msg) + '</span>';
-  }
-  function fgAnnounce(st) {
-    var live = el('fgLive'); if (!live || !st) return;
-    var last = st.last; if (!last) return;
-    var o = last.outcome;
-    var what = o === 'break' ? 'Destroyed. A new +0 sword'
-      : o === 'sold' ? 'Sold for ' + fmtInt(last.paid) + '. A new +0 sword'
-        : (o === 'up' ? 'Success' : o === 'keep' ? 'No change' : 'Down a level') + '. Sword +' + last.to;
-    live.textContent = what + '. ' + signed(st.net || 0) + '. Balance ' + fmtInt(prev.cr || 0) + '.';
-  }
-
-  // --- the beats of one attempt
-  function fgBeat() {
-    var box = el('fgSword'); if (!box) return;
-    box.className = 'fg-sword';           // and the last verdict's one-shot class goes with it
-    var f = box.querySelector('.fg-flash'); if (f) f.className = 'fg-flash';   // as does its flash
-    void box.offsetWidth; box.classList.add('beat');
-  }
-  // The verdict for the three outcomes that leave a sword on the anvil
-  function fgLand(out, st) {
-    fgDrawSword(st.level, st.riskFrom, _reduceMotion ? '' : (out === 'up' ? 'pop' : out === 'down' ? 'drop' : ''));
-    if (out === 'up' && !_reduceMotion) fgFlash();
-    fgFace(st);
-    fgLine();
-  }
-  // The break: the anvil flinches, the pieces fly, and the sword itself is still there to fade out
-  function fgShatter(from) {
-    var box = el('fgSword');
-    fgLine();
-    if (_reduceMotion) { fgEmptyAnvil(); return; }
-    if (box) {
-      box.classList.remove('beat');
-      var t = fgTier(from), html = '';
-      FG_SHARDS.forEach(function (s, i) {
-        html += '<span class="fg-shard" style="background:' + (i % 2 ? t.edge : t.core)
-          + ';--dx:' + s[0] + 'px;--dy:' + s[1] + 'px;--rot:' + s[2] + 'deg"></span>';
-      });
-      box.innerHTML = box.innerHTML + html;
-    }
-    var anvil = el('fgAnvil');
-    if (anvil) {
-      anvil.classList.remove('broke'); void anvil.offsetWidth; anvil.classList.add('broke');
-      fg.timers.push(setTimeout(function () { anvil.classList.remove('broke'); }, FG_T.brFlash));
-    }
-  }
-  function fgSwordGone() { var box = el('fgSword'); if (box) box.classList.add('gone'); }
-
-  // What a reply makes happen, and when. An open, an error and a late reply land at once; an
-  // attempt opens with the beat; a break then takes the long way round
-  function fgSteps(m, op) {
-    var st = fg.st, last = st && st.last;
-    var moved = !m.error && last && op && op !== 'open' && last.op === op;
-    if (!moved) return { steps: [{ at: 0, fn: function () { fgPaint(st); } }], unlock: 0 };
-    fgChip(st);
-    if (op === 'sell') return { steps: [{ at: 0, fn: function () { fgPaint(st); fgLine(); } }], unlock: FG_T.unlock };
-    var beat = _reduceMotion ? 0 : FG_T.beat, out = last.outcome, from = last.from;
-    var steps = [];
-    if (!_reduceMotion) steps.push({ at: 0, fn: fgBeat });
-    if (out !== 'break') return { steps: steps.concat([{ at: beat, fn: function () { fgLand(out, st); } }]), unlock: beat + FG_T.unlock };
-    var arrive = function () { fgDrawSword(st.level, st.riskFrom, _reduceMotion ? '' : 'arrive'); fgFace(st); };
-    steps.push({ at: beat, fn: function () { fgShatter(from); } });
-    if (_reduceMotion) return { steps: steps.concat([{ at: FG_T.rmEmpty, fn: arrive }]), unlock: FG_T.rmEmpty + FG_T.unlock };
-    return {
-      steps: steps.concat([
-        { at: beat + FG_T.brGone, fn: fgSwordGone },
-        { at: beat + FG_T.brCleared, fn: fgEmptyAnvil },
-        { at: beat + FG_T.brArrive, fn: arrive }
-      ]),
-      unlock: beat + FG_T.brUnlock
-    };
-  }
-
-  // --- the two buttons
-  function fgLock(locked) { fg.locked = !!locked; fgButtons(fg.st, fg.locked); }
-  // Selling asks twice: the sword is the one thing the player owns here, and a stray tap on a +9
-  // would be the whole climb. An attempt does not ask twice, because an attempt is the game
-  function fgArmSell() {
-    fg.armed = true;
-    fgButtons(fg.st, fg.locked);
-    clearTimeout(fg.arm);
-    fg.arm = setTimeout(function () { fgDisarmSell(); }, FG_T.sellArm);
-  }
-  function fgDisarmSell(quiet) {
-    clearTimeout(fg.arm);
-    if (!fg.armed) return;
-    fg.armed = false;
-    if (!quiet) fgButtons(fg.st, fg.locked);
-  }
-  function fgLeave() {
-    fgClearTimers();
-    clearTimeout(fg.to);
-    fgDisarmSell(true);
-    fg.busy = false; fg.op = null;
-  }
-  function fgFocusAfter() {
-    if (curGame() !== 'forge') return;
-    var a = document.activeElement, panel = el('panelForge');
-    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
-    if (!fg.wantFocus && !lost) return;
-    fg.wantFocus = false;
-    var enh = el('fgEnhance'), sl = el('fgSell');
-    var target = enh && !enh.disabled ? enh : (sl && !sl.disabled && !sl.hidden ? sl : null);
-    if (target) target.focus();
-  }
-
-  // --- messages
-  function fgSend(op) {
-    if (fg.busy) return;
-    fg.busy = true; fg.op = op; fg.n += 1;
-    if (op !== 'open') fgLock(true);
-    var msg = { type: 'fg', op: op, n: fg.n };
-    if (op !== 'open' && typeof fg.shown === 'number') msg.level = fg.shown;
-    vscode.postMessage(msg);
-    clearTimeout(fg.to);
-    fg.to = setTimeout(function () {
-      fg.busy = false; fg.op = null;
-      fgError('The forge didn’t respond. Try again.');
-      fgLock(false);
-    }, FG_T.noReply);
-  }
-  function fgReceive(m) {
-    var current = fg.op != null && m.n === fg.n;
-    if (!current && fg.op != null) return;   // an older reply while a newer request waits
-    var op = current ? fg.op : null;
-    clearTimeout(fg.to); fgClearTimers();
-    fg.op = null;
-    fgDisarmSell(true);                      // a reply closes the sell's second-tap window
-    fg.st = m.state || null;
-    setHeld('fg', m);
-    fg.chip = null;
-    fgLine();                                // the last verdict goes now; this one lands with its step
-    var plan = null;
-    try {
-      plan = fgSteps(m, op);                 // which sets the chip again when this reply is a move
-      fgError(m.error || '');
-      fgLock(true);
-    } finally {
-      // the header waits for this reply's settle, like the other tables: the host's data push is
-      // right behind it, and a fee paid or a sword sold is not a credit earned
-      _bjHold = true;
-      var sc = plan || { steps: [{ at: 0, fn: function () { fgPaint(fg.st); } }], unlock: 0 };
-      sc.steps.forEach(function (s) { fg.timers.push(setTimeout(s.fn, s.at)); });
-      fg.timers.push(setTimeout(function () { fgSettle(m, current && op !== 'open' && !m.error); }, sc.unlock));
-    }
-  }
-  function fgSettle(m, fresh) {
-    fg.busy = false; _bjHold = false;
-    try {
-      if (typeof m.balance === 'number') setCreditsQuiet(m.balance);
-      if (_ccHeld) { var h = _ccHeld; _ccHeld = null; renderCredits(h); }
-      fgLine();
-      if (fresh) fgAnnounce(fg.st);
-    } finally {
-      fgLock(false);
-      fgFocusAfter();
-    }
-  }
-
-  function fgBlank() {
-    fgEmptyAnvil();
-    var lv = el('fgLv'), mx = el('fgMax');
-    if (lv) lv.textContent = '';
-    if (mx) mx.textContent = '';
-    fgBar(null); fgOdds(null); fgLine();
-  }
-
-  // --- wiring
-  fgBlank();
-  fgLock(true);
-  if (el('fgEnhance')) el('fgEnhance').addEventListener('click', function () {
-    if (this.disabled) return;
-    fgDisarmSell();
-    fgSend('enhance');
-  });
-  if (el('fgSell')) el('fgSell').addEventListener('click', function () {
-    if (this.disabled || this.hidden) return;
-    if (!fg.armed) { fgArmSell(); return; }
-    fgDisarmSell(true);
-    fgSend('sell');
-  });
-  if (el('fgBack')) el('fgBack').addEventListener('click', function () { openGame(null); });
 
   // live tick every 1s: active time + countdowns + "Updated Ns ago"
   function tick() {
@@ -1899,10 +1149,17 @@
   window.addEventListener('message', function (e) {
     var m = e.data; if (!m) return;
     if (m.type === 'data') render(m.data);
-    else if (m.type === 'bj') bjReceive(m);
-    else if (m.type === 'hl') hlReceive(m);
-    else if (m.type === 'pk') pkReceive(m);
-    else if (m.type === 'fg') fgReceive(m);
+    // A reply for a game whose screen was never opened is dropped: that screen asks for the truth
+    // when it opens, so there is nothing to keep in sync meanwhile.
+    // Its list row is the exception. The row is in the page from the first paint, and a figure
+    // that only appears once you have opened the panel is a figure that cannot be the reason you
+    // open it. So fig() is called whether the panel was ever built or not, and it is guarded
+    // because it draws on the list that every other screen is reached through
+    else if (PANEL_BY_KEY[m.type]) {
+      var p = PANEL_BY_KEY[m.type];
+      if (p.fig) { try { p.fig(m); } catch (e2) { /* one row's figure, not the whole list */ } }
+      if (p.node) p.receive(m);
+    }
     else if (m.type === 'openSettings') { var s = el('settingsSheet'); if (s) s.hidden = !s.hidden; }
   });
 
@@ -1929,8 +1186,8 @@
     updateToggleChevron();
   });
 
-  // tab switcher (Usage default; last choice remembered within the view)
-  switchTab((st0 && st0.tab) || 'usage');
+  // tab switcher (Usage default; last choice remembered within the view). The stored view is
+  // applied in boot() at the end of this file, once the games' panel scripts have registered
   // room fold: the room is the panel's biggest block — let it collapse to just the header (persisted)
   function applyRoomFold(c) {
     var pa = el('panelAgents'); if (pa) pa.classList.toggle('room-collapsed', !!c);
@@ -1956,7 +1213,7 @@
   if (el('bjBack')) el('bjBack').addEventListener('click', function () { openGame(null); });
 
   // room theme: chosen via the map dropdown (persisted); light-theme variant used when it exists
-  function currentRoom() { var rs = CUC.rooms || {}; return rs[(vscode.getState() || {}).map || 'cave'] || rs.cave; }
+  function currentRoom() { var rs = ASSETS.rooms || {}; return rs[(vscode.getState() || {}).map || 'cave'] || rs.cave; }
   function applyRoom() {
     var r = currentRoom(); if (!r) return;
     var img = el('wsBg'); if (!img) return;
@@ -1970,12 +1227,12 @@
   function currentMap() { return (vscode.getState() || {}).map || 'cave'; }
   function syncMapName() {
     var n = el('wsMapName'); if (!n) return;
-    var r = (CUC.rooms || {})[currentMap()];
+    var r = (ASSETS.rooms || {})[currentMap()];
     n.textContent = (r && r.name) || 'Room';
   }
   function buildRoomGrid() {
     var g = el('roomGrid'); if (!g) return;
-    var rooms = CUC.rooms || {}, cur = currentMap(), html = '';
+    var rooms = ASSETS.rooms || {}, cur = currentMap(), html = '';
     for (var k in rooms) {
       var r = rooms[k];
       html += '<button class="room-opt' + (k === cur ? ' on' : '') + '" data-room="' + k + '">'
@@ -2078,14 +1335,14 @@
   function buildAppearancePicker(name) {
     var wrap = el('amAppear'); if (!wrap) return;
     var cur = SHEET_MAP[name], byCat = {};
-    for (var i = 0; i < NPC_KEYS.length; i++) { var k = NPC_KEYS[i], c = (CUC.npcs[k].cat || 'human'); (byCat[c] = byCat[c] || []).push(k); }
+    for (var i = 0; i < NPC_KEYS.length; i++) { var k = NPC_KEYS[i], c = (ASSETS.npcs[k].cat || 'human'); (byCat[c] = byCat[c] || []).push(k); }
     var present = CAT_ORDER.filter(function (c) { return byCat[c] && byCat[c].length; });
     if (!present.length) { wrap.innerHTML = ''; return; }
     var curCat = null; for (var cc = 0; cc < present.length; cc++) { if (byCat[present[cc]].indexOf(cur) >= 0) curCat = present[cc]; }
     if (present.indexOf(amCat) < 0) amCat = curCat || present[0];
     var tabs = present.map(function (c) { return '<button class="am-tab' + (c === amCat ? ' on' : '') + '" data-cat="' + c + '">' + CAT_LABEL[c] + ' ' + byCat[c].length + '</button>'; }).join('');
     var grid = byCat[amCat].map(function (key) {
-      var meta = CUC.npcs[key];
+      var meta = ASSETS.npcs[key];
       return '<div class="am-npc' + (key === cur ? ' on' : '') + '" data-npc="' + key + '"><div class="cr-sprite" style="' + cropStyle(meta, meta.idleRow || 0, meta.idleCol || 0, PICKER_T) + '"></div></div>';
     }).join('');
     wrap.innerHTML = '<div class="am-tabs">' + tabs + '</div><div class="am-row">' + grid + '</div>';
@@ -2172,7 +1429,9 @@
     var colW = (contentW - 2 * 3) / 4; // 4 cols, ~2px gaps
     var scale = Math.max(0.5, Math.min(1, colW / 52)); // 52px = comfortable full-size card
     document.body.style.setProperty('--cr-scale', scale.toFixed(3));
-    if (typeof bj !== 'undefined' && bj.st && curGame() === 'blackjack' && !_bjHold) { var np = bjPending(null); bjDealer(bj.st, np); bjHands(bj.st, np); bjLines(bj.st, true); }
+    // a game whose layout depends on the width redraws itself, but never mid-pacing
+    var live = PANELS[curGame()];
+    if (live && live.node && live.resize && !_hold) live.resize();
   }
   var _rzt;
   if (window.ResizeObserver) { new ResizeObserver(function () { clearTimeout(_rzt); _rzt = setTimeout(applyResponsive, 160); }).observe(document.body); }
@@ -2198,5 +1457,13 @@
   // keep "updated Xm ago" ticking between data pushes
   setInterval(function () { if (lastData && el('upd')) { var ua = lastData.usageAt || 0; if (ua) el('upd').textContent = agoText(ua); } }, 30000);
 
-  vscode.postMessage({ type: 'ready' });
+  // The games' panel scripts are loaded after this file, so the stored view can only be applied
+  // once they have all registered: a reload straight into a game has to find that game's panel.
+  // Everything above is wiring that does not care, and this is the one thing that does
+  function boot() {
+    switchTab((st0 && st0.tab) || 'usage');
+    vscode.postMessage({ type: 'ready' });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();

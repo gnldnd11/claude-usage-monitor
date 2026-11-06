@@ -67,22 +67,24 @@ Because a background subagent has no knowable progress, running agents show an i
 
 The tokens you spend earn credits: one per 100K, weighted the way the API prices them, so output counts five times an input token and a cache read a tenth. On first run your past sessions are counted once in the background, so you start with what you have already earned. The balance sits under the title, next to a coin that fills toward the next credit.
 
-Click it for the games list, where the crab runs four games.
+Click it for the games list, where the crab runs fourteen games in four families.
 
-**Blackjack**: six decks, the dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once.
+**Card tables.** **Blackjack**: six decks, the dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once. **Red Dog**: two cards are dealt apart and the bet is whether the third falls between them. **High-Low**: one card lies face up and you call whether the next one beats it, with each side priced off the cards actually left in the shoe, so the odds move as the run goes on. **Draw Poker**: jacks or better, 8/5, one draw, and the row you were paid for lights up.
 
-**High-Low**: one card lies face up and you call whether the next one beats it. Aces are high, a tie carries the pot on to the new card, and you can cash out after any call. Each side is priced off the cards actually left in the shoe, so the odds move as the run goes on.
+**Machines.** **Slots**: three rings of 24, rolled to the position the extension picked, so the reel you watch is the reel that paid. **Plinko**: twelve rows, thirteen cups, three risk tables. **Wheel**: 28 segments, three wheels. **Scratch Card**: a 3x3 card you rub one square at a time, and nothing is claimed until all nine are open.
 
-**Draw Poker**: jacks or better. Five cards come up, you mark the ones to keep with a click or the 1 to 5 keys, and one draw replaces the rest; keeping all five is allowed. The nine-row pay table sits on the felt above the cards and the row you were paid for lights up. It is an 8/5 table, so the royal pays 800 and every multiplier is a whole number.
+**Boards.** **Mines**: a 5x5 field with 3, 5 or 10 mines, and you can cash out after any dig. **Tower**: ten floors, one or two trap doors a floor, and when you fall every floor opens, including the ones you never reached. **Keno**: pick 2 to 10 of 40 and ten are drawn. **Crash**: set the multiplier before launch and find out where it burst.
 
-**Sword Forge**: the crab is a blacksmith here. Pay a fee and the sword goes up a level, or stays, or drops back, and from the level its blade starts to glow it can break and take the whole thing with it. The price it fetches is on the Sell button before you press anything, so stopping is always a choice you can price. Ten levels, and the sword keeps its level between sessions.
+**What you keep.** **Sword Forge**: the crab is a blacksmith here. Pay a fee and the sword goes up a level, or stays, or drops back, and from the level its blade starts to glow it can break and take the whole thing with it. A failed strike heats the forge and the next attempt is better for it, but the danger itself never moves. The price the sword fetches is on the Sell button before you press anything, so stopping is always a choice you can price. **Coin Market**: four coins on a three-hour candle chart. Buy with credits, sell whenever you like, 0.5% on the round trip, and the position is still there when you come back. The fee is small because the holding is long: a coin moves about 1% to 2.5% in a day, so coming back tomorrow is worth more than closing costs, while a minute of it is never worth the trip.
 
-The extension deals and judges, so a hand survives switching tabs; reloading the window voids it. The sword is the one thing that is kept. Credits are earned by using Claude Code and nothing else. They cannot be bought, and they cash out to nothing.
+Nothing you do moves a coin's price. The chart is the same in every window and on every install, it is drawn from the minute it belongs to, and there is no way to buy into a rise you have already seen. Every game with a pay table returns between 96% and 97%, and no single rung, cup, segment or stopping rule beats another; each table was solved by counting every outcome rather than sampled. The market has no table and no round, so there is nothing to return a percentage of: what is proved about it instead is that no rule for deciding when to sell is worth more than any other, and the round trip costs 0.5%.
+
+The extension deals and judges, so a hand survives switching tabs; reloading the window voids it. The sword and your coin positions are what is kept. Credits are earned by using Claude Code and nothing else. They cannot be bought, and they cash out to nothing.
 
 ## Features
 
 - **Agents.** Your subagents as distinct pixel characters that walk into a room when invoked, with levels, lifetime stats and per-agent nickname, role, character and model. Read-only, hook-free.
-- **Credits and games.** Your token spend becomes credits, and the crab runs blackjack, high-low, draw poker and a sword forge for them. Hide the whole thing from the settings gear if you would rather not have it.
+- **Credits and games.** Your token spend becomes credits, and the crab runs fourteen games for them: four card tables, four machines, four boards, a sword forge and a coin market. Hide the whole thing from the settings gear if you would rather not have it.
 - **Session (5h) / Weekly (7d) / Fable (7d).** The same live numbers as Claude Code's built-in usage dialog.
 - **Context window.** How full the current conversation is, scoped to the workspace you are actually in, with the window tier detected per session.
 - **Today's tokens and requests.** Summed across your local Claude Code sessions, with a `+N k` delta after each response. Resets at local midnight.

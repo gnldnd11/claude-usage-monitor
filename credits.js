@@ -5,6 +5,10 @@
 const fs = require('fs');
 const path = require('path');
 const U = require('./usage');
+// The coin market owns its own record's rules (clean, newer, merge, same, netOf) the way this file
+// owns the sword's, and they are required in rather than copied: a record whose merge is written
+// twice is a record with two answers. market.js requires nothing at all, so this cannot be a cycle
+const market = require('./market');
 
 // Credits are weighted like API list prices: input 1, output 5, cache write 1.25, cache read 0.1.
 // Every current model prices output at 5x input; a cache write is 1.25x at the 5-minute TTL (the
@@ -32,7 +36,8 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // --- ledger --------------------------------------------------------------------
 // Shape: { days: { 'YYYY-MM-DD': {input, output, cache_creation, cache_read} }, backfilled, sweptAt,
 //          bank: { [replicaId]: { won, lost, hands } },
-//          forge: { by, level, moves, tries, spent, best, earned } }
+//          forge: { by, level, moves, tries, spent, heat, best, broke, earned },
+//          market: { by, pos: { CODE: {amount, entryTicks, at} }, moves, trades, staked, earned, best, at } }
 // Raw tokens per day are stored, not credits, so a changed rate or weighting also re-prices the past.
 // `bank` holds game results. They can go down as well as up, which a per-day max merge cannot
 // express, so each window (replica) keeps its own won/lost/hands counters that only grow and only
@@ -57,11 +62,28 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Other future keys go next to these; the merge below keeps unknown keys.
 const REPLICA_RE = /^[0-9a-f]{16}$/;
 const BANK_FIELDS = ['won', 'lost', 'hands'];
-const FORGE_FIELDS = ['level', 'moves', 'tries', 'spent', 'best', 'earned'];
+const FORGE_FIELDS = ['level', 'moves', 'tries', 'spent', 'heat', 'best', 'broke', 'earned'];
 // The lifetime figures, maxed rather than adopted with the winning record. `earned` is deliberately
 // NOT one of them: maxing it is the bug this field was moved out of the bank to fix, because it
-// would keep a dropped sale's money next to the sword that sale did not take
-const FORGE_MAX_FIELDS = ['tries', 'best'];
+// would keep a dropped sale's money next to the sword that sale did not take.
+// `heat` and `spent` are not either, and for the same shape of reason: they belong to the sword in
+// hand. A maxed `heat` would hand the kept sword the dropped sword's gauge, which is odds nobody
+// paid for, and a maxed `spent` would put a dead sword's bill on a live one.
+// `broke` is maxed, not added: two windows that break the same sword broke ONE sword
+const FORGE_MAX_FIELDS = ['tries', 'best', 'broke'];
+
+// `market` holds the coin wallet (market.js), and it is here for the same reason the sword is: a
+// position is the player's property, not a round, so it outlives the window and several windows
+// share one. Its merge is the sword's register merge (more `moves` wins whole, a tie to the larger
+// writer id) with ONE difference, which is that nothing is maxed across the two copies: there is no
+// lifetime figure in a wallet that a dropped move could walk backwards, and maxing `best` would
+// print the price of a sale that was dropped and never paid.
+// BOTH halves of a trade live in the record (`staked` and `earned`), so the balance is
+// earned - staked (market.netOf) and a dropped move costs and pays nothing. That is stricter than
+// the sword, where the fee rides the bank's grow-only counters instead: a dropped forge attempt
+// costs its small fixed fee and should, while a dropped buy would charge a stake that can be the
+// whole purse and hand back nothing.
+// The rules are market.js's and are called, not copied: see the require at the top of this file
 
 function cleanTokens(t) {
   const out = U.zeroTokens();
@@ -148,7 +170,10 @@ function normalizeLedger(raw) {
   const days = {};
   for (const k in srcDays) if (DAY_RE.test(k)) days[k] = cleanTokens(srcDays[k]);
   const sweptAt = (typeof src.sweptAt === 'number' && isFinite(src.sweptAt)) ? src.sweptAt : 0;
-  return Object.assign({}, src, { days, backfilled: src.backfilled === true, sweptAt, bank: cleanBank(src.bank), forge: cleanForge(src.forge) });
+  return Object.assign({}, src, {
+    days, backfilled: src.backfilled === true, sweptAt,
+    bank: cleanBank(src.bank), forge: cleanForge(src.forge), market: market.clean(src.market)
+  });
 }
 
 // Field-wise max of `inc` over `cur` (both clean). Returns the merged copy, or null if nothing grew
@@ -185,6 +210,12 @@ function mergeLedger(stored, patch) {
     const next = mergeForge(out.forge, pForge);
     if (!sameForge(next, out.forge)) { out.forge = next; changed = true; }
   }
+  // the same three lines for the wallet, with the market's own rules doing the work
+  const pMarket = market.clean(patch && patch.market);
+  if (pMarket) {
+    const next = market.merge(out.market, pMarket);
+    if (!market.same(next, out.market)) { out.market = next; changed = true; }
+  }
   if (patch && patch.backfilled === true && !out.backfilled) { out.backfilled = true; changed = true; }
   if (patch && typeof patch.sweptAt === 'number' && patch.sweptAt > out.sweptAt) { out.sweptAt = patch.sweptAt; changed = true; }
   return { ledger: out, changed };
@@ -213,7 +244,19 @@ function forgeEarned(forge) {
 }
 
 // Summary for the webview. `ledger` has been through normalizeLedger.
-// balance = credits earned from tokens + game net. today and frac are about earning only
+// balance = credits earned from tokens + game net. today and frac are about earning only.
+//
+// Three sources, and each one is a DIFFERENT shape of promise, which is why none of them can be
+// folded into another:
+//   bankNet      the round games, as grow-only counters per window. A hand that settles is a hand
+//                that happened, so it never needs taking back
+//   forgeEarned  what the shop paid for swords sold, read out of the one surviving sword record
+//   market.netOf what the coin market paid minus what it took in, read out of the one surviving
+//                wallet. BOTH halves are in the record, so a dropped trade neither charges nor pays
+// The last two can go DOWN, once, when a collision drops a move: that is the move not having
+// happened, and the sword or the position is back in the player's hands to prove it. Writing either
+// of them into the bank's counters instead is the bug that mints money, and it has been written
+// once already: a sale banked per window paid 372,000 credits for one sword
 function creditSummary(ledger, todayKey, counting) {
   const unit = CREDIT_UNIT * WEIGHT_DEN;
   let total = 0;
@@ -221,7 +264,7 @@ function creditSummary(ledger, todayKey, counting) {
   const todayW = ledger.days[todayKey] ? weightedScaled(ledger.days[todayKey]) : 0;
   const earned = Math.floor(total / unit);
   return {
-    balance: earned + bankNet(ledger.bank || {}) + forgeEarned(ledger.forge),
+    balance: earned + bankNet(ledger.bank || {}) + forgeEarned(ledger.forge) + market.netOf(ledger.market),
     today: earned - Math.floor((total - todayW) / unit),
     frac: (total % unit) / unit,
     perCredit: CREDIT_UNIT,
@@ -429,5 +472,5 @@ module.exports = {
   createSweep, runSweep,
   // the sword's storage rules. forgeNewer is also what the host asks before it trusts the sword in
   // its own memory: another window may have moved it on since the last message
-  cleanForge, forgeNewer, mergeForge, forgeEarned, FORGE_FIELDS
+  cleanForge, forgeNewer, mergeForge, forgeEarned, FORGE_FIELDS, FORGE_MAX_FIELDS
 };

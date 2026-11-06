@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.19.0: A coin market, and ten more games
+
+- **Coin Market**: four coins, a three-hour candle chart, and a position that is still there when you come back. Buy with credits, sell whenever you like, 0.5% on the round trip. The fee is the small one on purpose: a coin moves about 1% to 2.5% in a day, so a position left overnight is worth more than what it costs to close, while a minute of it never is. The profit on an open position shows on the games list without opening the panel, because that number moving while you were away is the only reason to look.
+- **Playing cannot move a price.** The chart is the same for every window and every install, it is drawn from the minute it belongs to, and nothing you do touches it. There is no way to buy into a rise you have already seen: a price a minute ahead is not something the panel can be told, and every rule for deciding when to sell is worth the same as holding.
+- **The forge ladder was far too long.** Reaching +10 used to be years of play. It is now about ten weeks at a typical day's earnings, the fee curve is gentler at the bottom and steeper at the top, and a failed strike heats the forge: six bars, each worth five points on the next attempt, cleared when you succeed. The danger does not move. Heat buys its odds out of the drops and the stays, never out of the break.
+- **A success and a break now say what they cost.** The sword's price jumps on the chip at the moment it goes up, and a break prints everything that sword had eaten. The list row carries the level of the sword you are holding.
+- **Boards**: **Mines** (a 5x5 field, 3, 5 or 10 mines, cash out after any dig), **Tower** (ten floors, one or two trap doors a floor, and every floor opens when you fall, including the ones you never reached), **Keno** (pick 2 to 10 of 40, ten are drawn) and **Crash** (set the multiplier before launch and find out where it burst).
+- **Machines**: **Slots** (three real rings of 24, rolled to the position the extension picked), **Plinko** (twelve rows, thirteen cups, three risk tables), **Wheel** (28 segments, three wheels) and **Scratch Card** (a 3x3 card you rub a square at a time, and nothing is claimed until all nine are open).
+- **Card tables**: **Red Dog**, where two cards are dealt apart and the bet is whether the third falls between them.
+- **The games list is in four families**: card tables, machines, boards, and the two games that keep something when the window closes. Only those two carry a figure on the right.
+- **Every game with a pay table returns between 96% and 97%**, the band the first four already kept, and no single rung, cup, segment or stopping rule is better than another. Each table was solved by counting every outcome rather than sampled, and a game whose table drifts out of the band refuses to start instead of paying wrong. The market is the one game without a table, so it has no "one round" to return anything: what it has instead is a price that cannot be beaten by any rule for selling, proved rather than sampled, and the 0.5% round trip on top of that.
+- Credits are still earned by using Claude Code and nothing else. They cannot be bought and they cash out to nothing.
+
 ## 1.18.0: The sword forge, and art on the list
 
 - **Sword Forge**: the crab is a blacksmith at this table. Pay the fee and the sword goes up a level, or stays where it is, or drops back one, and from the level its blade starts to glow a failed strike can break it and take the whole thing. Ten levels. A broken sword is gone and a fresh one costs nothing, so what you lose is everything you fed the old one.

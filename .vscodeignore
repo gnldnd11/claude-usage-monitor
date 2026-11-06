@@ -1,3 +1,5 @@
+# This is a blocklist: anything not listed here IS published. games/** has to stay published,
+# because each game's panel is loaded into the webview as a script (verify with: vsce ls).
 .vscode/**
 *.vsix
 *.bak
@@ -12,3 +14,6 @@ ani-*.png
 docs/**
 .claude/**
 test/**
+# The game contract is for whoever adds the next game, not for the people who install this.
+# The code it describes still ships; only the 19KB of prose is held back.
+games/README.md

@@ -1,20 +1,56 @@
 const CSS = require('./styles');
+const games = require('./games/registry');
 const IC = require('./icons');
+// The ten sea symbols, once. The slot machine and the scratch card show eighteen squares between
+// them and the markup for one symbol is not small, so the drawings go into the page as one hidden
+// <symbol> sheet and each square is a <use>. A panel cannot require() this (it runs in the webview),
+// which is fine: the <use> markup is a string either side of the wall
+const symbols = require('./games/symbols');
 
-// Render the panel webview HTML. All per-webview values (CSP source, asset URIs,
-// the serialized asset catalog, and the script URI) are injected via `vars` so this
-// stays free of vscode specifics. The static stylesheet and icon set are required
-// directly. Extracted from extension.js — markup unchanged.
+// Render the panel webview HTML. All per-webview values (CSP source, asset URIs, the serialized
+// asset catalog, and the script URIs) are injected via `vars` so this stays free of vscode
+// specifics. The static stylesheet and icon set are required directly.
+//
+// The games area is TWO things here and no more: the list, built from the register, and one empty
+// stage the open game's panel is built into. A game's own markup lives in games/<id>/panel.js and
+// is created the first time that game is opened, so fourteen games cost fourteen list rows, not
+// fourteen panels. Nothing in this file names a game.
 function renderHtml(vars) {
   const {
     csp, scriptUri, logoUri, crabUri, sparkleUri,
     mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
-    roomMinecraftUri, assetsJson,
-    gameBlackjackUri, gameHiloUri, gamePokerUri, gameForgeUri
+    roomMinecraftUri, assetsJson, gameList, gameScripts
   } = vars;
+  // A row: the picture, the name, the figure's empty slot, the chevron.
+  //
+  // The picture is painted art (`thumb`, four games) or a drawn tile (`tile`, the other ten), and
+  // the glyph stays under both: an alt="" image that fails to load draws nothing, and the glyph
+  // showing through is better than a blank square.
+  // `sub` is a second line only where it says something. Twelve rows reading "Min bet 10" is not
+  // information, and the same line on two rows out of fourteen is "this one is expensive".
+  // `.gm-fig` is left empty for the webview to fill (CUC.rowFig) and `:empty` hides it, so the
+  // twelve rows that have no figure also have no gap where one would be
+  const gameRow = (g) => `    <button type="button" class="gm-row" data-game="${g.id}"${g.rowTitle ? ` title="${g.rowTitle}"` : ''}>
+      <span class="gm-ic">${g.icon}${g.tile || ''}${g.thumb ? `<img src="${g.thumb}" alt=""/>` : ''}</span>
+      <span class="gm-txt"><span class="gm-nm">${g.name}</span>${g.sub ? `<span class="gm-sub">${g.sub}</span>` : ''}</span>
+      <span class="gm-fig" id="fig-${g.id}"></span>
+      <span class="gm-go">${IC.chevron}</span>
+    </button>`;
+  // Headings, drawn wherever `group` changes down the list. The register has already sorted the
+  // rows (games/registry.js), so this walks them once and never re-groups: a group that is not
+  // contiguous in `order` is an ordering mistake in a meta.js, and it shows up here as a heading
+  // printed twice rather than as rows quietly moving somewhere else
+  const gameRows = (list) => {
+    let last = null;
+    return list.map((g) => {
+      const head = g.group && g.group !== last ? `    <div class="gm-sec">${g.group}</div>\n` : '';
+      last = g.group || last;
+      return head + gameRow(g);
+    }).join('\n');
+  };
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
-<style>${CSS}</style></head><body><div class="wrap"><div class="card">
+<style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}<div class="wrap"><div class="card">
   <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11.5px;font-weight:600;line-height:1.35">
     <span>Sign in for <b>live</b> session &amp; weekly %</span>
     <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11.5px;white-space:nowrap">Sign In</button>
@@ -115,131 +151,9 @@ function renderHtml(vars) {
   </div>
   <div class="inner bj-games" id="panelGames" style="display:none">
     <div class="ihead"><div class="it gm-it">${IC.coin} Games</div></div>
-    <button type="button" class="gm-row" data-game="blackjack">
-      <span class="gm-ic">${IC.cards}<img src="${gameBlackjackUri}" alt=""/></span>
-      <span class="gm-txt"><span class="gm-nm">Blackjack</span><span class="gm-sub">Min bet 10</span></span>
-      <span class="gm-go">${IC.chevron}</span>
-    </button>
-    <button type="button" class="gm-row" data-game="hilo">
-      <span class="gm-ic">${IC.updown}<img src="${gameHiloUri}" alt=""/></span>
-      <span class="gm-txt"><span class="gm-nm">High-Low</span><span class="gm-sub">Min bet 10</span></span>
-      <span class="gm-go">${IC.chevron}</span>
-    </button>
-    <button type="button" class="gm-row" data-game="poker">
-      <span class="gm-ic">${IC.spade}<img src="${gamePokerUri}" alt=""/></span>
-      <span class="gm-txt"><span class="gm-nm">Draw Poker</span><span class="gm-sub">Jacks or better</span></span>
-      <span class="gm-go">${IC.chevron}</span>
-    </button>
-    <button type="button" class="gm-row" data-game="forge" title="Sword Forge">
-      <span class="gm-ic">${IC.sword}<img src="${gameForgeUri}" alt=""/></span>
-      <span class="gm-txt"><span class="gm-nm">Forge</span><span class="gm-sub">Enhance or sell</span></span>
-      <span class="gm-go">${IC.chevron}</span>
-    </button>
+${gameRows(gameList)}
   </div>
-  <div class="inner bj" id="panelTable" style="display:none">
-    <div class="ihead bj-head">
-      <button type="button" class="bj-back" id="bjBack" title="All games">${IC.chevron}</button>
-      <div class="it" title="6 decks · Dealer stands on soft 17 · Blackjack pays 3:2">${IC.cards} Blackjack</div>
-      <div class="bj-side" id="bjSide"></div><!-- stage 2: the Challenge button goes here -->
-    </div>
-    <div class="bj-felt">
-      <div class="bj-row bj-dealer">
-        <div class="bj-who">
-          <div class="bj-crab"><img id="bjCrab" src="${crabUri}" alt=""/></div>
-        </div>
-        <div class="bj-hand"><div class="bj-line" id="bjDTot"></div><div class="bj-fan" id="bjDFan" role="img" aria-label="Dealer"></div></div>
-      </div>
-      <div class="bj-rule"></div>
-      <div id="bjHands"></div>
-      <div class="bj-net" id="bjNet" hidden></div>
-    </div>
-    <div class="bj-sr" id="bjLive" aria-live="polite"></div>
-    <div class="bj-note" id="bjNote" hidden></div>
-    <div class="warnbar" id="bjErr" hidden></div>
-    <div class="bj-ctl" id="bjBet">
-      <div class="bj-stakes" id="bjStakes" role="group" aria-label="Bet"><button type="button" data-v="10">10</button><button type="button" data-v="100">100</button><button type="button" data-v="1000" aria-label="1,000">1K</button></div>
-      <button type="button" class="bj-btn primary" id="bjDeal" title="Deal (Enter)">Deal</button>
-    </div>
-    <div class="bj-ctl" id="bjPlay" hidden>
-      <button type="button" class="bj-btn" data-op="hit" title="Hit (H)">Hit</button>
-      <button type="button" class="bj-btn" data-op="stand" title="Stand (S)">Stand</button>
-      <button type="button" class="bj-btn" data-op="double" title="Double (D)">Double</button>
-      <button type="button" class="bj-btn" data-op="split" title="Split (P)">Split</button>
-    </div>
-    <template id="bjCoin">${IC.coin}</template>
-  </div>
-  <div class="inner hl" id="panelHiLo" style="display:none">
-    <div class="ihead bj-head">
-      <button type="button" class="bj-back" id="hlBack" title="All games">${IC.chevron}</button>
-      <div class="it" title="Payouts follow the cards left in the shoe · Aces are high · A tie carries the pot">${IC.updown} High-Low</div>
-      <div class="bj-side" id="hlSide"></div>
-    </div>
-    <div class="bj-felt">
-      <div class="hl-stage">
-        <div class="bj-crab"><img src="${crabUri}" alt=""/></div>
-        <div class="hl-cards"><div class="hl-prev" id="hlPrev" aria-hidden="true"></div><div class="hl-card" id="hlCard" role="img" aria-label="No card"></div></div>
-      </div>
-      <div class="hl-line" id="hlLine"></div>
-    </div>
-    <div class="bj-sr" id="hlLive" aria-live="polite"></div>
-    <div class="bj-note" id="hlNote" hidden></div>
-    <div class="warnbar" id="hlErr" hidden></div>
-    <div class="bj-ctl" id="hlBet">
-      <div class="bj-stakes" id="hlStakes" role="group" aria-label="Bet"><button type="button" data-v="10">10</button><button type="button" data-v="100">100</button><button type="button" data-v="1000" aria-label="1,000">1K</button></div>
-      <button type="button" class="bj-btn primary" id="hlDeal" title="Deal (Enter)">Deal</button>
-    </div>
-    <div class="bj-ctl" id="hlPlay" hidden>
-      <button type="button" class="bj-btn hl-guess" data-op="higher" title="Higher (up arrow)"><span>Higher</span><b id="hlUp">—</b></button>
-      <button type="button" class="bj-btn hl-guess" data-op="lower" title="Lower (down arrow)"><span>Lower</span><b id="hlDn">—</b></button>
-      <button type="button" class="bj-btn hl-cash" data-op="cashout" title="Cash out (C)">Cash out <b id="hlCashAmt">0</b></button>
-    </div>
-  </div>
-  <div class="inner pk" id="panelPoker" style="display:none">
-    <div class="ihead bj-head">
-      <button type="button" class="bj-back" id="pkBack" title="All games">${IC.chevron}</button>
-      <div class="it" title="One deck, shuffled each hand · Hold what you want, draw once · A pair pays only from jacks up">${IC.spade} Draw Poker</div>
-      <div class="bj-side" id="pkSide"></div>
-    </div>
-    <div class="bj-felt">
-      <div class="pk-pays" id="pkPays"></div>
-      <div class="pk-hand" id="pkHand"></div>
-      <div class="hl-line" id="pkLine"></div>
-    </div>
-    <div class="bj-sr" id="pkLive" aria-live="polite"></div>
-    <div class="bj-note" id="pkNote" hidden></div>
-    <div class="warnbar" id="pkErr" hidden></div>
-    <div class="bj-ctl" id="pkBet">
-      <div class="bj-stakes" id="pkStakes" role="group" aria-label="Bet"><button type="button" data-v="10">10</button><button type="button" data-v="100">100</button><button type="button" data-v="1000" aria-label="1,000">1K</button></div>
-      <button type="button" class="bj-btn primary" id="pkDeal" title="Deal (Enter)">Deal</button>
-    </div>
-    <div class="bj-ctl" id="pkPlay" hidden>
-      <button type="button" class="bj-btn primary" id="pkDraw" style="flex:1 1 100%" title="Draw (Enter)">Draw</button>
-    </div>
-  </div>
-  <div class="inner fg" id="panelForge" style="display:none">
-    <div class="ihead bj-head">
-      <button type="button" class="bj-back" id="fgBack" title="All games">${IC.chevron}</button>
-      <div class="it" title="Enhance to Lv 10 · it can break from the level the glow starts">${IC.sword} Sword Forge</div>
-      <div class="bj-side" id="fgSide"></div><!-- Best N -->
-    </div>
-    <div class="fg-anvil" id="fgAnvil">
-      <div class="fg-stage">
-        <div class="bj-crab"><img src="${crabUri}" alt=""/></div>
-        <div class="fg-sword" id="fgSword"></div>
-        <div class="fg-lv"><b id="fgLv">0</b><span id="fgMax">/ 10</span></div>
-      </div>
-      <div class="fg-bar" id="fgBar"></div>
-      <div class="fg-odds"><span id="fgSucc"></span><span id="fgRisk"></span></div>
-      <div class="hl-line" id="fgLine"></div>
-    </div>
-    <div class="bj-sr" id="fgLive" aria-live="polite"></div>
-    <div class="bj-note" id="fgNote" hidden></div>
-    <div class="warnbar" id="fgErr" hidden></div>
-    <div class="bj-ctl">
-      <button type="button" class="bj-btn primary" id="fgEnhance" style="flex:1 1 100%" title="Enhance (E)">Enhance</button>
-      <button type="button" class="bj-btn" id="fgSell" style="flex:1 1 100%" title="Sell (S, twice)">Sell</button>
-    </div>
-  </div>
+  <div id="gameStage"></div>
 </div></div>
   <div class="sheet" id="settingsSheet" hidden>
     <div class="sheet-card">
@@ -286,7 +200,10 @@ function renderHtml(vars) {
     </div>
   </div>
 <div id="cuc-assets" data-json='${assetsJson}' style="display:none"></div>
-<script src="${scriptUri}"></script></body></html>`;
+<template id="cucCoin">${IC.coin}</template>
+<script src="${scriptUri}"></script>
+${gameScripts.map((u) => `<script src="${u}"></script>`).join('\n')}
+</body></html>`;
 }
 
 module.exports = { renderHtml };

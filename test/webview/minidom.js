@@ -214,7 +214,10 @@ function queryAll(root, sel, first) {
 }
 
 function createDocument(html) {
-  const doc = { _ls: {} };
+  // 'loading' until the caller has run every script the page carries, like a parser would:
+  // webview.js waits for DOMContentLoaded before applying the stored view, because the games'
+  // panel scripts load after it. doc.ready() is how a test says the parsing is done.
+  const doc = { _ls: {}, readyState: 'loading' };
   const root = new Element('#document', {}, doc);
   parseInto(root, html, doc);
   doc.root = root;
@@ -237,6 +240,11 @@ function createDocument(html) {
     return ev;
   };
   doc.dispatchKey = (key, target) => doc.pressKey(key, { target: target || doc.body });
+  // every script has run: fire DOMContentLoaded at the document's own listeners
+  doc.ready = () => {
+    doc.readyState = 'complete';
+    for (const f of (doc._ls.DOMContentLoaded || []).slice()) f(makeEvent('DOMContentLoaded', { target: doc }));
+  };
   root._ls = doc._ls; // clicks bubble up to document listeners too
   return doc;
 }

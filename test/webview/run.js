@@ -2,12 +2,17 @@
 // (the check loads webview.js into a single vm context per run). A mode that hangs is killed after
 // 60 seconds and counts as a failure, so npm test always finishes. Each run gets its own temp
 // parent directory, removed here: a killed run cannot clean up after itself.
+//
+// The modes are not listed here. They are read off test/webview/games/ (see modes.js), so a game
+// adds its own file and is run by this without the file being touched: with ten more games coming,
+// a list here would be a queue.
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const MODES = ['normal', 'reduce', 'poor50', 'poor5', 'compact', 'badtab', 'nohero', 'resume-list', 'resume-bj', 'hilo', 'hilo-reduce', 'hilo-poor', 'poker', 'poker-reduce', 'poker-poor', 'forge', 'forge-reduce', 'forge-poor', 'header', 'header-reduce'];
+const MODES = require('./modes').all();
 const TIMEOUT_MS = 60000;
+if (MODES.length < 1) { console.log('no webview modes found in test/webview/games'); process.exit(1); }
 let failed = 0;
 for (const m of MODES) {
   const t0 = Date.now();

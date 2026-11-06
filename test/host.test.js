@@ -17,9 +17,10 @@ process.env.CUC_TEST = '1'; // exposes _test.setBjSeeds / setHlSeeds / setPkSeed
 // --- fake vscode ------------------------------------------------------------------------
 const noop = () => ({ dispose() {} });
 let provider = null;
+const logged = []; // the output channel, kept: a fault the player is not shown has to be findable here
 const vscode = {
   window: {
-    createOutputChannel: () => ({ appendLine() {}, show() {}, dispose() {} }),
+    createOutputChannel: () => ({ appendLine: (l) => logged.push(l), show() {}, dispose() {} }),
     createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
     registerWebviewViewProvider: (id, p) => { provider = p; return noop(); },
     onDidChangeWindowState: noop,
@@ -896,6 +897,8 @@ test('fg: the sword outlives the window, and another window\'s is adopted on the
     const seen = send({ type: 'fg', op: 'open' }).state;
     assert.equal(seen.level, 7, 'the window kept forging the copy in its own memory');
     assert.equal(seen.spent, 24000);
+    // the gauge belongs to the sword in hand, so it was adopted with the record rather than maxed
+    assert.equal(seen.heat, 0, 'the adopted record is cold, so the sword on the screen is');
     // the record high is maxed across every copy rather than adopted with one, so it can stand
     // above the sword in hand: an earlier test in this file reached +9
     assert.ok(seen.best >= 7, 'best came back as ' + seen.best);
@@ -911,6 +914,36 @@ test('fg: the sword outlives the window, and another window\'s is adopted on the
     assert.equal(storedSword().level, 7);
     assert.equal(storedSword().moves, rec.moves + 2);
     assert.match(storedSword().by, /^[0-9a-f]{16}$/, 'and it is this window that wrote it');
+  } finally { ext._test.setFgSeeds(null); }
+});
+
+test('fg: a lifetime figure the merge raises comes back in the reply, not only in storage', () => {
+  // The merge keeps the later record WHOLE and lifts the lifetime figures out of the loser
+  // (credits.FORGE_MAX_FIELDS). This window's record is the later one, so what it wrote is what
+  // stands, but a figure raised out of the other copy has to reach the sword in MEMORY as well: two
+  // records at the same move count are neither of them the later one, so sync() could never fix a
+  // figure left behind, and the screen would sit under storage for the rest of the session
+  needCredits(1500);
+  try {
+    placeSword(2);
+    const before = send({ type: 'fg', op: 'open' }).state;
+    // an older copy from another window, with lifetime figures this one has never seen. Earlier
+    // tests in this file have already broken swords, so the figures are raised from where they
+    // stand rather than from zero
+    const cur = JSON.parse(JSON.stringify(storedSword()));
+    const want = { broke: before.broke + 5, tries: cur.tries + 9 };
+    gs.data[LEDGER].forge = Object.assign({}, cur, { by: OTHER, moves: cur.moves - 1 }, want);
+    pinFg(2, 'up');
+    const r = send({ type: 'fg', op: 'enhance' });
+    assert.equal(r.error, undefined);
+    assert.equal(r.state.level, 3, 'this window\'s move is the one that stands');
+    for (const k of creditsMod.FORGE_MAX_FIELDS) {
+      assert.equal(r.state[k], storedSword()[k], k + ' is in storage but not in the reply');
+    }
+    assert.equal(r.state.broke, want.broke, 'the other copy\'s grave count was raised into this one');
+    assert.ok(r.state.tries >= want.tries, 'and so was its attempt count');
+    // and the next message agrees, with nothing left for the sync to catch up on
+    assert.equal(send({ type: 'fg', op: 'open' }).state.broke, want.broke);
   } finally { ext._test.setFgSeeds(null); }
 });
 
@@ -1041,6 +1074,81 @@ test('fg: the seed is the host\'s, and the reply echoes the request number', () 
     assert.equal(r.error, undefined);
     assert.equal(r.state.level, 1, 'the webview picked the roll');
   } finally { ext._test.setFgSeeds(null); }
+});
+
+// --- a view() that throws ------------------------------------------------------------------
+// view() is the last engine call a reply makes, and it was the one left outside the driver's guard.
+// An uncaught throw there leaves the message with NO reply, and the panel then sits out its
+// four-second no-reply timeout, which the player reads as a screen that has stopped working.
+// send() asserts exactly one reply per message, so every test here fails loudly if the reply stops
+// going out at all: that, and not the wording, is what these are for
+function withBrokenView(engine, thrown, fn) {
+  const real = engine.view;
+  engine.view = () => { throw thrown; };
+  try { return fn(); } finally { engine.view = real; }
+}
+const loggedLike = (re) => logged.filter((l) => re.test(l));
+
+test('a view() that throws still answers: no state, one plain sentence, the money and the number', () => {
+  const before = send({ type: 'bj', op: 'open' }).balance;
+  const mark = logged.length;
+  const r = withBrokenView(bj, new TypeError('cannot read hole of undefined'), () => send({ type: 'bj', op: 'open', n: 73 }));
+  assert.equal('state' in r, false, 'a reply that cannot describe the round carries no state');
+  assert.equal(r.error, 'the table could not describe the round', 'a fault is one plain sentence, never its own message');
+  assert.equal(r.n, 73, 'the request number is echoed, or the panel waits its timeout out anyway');
+  assert.equal(r.balance, before, 'the money on the reply is still true');
+  assert.equal(typeof r.free, 'number');
+  // what the player is not shown is the log's, whole: the message AND the stack
+  const lines = logged.slice(mark).filter((l) => /bj: could not describe the round/.test(l));
+  assert.equal(lines.length, 1, 'one log line for the fault');
+  assert.match(lines[0], /TypeError: cannot read hole of undefined/);
+  assert.match(lines[0], /\n\s+at /, 'the stack is logged, not just the message');
+  // and the host is intact: the next message is answered as if nothing had happened
+  const after = send({ type: 'bj', op: 'open' });
+  assert.ok(after.state, 'the message after a fault carries a table again');
+  assert.equal(after.error, undefined);
+});
+
+test('a RangeError from view() is the engine\'s own ruling, so its sentence is passed through', () => {
+  const r = withBrokenView(bj, new RangeError('the shoe is spent'), () => send({ type: 'bj', op: 'open' }));
+  assert.equal(r.error, 'the shoe is spent');
+  assert.equal('state' in r, false, 'a ruling the table cannot draw still carries no table');
+});
+
+test('a round survives a reply that could not describe it, and the ledger does not move twice', () => {
+  const seed = findSeed('fault-live-', (st) => st.phase === 'player' && bj.act(st, 'hit').phase === 'player');
+  ext._test.setBjSeeds(() => seed);
+  try {
+    const dealt = send({ type: 'bj', op: 'deal', bet: 10 });
+    assert.equal(dealt.state.phase, 'player');
+    const cards = dealt.state.hands[0].cards.length;
+    const hands = bankSum('hands');
+    const broke = withBrokenView(bj, new Error('boom'), () => send({ type: 'bj', op: 'hit' }));
+    assert.equal('state' in broke, false);
+    assert.equal(broke.error, 'the table could not describe the round');
+    const back = send({ type: 'bj', op: 'open' });
+    assert.equal(back.state.phase, 'player', 'the hand is still live: it was the describing that failed');
+    assert.equal(back.state.hands[0].cards.length, cards + 1, 'and the hit that could not be drawn did happen');
+    assert.equal(bankSum('hands'), hands, 'a live round settles nothing, broken view or not');
+    send({ type: 'bj', op: 'stand' });
+  } finally { ext._test.setBjSeeds(null); }
+});
+
+test('a refusal that cannot be drawn is sent as the fault, with the refusal it was carrying logged', () => {
+  const mark = logged.length;
+  const r = withBrokenView(bj, new Error('boom'), () => send({ type: 'bj', op: 'teleport' }));
+  assert.equal(r.error, 'the table could not describe the round', 'one reason per reply, and this one is the fault');
+  assert.equal('state' in r, false);
+  assert.equal(logged.slice(mark).filter((l) => /the refusal it was carrying: unknown action/.test(l)).length, 1);
+});
+
+test('fg: a view() that throws answers the same way (the reply is shared, not the driver)', () => {
+  const r = withBrokenView(fgmod, new Error('no anvil'), () => send({ type: 'fg', op: 'open', n: 55 }));
+  assert.equal('state' in r, false, 'the forge keeps its own handler and still gets this for free');
+  assert.equal(r.error, 'the table could not describe the round');
+  assert.equal(r.n, 55);
+  assert.equal(loggedLike(/fg: could not describe the round/).length, 1);
+  assert.ok(send({ type: 'fg', op: 'open' }).state, 'and the sword is still there');
 });
 
 // A test that throws mid-round leaves that round live, and every test after it then fails on

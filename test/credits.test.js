@@ -194,8 +194,13 @@ test('bank: malformed entries are dropped or zeroed at the boundary', () => {
 // of two copies the one with more of them is the later one and wins WHOLE.
 // `earned` is the credits the shop has paid this save for swords sold. It is the one money figure
 // that is NOT a grow-only counter in the bank, and the tests below are why
-const SW = (by, level, moves, tries, spent, best, earned) => ({ by, level, moves, tries, spent, best, earned: earned || 0 });
-const PRICE9 = 186000; // what a +9 fetches (forge.js), spelled out so these tests read on their own
+// `heat` (the gauge on the sword in hand) and `broke` (swords destroyed, a lifetime count) default
+// to 0 here: these tests are about the ORDER two records merge in, and the two of them follow the
+// rule each already belongs to (heat adopted whole with the record, broke maxed). The one place
+// they are set is the heat test below
+const SW = (by, level, moves, tries, spent, best, earned, heat, broke) =>
+  ({ by, level, moves, tries, spent, heat: heat || 0, best, broke: broke || 0, earned: earned || 0 });
+const PRICE9 = 6053; // what a +9 fetches (forge.js), spelled out so these tests read on their own
 
 test('forge: the copy with more moves wins whole, and a stale one never pulls the sword back', () => {
   const early = SW(RA, 3, 5, 5, 850, 3);
@@ -317,6 +322,31 @@ test('forge: `earned` is adopted with the record and never maxed', () => {
   assert.equal(credits.mergeForge(SW(RA, 0, 30, 30, 0, 9, PRICE9), SW(RB, 2, 4, 4, 0, 2, 0)).earned, PRICE9);
 });
 
+test('forge: the gauge travels with the sword and the swords broken are maxed', () => {
+  // The gauge is odds. Maxed, it would hand the kept sword the gauge of the one that was dropped,
+  // and the losing window's six failed attempts would buy the winning window's next press
+  const keeper = SW(RB, 9, 21, 21, 7500, 9, 0, 0, 2);   // went up: its gauge is cold
+  const hot = SW(RA, 8, 21, 21, 6000, 9, 0, 6, 1);      // stalled six times: gauge full
+  const out = credits.mergeForge(hot, keeper);
+  assert.equal(out.by, RB, 'the larger id takes the tie');
+  assert.equal(out.heat, 0, 'a dropped record cannot leave its heat behind');
+  assert.equal(out.spent, 7500, 'and the bill is the kept sword’s too');
+  // the other way round the hot sword wins, and then its gauge is the one that stands
+  assert.equal(credits.mergeForge(hot, SW(RB, 9, 20, 20, 7500, 9, 0, 0, 2)).heat, 6);
+  // swords broken is a lifetime count, so it is maxed: neither copy can take it backwards...
+  assert.equal(out.broke, 2);
+  assert.equal(credits.mergeForge(SW(RA, 0, 30, 30, 0, 9, 0, 0, 7), SW(RB, 2, 4, 4, 0, 2, 0, 3, 4)).broke, 7);
+  // ...and it is maxed rather than added, because two windows breaking the one sword broke one
+  const aBreak = SW(RA, 0, 22, 22, 0, 9, 0, 0, 3);
+  const sameBreak = SW(RB, 0, 22, 22, 0, 9, 0, 0, 3);
+  const ab = credits.mergeForge(aBreak, sameBreak);
+  assert.equal(ab.broke, 3, 'one sword, one grave');
+  assert.deepEqual(credits.mergeForge(sameBreak, aBreak), ab);
+  // merging again settles, as it must for every field in the record
+  assert.deepEqual(credits.mergeForge(out, hot), out);
+  assert.deepEqual(credits.mergeForge(out, keeper), out);
+});
+
 test('forge: a stored record is rebuilt at the boundary, never carried over as it stands', () => {
   const n = credits.normalizeLedger({ forge: { by: 'not an id', level: 4, moves: 2.5, tries: -1, spent: 'x', best: 4, junk: 1 } });
   assert.deepEqual(n.forge, SW('', 4, 0, 0, 0, 4), 'only the fields the merge knows travel');
@@ -330,6 +360,161 @@ test('forge: a stored record is rebuilt at the boundary, never carried over as i
   assert.equal(Object.getPrototypeOf(poisoned.forge), Object.prototype);
   // and the sword is not money: it never moves the balance by itself
   assert.equal(credits.creditSummary(credits.normalizeLedger({ forge: SW(RA, 10, 99, 99, 10000, 10) }), 'x', false).balance, 0);
+});
+
+// --- market: the coin wallet in the ledger -----------------------------------------------------
+// The wallet is stored for the same reason the sword is (a position is the player's property, not a
+// round) and merges the same way (more `moves` wins whole, a tie to the larger writer id). What
+// differs is where the money sits: BOTH halves of a trade are in the record, so the balance is
+// earned - staked and a dropped move neither charges nor pays. The sword can only do half of that,
+// because its fee rides the bank's grow-only counters.
+// The rules are market.js's own (clean, newer, merge, same, netOf) and this file calls them rather
+// than carrying a second copy; these tests are about the ledger being wired to them.
+const marketMod = require(path.join(ROOT, 'market.js'));
+
+// a wallet record: nothing held unless `pos` says so
+const MK = (by, moves, trades, staked, earned, best, pos) =>
+  ({ by, pos: pos || {}, moves, trades, staked, earned, best, at: 0 });
+// a position the market could really have sold: TIDE opens at 120,000 ticks (market.js's table)
+const TIDE_AT = 120000;
+const HOLD = (amount) => ({ TIDE: { amount, entryTicks: TIDE_AT, at: 0 } });
+const walletBalance = (led) => credits.creditSummary(credits.normalizeLedger(led), 'x', false).balance;
+
+test('market: the balance is what the wallet paid out minus what it took in', () => {
+  // a buy of 500 that has not been sold: the stake has left the balance and nothing has come back
+  assert.equal(walletBalance({ market: MK(RA, 1, 0, 500, 0, 0, HOLD(500)) }), -500);
+  // sold for 640: the stake stays on the record and the payout lands next to it
+  assert.equal(walletBalance({ market: MK(RA, 2, 1, 500, 640, 640) }), 140);
+  // and it reads straight off netOf, so the ledger and the market cannot disagree
+  const rec = MK(RA, 2, 1, 500, 640, 640);
+  assert.equal(marketMod.netOf(rec), 140);
+  assert.equal(walletBalance({ market: rec }), marketMod.netOf(rec));
+  // a player who has never traded has no record and no effect on the balance
+  assert.equal(credits.normalizeLedger({}).market, null);
+  assert.equal(walletBalance({}), 0);
+  assert.equal(marketMod.netOf(null), 0);
+});
+
+test('market: the wallet is added on top of the tokens, the bank and the sword', () => {
+  // 100M input tokens is 1,000 credits (the weights at the top of credits.js)
+  const led = {
+    days: { '2026-09-20': { input: 100_000_000, output: 0, cache_creation: 0, cache_read: 0 } },
+    bank: { [RA]: W(300, 120, 9) },
+    forge: SW(RB, 0, 21, 21, 0, 9, PRICE9),
+    market: MK(RA, 2, 1, 500, 640, 640)
+  };
+  const sum = credits.creditSummary(credits.normalizeLedger(led), '2026-09-20', false);
+  assert.equal(sum.balance, 1000 + (300 - 120) + PRICE9 + 140, 'one of the four sources is not in the balance');
+  // and taking the wallet out moves the balance by exactly what the wallet is worth
+  const without = credits.creditSummary(credits.normalizeLedger(Object.assign({}, led, { market: null })), '2026-09-20', false);
+  assert.equal(sum.balance - without.balance, 140);
+});
+
+test('market: the copy with more moves wins whole, and a stale one never pulls a trade back', () => {
+  const bought = MK(RA, 1, 0, 500, 0, 0, HOLD(500));
+  const sold = MK(RA, 2, 1, 500, 640, 640);
+  const a = credits.mergeLedger(null, { market: bought });
+  assert.equal(a.changed, true);
+  assert.deepEqual(a.ledger.market, bought);
+  assert.equal(walletBalance(a.ledger), -500);
+  const b = credits.mergeLedger(a.ledger, { market: sold });
+  assert.equal(b.changed, true);
+  assert.deepEqual(b.ledger.market, sold);
+  assert.equal(walletBalance(b.ledger), 140);
+  // the earlier copy arriving late (another window's throttled write) changes nothing
+  assert.equal(credits.mergeLedger(b.ledger, { market: bought }).changed, false);
+  assert.equal(walletBalance(credits.mergeLedger(b.ledger, { market: bought }).ledger), 140);
+  // and merging the same record twice is the same as once
+  assert.equal(credits.mergeLedger(b.ledger, { market: sold }).changed, false);
+});
+
+test('market: two windows selling the same position are paid for it once', () => {
+  // both were holding the same 500 in TIDE at move 1 and both pressed sell, so both made move 2
+  const mine = MK(RA, 2, 1, 500, 640, 640);
+  const theirs = MK(RB, 2, 1, 500, 640, 640);
+  const ab = credits.mergeLedger(credits.mergeLedger(null, { market: mine }).ledger, { market: theirs }).ledger;
+  const ba = credits.mergeLedger(credits.mergeLedger(null, { market: theirs }).ledger, { market: mine }).ledger;
+  assert.deepEqual(ab.market, ba.market, 'the two windows would hold different wallets');
+  assert.equal(ab.market.by, RB, 'the larger id takes the tie');
+  assert.equal(ab.market.earned, 640, 'one position, one payout');
+  assert.equal(walletBalance(ab), 140);
+  // and the bank each window keeps carries no part of a trade, so it cannot add a second one
+  assert.equal(credits.mergeLedger(ab, { market: mine }).changed, false);
+  assert.equal(credits.mergeLedger(ab, { market: theirs }).changed, false);
+});
+
+test('market: a buy that loses the merge charges nothing, which is stricter than the forge', () => {
+  // One window bought 500 of TIDE; the other sold the KELP it was holding. Same move count, so one
+  // of the two is dropped. A dropped forge attempt still costs its fee, because the fee is in the
+  // bank. A dropped BUY has to cost nothing, because a stake can be the whole purse
+  const buyer = MK(RA, 4, 1, 1500, 900, 900, HOLD(500));
+  const seller = MK(RB, 4, 2, 1000, 1800, 900);
+  const ab = credits.mergeLedger(credits.mergeLedger(null, { market: buyer }).ledger, { market: seller }).ledger;
+  const ba = credits.mergeLedger(credits.mergeLedger(null, { market: seller }).ledger, { market: buyer }).ledger;
+  assert.deepEqual(ab.market, ba.market);
+  assert.equal(ab.market.by, RB, 'the larger id takes the tie');
+  assert.equal(ab.market.staked, 1000, 'the dropped buy is still being charged for');
+  assert.deepEqual(ab.market.pos, {}, 'and the position it bought is still in the wallet');
+  assert.equal(walletBalance(ab), 800);
+});
+
+test('market: nothing is maxed across a merge, so a dropped sale cannot leave its price behind', () => {
+  // The mirror of the sword's `tries` and `best`. Here `best` is money and travels with the record:
+  // maxing it would print a record the player never set, for a sale that was never paid
+  const keeper = MK(RB, 7, 1, 500, 640, 640, HOLD(500));
+  const seller = MK(RA, 7, 2, 500, 9000, 8360);
+  const out = marketMod.merge(seller, keeper);
+  assert.equal(out.by, RB, 'the larger id takes the tie');
+  assert.equal(out.best, 640, 'a payout that was dropped cannot outlive the record that paid it');
+  assert.equal(out.earned, 640);
+  assert.deepEqual(marketMod.MAX_FIELDS, [], 'the market maxes nothing: the rule is the empty list');
+  // raising nothing cannot upset the order, so merging the result again settles at once
+  assert.deepEqual(marketMod.merge(out, seller), out);
+  assert.deepEqual(marketMod.merge(out, keeper), out);
+});
+
+test('market: a stored record is rebuilt at the boundary, never carried over as it stands', () => {
+  const n = credits.normalizeLedger({
+    market: { by: 'not an id', moves: 2.5, trades: -1, staked: 'x', earned: 640, best: 640, at: 0, junk: 1, pos: { TIDE: { amount: 500, entryTicks: TIDE_AT, at: 0 }, NOPE: { amount: 10, entryTicks: 1, at: 0 } } }
+  });
+  assert.equal(n.market.by, '', 'a writer id outside the shape would win every merge tie');
+  assert.equal(n.market.moves, 0);
+  assert.equal(n.market.trades, 0);
+  assert.equal(n.market.staked, 0);
+  assert.equal(n.market.earned, 640);
+  assert.equal('junk' in n.market, false, 'a field a later version added is not carried into this one');
+  assert.deepEqual(Object.keys(n.market.pos), ['TIDE'], 'a position in a coin this build has no row for');
+  assert.equal(credits.normalizeLedger({ market: 'nope' }).market, null);
+  assert.equal(credits.normalizeLedger({ market: 7 }).market, null);
+  // the record is built, not copied, so a "__proto__" in the stored JSON cannot ride along
+  const poisoned = credits.normalizeLedger(JSON.parse('{"market":{"__proto__":{"earned":99999},"moves":3,"trades":1,"staked":500,"earned":640,"best":640,"at":0,"pos":{},"by":"' + RA + '"}}'));
+  assert.equal(poisoned.market.earned, 640);
+  assert.equal(Object.getPrototypeOf(poisoned.market), Object.prototype);
+  assert.equal(walletBalance({ market: poisoned.market }), 140);
+});
+
+test('market: an unreachable entry price is dropped, so no sale can pay an impossible ratio', () => {
+  // TIDE cannot trade at 1 tick (its band floor is 1,875), so a position bought there is a position
+  // the market never sold, and selling it would pay a ratio the band says is impossible
+  const n = credits.normalizeLedger({ market: MK(RA, 1, 0, 500, 0, 0, { TIDE: { amount: 500, entryTicks: 1, at: 0 } }) });
+  assert.deepEqual(n.market.pos, {});
+  // and the honest one survives
+  const ok = credits.normalizeLedger({ market: MK(RA, 1, 0, 500, 0, 0, HOLD(500)) });
+  assert.deepEqual(ok.market.pos, HOLD(500));
+});
+
+test('market: the wallet and the sword travel in one write, and neither touches the other', () => {
+  const led = credits.mergeLedger(null, { forge: SW(RA, 3, 5, 5, 850, 3), market: MK(RA, 2, 1, 500, 640, 640) });
+  assert.equal(led.changed, true);
+  assert.equal(led.ledger.forge.level, 3);
+  assert.equal(led.ledger.market.earned, 640);
+  // a write that moves only the sword leaves the wallet exactly as it was, and the other way round
+  const onlySword = credits.mergeLedger(led.ledger, { forge: SW(RA, 4, 6, 6, 1200, 4) });
+  assert.equal(onlySword.changed, true);
+  assert.deepEqual(onlySword.ledger.market, led.ledger.market);
+  const onlyWallet = credits.mergeLedger(onlySword.ledger, { market: MK(RA, 3, 1, 1000, 640, 640, HOLD(500)) });
+  assert.equal(onlyWallet.changed, true);
+  assert.deepEqual(onlyWallet.ledger.forge, onlySword.ledger.forge);
 });
 
 // --- de-duplication -------------------------------------------------------------------

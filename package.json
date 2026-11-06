@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "See which Claude Code subagents are running, and spot the one that's stuck. Your agents as pixel characters in the sidebar, plus live session, weekly and context usage. Unofficial, read-only.",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
@@ -39,7 +39,7 @@
   },
   "main": "./extension.js",
   "scripts": {
-    "test": "node test/credits.test.js && node test/blackjack.test.js && node test/highlow.test.js && node test/poker.test.js && node test/forge.test.js && node test/host.test.js && node test/webview/run.js"
+    "test": "node test/credits.test.js && node test/blackjack.test.js && node test/highlow.test.js && node test/poker.test.js && node test/forge.test.js && node test/market.test.js && node test/mines.test.js && node test/tower.test.js && node test/crash.test.js && node test/slots.test.js && node test/scratch.test.js && node test/plinko.test.js && node test/wheel.test.js && node test/keno.test.js && node test/reddog.test.js && node test/registry.test.js && node test/host.test.js && node test/webview/run.js"
   },
   "activationEvents": [
     "onStartupFinished"
