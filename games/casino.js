@@ -32,9 +32,9 @@ const CSS = `
   .bj-btn.primary{background:#e8895a;color:#1d1d1f;} /* white on this orange is 2.6:1 */
   .bj-btn.primary:hover:not(:disabled){box-shadow:none;filter:brightness(1.07);}
   .bj-btn:disabled{opacity:.4;cursor:default;}
-  .bj-stakes button:focus-visible,.bj-btn:focus-visible{outline:2px solid #e8895a;outline-offset:2px;}
+  .bj-stakes button:focus-visible,.bj-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .bj-btn.primary:focus-visible{outline-color:var(--text);}
-  @media (prefers-reduced-motion:reduce){.bj-chip{animation:none;}}
+  @media (prefers-reduced-motion:reduce){.bj-chip{animation:none;}.gm-sec svg{transition:none;}}
   /* --- the paytable, folded. Fourteen screens that each lay a table out are fourteen tables and no
      screens, so every ladder, every ways[] and every pays[] lives behind this one toggle and the
      one-line version lives in the heading's title= (docs/game-panels.md, section 5) --- */
@@ -46,7 +46,7 @@ const CSS = `
     font-family:inherit;font-size:10.5px;font-weight:700;
     cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
   .bj-why:hover{color:var(--text);}
-  .bj-why:focus-visible{outline:2px solid #e8895a;outline-offset:2px;}
+  .bj-why:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .bj-pays{margin-top:6px;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;}
   .bj-pays[hidden],.bj-why[hidden]{display:none;}
   /* --- what sits ON the felt, by family (docs/game-panels.md, section 3). The background changes
@@ -66,6 +66,11 @@ const CSS = `
      nothing is tight there. The plinko board is 130px and keeps the plain plate */
   .gm-plate.tight{padding-left:0;padding-right:0;}
   .gm-rule{background:rgba(255,255,255,.1);}
+  /* --- the die faces (Sic Bo, Shut the Box, Hazard). One hidden sprite in the page, drawn through
+     CUC.die(). The body of a die follows the CELL's own color, so the colour is the game's: cream
+     for a die that was rolled, #f6836e for Hazard's warning die (games/dice-faces.js) --- */
+  .dc-sprite{display:none;}
+  .dc{display:block;}
   /* --- the sea symbols (slots, scratch card). One hidden sprite in the page, 18 <use> --- */
   .sy-sprite{display:none;}
   .sy-cell{display:flex;width:48px;height:48px;border-radius:6px;background:#15181c;}
@@ -78,14 +83,56 @@ const CSS = `
   /* --- games list: the third view. A game screen opens from a row --- */
   .bj-games .ihead{margin-bottom:8px;}
   .gm-it svg{width:16px;height:16px;} /* the pixel coin needs its 2px grid */
-  /* Four headings turn one scan of fourteen rows into four scans of four. They do not shorten the
-     list, which is what the 24px row above is for. Same recipe as .sheet-sec */
-  .gm-sec{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);
-    font-weight:700;margin:10px 0 3px;padding:0 10px;}
-  .gm-sec:first-of-type{margin-top:2px;}
-  .gm-row{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:0;border-radius:10px;background:transparent;font-family:inherit;text-align:left;cursor:pointer;}
+  /* Four headings turn one scan of fourteen rows into four scans of four. Same recipe as
+     .sheet-sec, and now a BUTTON, because the heading is also what folds the block away.
+     The favourites alone do not shorten the list: measured, it is 680px now and 705 with a
+     Favourites block of four (docs/game-panels.md, 7-0). Four rows kept and the rest folded is
+     about 264, and that is the request the favourites could not answer on their own */
+  .gm-grp{margin-top:10px;}
+  .gm-grp[hidden]{display:none;}
+  /* the first block that SHOWS, which :first-of-type cannot say: the Favourites block is in the
+     page from the first paint and stays hidden until something is starred, and every heading is
+     the first of its type inside its own block anyway */
+  .gm-grp.gm-top{margin-top:2px;}
+  .gm-sec{display:flex;align-items:center;gap:4px;width:100%;margin:0 0 3px;padding:0 10px;
+    border:0;background:transparent;font-family:inherit;font-size:10px;text-transform:uppercase;
+    letter-spacing:.6px;color:var(--muted);font-weight:700;text-align:left;}
+  /* Favourites does not fold (folding what I put at the top says nothing), so its heading has no
+     chevron. The indent is the chevron's, so the five headings read as one column */
+  .gm-favs .gm-sec{padding-left:28px;}
+  .gm-fold{cursor:pointer;}
+  .gm-fold:hover{color:var(--text);}
+  .gm-fold:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;border-radius:6px;}
+  /* the same chevron, the same 14px, the same flip as .ws-fold (styles.js): up while the block is
+     open, down while it is shut. A second fold mark in one panel would be two vocabularies */
+  .gm-sec svg{width:14px;height:14px;flex:none;transition:transform .3s ease;}
+  .gm-grp.folded .gm-sec svg{transform:rotate(180deg);}
+  .gm-grp.folded .gm-rows{display:none;}
+  /* The row is a DIV with two buttons in it: a game cannot be opened and kept by the same button,
+     and a button cannot be nested in a button. The hover and the rounding stay on the wrapper so
+     the pair still reads as one row */
+  .gm-row{display:flex;align-items:center;border-radius:10px;padding-right:6px;}
   .gm-row:hover{background:var(--track);}
-  .gm-row:focus-visible{outline:2px solid #e8895a;outline-offset:-2px;}
+  /* gap 6, not 8. At sidebar 250 the row has 172px and the tightest one (Sword Forge with a +7 on
+     it) measures 10 + 24 + 6 + 78.8 + 6 + 12.5 + 4 + 20 + 6 = 167.3. At gap 8 it is over
+     (docs/game-panels.md, 7-3) */
+  .gm-open{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;
+    padding:8px 4px 8px 10px;border:0;border-radius:10px 0 0 10px;background:transparent;
+    font-family:inherit;text-align:left;cursor:pointer;color:var(--text);}
+  .gm-open:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
+  /* The star. Same 20x20 box as .ws-fold with a 16px glyph in it: the sidebar is a mouse surface,
+     so this does not owe the 44px touch target */
+  .gm-fav{flex:none;display:flex;width:20px;height:20px;padding:2px;border:0;border-radius:6px;
+    background:transparent;color:var(--muted);cursor:pointer;opacity:0;}
+  .gm-fav svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linejoin:round;display:block;}
+  /* while it is off it shows on hover and on focus only. opacity rather than visibility, because
+     visibility:hidden cannot be reached by the Tab key */
+  .gm-row:hover .gm-fav,.gm-row:focus-within .gm-fav{opacity:1;}
+  .gm-fav:focus-visible{outline:2px solid var(--focus);outline-offset:-1px;opacity:1;}
+  /* while it is on it always shows. The FILL is the state and the colour only helps */
+  .gm-row.fav .gm-fav{opacity:1;color:#e8895a;}
+  .gm-row.fav .gm-fav svg{fill:currentColor;}
   /* 24px, down from 48. Fourteen rows at the old size ran to 896px and the list was mostly
      scrolling; at 24 a row is 40px and the whole casino is about 640px.
      24 rather than 32 or 36 because the art is drawn on a 24-unit grid (games/tiles.js), so only a
@@ -106,7 +153,10 @@ const CSS = `
      would make the two rows that have one 7px taller than the other twelve. Side by side every row
      is the same 40px and the sub-line still reads as the exception it is */
   .gm-txt{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:6px;overflow:hidden;}
-  .gm-nm{font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;flex:none;}
+  /* the safety net for the width above: a name that does not fit is cut with an ellipsis rather
+     than cut through the middle of a letter by the overflow */
+  .gm-nm{font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;
+    flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;}
   .gm-sub{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
   /* The right-hand figure, and only two rows get one: the market's open profit and the forge's
      sword level. A number on all fourteen rows is a number on none of them, because the point of
@@ -121,14 +171,16 @@ const CSS = `
   /* the same two roles (it went up / it went down) brought down for a white card. Not new roles */
   body.vscode-light .gm-fig.gm-up{color:#1f7a49;}  /* 5.33:1 */
   body.vscode-light .gm-fig.gm-dn{color:#b32a2e;}  /* 6.39:1 */
-  .gm-go{flex:none;line-height:0;}
-  .gm-go svg{width:14px;height:14px;color:var(--muted);transform:rotate(90deg);display:block;}
+  /* the lit star, brought down for a white card the same way. Measured: ember on light --inner
+     (#f6f6f7) is 2.38:1, under the 3:1 a control owes; #c25a34 is 4.05:1 there and 3.44:1 on the
+     hover track (#e4e4e7). Not a new colour, it is tiles.js's emberLo (the coin's rim) */
+  body.vscode-light .gm-row.fav .gm-fav{color:#c25a34;}
   /* --- a game's heading: back arrow, title, and a corner for the game's own figure --- */
   .ihead.bj-head .it{flex:1 1 auto;}
   .bj-side{flex:none;font-size:10.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
   .bj-back{flex:none;margin-right:2px;padding:3px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;display:flex;line-height:0;}
   .bj-back:hover{background:var(--track);color:var(--text);}
-  .bj-back:focus-visible{outline:2px solid #e8895a;outline-offset:1px;}
+  .bj-back:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
   .bj-back svg{width:14px;height:14px;transform:rotate(-90deg);}
   /* --- the felt: the table surface itself. The heading, warnings and the buttons sit outside it,
      in the room the table stands in. Woven look from 1px lines on a 2px period, the same grid the

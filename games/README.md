@@ -68,9 +68,8 @@ stake(round)                 // optional: what a live round has riding, if a mov
 A round is in exactly one phase, and there are **two shapes of game**, not one:
 
 ```
-a round the player plays     your live phase -> done      blackjack, high-low, poker, the minefield,
-                                                          the tower, the crash, keno, the wheel,
-                                                          the scratch card, red dog
+a round the player plays     your live phase -> done      blackjack, high-low, poker, red dog,
+                                                          the wheel, the scratch card
 a round born settled         done                         the slots, the plinko drop
 ```
 
@@ -79,8 +78,8 @@ decide after the press: the deal **is** the round, so `newRound` returns `phase:
 engine's `OPS` is empty. There is no bet phase in either shape; `idleView()` is what the screen
 shows before a round exists.
 
-For the first shape, the live phase's name is yours (`player`, `play`, `draw`, `arm`, `scratch`,
-`spin`) and `table.livePhase` tells the driver which it is. For the second, **leave `livePhase`
+For the first shape, the live phase's name is yours (`player`, `play`, `draw`, `scratch`, `spin`)
+and `table.livePhase` tells the driver which it is. For the second, **leave `livePhase`
 out.** Naming `'done'` there would deal exactly one round per window and refuse every deal after it
 with "a round is already in progress", forever; the driver refuses that spec at load (`whyNotSpec`)
 rather than letting it ship, and the two halves are checked against each other: a live phase with
@@ -148,9 +147,17 @@ games on the same number are ordered by their `id`, alphabetically, never by the
 system's order differs between APFS, ext4 and a `.vsix` unpacked by another version, and a list that
 is in a different order in every window is a list nobody can learn.
 
-`group` is an optional string. The list is drawn **flat** today and the webview ignores the field;
-it is carried so the day the list grows headings is not the day fourteen `meta.js` files are edited.
-Set it if your game clearly belongs with others, leave it `''` if you are not sure.
+`group` is an optional string, and it is the heading your row sits under. Three things hang off it
+now, so it is worth getting right:
+
+- the list draws one heading wherever `group` changes down the already-sorted rows, so **`order` has
+  to keep a group contiguous.** A group that comes back later prints its heading twice
+- the heading is the button that folds its block away, and the fold is remembered **by this string**.
+  Renaming a group forgets whether it was folded, which is the cheaper of the two mistakes
+- a game the player has starred leaves the block, and a block the stars empty draws no heading at all
+
+Leave it `''` if you are not sure: a row with no group keeps its place in `order` and simply has no
+heading over it.
 
 ### What the register does with it
 
@@ -171,23 +178,24 @@ What it does when something is wrong matters more than what it does when nothing
 
 ### The deal's selection: `startArg` and `badStart`
 
-Some games let the player choose something **before the round exists**: how many mines are buried,
-which tower, what multiplier to get out at. That choice has to reach `newRound`, and the webview
+Some games let the player choose something **before the round exists**: which board, how steep the
+prices are, what the bead is dropped through. That choice has to reach `newRound`, and the webview
 sends it on the `deal` message. Two hooks carry it, and the shape is `opArg`'s:
 
 ```js
-// the minefield: the player picks 3, 5 or 10 mines
+// plinko: the player picks a board before the bead exists (games/plinko/meta.js)
 table: {
-  key: 'mn', id: 'mines', engine: engine, minBet: engine.MIN_BET,
-  livePhase: 'play', noun: 'round',
+  key: 'pl', id: 'plinko', engine: engine, minBet: engine.MIN_BET,
+  noun: 'drop',
   // read off the deal message, and ONLY the fields you name. The driver writes `seed`, `id` and
   // `bet` over whatever this returns, so nothing off the wire can reach them
-  startArg: (m) => ({ mines: m.mines }),
+  startArg: (m) => ({ risk: m.risk }),
   // ...and why that selection is refused, asked BEFORE anything is staked and before the purse is
   // read. Call the engine's own check where it exports one; the sentence is shown to the player
-  badStart: (a) => (engine.MINE_COUNTS.indexOf(a.mines) >= 0 ? null : 'pick 3, 5 or 10 mines'),
-  start: (a) => engine.newRound({ seed: a.seed, id: a.id, bet: a.bet, mines: a.mines }),
-  stakeOf: (st) => st.bet
+  badStart: (a) => engine.badRisk(a.risk),
+  start: (a) => engine.newRound({ seed: a.seed, id: a.id, bet: a.bet, risk: a.risk }),
+  // a drop settles on the press, so a round is never live. See the shapes above
+  stakeOf: () => 0
 }
 ```
 
@@ -197,24 +205,26 @@ style choice: read where the engine takes the field.
 
 | game | what is chosen | how it travels | the check to call first |
 |---|---|---|---|
-| minefield | `mines`: 3, 5, 10 | `startArg` -> `newRound` | none exported; `MINE_COUNTS` |
-| | `cell`: which cell to dig | **also** `opArg` with `dig` | inside its own `whyNot` |
-| tower | `diff`: easy, normal, hard | `startArg` -> `newRound` | none exported; `DIFFS` / `diffOf()` |
-| | `cell`: which door to open | **also** `opArg` with `climb` | inside its own `whyNot` |
-| crash | `ticks`: 11 to 500 | `startArg` -> `newRound` | none exported; `MIN_TICKS`, `MAX_TICKS` |
 | plinko | `risk`: mild, medium, spicy | `startArg` -> `newRound` | **`badRisk(risk)`** |
 | wheel | `risk`: mild, medium, wild | `opArg` with `spin` | `badRisk()`, inside its own `whyNot` |
-| keno | `picks`: 2 to 10 numbers | `opArg` with `draw` | `badPicks()`, inside its own `whyNot` |
 | scratch card | `cell`: 0 to 8, one a move | `opArg` with `scratch` | `badCell()`, inside its own `whyNot` |
+| poker | `hold`: five flags | `opArg` with `draw` | inside its own `whyNot` |
 | slots, red dog | nothing | - | - |
 
-**The minefield and the tower need both hooks**, and that is easy to miss: the default `opArg` is
-`(m) => m.op`, which hands the engine the bare string and drops the cell with it. The refusal that
-comes back is "pick a cell on the board", which reads like a bad message rather than a missing hook.
-Write `opArg: (m) => ({ op: m.op, cell: m.cell })` for both.
+The four dice games are not in this table yet: their engines are being written and no `meta.js`
+names them.
 
-**Four of these do not export a check, and the engine throws instead.** `newRound` raises a
-`RangeError` whose message is already the sentence the player should read. The driver catches every
+**A game whose move carries a field needs `opArg` spelled out**, and that is easy to miss: the
+default is `(m) => m.op`, which hands the engine the bare string and drops the field with it. The
+refusal that comes back then names something the message *did* carry, which reads like a bad message
+rather than a missing hook. The wheel is the live example and its own header says so: without
+`opArg: (m) => ({ op: m.op, risk: m.risk })` the engine is handed `'spin'` and answers "pick a
+wheel: mild, medium, wild" for a message that named one. The scratch card carries `cell` the same
+way. A game that chooses before the deal *and* on the move needs both hooks.
+
+**A game that exports no check of its own leaves the engine to throw instead, and that path is
+handled rather than avoided.** `newRound` raises a `RangeError` whose message is already the
+sentence the player should read. The driver catches every
 call into an engine for exactly that reason: an uncaught throw leaves the message with **no reply**,
 and the panel then sits out its four-second no-reply timeout, which the player reads as a hang. A
 caught `RangeError` is passed through as the refusal; anything else is a fault rather than a ruling,
@@ -441,7 +451,8 @@ Do not drag either game back into 96 to 97% on the strength of this paragraph.
 **Enumerate if you can. Sample only what you cannot enumerate.** This is the order, and it is not a
 preference: an enumeration is a proof of the pay table and a simulation is a measurement of it with
 an error bar, so where both are available the error bar is a weaker statement about the same fact.
-Nine of the ten newest engines are proved by enumeration.
+Every engine in the table below is proved that way; the market is the one newer engine that cannot
+be, and the paragraph above says why.
 
 ### Enumeration, which is what most games can do
 
@@ -451,12 +462,9 @@ The outcome space is usually small enough to walk whole:
 |---|---|---|
 | slots | every stop of three rings | 13,824 |
 | plinko | every walk of the bead | 4,096 |
-| wheel | every segment of every wheel | exact fraction, no count needed |
-| keno | every board's hit distribution | the hypergeometric weights |
+| wheel | every slice of every wheel, by width | exact fraction, no count needed |
 | scratch card | every tally of nine draws | 48,620, as an exact `BigInt` fraction |
 | red dog | every opening and third card, and all 2,048 ways to choose where to raise | 48,516 |
-| minefield, tower | every rung of every ladder, against the exact hypergeometric | the whole table |
-| crash | every target on the dial, against P(burst >= x) = 0.97 / x | the whole dial |
 
 What that buys: the return comes out as an exact rational rather than a figure with a `+-` on it, so
 the assertion is an equality and the test does not get slower as the claim gets tighter. Keep the
@@ -467,11 +475,13 @@ holds up without it.
 ### Sampling, for the one thing an enumeration cannot see
 
 An enumeration believes something it cannot check: that the engine's own dealer really produces the
-distribution the enumeration assumed. A board where the mines are not uniform, a shoe that is not
-shuffled, a seed that correlates two rounds, all of these leave the enumerated table exactly as it
-is and change what the game pays. **That** is what a Monte Carlo is for here, and it is the only
-thing it is for. `test/mines.test.js` and `test/tower.test.js` keep one each, and they measure the
-survival rate of real boards against the rate the ladder is priced off, not the return.
+distribution the enumeration assumed. A shoe that is not shuffled, a wheel whose stops are not
+uniform in the slices' widths, a seed that correlates two rounds, all of these leave the enumerated
+table exactly as it is and change what the game pays. **That** is what a Monte Carlo is for here,
+and it is the only thing it is for. `test/reddog.test.js` keeps the model of it: beside the exact
+solve of 48,516 openings it plays 200,000 rounds from fixed seeds under three strategies and holds
+the measured return against the solved one, which is a check on the shuffle rather than on the
+table.
 
 Where sampling is the only option (`test/market.test.js`, whose price is a random walk with no
 finite outcome space), the shape is:

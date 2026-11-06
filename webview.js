@@ -470,7 +470,14 @@
   function enterGames() {
     var def = PANELS[curGame()];
     if (def) { if (def.node && def.enter) def.enter(); }
-    else { var first = document.querySelector('#panelGames .gm-row'); if (first) first.focus(); }
+    else {
+      // The row is a div now, and a div takes no focus: the button inside it is what opens a game.
+      // It also has to be a row that can be SEEN — one inside a folded or emptied block is not —
+      // and if every block is folded there are no rows at all, so a heading takes it instead
+      var first = document.querySelector('#panelGames .gm-grp:not([hidden]):not(.folded) .gm-open')
+        || document.querySelector('#panelGames .gm-fold');
+      if (first) first.focus();
+    }
   }
   function switchTab(t) {
     if (['usage', 'agents', 'games'].indexOf(t) < 0) t = 'usage'; // a stored tab this build does not know
@@ -687,6 +694,32 @@
     var one = SYM_WORD[sym];
     if (!one) return String(sym);
     return (n === 1 || SYM_NO_S[sym]) ? one : one + 's';
+  }
+
+  // --- the die faces (Sic Bo, Shut the Box, Hazard).
+  //
+  // html.js puts ONE hidden sprite of the seven drawings in the page (games/dice-faces.js), beside
+  // the sea symbols' and for the same reason, so a cell is a <use> and a new face is one href.
+  // Three screens draw dice, which is what puts this here rather than in any one of them: the three
+  // had a copy of the pip geometry each before this existed (games/README.md, section 4).
+  //
+  // THE BODY IS currentColor AND THE PIPS ARE NOT. The cell sets `color`, so the same seven
+  // drawings are cream on the felt (9.30:1) and #f6836e for Hazard's warning die (4.29:1); a pip
+  // that followed the body would vanish into it. That one exception is why dice-faces.js is built
+  // this way at all, so do not bake a colour in here.
+  //
+  // 48 is the size the drawings are made for, and 24 is the one other whole multiple of their
+  // 24-unit grid that is used (Hazard's warning die). FACE 0 IS THE UNROLLED DIE, which is what a
+  // bet screen stands up: a felt that looks the same before and after the deal is the mistake four
+  // games were taken off the floor for (docs/game-panels.md, 5-12 to 5-15).
+  //
+  // The art is aria-hidden, so whatever shows a die carries its number: cardFace's rule with
+  // cardWord, and the sea symbols' with symWord
+  function dieFace(n, px) {
+    var size = px > 0 ? px : 48;
+    var f = (n >= 1 && n <= 6) ? Math.floor(n) : 0;
+    return '<svg class="dc" viewBox="0 0 24 24" width="' + size + '" height="' + size + '"'
+      + ' aria-hidden="true"><use href="#dc-' + f + '"/></svg>';
   }
 
   // --- a multiplier, printed. The host's own figure (the payout over the bet) and never recomputed:
@@ -977,9 +1010,9 @@
     coin: function () { return COIN_FULL; },
     pot: potHtml,
 
-    // --- cards, sea symbols and multiples: what a drawing is CALLED, and how a figure is printed
+    // --- cards, dice, sea symbols and multiples: what a drawing is CALLED, and how a figure is printed
     cardFace: cardFace, cardBack: function () { return CARD_BACK; }, cardWord: cardWord,
-    symWord: symWord, xMult: xMult, xMult100: xMult100,
+    symWord: symWord, die: dieFace, xMult: xMult, xMult100: xMult100,
     npc: npcStyle,
 
     // --- bets
@@ -1045,6 +1078,7 @@
     applyXpEffects(d);
     updateRoom(d.agentActivity);
     if ((vscode.getState() || {}).rosterCollapsed) renderCrewMini(d.agentActivity); // keep collapsed strip live
+    applyFavs(d.favGames); // the host owns the set, so every window hears about a star through here
     // compact usage HUD over the room (so session/weekly stay visible on the Agents tab)
     var _hs = el('wsHudS');
     if (_hs) { if (d.fh && d.fh.used_percentage != null) { var _sp = Math.round(d.fh.used_percentage); _hs.textContent = '5h ' + _sp + '%'; _hs.style.color = col(_sp); } else { _hs.textContent = '5h –'; _hs.style.color = ''; } }
@@ -1205,11 +1239,102 @@
   // the header credits line is the way into the table, and back out to the last tab
   var _hdcBtn = el('hdCredits');
   if (_hdcBtn) _hdcBtn.addEventListener('click', function () { switchTab(curTab() === 'games' ? ((vscode.getState() || {}).lastTab || 'usage') : 'games'); });
+  // --- the games list: the favourites at the top, and the blocks that fold.
+  //
+  // TWO MEMORIES, ON PURPOSE, and they are not interchangeable.
+  // The favourites are the HOST's (globalState, `gameFavoritesV1`): which games are mine is a fact
+  // about me, not about this window, and a second window showing a different set of favourites
+  // would be a second answer to the same question. So the star asks and the row moves when the host
+  // answers, like every number on this page.
+  // Which blocks are folded is this window's (`gamesFold` in getState), the way `rosterCollapsed`
+  // already is: that IS a statement about what this window is looking at.
+  //
+  // A starred game LEAVES its family and goes to the Favourites block. In two places at once it
+  // would be the reader's job to work out whether the two are the same game. Inside the block it
+  // keeps the register's order rather than the order it was starred in, so the block is a short
+  // copy of the same list and not a third order to learn.
+  //
+  // The rows are MOVED, never re-made. Each one holds the figure CUC.rowFig writes (#fig-<id>) and
+  // a redraw would blank it until the next reply, which is a figure that cannot be the reason the
+  // panel is opened. Moving a node blurs whatever it holds, so this runs only when the set really
+  // changed, and puts the focus back afterwards: starring with the keyboard follows the row up
+  var _favSig = null;
+  function favRowOf(id) { return document.querySelector('#panelGames .gm-row[data-game="' + id + '"]'); }
+  function applyFavs(fav) {
+    var list = ASSET_UI.games || [], into = el('gmFavRows');
+    if (!into) return;
+    var i, on = {}, sig = [];
+    for (i = 0; i < list.length; i++) if (fav && fav[list[i].id]) { on[list[i].id] = 1; sig.push(list[i].id); }
+    sig = sig.join(',');
+    if (sig === _favSig) return;   // nothing starred since the last push: leave the DOM alone
+    _favSig = sig;
+    var act = document.activeElement;
+    for (i = 0; i < list.length; i++) {
+      var g = list[i], row = favRowOf(g.id);
+      if (!row) continue;
+      var keep = !!on[g.id];
+      row.classList.toggle('fav', keep);
+      var star = row.querySelector('.gm-fav');
+      if (star) star.setAttribute('aria-pressed', keep ? 'true' : 'false');
+      // appendChild moves: walking the register in its own order rebuilds both orders at once
+      var home = keep ? into : el(row.getAttribute('data-home'));
+      if (home) home.appendChild(row);
+    }
+    trimBlocks();
+    if (act && act.focus && _gmList && _gmList.contains(act)) act.focus();
+  }
+  // A heading with nothing behind it is a heading for a family the favourites emptied, and the
+  // Favourites block itself is the same rule: no stars, no block (no empty box, no dotted outline,
+  // no "put your favourites here"). The top margin goes to the first block that SHOWS, which is
+  // why it is a class and not :first-of-type
+  function trimBlocks() {
+    var grps = document.querySelectorAll('#panelGames .gm-grp'), top = null;
+    for (var i = 0; i < grps.length; i++) {
+      var box = grps[i].querySelector('.gm-rows');
+      grps[i].hidden = !box || box.children.length === 0;
+      grps[i].classList.remove('gm-top');
+      if (!grps[i].hidden && !top) top = grps[i];
+    }
+    if (top) top.classList.add('gm-top');
+  }
+  function toggleFav(id) {
+    var row = id && favRowOf(id); if (!row) return;
+    vscode.postMessage({ type: 'favGame', id: id, on: !row.classList.contains('fav') });
+  }
+  function applyFolds() {
+    var shut = (vscode.getState() || {}).gamesFold || {};
+    var grps = document.querySelectorAll('#panelGames .gm-grp');
+    for (var i = 0; i < grps.length; i++) {
+      var head = grps[i].querySelector('.gm-fold'); if (!head) continue; // Favourites does not fold
+      var f = !!shut[grps[i].getAttribute('data-grp')];
+      grps[i].classList.toggle('folded', f);
+      head.setAttribute('aria-expanded', f ? 'false' : 'true');
+    }
+  }
+  // Keyed by the heading's own text, not by where the block sits: a game added later renumbers the
+  // blocks, and a fold that then applies to somebody else's family is worse than one forgotten
+  function toggleFold(head) {
+    var grp = head.closest ? head.closest('.gm-grp') : null; if (!grp) return;
+    var k = grp.getAttribute('data-grp'); if (!k) return;
+    var s = vscode.getState() || {}, f = s.gamesFold || {};
+    if (f[k]) delete f[k]; else f[k] = 1;
+    s.gamesFold = f; vscode.setState(s);
+    applyFolds();
+  }
   var _gmList = el('panelGames');
+  // The star first: it sits inside the row, so asking what was clicked in the other order opens
+  // the game every time somebody keeps it
   if (_gmList) _gmList.addEventListener('click', function (e) {
-    var row = e.target.closest ? e.target.closest('.gm-row') : null;
-    if (row) openGame(row.getAttribute('data-game'));
+    var t = e.target; if (!t || !t.closest) return;
+    var star = t.closest('.gm-fav');
+    if (star) { toggleFav(star.getAttribute('data-fav')); return; }
+    var head = t.closest('.gm-fold');
+    if (head) { toggleFold(head); return; }
+    var open = t.closest('.gm-open');
+    if (open) openGame(open.getAttribute('data-game'));
   });
+  applyFolds();
+  applyFavs(null);   // before boot(): the empty list is a state too, and boot takes the focus
   if (el('bjBack')) el('bjBack').addEventListener('click', function () { openGame(null); });
 
   // room theme: chosen via the map dropdown (persisted); light-theme variant used when it exists

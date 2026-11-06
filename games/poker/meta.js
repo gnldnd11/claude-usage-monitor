@@ -54,7 +54,7 @@ module.exports = {
   .pk-slot.held .pk-card{transform:translateY(-6px);}   /* a kept card is the one that does not move */
   .pk-hold{display:none;position:absolute;left:0;bottom:0;width:28px;padding:1px 0;border-radius:4px;background:rgba(0,0,0,.42);color:var(--felt-ink);font-size:7.5px;font-weight:800;letter-spacing:.5px;line-height:1.3;text-align:center;}
   .pk-slot.held .pk-hold{display:block;}
-  .pk-slot:focus-visible{outline:2px solid #e8895a;outline-offset:1px;border-radius:4px;}
+  .pk-slot:focus-visible{outline:2px solid var(--focus);outline-offset:1px;border-radius:4px;}
   .pk-slot:disabled{cursor:default;}   /* disabled through the deal's pacing and once the hand is over */
   /* these two lengths are PK_T.cardIn and PK_T.cardOut in panel.js: change them together */
   .pk-card.in{animation:pkIn .16s ease-out both;}

@@ -6,6 +6,11 @@ const IC = require('./icons');
 // <symbol> sheet and each square is a <use>. A panel cannot require() this (it runs in the webview),
 // which is fine: the <use> markup is a string either side of the wall
 const symbols = require('./games/symbols');
+// The six die faces plus the unrolled one, once, for the same reason and in the same way: Sic Bo
+// shows three dice, Shut the Box two and Hazard two, the faces change every roll, and a cell is
+// swapped by rewriting one <use href> rather than by pasting a face. The panels reach these through
+// CUC.die() (webview.js), which is the <use> markup on the other side of the wall
+const diceFaces = require('./games/dice-faces');
 
 // Render the panel webview HTML. All per-webview values (CSP source, asset URIs, the serialized
 // asset catalog, and the script URIs) are injected via `vars` so this stays free of vscode
@@ -21,7 +26,13 @@ function renderHtml(vars) {
     mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
     roomMinecraftUri, assetsJson, gameList, gameScripts
   } = vars;
-  // A row: the picture, the name, the figure's empty slot, the chevron.
+  // A row: the picture, the name, the figure's empty slot, and the star.
+  //
+  // TWO BUTTONS IN A WRAPPER, not one button. The row opens a game and the star keeps it, and a
+  // button cannot be nested in a button, so `.gm-row` is the div both sit in: `.gm-open` is the
+  // whole row minus the star, `.gm-fav` is the star. The chevron that used to close the row is
+  // gone, because it was the same constant on every row and the hover plus the pointer cursor
+  // already said it; the star stands in the width it leaves (docs/game-panels.md, section 7-3).
   //
   // The picture is painted art (`thumb`, four games) or a drawn tile (`tile`, the other ten), and
   // the glyph stays under both: an alt="" image that fails to load draws nothing, and the glyph
@@ -29,28 +40,47 @@ function renderHtml(vars) {
   // `sub` is a second line only where it says something. Twelve rows reading "Min bet 10" is not
   // information, and the same line on two rows out of fourteen is "this one is expensive".
   // `.gm-fig` is left empty for the webview to fill (CUC.rowFig) and `:empty` hides it, so the
-  // twelve rows that have no figure also have no gap where one would be
-  const gameRow = (g) => `    <button type="button" class="gm-row" data-game="${g.id}"${g.rowTitle ? ` title="${g.rowTitle}"` : ''}>
-      <span class="gm-ic">${g.icon}${g.tile || ''}${g.thumb ? `<img src="${g.thumb}" alt=""/>` : ''}</span>
-      <span class="gm-txt"><span class="gm-nm">${g.name}</span>${g.sub ? `<span class="gm-sub">${g.sub}</span>` : ''}</span>
-      <span class="gm-fig" id="fig-${g.id}"></span>
-      <span class="gm-go">${IC.chevron}</span>
-    </button>`;
-  // Headings, drawn wherever `group` changes down the list. The register has already sorted the
-  // rows (games/registry.js), so this walks them once and never re-groups: a group that is not
-  // contiguous in `order` is an ordering mistake in a meta.js, and it shows up here as a heading
-  // printed twice rather than as rows quietly moving somewhere else
-  const gameRows = (list) => {
-    let last = null;
-    return list.map((g) => {
-      const head = g.group && g.group !== last ? `    <div class="gm-sec">${g.group}</div>\n` : '';
-      last = g.group || last;
-      return head + gameRow(g);
+  // twelve rows that have no figure also have no gap where one would be.
+  // `data-home` is the rows box this game belongs in. The webview MOVES the row into the
+  // Favourites block and back, and it has to put it back without guessing from the heading text
+  const gameRow = (g, home) => `        <div class="gm-row" data-game="${g.id}" data-home="${home}">
+          <button type="button" class="gm-open" data-game="${g.id}"${g.rowTitle ? ` title="${g.rowTitle}"` : ''}>
+            <span class="gm-ic">${g.icon}${g.tile || ''}${g.thumb ? `<img src="${g.thumb}" alt=""/>` : ''}</span>
+            <span class="gm-txt"><span class="gm-nm">${g.name}</span>${g.sub ? `<span class="gm-sub">${g.sub}</span>` : ''}</span>
+            <span class="gm-fig" id="fig-${g.id}"></span>
+          </button>
+          <button type="button" class="gm-fav" data-fav="${g.id}" aria-pressed="false" aria-label="Favourite ${g.name}" title="Favourite ${g.name}">${IC.star}</button>
+        </div>`;
+  // The list in blocks, one per `group`, each with its own heading and its own rows box.
+  //
+  // A block rather than a loose heading because both things that move rows need a container: the
+  // heading has to disappear when the favourites have emptied its family (an empty heading is a
+  // heading for nothing), and folding it has to hide its rows and keep the heading.
+  //
+  // The register has already sorted the rows (games/registry.js), so this walks them once and never
+  // re-groups: a group that is not contiguous in `order` is an ordering mistake in a meta.js, and it
+  // shows up here as a heading printed twice rather than as rows quietly moving somewhere else.
+  // The rows boxes are therefore numbered, not named: two blocks may legitimately carry one name
+  const gameBlocks = (list) => {
+    const blocks = [];
+    for (const g of list) {
+      const last = blocks[blocks.length - 1];
+      if (last && last.group === (g.group || '')) last.rows.push(g);
+      else blocks.push({ group: g.group || '', rows: [g] });
+    }
+    return blocks.map((b, i) => {
+      const rid = 'gmRows' + i;
+      // A group with no name is not a mistake (games/registry.js lets a game not care), and it has
+      // no heading, so there is nothing to fold it by: it just shows its rows
+      const head = b.group
+        ? `      <button type="button" class="gm-sec gm-fold" aria-expanded="true" aria-controls="${rid}">${IC.chevron}<span>${b.group}</span></button>\n`
+        : '';
+      return `    <div class="gm-grp" data-grp="${b.group}">\n${head}      <div class="gm-rows" id="${rid}">\n${b.rows.map((g) => gameRow(g, rid)).join('\n')}\n      </div>\n    </div>`;
     }).join('\n');
   };
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
-<style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}<div class="wrap"><div class="card">
+<style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}${diceFaces.sprite()}<div class="wrap"><div class="card">
   <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11.5px;font-weight:600;line-height:1.35">
     <span>Sign in for <b>live</b> session &amp; weekly %</span>
     <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11.5px;white-space:nowrap">Sign In</button>
@@ -151,7 +181,11 @@ function renderHtml(vars) {
   </div>
   <div class="inner bj-games" id="panelGames" style="display:none">
     <div class="ihead"><div class="it gm-it">${IC.coin} Games</div></div>
-${gameRows(gameList)}
+    <div class="gm-grp gm-favs" id="gmFavs" data-grp="" hidden>
+      <div class="gm-sec">Favourites</div>
+      <div class="gm-rows" id="gmFavRows"></div>
+    </div>
+${gameBlocks(gameList)}
   </div>
   <div id="gameStage"></div>
 </div></div>

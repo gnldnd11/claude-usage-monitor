@@ -67,13 +67,13 @@ Because a background subagent has no knowable progress, running agents show an i
 
 The tokens you spend earn credits: one per 100K, weighted the way the API prices them, so output counts five times an input token and a cache read a tenth. On first run your past sessions are counted once in the background, so you start with what you have already earned. The balance sits under the title, next to a coin that fills toward the next credit.
 
-Click it for the games list, where the crab runs fourteen games in four families.
+Click it for the games list, where the crab runs fourteen games in four families. Star the ones you come back to and they move to the top; each family folds away.
 
 **Card tables.** **Blackjack**: six decks, the dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once. **Red Dog**: two cards are dealt apart and the bet is whether the third falls between them. **High-Low**: one card lies face up and you call whether the next one beats it, with each side priced off the cards actually left in the shoe, so the odds move as the run goes on. **Draw Poker**: jacks or better, 8/5, one draw, and the row you were paid for lights up.
 
-**Machines.** **Slots**: three rings of 24, rolled to the position the extension picked, so the reel you watch is the reel that paid. **Plinko**: twelve rows, thirteen cups, three risk tables. **Wheel**: 28 segments, three wheels. **Scratch Card**: a 3x3 card you rub one square at a time, and nothing is claimed until all nine are open.
+**Machines.** **Slots**: three rings of 24, rolled to the position the extension picked, so the reel you watch is the reel that paid. **Plinko**: twelve rows, thirteen cups, three risk tables, and the bead speeds up as it falls. **Wheel**: every slice carries its own multiplier, written on it. The wide ones pay nothing and the thin one pays twelve. **Scratch Card**: a 3x3 card you rub one square at a time, and nothing is claimed until all nine are open.
 
-**Boards.** **Mines**: a 5x5 field with 3, 5 or 10 mines, and you can cash out after any dig. **Tower**: ten floors, one or two trap doors a floor, and when you fall every floor opens, including the ones you never reached. **Keno**: pick 2 to 10 of 40 and ten are drawn. **Crash**: set the multiplier before launch and find out where it burst.
+**Dice.** **Roll Under**: drag a line anywhere from 1 to 96 and roll under it. The side that wins is the side that is filled in, and the roll lands on the same ruler you set the line with. **Sic Bo**: three dice and one bet, small, big, any triple, or an exact total; the cell the dice actually landed in lights up, so a loss says why it lost. **Hazard**: roll as often as you dare. Every pip drops into the tray and a 1 empties it. **Shut the Box**: nine tiles and two dice, close any set that adds up to the roll. The tiles you cannot use this throw cannot be pressed, so there is nothing to add up.
 
 **What you keep.** **Sword Forge**: the crab is a blacksmith here. Pay a fee and the sword goes up a level, or stays, or drops back, and from the level its blade starts to glow it can break and take the whole thing with it. A failed strike heats the forge and the next attempt is better for it, but the danger itself never moves. The price the sword fetches is on the Sell button before you press anything, so stopping is always a choice you can price. **Coin Market**: four coins on a three-hour candle chart. Buy with credits, sell whenever you like, 0.5% on the round trip, and the position is still there when you come back. The fee is small because the holding is long: a coin moves about 1% to 2.5% in a day, so coming back tomorrow is worth more than closing costs, while a minute of it is never worth the trip.
 
@@ -84,7 +84,7 @@ The extension deals and judges, so a hand survives switching tabs; reloading the
 ## Features
 
 - **Agents.** Your subagents as distinct pixel characters that walk into a room when invoked, with levels, lifetime stats and per-agent nickname, role, character and model. Read-only, hook-free.
-- **Credits and games.** Your token spend becomes credits, and the crab runs fourteen games for them: four card tables, four machines, four boards, a sword forge and a coin market. Hide the whole thing from the settings gear if you would rather not have it.
+- **Credits and games.** Your token spend becomes credits, and the crab runs fourteen games for them: four card tables, four machines, four dice games, a sword forge and a coin market. Hide the whole thing from the settings gear if you would rather not have it.
 - **Session (5h) / Weekly (7d) / Fable (7d).** The same live numbers as Claude Code's built-in usage dialog.
 - **Context window.** How full the current conversation is, scoped to the workspace you are actually in, with the window tier detected per session.
 - **Today's tokens and requests.** Summed across your local Claude Code sessions, with a `+N k` delta after each response. Resets at local midnight.

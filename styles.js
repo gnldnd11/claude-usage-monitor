@@ -7,9 +7,16 @@ module.exports = `
     --card:#232326;--inner:#191919;--track:#3a3a3d;--text:#ececec;--muted:#8b8b90;
     --border:#303034;--iborder:#2c2c30;--ringtrack:#333;--bubble:#fff;--bubblebd:rgba(0,0,0,.06);
     --felt:#17462f;--felt-lo:#0f3423;--felt-ink:#f2f6f3;--felt-dim:#9fb9a9;
+    /* the focus ring, as a token, because the casino writes one in eleven places. Ember measures
+       6.8:1 on the dark --inner and 2.38:1 on the light one, so the light theme lowers it (below)
+       instead of each of the nine deciding for itself */
+    --focus:#e8895a;
     --forge:#2b2320;--forge-lo:#15100e;--forge-ink:#f4efe9;--forge-dim:#b7a79c;}
   body.vscode-light{--card:#ffffff;--inner:#f6f6f7;--track:#e4e4e7;--text:#1d1d1f;--muted:#78787f;
-    --border:#e7e7ea;--iborder:#ededf0;--ringtrack:#e2e2e6;--bubble:#ffffff;--bubblebd:rgba(0,0,0,.14);}
+    --border:#e7e7ea;--iborder:#ededf0;--ringtrack:#e2e2e6;--bubble:#ffffff;--bubblebd:rgba(0,0,0,.14);
+    /* 4.05:1 on --inner (#f6f6f7) and 3.44:1 on --track, where ember was 2.38:1. Same role, not a
+       new colour: it is tiles.js's emberLo, the pixel coin's rim */
+    --focus:#c25a34;}
   body.vscode-high-contrast{--card:#000;--inner:#000;--border:#6fc3df;--iborder:#6fc3df;--text:#fff;--track:#555;}
   .wrap{padding:10px;}
   .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;}
@@ -366,7 +373,9 @@ module.exports = `
   /* --- header credits: the way into the blackjack table --- */
   button.cc{background:transparent;border:0;font-family:inherit;color:inherit;text-align:left;cursor:pointer;padding:1px 6px 1px 3px;border-radius:6px;width:fit-content;max-width:100%;}
   button.cc:hover,button.cc[aria-pressed="true"]{background:var(--track);}
-  button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px #e8895a;} /* .ttl clips outside outlines */
+  /* the same token as the casino's rings: this button is the door into it, and ember measures
+     2.57:1 on the light --card (#ffffff) the ring is drawn inside */
+  button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px var(--focus);} /* .ttl clips outside outlines */
   body.tab-games .mascot{display:none;} /* the crab climbs down to deal */
   /* Every game screen's CSS lives with that game: the casino chrome in games/casino.js and the
      rest in games/<id>/meta.js, appended after this stylesheet by games/registry.js. */

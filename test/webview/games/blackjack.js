@@ -59,10 +59,13 @@ module.exports = {
       && doc.querySelectorAll('#panelGames .gm-ic svg:not(.gm-tile)').length === registry.GAMES.length,
       doc.querySelectorAll('#panelGames .gm-ic img').map((e) => /[^/]+$/.exec(e.getAttribute('src'))[0] + ' alt=' + JSON.stringify(e.getAttribute('alt'))).join(' '));
     // One heading where the group changes, and a group that comes back would print its heading
-    // twice: see test/registry.test.js, which is where that mistake is named
-    ok('one heading per family, in the order the register sorted them',
+    // twice: see test/registry.test.js, which is where that mistake is named.
+    // Favourites is a fifth heading, in the page from the first paint and hidden with its block
+    // while nothing is starred (test/webview/games/_chrome.js, the favs mode, is where that lives)
+    ok('one heading per family, in the order the register sorted them, under an empty Favourites',
       doc.querySelectorAll('#panelGames .gm-sec').map((e) => e.textContent).join()
-        === registry.GAMES.map((g) => g.group).filter((g, i, a) => g && g !== a[i - 1]).join(),
+        === ['Favourites'].concat(registry.GAMES.map((g) => g.group).filter((g, i, a) => g && g !== a[i - 1])).join()
+      && $('gmFavs').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0,
       doc.querySelectorAll('#panelGames .gm-sec').map((e) => e.textContent).join());
     // the figure slot is in the page from the first paint, because the two games that fill it
     // (the market's profit, the forge's level) have to be able to fill it before they are opened:

@@ -38,6 +38,9 @@ let agentNicknames = {}; // agentName -> user nickname (persisted, editable in t
 let agentRoles = {};     // agentName -> user role/title alias (persisted, editable)
 let agentAppearance = {}; // agentName -> chosen NPC sprite key (persisted, overrides auto-assignment)
 let agentHidden = {};     // agentName -> 1: display-only hide (roster + room + strip)
+// gameId -> 1: the games the player keeps at the top of the list. Global, not per workspace: which
+// games are mine is a fact about me, and a game is not part of a project the way a hidden agent is
+let gameFavorites = {};
 let debounceTimer;
 let usageCache = null; // { five_hour:{used_percentage,resets_at}, seven_day:{...} } — from oauth/usage endpoint
 const watchers = [];
@@ -1041,6 +1044,7 @@ function collect() {
     roles: agentRoles,
     appearance: agentAppearance,
     hidden: agentHidden,
+    favGames: gameFavorites,
     xp: xpSummary(),
     credits: syncCredits(tokens)
   };
@@ -1116,6 +1120,14 @@ class UsageViewProvider {
         // travel with it, but hiding is a statement about THIS project's roster. Kept global
         // it followed you into unrelated folders and emptied their Crew.
         if (extContext) extContext.workspaceState.update('agentHiddenV1', agentHidden);
+        push();
+      }
+      // A star on a list row. globalState, so both windows show one set of favourites: the write is
+      // broadcast and push() redraws every webview, which is also why the row does not move until
+      // the answer comes back. An id no game claims is dropped rather than stored for ever
+      else if (m.type === 'favGame' && m.id && registry.BY_ID[m.id]) {
+        if (m.on) gameFavorites[m.id] = 1; else delete gameFavorites[m.id];
+        if (extContext) extContext.globalState.update('gameFavoritesV1', gameFavorites);
         push();
       }
       else if (m.type === 'setAppearance' && m.name) {
@@ -1226,6 +1238,7 @@ function activate(context) {
   agentNicknames = context.globalState.get('agentNicknamesV1', {}) || {}; // restore agent nicknames
   agentRoles = context.globalState.get('agentRolesV1', {}) || {}; // restore agent role/title aliases
   agentAppearance = context.globalState.get('agentAppearanceV1', {}) || {}; // restore appearance overrides
+  gameFavorites = context.globalState.get('gameFavoritesV1', {}) || {};     // restore the starred games
   // display-only hides are per workspace (see setHidden). One-time migration: the old global
   // set seeds whichever workspace is open first, so the folder you set it up in keeps its
   // hides and every other folder starts clean.

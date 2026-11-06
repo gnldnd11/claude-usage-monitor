@@ -2,8 +2,8 @@
 //
 // ONE PAGE FOR ALL FOURTEEN SCREENS, because the rule is the floor's and not any one game's. The
 // fourteen receive() bodies are fourteen copies of one sentence, and a mode per game would be
-// fourteen pages proving the same thing fourteen times. A fifteenth game is a row in GAMES below
-// and nothing else. What is asked of every screen is the same five things:
+// fourteen pages proving the same thing fourteen times. A fifteenth game is a row in GAMES below and
+// nothing else. What is asked of every screen is the same five things:
 //
 //   1. the reason shows
 //   2. what was drawn is still drawn, to the character, marks and held cards included
@@ -16,6 +16,10 @@
 // five inside its own mode file for a while; the second copy of a rule is where the two copies start
 // to differ, so it is a row here now and test/webview/games/reddog.js keeps none of them.
 //
+// (The count above read "ten" while the minefield, the tower, keno and the crash were off the floor
+// and the dice family had not replaced them. It is in the prose and nowhere in the code: the rows in
+// GAMES are the register.)
+//
 // The fault is delivered by answering the message in the page (h.intercept) rather than by breaking
 // the host, so the host never sees the move and still holds the round the panel kept. That is what
 // makes step 5 worth anything: if the panel had thrown its state away, the move it sends next would
@@ -25,11 +29,11 @@
 module.exports = {
   id: 'fault',
   modes: ['stateless'],
-  // Fourteen tables on one purse, and two of them (the minefield, the tower) deal at 100 while the
-  // market buys at 100 and the forge charges a fee an attempt. A round left live holds its stake
-  // back from every other game (games/README.md, section 6), so this page runs on a purse deep
-  // enough that no table here is ever refused for money: what is being measured is a fault, and a
-  // refused deal would be a different reply with a different rule
+  // Fourteen tables on one purse: ten of them deal at 10, the four dice games and the market at
+  // 100, and the forge charges a fee an attempt. A round left live holds its stake back from every
+  // other game (games/README.md, section 6), and Hazard and Shut the Box are both left live by this
+  // page, so this runs on a purse deep enough that no table here is ever refused for money: what is
+  // being measured is a fault, and a refused deal would be a different reply with a different rule
   start: { stateless: 20000 },
 
   run: function (h) {
@@ -72,46 +76,23 @@ module.exports = {
       throw new Error('no forge seed for ' + outcome + ' at ' + level);
     }
 
-    // --- the seeds the boards and the machines need ------------------------------------------
+    // --- the seeds the machines need -----------------------------------------------------------
     //
-    // A board is dug one cell at a time and a round that ended cannot take the move step 5 sends,
-    // so the minefield and the tower are dealt on a seed whose first three moves are all safe. The
-    // slot machine and the plinko board settle on the press instead: there what has to be arranged
-    // is that the two real spins DIFFER, or "the table moved" in step 5 would pass on a coincidence
-    // one spin in thirteen thousand and fail on the other.
-    const mines = engineOf('mines.js');
-    const tower = engineOf('tower.js');
+    // The slot machine and the plinko board settle on the press, so what has to be arranged for
+    // them is that the two real spins DIFFER, or "the table moved" in step 5 would pass on a
+    // coincidence one spin in thirteen thousand and fail on the other.
     const slots = engineOf('slots.js');
     const plinko = engineOf('plinko.js');
     const reddog = engineOf('reddog.js');
+    // The dice family. Two of the four settle on the press (Roll Under, Sic Bo) and need the same
+    // arrangement the machines do: the two real rolls have to DIFFER, or "the table moved" in step 5
+    // would pass on a coincidence. The other two (Hazard, Shut the Box) hold a live round, so what
+    // they need instead is a first roll that leaves one
+    const dice = engineOf('dice.js');
+    const sicbo = engineOf('sicbo.js');
+    const hazard = engineOf('hazard.js');
+    const shutbox = engineOf('shutbox.js');
 
-    function mnSeed() {
-      for (let i = 0; i < 40000; i++) {
-        const s = 'fault-mn-' + i;
-        let st = mines.newRound({ seed: s, id: 't', bet: mines.MIN_BET, mines: mines.DEFAULT_MINES });
-        st = mines.act(st, { op: 'dig', cell: 0 });
-        if (st.phase !== 'play') continue;
-        if (mines.act(st, { op: 'dig', cell: 2 }).phase !== 'play') continue;
-        ext._test.setSeeds('mn', () => s);
-        return s;
-      }
-      throw new Error('no minefield seed whose first and third cells are both clear');
-    }
-    function twSeed() {
-      for (let i = 0; i < 40000; i++) {
-        const s = 'fault-tw-' + i;
-        let st = tower.newRound({ seed: s, id: 't', bet: tower.MIN_BET, diff: tower.DEFAULT_DIFF });
-        let ok3 = true;
-        for (let k = 0; k < 2 && ok3; k++) {
-          st = tower.act(st, { op: 'climb', cell: 0 });
-          ok3 = st.phase === 'play';
-        }
-        if (!ok3) continue;
-        ext._test.setSeeds('tw', () => s);
-        return s;
-      }
-      throw new Error('no tower seed whose first two doors are both safe');
-    }
     // Two seeds in a row, handed out in order, that land somewhere different from each other
     function pinTwo(key, tag, faceOf) {
       const picked = [];
@@ -141,13 +122,34 @@ module.exports = {
       throw new Error('no Red Dog seed that deals a spread');
     }
 
-    // The first door of whichever floor is being climbed: every other floor's doors are disabled
-    const twDoor = () => doc.querySelector('#panel-tower .tw-d:not([disabled])');
     const scFree = () => doc.querySelector('#scGrid .sc-cell:not([disabled])');
 
+    // --- the dice family's own arrangements ----------------------------------------------------
+    const dcFaceOf = (s) => String(dice.newRound({ seed: s, id: 't', bet: dice.MIN_BET, target: 50 }).roll);
+    const sbFaceOf = (s) => sicbo.newRound({ seed: s, id: 't', bet: sicbo.MIN_BET, kind: 'small' }).dice.join();
+    // One seed, pinned, whose FIRST roll leaves a live round. Hazard busts one time in six and Shut
+    // the Box needs a throw a single tile can close, or there would be no live round to fault on
+    function pinOne(key, tag, want) {
+      for (let i = 0; i < 40000; i++) {
+        const s = tag + i;
+        if (want(s)) { ext._test.setSeeds(key, () => s); return s; }
+      }
+      throw new Error('no ' + key + ' seed for ' + tag);
+    }
+    const hzLive = (s) => hazard.newRound({ seed: s, id: 't', bet: hazard.MIN_BET }).phase === 'play';
+    // a first throw of 9 or less: the tile of that number closes it on its own, so the press below
+    // is one click and the screen sends the close without a pick to paint first
+    let sxFirst = null;
+    const sxEasy = (s) => {
+      const st = shutbox.newRound({ seed: s, id: 't', bet: shutbox.MIN_BET });
+      if (st.phase === 'play' && st.roll <= shutbox.TILES) { sxFirst = st; return true; }
+      return false;
+    };
+    const sxTile = (n) => doc.querySelector('#sxTiles .sx-tile[data-t="' + n + '"]');
+
     // Each row is one screen. `shows` is what proves something is really on the table before the
-    // fault, and it is not /svg/ for every game: the card games draw cards, the boards draw their
-    // own marks and the machines draw their own symbols
+    // fault, and it is not /svg/ for every game: the card games draw cards and the machines draw
+    // their own symbols
     const GAMES = [
       {
         id: 'blackjack', err: 'bjErr', key: 'bj', moves: ['hit'],
@@ -185,61 +187,6 @@ module.exports = {
         press: () => $('fgEnhance').click(),
         ready: () => !$('fgEnhance').disabled,
         next: () => { $('fgEnhance').click(); advance(3000); }
-      },
-      {
-        // the gems already dug, the pot they are worth and the next rung's price: a board wiped
-        // back to twenty-five covered cells is the one reading nobody can tell from "my round is
-        // gone", and this round is the most expensive one on the list to lose
-        id: 'mines', err: 'mnErr', key: 'mn', moves: ['dig'], shows: /mn-c safe/,
-        open: () => {
-          mnSeed();
-          openGame('mines');
-          $('mnDeal').click(); advance(2000);
-          $('mnC0').click(); advance(2000);
-        },
-        drawn: () => $('mnBoard').innerHTML + '|' + text('mnLine'),
-        press: () => $('mnC1').click(),
-        ready: () => !$('mnPlay').hidden && !$('mnC2').disabled,
-        next: () => { $('mnC2').click(); advance(2000); }
-      },
-      {
-        // what makes the tower different from the minefield is that the climb stays behind you, so
-        // the floors already taken are exactly what a fault may not forget
-        id: 'tower', err: 'twErr', key: 'tw', moves: ['climb'], shows: /tw-d took/,
-        open: () => {
-          twSeed();
-          openGame('tower');
-          $('twDeal').click(); advance(2000);
-          twDoor().click(); advance(2000);
-        },
-        drawn: () => $('twTower').innerHTML + '|' + text('twLine'),
-        press: () => twDoor().click(),
-        ready: () => !$('twPlay').hidden && !!twDoor(),
-        next: () => { twDoor().click(); advance(2000); }
-      },
-      {
-        // the ticket is the SCREEN's own until the draw (keno's marks are not the host's yet), so a
-        // fault that wiped it would throw away numbers the host has no copy of
-        id: 'keno', err: 'knErr', key: 'kn', moves: ['draw'], shows: /kn-n on/,
-        open: () => {
-          openGame('keno');
-          $('knDeal').click(); advance(1000);
-          $('knQuick').click(); advance(10);
-        },
-        drawn: () => $('knBoard').innerHTML + '|' + text('knLine') + '|' + $('knNear').innerHTML,
-        press: () => doc.dispatchKey('d'),
-        ready: () => !$('knPlay').hidden && !$('knDraw').disabled,
-        next: () => { doc.dispatchKey('d'); advance(3000); }
-      },
-      {
-        // the armed target and the price the host put on it. The hero number is this screen's whole
-        // state and a fault must not reset it to the dial's own zero
-        id: 'crash', err: 'crErr', key: 'cr', moves: ['launch'], shows: /×\d/,
-        open: () => { openGame('crash'); $('crDeal').click(); advance(2000); },
-        drawn: () => text('crNum') + '|' + $('crPays').innerHTML + '|' + text('crLine'),
-        press: () => doc.dispatchKey('l'),
-        ready: () => !$('crPlay').hidden && !$('crLaunch').disabled,
-        next: () => { doc.dispatchKey('l'); advance(5000); }
       },
       {
         // a spin settles on the press, so the thing a fault may not wipe is the LAST spin: three
@@ -322,6 +269,61 @@ module.exports = {
         press: () => doc.dispatchKey('s'),
         ready: () => !$('rdPlay').hidden && !doc.querySelector('#rdPlay [data-op="stand"]').disabled,
         next: () => { doc.dispatchKey('s'); advance(1500); }
+      },
+      {
+        // a roll settles on the press, so what a fault may not wipe is the LAST roll: an empty
+        // shelf is a lane that has never been rolled on rather than one nobody could describe
+        id: 'dice', err: 'dcErr', key: 'dc', moves: ['deal'], shows: /dc-plaque/,
+        open: () => {
+          pinTwo('dc', 'fault-dc-', dcFaceOf);
+          openGame('dice');
+          $('dcDeal').click(); advance(1000);
+        },
+        drawn: () => $('dcShelf').innerHTML + '|' + $('dcFill').style.width + '|' + text('dcLine'),
+        press: () => $('dcDeal').click(),
+        ready: () => !$('dcDeal').disabled,
+        next: () => { $('dcDeal').click(); advance(1000); }
+      },
+      {
+        // the same rule drawn as three dice: three blank faces is a table that was never played
+        id: 'sicbo', err: 'sbErr', key: 'sb', moves: ['deal'], shows: /#dc-[1-6]/,
+        open: () => {
+          pinTwo('sb', 'fault-sb-', sbFaceOf);
+          openGame('sicbo');
+          $('sbDeal').click(); advance(1000);
+        },
+        drawn: () => $('sbDice').innerHTML + '|' + $('sbBoard').innerHTML + '|' + text('sbLine'),
+        press: () => $('sbDeal').click(),
+        ready: () => !$('sbDeal').disabled,
+        next: () => { $('sbDeal').click(); advance(1000); }
+      },
+      {
+        // the tray is the round: a fault that emptied it would be indistinguishable from the 1 that
+        // empties it for real, which is the only thing this game can lose
+        id: 'hazard', err: 'hzErr', key: 'hz', moves: ['roll'], shows: /hz-pip/,
+        open: () => {
+          pinOne('hz', 'fault-hz-', hzLive);
+          openGame('hazard');
+          $('hzDeal').click(); advance(1000);
+        },
+        drawn: () => $('hzDie').innerHTML + '|' + $('hzTray').innerHTML + '|' + text('hzPay') + '|' + text('hzLine'),
+        press: () => doc.dispatchKey('r'),
+        ready: () => !$('hzPlay').hidden && !doc.querySelector('#hzPlay [data-op="roll"]').disabled,
+        next: () => { doc.dispatchKey('r'); advance(1000); }
+      },
+      {
+        // nine tiles, and the ones already down are the player's own closes. This screen has no
+        // buttons at all, so the press and the next input are both a tile
+        id: 'shutbox', err: 'sxErr', key: 'sx', moves: ['close'], shows: /sx-tile/,
+        open: () => {
+          pinOne('sx', 'fault-sx-', sxEasy);
+          openGame('shutbox');
+          $('sxDeal').click(); advance(1000);
+        },
+        drawn: () => $('sxTiles').innerHTML + '|' + $('sxDice').innerHTML + '|' + text('sxLine'),
+        press: () => sxTile(sxFirst.roll).click(),
+        ready: () => $('sxBet').hidden && !!sxTile(sxFirst.roll) && !sxTile(sxFirst.roll).disabled,
+        next: () => { sxTile(sxFirst.roll).click(); advance(1000); }
       }
     ];
 
@@ -350,7 +352,7 @@ module.exports = {
       // and fail the snapshot for a reason that has nothing to do with faults. The ask is left
       // unanswered for the length of the wait: mkAsk() is not a move and starts no timeout of its
       // own, and a message the host never sees cannot redraw anything. No other screen asks for
-      // anything on a timer, so for the other thirteen this swallows nothing
+      // anything on a timer, so for the other nine this swallows nothing
       h.intercept = (m) => m.op === 'open';
       advance(5000);
       h.intercept = null;

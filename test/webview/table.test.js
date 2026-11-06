@@ -143,7 +143,9 @@ try {
   const bodyTabs = () => ['tab-usage', 'tab-agents', 'tab-games', 'game-bj', 'compact'].filter((c) => doc.body.classList.contains(c)).join(' ');
   const inGames = () => doc.body.classList.contains('tab-games');
   const atTable = () => doc.body.classList.contains('game-bj');
-  const gameRow = () => doc.querySelector('#panelGames .gm-row');
+  // The first row's OPEN button. `.gm-row` is the div that holds the open button and the star, so
+  // it is not what a click that means "open this game" lands on any more
+  const gameRow = () => doc.querySelector('#panelGames .gm-open');
   // Out of whichever game is open, back to the list. The register is what says which games there
   // are, so a game added to games/registry.js needs no line here: the body carries game-<key> while
   // a game is open and its back arrow is <key>Back
@@ -157,7 +159,10 @@ try {
   };
   // The list row that opens a game, by id rather than by its place in the list: a game added above
   // another one must not move anybody else's test
-  const rowFor = (id) => doc.querySelector('#panelGames .gm-row[data-game="' + id + '"]');
+  const rowFor = (id) => doc.querySelector('#panelGames .gm-open[data-game="' + id + '"]');
+  // the star on that row, and the row it is in: the two halves a favourite needs
+  const favFor = (id) => doc.querySelector('#panelGames .gm-fav[data-fav="' + id + '"]');
+  const rowBox = (id) => doc.querySelector('#panelGames .gm-row[data-game="' + id + '"]');
   const openGame = (id) => { openList(); rowFor(id).click(); advance(20); };
   const openTable = () => { openList(); gameRow().click(); advance(5); latchIdle(); };
   const reopenTable = () => { $('bjBack').click(); advance(5); gameRow().click(); advance(5); }; // forces a fresh 'open'
@@ -216,9 +221,13 @@ try {
   // opens its own screen with h.openGame('<id>')
   const h = {
     MODE, START, EXT, path,
+    // The page as the HOST rendered it, before a single script ran. The DOM above is what the
+    // scripts have made of it, so a mode that cares what the first paint said (a control that has
+    // to carry its own state in the markup) has to read this instead
+    rawHtml: html,
     ok, advance, later,
     pending: (ms) => q.filter((t) => t.at > now + (ms || 0)).length,  // pacing timers still to fire
-    doc, $, notShown, bodyTabs, inGames, atTable, gameRow, rowFor, openGame, openList, openTable,
+    doc, $, notShown, bodyTabs, inGames, atTable, gameRow, rowFor, favFor, rowBox, openGame, openList, openTable,
     reopenTable, dealerCards, allCards, isBack, lineText, hdrBal, latchIdle, active, activeName,
     mouseClick, ledgerBalance, useSeed, standOut, watch, noStaleTimer,
     sent: sentOf, sentOps, sentHl, hostLog, errors, roCbs,

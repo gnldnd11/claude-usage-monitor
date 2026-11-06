@@ -232,7 +232,7 @@ module.exports = {
   .mk-row{display:flex;flex-direction:column;justify-content:center;gap:2px;width:100%;height:44px;
     padding:0 6px;border:0;border-radius:8px;background:transparent;font-family:inherit;text-align:left;cursor:pointer;}
   .mk-row:hover{background:var(--track);}
-  .mk-row:focus-visible{outline:2px solid #e8895a;outline-offset:-2px;}
+  .mk-row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
   .mk-r1,.mk-r2{display:flex;align-items:center;gap:6px;width:100%;min-width:0;}
   .mk-nm{flex:1 1 auto;min-width:0;font-size:12.5px;font-weight:700;color:var(--text);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -246,7 +246,7 @@ module.exports = {
   .mk-back{flex:none;padding:2px 5px;border:0;border-radius:6px;background:transparent;color:var(--muted);
     font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;}
   .mk-back:hover{background:var(--track);color:var(--text);}
-  .mk-back:focus-visible{outline:2px solid #e8895a;outline-offset:1px;}
+  .mk-back:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
   /* the code gives way first when the crumb runs out of room: the price and the move are the two
      figures this line is for */
   .mk-code{flex:1 1 auto;min-width:0;font-size:12.5px;font-weight:700;color:var(--text);letter-spacing:.3px;
@@ -277,7 +277,7 @@ module.exports = {
      stays the focus ring and the entry line, and nothing in this panel is picked by being ember */
   .mk-span button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
   .mk-span button:hover:not(.on){color:var(--text);}
-  .mk-span button:focus-visible{outline:2px solid #e8895a;outline-offset:2px;}
+  .mk-span button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   /* The max block, and the one size on this screen that is not in the scale of six: the profit of an
      open position at 26px, which docs/game-panels.md section 2 writes down as the one exception.
      It is HIDDEN when nothing is held rather than showing a zero: a zero in the biggest type on the

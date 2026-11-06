@@ -14,8 +14,18 @@ module.exports = {
   updown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l4-4 4 4"/><path d="M8 15l4 4 4-4"/></svg>',
   spade: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.6 4.8 10c-2.4 2.5-1.6 6.6 1.7 7.8 1.6.6 3.3.2 4.4-.9l-1.2 4.5h4.6l-1.2-4.5c1.1 1.1 2.8 1.5 4.4.9 3.3-1.2 4.1-5.3 1.7-7.8z"/></svg>',
   sword: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 15 6v8H9V6z"/><path d="M6.5 14h11"/><path d="M12 14v5"/><path d="M9.5 21.5h5"/></svg>',
+  // The favourite toggle on a list row. ONE path, and the outline and the filled star are the same
+  // path: two glyphs would have slightly different outer edges and starring a game would look like
+  // a flicker rather than a fill. Neither fill nor stroke is set here on purpose — games/casino.js
+  // paints it, because which of the two is drawn IS the state (.gm-row.fav fills it).
+  // aria-hidden like `coin`: the button beside it carries the name
+  star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1l2.75 5.57 6.15.9-4.45 4.34 1.05 6.12L12 17.14l-5.5 2.89 1.05-6.12L3.1 9.57l6.15-.9z"/></svg>',
 
   // --- the glyphs that only a game panel head uses ---
+  //
+  // `bomb`, `tower`, `grid` and `rocket` are not claimed by any game right now (the minefield, the
+  // tower, keno and the crash left the floor on 2026-11-06). They stay: an unclaimed key costs the
+  // webview nothing, and a glyph that has already passed the 15px squint is worth more than a redraw.
   //
   // THEY HAVE TO RIDE currentColor. `.ihead .it svg` in styles.js paints the head glyph ember
   // (#e8895a) through `color`, so a baked fill arrives in its own colour instead and the panel ends
@@ -47,5 +57,16 @@ module.exports = {
   // the bottom, which at 15px is the sword
   rocket: '<svg viewBox="0 0 24 24" fill="currentColor"><g transform="rotate(40 12 11.7)"><path d="M12 3.4c2.2 2.4 3.3 5.1 3.3 8.2v3.8H8.7v-3.8c0-3.1 1.1-5.8 3.3-8.2z"/><path d="M8.7 11.8L5.6 16.2h3.1zM15.3 11.8l3.1 4.4h-3.1z"/><path d="M12 20.6l-2.1-4.6h4.2z"/></g></svg>',
   wheel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="14" r="7.4"/><path d="M15.8 14h3.6M13.9 17.3l1.8 3.1M10.1 17.3l-1.8 3.1M8.2 14H4.6M10.1 10.7L8.3 7.6M13.9 10.7l1.8-3.1"/><circle cx="12" cy="14" r="1.8" fill="currentColor" stroke="none"/><path fill="currentColor" stroke="none" d="M12 7.4L8.6 1.6h6.8z"/></svg>',
+  // --- the four dice games.
+  //
+  // ONLY ONE OF THE FOUR CAN BE A DIE WITH PIPS. At 15px a 9-unit cube is 5.6px across and a pip
+  // inside it is under a pixel, so three dice can only ever be three boxes. Hazard is the one that
+  // keeps the pips, because Hazard is literally one die; Sic Bo is the count (three boxes clustered)
+  // and Shut the Box is the box. Dice itself has no cube in the list tile either and none here: that
+  // game rolls 0.00 to 99.99 against a line, and the line is what both drawings show.
+  lane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="2.4" y="11.6" width="19.2" height="8.4" rx="4.2"/><path fill="currentColor" stroke="none" d="M6.2 13.6h4.6v4.4H6.2a2.2 2.2 0 0 1 0-4.4z"/><path fill="currentColor" stroke="none" d="M12.4 9.4L8.4 2.6h8z"/><path fill="currentColor" stroke="none" d="M11.6 9.2h1.6v3.4h-1.6z"/></svg>',
+  dice3: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="7.6" y="2.2" width="8.8" height="8.8" rx="2"/><rect x="2" y="13" width="8.8" height="8.8" rx="2"/><rect x="13.2" y="13" width="8.8" height="8.8" rx="2"/></svg>',
+  die1: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="2" y="6" width="13.2" height="13.2" rx="2.6"/><circle cx="8.6" cy="12.6" r="1.9" fill="currentColor" stroke="none"/><g fill="currentColor" stroke="none"><circle cx="20" cy="17.6" r="2"/><circle cx="20" cy="11.8" r="2"/><circle cx="20" cy="6" r="2"/></g></svg>',
+  slats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="2" y="15.6" width="20" height="5.6" rx="1.8"/><g fill="currentColor" stroke="none"><rect x="4.6" y="3.6" width="3.6" height="12.4" rx="1"/><rect x="10.2" y="3.6" width="3.6" height="12.4" rx="1"/><rect x="15.8" y="11.8" width="3.6" height="4.2" rx="1"/></g></svg>',
   spread: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="2" y="6.4" width="7" height="11.2" rx="1.4"/><rect x="15" y="6.4" width="7" height="11.2" rx="1.4"/><circle cx="5.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>'
 };

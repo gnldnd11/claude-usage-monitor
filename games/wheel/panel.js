@@ -1,10 +1,20 @@
-// The wheel's screen: where did it stop? And before it turns, how many segments are worth hoping
+// The wheel's screen: where did it stop? And before it turns, how wide is the slice worth hoping
 // for?
 //
 // A WHEEL IS DRAWN AS A CIRCLE because the whole point of this game is that it can be read before
-// the bet: 28 segments, all public, and the only secret is where it stops. Flattened into a bar it
-// would be a lie about the object. The host sends every wheel's segments and its legend, so this
-// screen colours wedges and prints rows and holds no multiplier or chance of its own.
+// the bet: every slice public, and the only secret is where it stops. Flattened into a bar it
+// would be a lie about the object.
+//
+// THE FIGURES ARE ON THE DIAL. The host sends each slice its own `from`, `span`, `mid` and `label`,
+// so this screen works out no angle and names no multiplier: it lays the label the host wrote along
+// the arc the host measured. The labels live INSIDE `.wh-face`, which is the element the spin
+// rotates, so they turn with the wheel instead of being re-placed frame by frame.
+//
+// They are laid along the arc rather than out along the radius, and that is the one piece of this
+// screen worth defending. A wheel rests with the stopped slice at twelve o'clock, so a label laid
+// along the arc is EXACTLY UPRIGHT at the moment anyone reads it, every time, on every wheel. Laid
+// along the radius it would be side-on at that moment instead. The price is that the slices at the
+// bottom of the dial are upside down, which is what a prize wheel looks like.
 //
 // `stop` is null while the round is live, which is the one thing the host keeps back: a screen that
 // knew the segment before it animated getting there would be animating a result it already had.
@@ -20,6 +30,11 @@
   // `stop` is also the .86s on `.wh-face` in games/wheel/meta.js
   var WH_T = { stop: 860, chip: 960, noReply: 4000 };
   var TURNS = 3;   // whole turns before it settles, so a short hop and a long one look the same
+  // How far out the figures sit, on a dial 150px across (radius 75). Measured rather than chosen:
+  // the widest label on any wheel is ×12 at 17.98px of ink at 10.5px/700, and in a 12px line box
+  // centred here its inner corners stand 10.2deg off the slice middle. The narrowest slice the
+  // engine will build is 24deg (wheel.js, MIN_UNITS), so every label clears its own edges by 1.8deg
+  var WH_R = 56;
 
   var wh = { st: null, busy: false, op: null, n: 0, timers: CUC.timers(), to: null, wantFocus: false, risk: null, phase: null, spins: 0 };
   var SU = CUC.stakeUi('wh');
@@ -32,7 +47,9 @@
       + '<div class="bj-felt">'
       +   '<div class="gm-plate tight">'
       +     '<div class="wh-dial">'
-      +       '<div class="wh-face" id="whFace" role="img" aria-label="Wheel"></div>'
+      +       '<div class="wh-face" id="whFace" role="img" aria-label="Wheel">'
+      +         '<div class="wh-nums" id="whNums" aria-hidden="true"></div>'
+      +       '</div>'
       +       '<div class="wh-hub" aria-hidden="true"></div>'
       +       '<i class="wh-pin" aria-hidden="true"></i>'
       +     '</div>'
@@ -78,91 +95,109 @@
     box.innerHTML = out;
   }
 
-  // ONE COLOUR, IN DEPTHS. Ember is the only accent this casino has, so a live segment is ember at
-  // a depth set by its rank among that wheel's own multipliers: proportion would make the wild
-  // wheel's 20x the only visible thing on it. A dead segment is two near-identical darks,
-  // alternating, which is what keeps 25 dead segments in a row from reading as one solid ring
+  // ONE COLOUR, IN DEPTHS. Ember is the only accent this casino has, so a live slice is ember at a
+  // depth set by its rank among that wheel's own multipliers: proportion would make the wild
+  // wheel's ×12 the only visible thing on it. A dead slice is two near-identical darks,
+  // alternating, which is what keeps a run of dead slices from reading as one solid wedge.
+  // Ranked on `halves`, the host's own whole number, so no float orders the palette
   function wedgeColours(segments) {
     var live = [];
     for (var i = 0; i < segments.length; i++) {
-      if (segments[i] > 0 && live.indexOf(segments[i]) < 0) live.push(segments[i]);
+      if (segments[i].halves > 0 && live.indexOf(segments[i].halves) < 0) live.push(segments[i].halves);
     }
     live.sort(function (a, b) { return a - b; });
     var span = Math.max(1, live.length - 1);
-    return segments.map(function (m, i) {
-      if (!m) return 'rgba(255,255,255,' + (i % 2 ? '.05' : '.09') + ')';
-      return 'rgba(232,137,90,' + (0.28 + 0.62 * (live.indexOf(m) / span)).toFixed(2) + ')';
+    return segments.map(function (s, i) {
+      if (!s.halves) return 'rgba(255,255,255,' + (i % 2 ? '.05' : '.09') + ')';
+      return 'rgba(232,137,90,' + (0.28 + 0.62 * (live.indexOf(s.halves) / span)).toFixed(2) + ')';
     });
   }
-  function segAngle(st) { return 360 / ((st && st.slots) || 28); }
-  // The wedges, plus (once the wheel has stopped) one more layer that lights the segment it stopped
-  // on. The lit layer goes first, so it paints over the wedge underneath it
-  function faceCss(st, w, stop) {
-    var seg = segAngle(st), cols = wedgeColours(w.segments), from = (-seg / 2).toFixed(4), parts = [];
+  // The wedges, plus (once the wheel has stopped) one more layer that lights the slice it stopped
+  // on. The lit layer goes first, so it paints over the wedge underneath it.
+  // Every angle is the host's own `from`/`span`, in whole degrees
+  function faceCss(w, stop) {
+    var cols = wedgeColours(w.segments), parts = [];
     for (var i = 0; i < w.segments.length; i++) {
-      parts.push(cols[i] + ' ' + (i * seg).toFixed(4) + 'deg ' + ((i + 1) * seg).toFixed(4) + 'deg');
+      var s = w.segments[i];
+      parts.push(cols[i] + ' ' + s.from + 'deg ' + (s.from + s.span) + 'deg');
     }
-    var base = 'conic-gradient(from ' + from + 'deg,' + parts.join(',') + ')';
+    var base = 'conic-gradient(from 0deg,' + parts.join(',') + ')';
     if (stop == null) return base;
-    var a = (stop * seg).toFixed(4), b = ((stop + 1) * seg).toFixed(4);
-    return 'conic-gradient(from ' + from + 'deg,rgba(0,0,0,0) 0deg ' + a + 'deg,#e8895a ' + a
+    var hit = w.segments[stop], a = hit.from, b = hit.from + hit.span;
+    return 'conic-gradient(from 0deg,rgba(0,0,0,0) 0deg ' + a + 'deg,#e8895a ' + a
       + 'deg ' + b + 'deg,rgba(0,0,0,0) ' + b + 'deg 360deg),' + base;
   }
-  // WHERE THE WHEEL RESTS WHEN NOTHING HAS HAPPENED: with its QUIETEST segment under the pointer.
+  // The figures, laid along the arc of their own slice. The label is the host's string and the
+  // angle is the host's `mid`: this only turns the box.
+  // `rotate(mid) translateY(-WH_R)` with nothing after it is what makes the stopped slice upright,
+  // because the wheel is turned by -mid to bring that slice to the pointer and the two cancel
+  function drawNums(w, stop) {
+    var box = el('whNums'); if (!box) return;
+    var out = '';
+    for (var i = 0; i < w.segments.length; i++) {
+      var s = w.segments[i];
+      out += '<i class="wh-num' + (s.dead ? ' dead' : '') + (stop === i ? ' on' : '')
+        + '" style="transform:rotate(' + s.mid + 'deg) translateY(-' + WH_R + 'px)">'
+        + CUC.esc(s.label) + '</i>';
+    }
+    box.innerHTML = out;
+  }
+  // WHERE THE WHEEL RESTS WHEN NOTHING HAS HAPPENED: with its QUIETEST slice under the pointer.
   // Parking a big multiplier at twelve o'clock makes the pointer and the wedge read as one arrow,
-  // and the wild wheel's own first segment is its 20x, so this is not a hypothetical
+  // and that is what the wheel tile in games/tiles.js actually did
   function homeStop(w) {
     var best = 0;
-    for (var i = 1; i < w.segments.length; i++) if (w.segments[i] < w.segments[best]) best = i;
+    for (var i = 1; i < w.segments.length; i++) if (w.segments[i].halves < w.segments[best].halves) best = i;
     return best;
   }
   function spinWord(st, w, stop) {
-    if (stop == null) return w ? w.name + ' wheel, ' + w.segments.length + ' segments' : 'Wheel';
-    return 'Stopped on segment ' + (stop + 1) + ' of ' + w.segments.length
-      + ', ' + (w.segments[stop] ? xText(st.mult) : 'nothing');
+    if (stop == null) return w ? w.name + ' wheel, ' + w.segments.length + ' slices' : 'Wheel';
+    return 'Stopped on slice ' + (stop + 1) + ' of ' + w.segments.length
+      + ', ' + (w.segments[stop].dead ? 'nothing' : st.label);
   }
   // The wheel at rest. `turn` is false when nothing should be animated: a redraw, a broadcast, or a
   // walk back into the screen must not spin a wheel that has already stopped
   function drawFace(st, stop, turn) {
     var face = el('whFace'), w = wheelOf(st); if (!face || !w) return;
     var at = stop == null ? homeStop(w) : stop;
-    face.style.background = faceCss(st, w, stop);
+    face.style.background = faceCss(w, stop);
     face.setAttribute('aria-label', spinWord(st, w, stop));
+    drawNums(w, stop);   // the lit label goes dark WITH its wedge, or it vanishes into the ember
     face.classList.toggle('turning', !!turn);   // no class, no transition, so this lands at once
     if (turn) wh.spins += 1; else wh.spins = 0;
-    face.style.transform = 'rotate(' + (-(wh.spins * TURNS * 360 + at * segAngle(st))).toFixed(4) + 'deg)';
+    face.style.transform = 'rotate(' + (-(wh.spins * TURNS * 360 + w.segments[at].mid)) + 'deg)';
   }
-  // The legend: every live multiplier the host listed, then the dead segments. The chances are
-  // num/den exactly as sent, NEVER divided into a percentage: wheel.js hands them over that way on
-  // purpose, because a rounded percent beside an exact table is a table nobody trusts
-  // `stop` is the segment to light the row of, or null for none: the row lights WITH the chip, not
+  // The legend. The dial already carries the figures, so this is the OTHER half of the question:
+  // how much of the wheel each figure is. The chances are num/den exactly as sent, NEVER divided
+  // into a percentage: wheel.js hands them over that way on purpose, because a rounded percent
+  // beside an exact table is a table nobody trusts.
+  // `stop` is the slice to light the row of, or null for none: the row lights WITH the chip, not
   // when the state arrives, so it is passed in rather than read off the phase
   function drawKey(st, stop) {
     var box = el('whKey'), w = wheelOf(st); if (!box) return;
     if (!w) { box.innerHTML = ''; return; }
     var cols = wedgeColours(w.segments), out = '';
-    var hitMult = stop != null ? w.segments[stop] : null;
-    for (var i = 0; i < w.legend.length; i++) {
-      var row = w.legend[i];
-      if (!row.mult) continue;
-      var swatch = cols[w.segments.indexOf(row.mult)];
-      out += '<div class="wh-row' + (hitMult === row.mult ? ' on' : '') + '">'
-        + '<i style="background:' + swatch + '"></i><b>' + CUC.esc(xText(row.mult)) + '</b>'
-        + '<span>' + fmtInt(row.chance.num) + ' of ' + fmtInt(row.chance.den) + '</span></div>';
+    var hit = stop != null ? w.segments[stop].halves : null;
+    function swatchOf(halves) {
+      for (var j = 0; j < w.segments.length; j++) if (w.segments[j].halves === halves) return cols[j];
+      return cols[0];
     }
-    if (w.dead.num) {
-      out += '<div class="wh-row dead' + (hitMult === 0 ? ' on' : '') + '">'
-        + '<i style="background:' + cols[w.segments.indexOf(0)] + '"></i><b>nothing</b>'
-        + '<span>' + fmtInt(w.dead.num) + ' of ' + fmtInt(w.dead.den) + '</span></div>';
+    for (var i = 0; i < w.legend.length; i++) {
+      var row = w.legend[i], dead = row.halves === 0;
+      out += '<div class="wh-row' + (dead ? ' dead' : '') + (hit === row.halves ? ' on' : '') + '">'
+        + '<i style="background:' + swatchOf(row.halves) + '"></i>'
+        + '<b>' + CUC.esc(dead ? 'nothing' : row.label) + '</b>'
+        + '<span>' + fmtInt(row.chance.num) + ' of ' + fmtInt(row.chance.den) + '</span></div>';
     }
     box.innerHTML = out;
   }
 
   // --- the line, the folded table and what is read out ----------------------------------------
 
-  // The host's own `mult` (the payout over the bet), formatted and never recomputed, which is the
-  // floor's CUC.xMult: the plinko board prints its cups the same way
-  var xText = CUC.xMult;
+  // The chip says what the slice said. The host writes that string once (wheel.js, labelOf) and
+  // reads it back out of the payout, so the figure on the dial, the figure on the line and the
+  // credits the balance moved by are one thing. CUC.xMult is not used here for that reason: it
+  // would turn a ÷2 slice into ×0.5 and the felt would be printing two names for one outcome
   function whLine(st, pop) {
     var line = el('whLine'); if (!line) return;
     if (!st || st.phase === 'bet') { line.innerHTML = CUC.pot(CUC.stake(SU), true); return; }
@@ -170,15 +205,15 @@
     var net = st.net || 0;
     var cls = net > 0 ? ' win' : net < 0 ? ' lose' : '';
     line.innerHTML = CUC.pot(st.pay, false)
-      + '<span class="bj-chip' + cls + (pop ? '' : ' still') + '">' + CUC.esc(xText(st.mult)) + '</span>';
+      + '<span class="bj-chip' + cls + (pop ? '' : ' still') + '">' + CUC.esc(st.label || '') + '</span>';
   }
   // What the house keeps, exactly, and the fact that picking a wheel cannot improve it. Folded,
   // because it is the same on all three and a constant on the felt is self-commentary
   function whPays(st) {
     var box = el('whPays'), w = wheelOf(st); if (!box) return;
     if (!w) { box.innerHTML = ''; return; }
-    box.innerHTML = 'Every wheel pays back ' + fmtInt(w.rtp.num) + ' of every ' + fmtInt(w.rtp.den)
-      + ' staked, so which one you pick changes the shape and not the edge.';
+    box.innerHTML = 'A slice is as likely as it is wide. Every wheel pays back ' + fmtInt(w.rtp.num)
+      + ' of every ' + fmtInt(w.rtp.den) + ' staked, so which one you pick changes the shape and not the edge.';
   }
   function whAnnounce(st) {
     if (!st) return;

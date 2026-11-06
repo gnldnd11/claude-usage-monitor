@@ -59,7 +59,7 @@ module.exports = {
     background:#7e828c;box-shadow:inset 0 1px 0 #bbbdc7;cursor:pointer;display:block;
     font-family:inherit;overflow:hidden;}
   .sc-cell:hover:not(:disabled){background:#8d919b;}
-  .sc-cell:focus-visible{outline:2px solid #e8895a;outline-offset:2px;}
+  .sc-cell:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .sc-cell[disabled]{cursor:default;}
   /* the foil's own grain, so nine covered squares are not nine grey rectangles */
   .sc-cell::after{content:'';position:absolute;inset:0;
