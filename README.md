@@ -94,13 +94,15 @@ The extension deals and judges, so a hand survives switching tabs; reloading the
 
 ## How it works and privacy
 
-Everything is read locally from your `~/.claude` folder. No telemetry, no third party, no server of ours.
+Everything is read locally from your `~/.claude` folder. No telemetry, no third party, and no server of ours unless you turn on team sharing (below).
 
 - **Agents, tokens, requests, context** are parsed from your local session transcripts (`~/.claude/projects/**/*.jsonl`), incrementally, so a long day of transcripts does not mean re-reading them every tick.
 - **Session, weekly and Fable limits** come from *listening* rather than polling. When the Claude Code extension checks its own usage in the same host process, this extension observes that response through Node's `diagnostics_channel` and reuses it. That means **zero extra API requests** in normal use, and numbers that match the built-in dialog exactly because they *are* the built-in dialog's numbers.
 - **Fallback.** If that tap has been quiet for a while, the extension calls Anthropic's usage endpoint (`https://api.anthropic.com/api/oauth/usage`) itself, using your own signed-in token, or Claude Code's stored OAuth token if you have not signed in.
 
 Your token is sent **only** to `api.anthropic.com` and nowhere else. The code is open, and it is plain JavaScript with no build step, so what ships in the `.vsix` is what is in the repo.
+
+**Team sharing (off by default).** For people who share one Claude account. Enter the same team code under Weekly > Details on each PC (or `claudeUsage.team.code` in settings) and the PCs see each other's week side by side, adding up to the account's weekly %. While a code is set, every 10 minutes this PC sends the extension author's server (`saegimai.up.railway.app`): your display name, the weekly window, the account's weekly %, and this PC's use in that window (tokens and an API-price equivalent, per model). Never prompts, file or project names, session titles, your plan or any token. The team code is kept only as a hash. Clear the code to stop.
 
 The usage endpoint and the transcript format are both undocumented and may change. If they do, the affected numbers may stop updating until the extension is updated.
 

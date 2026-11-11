@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "See which Claude Code subagents are running, and spot the one that's stuck. Your agents as pixel characters in the sidebar, plus live session, weekly and context usage. Unofficial, read-only.",
-  "version": "1.20.1",
+  "version": "1.21.0",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
@@ -132,6 +132,17 @@
           },
           "default": [],
           "markdownDescription": "Panel dashboard elements to hide. Toggle these from the panel's settings gear."
+        },
+      "claudeUsage.team.code": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Team sharing (off while empty). PCs that share one Claude account and enter the same code see each other's weekly usage side by side in Weekly > Details. Sent to the extension author's server every 10 minutes: the name below, the weekly window, the account's weekly %, and this PC's weekly usage (tokens and an API-price equivalent, per model). Never prompts, file or project names, or session titles. The code itself is stored only as a hash."
+        },
+      "claudeUsage.team.name": {
+          "type": "string",
+          "default": "",
+          "maxLength": 24,
+          "markdownDescription": "Your name as the rest of the team sees it. Falls back to this computer's name."
         },
         "claudeUsage.burnRate.enabled": {
           "type": "boolean",

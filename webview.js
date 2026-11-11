@@ -1529,12 +1529,43 @@
         + '<span class="tr"><i style="width:' + Math.max(1, sh) + '%"></i></span></div>';
     }).join('') + '</div>';
   }
+  function teamBlock(r) {
+    var c = r.teamCfg || {}, t = r.team, h = '<div class="sheet-sec">Team</div>';
+    if (!c.on || wkEditTeam) {
+      return h + '<div class="wk-team-form">'
+        + '<input id="wkTeamCode" type="password" maxlength="64" placeholder="Team code (8+ characters)" autocomplete="off">'
+        + '<input id="wkTeamName" type="text" maxlength="24" placeholder="Your name" value="' + esc(c.name || '') + '">'
+        + '<button type="button" id="wkTeamSave">' + (c.on ? 'Save' : 'Join') + '</button>'
+        + (c.on ? '<button type="button" id="wkTeamOff" class="ghost">Leave</button>' : '')
+        + '</div><div class="wk-note">Same code on every PC that shares this account. Sends weekly totals and your name, nothing from your work.</div>';
+    }
+    if (!t) return h + '<div class="wk-note">Reading the team…</div>';
+    if (t.error) return h + '<div class="wk-note">Team server not reachable (' + esc(t.error) + '). <a href="#" id="wkTeamEdit">Change</a></div>';
+    h += '<div class="wk-team">' + t.rows.map(function (x) {
+      return '<div class="wk-trow' + (x.me ? ' me' : '') + (x.stale ? ' stale' : '') + '" title="' + esc(x.name) + ': ' + fmtBig(x.tokens) + ' tokens, $' + Math.round(x.cost) + ', ' + Math.round(x.ofTeam * 100) + '% of the team\'s recorded use' + (x.stale ? ' (no report for 6h+)' : '') + '">'
+        + '<span class="nm">' + esc(x.name) + (x.me ? ' (you)' : '') + '</span>'
+        + '<span class="pc">' + pctTxt(x.pct) + '%</span>'
+        + '<span class="tr"><i style="width:' + Math.min(100, x.pct) + '%"></i></span></div>';
+    }).join('');
+    if (t.unrecorded != null && t.unrecorded >= 0.5) {
+      h += '<div class="wk-trow other" title="Account total minus everyone above: claude.ai on the web, the apps, PCs without team sharing">'
+        + '<span class="nm">Not recorded (web, apps, other PCs)</span><span class="pc">' + pctTxt(t.unrecorded) + '%</span>'
+        + '<span class="tr"><i style="width:' + Math.min(100, t.unrecorded) + '%"></i></span></div>';
+    }
+    h += '</div><div class="wk-note">Adds up to the account total ' + (t.accountPct != null ? Math.round(t.accountPct) + '%' : '') + '. <a href="#" id="wkTeamEdit">Change</a></div>';
+    return h;
+  }
+  var wkEditTeam = false, wkLast = null;
   function renderWeekly(r) {
+    wkLast = r;
     var body = el('wkBody'); if (!body || !r) return;
     var pl = r.plan || {}, t = r.total || {};
     var h = '<div class="wk-host">' + esc(r.host || '') + (r.user ? ' · ' + esc(r.user) : '') + ' · as of ' + new Date(r.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
     // share of the plan
     var acc = pl.pct, me = pl.share;
+    var tm = r.team && r.team.rows ? r.team : null;
+    var mine = tm ? tm.rows.filter(function (x) { return x.me; })[0] : null;
+    if (mine) me = mine.pct; // the team split is the better number when there is one
     h += '<div class="wk-share"><span class="wk-big">' + (me != null ? (pl.basis === 'measured' ? '≈ ' : '~') + pctTxt(me) + '<small>%</small>' : '–') + '</span>'
       + '<span class="wk-of">of this week\'s plan limit<br>account total (every PC) ' + (acc != null ? Math.round(acc) + '%' : '–') + '</span></div>';
     h += '<div class="wk-meter">' + (acc != null ? '<i class="acc" style="width:' + Math.min(100, acc) + '%"></i>' : '')
@@ -1550,6 +1581,7 @@
       h += '<div class="wk-note">' + (pl.basis === 'rough' ? 'Measured on this PC, rough (' + pl.readings + ' of ' + pl.needed + ' intervals). ' : 'Measured on this PC. ')
         + 'About ' + per + ' per 1%. Other PCs busy at the same moments can push it up.</div>';
     }
+    h += teamBlock(r);
     // totals
     h += '<div class="wk-stats">'
       + '<div class="wk-stat"><div class="v">' + fmtBig((t.input || 0) + (t.output || 0) + (t.cache_creation || 0) + (t.cache_read || 0)) + '</div><div class="l">tokens · 7d</div></div>'
@@ -1583,6 +1615,18 @@
     vscode.postMessage({ type: 'weeklyOpen' });
   }
   if (el('wkMore')) el('wkMore').addEventListener('click', function (e) { e.stopPropagation(); openWeekly(); });
+  if (el('wkBody')) el('wkBody').addEventListener('click', function (e) {
+    var id = e.target && e.target.id;
+    if (id === 'wkTeamEdit') { e.preventDefault(); wkEditTeam = true; if (wkLast) renderWeekly(wkLast); return; }
+    if (id !== 'wkTeamSave' && id !== 'wkTeamOff') return;
+    var code = id === 'wkTeamOff' ? '' : (el('wkTeamCode').value || '').trim();
+    var name = (el('wkTeamName') ? el('wkTeamName').value : '').trim();
+    if (id === 'wkTeamSave' && code.length < 8) { el('wkTeamCode').focus(); return; }
+    vscode.postMessage({ type: 'setConfig', key: 'team.name', value: name });
+    vscode.postMessage({ type: 'setConfig', key: 'team.code', value: code });
+    wkEditTeam = false;
+    setTimeout(function () { vscode.postMessage({ type: 'weeklyOpen' }); }, 700);
+  });
   if (el('wkClose')) el('wkClose').addEventListener('click', function () { el('weeklyModal').hidden = true; });
   if (el('weeklyModal')) el('weeklyModal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
 

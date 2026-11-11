@@ -10,6 +10,7 @@ const spriteData = require('./sprite-data'); // character sprites as base64 (not
 const { lineUsage, usageKey, usageVec, addUsageOnce, localDayKey } = require('./usage');
 const credits = require('./credits');
 const weekly = require('./weekly'); // this PC's 7 days + its share of the account's week
+const team = require('./team');     // opt-in: the same account's PCs side by side
 const IC = require('./icons');
 const registry = require('./games/registry');
 const tables = require('./games/tables'); // refusal(): one engine throw, one sentence (gameReply)
@@ -56,6 +57,27 @@ function fmtCountdown(resetsAt) {
   if (d) return `${d}d${h}h`;
   if (h) return `${h}h${String(m).padStart(2, '0')}m`;
   return `${m}m`;
+}
+
+// Team sharing (team.js). The PC id is random and kept per install, so a renamed person is still one row
+function teamCfg() {
+  const c = vscode.workspace.getConfiguration('claudeUsage');
+  let pcId = extContext ? extContext.globalState.get('teamPcIdV1') : null;
+  if (!pcId && extContext) { pcId = crypto.randomUUID(); extContext.globalState.update('teamPcIdV1', pcId); }
+  return { code: String(c.get('team.code', '') || ''), name: String(c.get('team.name', '') || ''), pcId: pcId || 'unsaved-pc-id' };
+}
+let teamBusy = null;
+function teamSync() {
+  const cfg = teamCfg();
+  const sd = usageCache ? usageCache.seven_day : null;
+  if (!team.validCode(cfg.code) || !sd || !sd.resets_at) return Promise.resolve(null);
+  if (teamBusy) return teamBusy;
+  const version = extContext && extContext.extension ? extContext.extension.packageJSON.version : '';
+  teamBusy = weekly.scan()
+    .then(() => team.sync(cfg, weekly.windowTotals(sd.resets_at), sd, version))
+    .then((res) => { if (log && !res.ok) log.appendLine('[team] sync: ' + res.error); return res; })
+    .finally(() => { teamBusy = null; });
+  return teamBusy;
 }
 
 // The plan tier, for the weekly share's reference rate. Only the tier field is read; on macOS the
@@ -1121,7 +1143,15 @@ class UsageViewProvider {
       if (!m) return;
       if (m.type === 'ready') push();
       else if (m.type === 'weeklyOpen') {
-        weekly.report(usageCache ? usageCache.seven_day : null, Date.now(), readPlanTier()).then((r) => {
+        const sd = usageCache ? usageCache.seven_day : null;
+        weekly.report(sd, Date.now(), readPlanTier()).then(async (r) => {
+          const cfg = teamCfg();
+          r.teamCfg = { on: team.validCode(cfg.code), set: !!cfg.code, name: cfg.name };
+          // the page first, then the team rows when the server answers (up to a few seconds)
+          if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
+          if (!r.teamCfg.on) return;
+          const res = await teamSync();
+          r.team = res && res.ok ? team.split(res.summary, cfg.pcId, r.plan.rate, r.plan.pct) : { error: res ? res.error : 'off' };
           if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
         }).catch((e) => { if (log) log.appendLine('[weekly] report failed: ' + (e && e.message)); });
       }
@@ -1296,7 +1326,10 @@ function activate(context) {
   weekly.init({ load: () => context.globalState.get('weeklySamplesV1', []), save: (arr) => context.globalState.update('weeklySamplesV1', arr) });
   const weeklyFirst = setTimeout(() => { weekly.scan().catch(() => {}); }, 20000);
   const weeklyTimer = setInterval(() => { weekly.scan().catch(() => {}); }, 5 * 60 * 1000);
-  context.subscriptions.push({ dispose: () => { clearTimeout(weeklyFirst); clearInterval(weeklyTimer); } });
+  // Team rows stay current for the others even when nobody here opens the page
+  const teamTimer = setInterval(() => { teamSync().catch(() => {}); }, 10 * 60 * 1000);
+  const teamFirst = setTimeout(() => { teamSync().catch(() => {}); }, 60000);
+  context.subscriptions.push({ dispose: () => { clearTimeout(weeklyFirst); clearInterval(weeklyTimer); clearInterval(teamTimer); clearTimeout(teamFirst); } });
   context.subscriptions.push({ dispose: () => { if (creditRun) creditRun.cancel(); } });
   try {
     const saved = context.globalState.get('usageCacheV1');

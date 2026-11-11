@@ -226,6 +226,26 @@ function costSince(since) {
   return sum;
 }
 
+// This PC's use inside one weekly window: what team sharing sends. Per model, so the server copy can
+// be re-weighted later without asking every PC again
+function windowTotals(resetsAt, now) {
+  const since = windowStartOf(resetsAt, now || Date.now());
+  const byModel = {};
+  let cost = 0, tokens = 0;
+  for (const c of files.values()) {
+    for (const [h, models] of c.hours) {
+      if (h + HOUR <= since) continue;
+      for (const [model, v] of models) {
+        const k = modelLabel(model);
+        const cc = costOf(model, v), tk = U.tokenTotal(v);
+        const e = byModel[k] || (byModel[k] = { tokens: 0, cost: 0 });
+        e.tokens += tk; e.cost += cc; cost += cc; tokens += tk;
+      }
+    }
+  }
+  return { cost, tokens, byModel };
+}
+
 // --- share estimate -----------------------------------------------------------------
 // samples: [{ t, pct, r (weekly reset, epoch s), cost (this PC's weighted use since the window opened) }]
 let samples = [];
@@ -348,13 +368,13 @@ async function report(sevenDay, now, tier) {
     models: ranked(models, total.cost, 6),
     kinds: ranked(kinds, total.cost, 6),
     sessions: topSessions,
-    plan: { pct, resetsAt, windowStart: wStart, windowCost, share, basis, tier: tk, tierKnown: !!tk, perPoint: rate > 0 ? 1 / rate : null, rough: est.rough, readings: est.n, needed: MIN_RATIOS, minStep: MIN_DP, samples: samples.length },
+    plan: { pct, resetsAt, windowStart: wStart, windowCost, share, basis, rate, tier: tk, tierKnown: !!tk, perPoint: rate > 0 ? 1 / rate : null, rough: est.rough, readings: est.n, needed: MIN_RATIOS, minStep: MIN_DP, samples: samples.length },
     scannedAt: lastScanAt
   };
 }
 
 module.exports = {
-  init, scan, sample, report, setProjectsDir,
+  init, scan, sample, report, setProjectsDir, windowTotals,
   // exposed for tests
   _internal: { tierKey, REFERENCE_RATE, costOf, priceOf, modelLabel, estimateRate, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
 };

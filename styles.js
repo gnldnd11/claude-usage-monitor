@@ -409,6 +409,22 @@ module.exports = `
   .wk-row .val{color:var(--muted);font-size:10.5px;white-space:nowrap;}
   .wk-row .tr{grid-column:1 / -1;height:4px;border-radius:3px;background:var(--track);overflow:hidden;}
   .wk-row .tr i{display:block;height:100%;background:#e8895a;border-radius:3px;}
+  .wk-team-form{display:flex;flex-wrap:wrap;gap:6px;}
+  .wk-team-form input{flex:1 1 140px;min-width:0;background:var(--track);color:var(--text);border:1px solid var(--iborder);border-radius:7px;padding:5px 8px;font-size:12px;font-family:inherit;}
+  .wk-team-form button{background:#e8895a;color:#fff;border:0;border-radius:7px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .wk-team-form button.ghost{background:transparent;color:var(--muted);border:1px solid var(--iborder);}
+  .wk-team{display:flex;flex-direction:column;gap:6px;}
+  .wk-trow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;font-size:12px;color:var(--text);}
+  .wk-trow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .wk-trow .pc{font-weight:700;}
+  .wk-trow .tr{grid-column:1 / -1;height:5px;border-radius:3px;background:var(--track);overflow:hidden;}
+  .wk-trow .tr i{display:block;height:100%;background:rgba(232,137,90,.55);border-radius:3px;}
+  .wk-trow.me .tr i{background:#e8895a;}
+  .wk-trow.me .nm{font-weight:700;}
+  .wk-trow.stale{opacity:.55;}
+  .wk-trow.other .nm,.wk-trow.other .pc{color:var(--muted);font-weight:500;}
+  .wk-trow.other .tr i{background:var(--muted);opacity:.5;}
+  .wk-note a{color:#e8895a;}
   button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px var(--focus);} /* .ttl clips outside outlines */
   body.tab-games .mascot{display:none;} /* the crab climbs down to deal */
   /* Every game screen's CSS lives with that game: the casino chrome in games/casino.js and the

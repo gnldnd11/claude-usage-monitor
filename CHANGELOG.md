@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.21.0: Team sharing
+
+- **One account, several PCs, one table.** Under Weekly > Details, PCs that enter the same team code list each other: each person's part of the account's weekly limit, side by side, adding up to the account total. What nobody on the team recorded (claude.ai on the web, the apps, PCs without sharing) shows as its own row, so a full account with small rows says where to look next.
+- **Off by default, and narrow when on.** Sent every 10 minutes while a code is set: your display name, the weekly window, the account's weekly %, and this PC's use in that window (tokens and an API-price equivalent per model). Nothing from a prompt, a file, a project or a session; the code is stored only as a hash. Clear the code to stop.
+- The split uses this PC's rate (measured, or the plan reference) but never lets the rows add up to more than the account: if they would, the rate is lowered to fit, and who used how much more is unchanged by that.
+
 ## 1.20.1: A share from the first look
 
 - **This PC's share of the weekly limit shows straight away.** It used to wait until the account's weekly % had risen three points while this PC was busy, which a nearly full account never does. Until this PC has measured its own rate, the share now uses a reference rate for the plan (Max 20x: about $20 of API-equivalent use per 1%), says so under the figure, and switches to the measured rate once there is one. The plan is read from Claude Code's credentials file where there is one; where it lives in the system keychain, Max 20x is assumed and the page says that too.
