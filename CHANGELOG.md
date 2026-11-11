@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.20.1: A share from the first look
+
+- **This PC's share of the weekly limit shows straight away.** It used to wait until the account's weekly % had risen three points while this PC was busy, which a nearly full account never does. Until this PC has measured its own rate, the share now uses a reference rate for the plan (Max 20x: about $20 of API-equivalent use per 1%), says so under the figure, and switches to the measured rate once there is one. The plan is read from Claude Code's credentials file where there is one; where it lives in the system keychain, Max 20x is assumed and the page says that too.
+- On Windows, projects were named after the encoded folder (`c--dev-hai`) instead of the folder itself (`hai`).
+- A session whose first turn was text Claude Code inserted, such as a skill's base directory, is now named after the first thing the person actually asked.
+
 ## 1.20.0: This PC's week
 
 - **Details on the Weekly meter** opens this PC's last seven days: tokens per day (main sessions and subagents stacked), requests, and an API-equivalent figure for comparing machines, then where it went, by project, by model, by agent and by session.

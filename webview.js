@@ -1535,16 +1535,20 @@
     var h = '<div class="wk-host">' + esc(r.host || '') + (r.user ? ' · ' + esc(r.user) : '') + ' · as of ' + new Date(r.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
     // share of the plan
     var acc = pl.pct, me = pl.share;
-    h += '<div class="wk-share"><span class="wk-big">' + (me != null ? (pl.rough ? '~' : '≈ ') + pctTxt(me) + '<small>%</small>' : '–') + '</span>'
+    h += '<div class="wk-share"><span class="wk-big">' + (me != null ? (pl.basis === 'measured' ? '≈ ' : '~') + pctTxt(me) + '<small>%</small>' : '–') + '</span>'
       + '<span class="wk-of">of this week\'s plan limit<br>account total (every PC) ' + (acc != null ? Math.round(acc) + '%' : '–') + '</span></div>';
     h += '<div class="wk-meter">' + (acc != null ? '<i class="acc" style="width:' + Math.min(100, acc) + '%"></i>' : '')
       + (me != null ? '<i class="me" style="width:' + Math.min(100, me) + '%"></i>' : '') + '</div>';
     h += '<div class="wk-legend"><span><b style="background:#e8895a"></b>this PC</span><span><b style="background:rgba(232,137,90,.35)"></b>other PCs</span></div>';
-    if (me == null) {
-      h += '<div class="wk-note">This PC\'s share appears once the account\'s weekly % has risen ' + (pl.minStep || 3) + ' points while this PC is in use. Readings so far: ' + (pl.samples || 0) + '.</div>';
+    var TIER = { max_20x: 'Max 20x', max_5x: 'Max 5x', pro: 'Pro' };
+    var per = pl.perPoint ? '$' + Math.round(pl.perPoint) : '';
+    if (pl.basis === 'reference') {
+      h += '<div class="wk-note">Reference rate for ' + (pl.tierKnown ? TIER[pl.tier] : 'Max 20x (plan not readable here, assumed)')
+        + ': about ' + per + ' of API-equivalent use per 1%. This PC measures its own rate once the account\'s weekly % has risen '
+        + (pl.minStep || 3) + ' points while it is in use, and switches to that.</div>';
     } else {
-      h += '<div class="wk-note">' + (pl.rough ? 'Rough: from ' + pl.readings + ' interval' + (pl.readings === 1 ? '' : 's') + ', firms up at ' + pl.needed + '. ' : '')
-        + 'Upper estimate: other PCs busy at the same moments push it up. Weighted by model price, not raw tokens.</div>';
+      h += '<div class="wk-note">' + (pl.basis === 'rough' ? 'Measured on this PC, rough (' + pl.readings + ' of ' + pl.needed + ' intervals). ' : 'Measured on this PC. ')
+        + 'About ' + per + ' per 1%. Other PCs busy at the same moments can push it up.</div>';
     }
     // totals
     h += '<div class="wk-stats">'

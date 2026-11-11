@@ -58,6 +58,15 @@ function fmtCountdown(resetsAt) {
   return `${m}m`;
 }
 
+// The plan tier, for the weekly share's reference rate. Only the tier field is read; on macOS the
+// credentials live in the keychain and this returns null (the page then says it assumed Max 20x)
+function readPlanTier() {
+  try {
+    const o = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf8')).claudeAiOauth || {};
+    return o.rateLimitTier || o.subscriptionType || null;
+  } catch (e) { return null; }
+}
+
 function readRate() {
   try { return JSON.parse(fs.readFileSync(RATE_FILE, 'utf8')); }
   catch (e) { return null; }
@@ -1112,7 +1121,7 @@ class UsageViewProvider {
       if (!m) return;
       if (m.type === 'ready') push();
       else if (m.type === 'weeklyOpen') {
-        weekly.report(usageCache ? usageCache.seven_day : null).then((r) => {
+        weekly.report(usageCache ? usageCache.seven_day : null, Date.now(), readPlanTier()).then((r) => {
           if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
         }).catch((e) => { if (log) log.appendLine('[weekly] report failed: ' + (e && e.message)); });
       }

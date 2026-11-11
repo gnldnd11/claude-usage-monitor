@@ -86,7 +86,34 @@ test('report: duplicate content-block lines count once, subagents are labelled b
   assert.equal(r.sessions[0].name, 'build the weekly page');
   assert.equal(r.days.length, 7);
   assert.equal(r.days.reduce((a, d) => a + d.tokens, 0), 1370);
-  assert.equal(r.plan.share, null);
+  // no measured rate yet: the reference for the plan applies, capped at the account total
+  assert.equal(r.plan.basis, 'reference');
+  assert.ok(Math.abs(r.plan.share - r.plan.windowCost * 0.05) < 1e-12);
+});
+
+test('reference rate: the two screens of 2026-11-11 come out as their plan percent', () => {
+  // $35 on an account at 99% -> about 1.75%; $140 on a single-PC account at 7% -> 7%
+  assert.equal(W.tierKey('default_claude_max_20x'), 'max_20x');
+  assert.equal(W.tierKey('default_claude_max_5x'), 'max_5x');
+  assert.equal(W.tierKey(null), '');
+  assert.ok(Math.abs(35 * W.REFERENCE_RATE.max_20x - 1.75) < 1e-9);
+  assert.ok(Math.abs(140 * W.REFERENCE_RATE.max_20x - 7) < 1e-9);
+});
+
+test('project is named from the cwd, Windows paths included; injected text is no title', async () => {
+  const proj = path.join(TMP, 'c--dev-hai');
+  fs.mkdirSync(proj, { recursive: true });
+  const now = Date.now(), t = now - HOUR;
+  fs.writeFileSync(path.join(proj, 'sess2.jsonl'), [
+    JSON.stringify({ type: 'user', timestamp: new Date(t).toISOString(), cwd: 'c:\\dev\\hai', message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: c:\\dev\\hai\\.claude\\skills\\onboard' }] } }),
+    JSON.stringify({ type: 'user', timestamp: new Date(t).toISOString(), cwd: 'c:\\dev\\hai', message: { role: 'user', content: 'git checkout 개념' } }),
+    JSON.stringify({ type: 'assistant', requestId: 'r9', timestamp: new Date(t).toISOString(), cwd: 'c:\\dev\\hai', message: { id: 'm9', model: 'claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } }),
+    ''
+  ].join('\n'));
+  weekly.setProjectsDir(proj.replace(/c--dev-hai$/, ''));
+  const r = await weekly.report(null, now);
+  assert.ok(r.projects.some((e) => e.name === 'hai'));
+  assert.ok(r.sessions.some((e) => e.name === 'git checkout 개념'));
 });
 
 (async () => {

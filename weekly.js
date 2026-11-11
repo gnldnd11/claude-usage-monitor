@@ -28,6 +28,20 @@ const MIN_DP = 3;                 // percent points between two readings before 
 const MIN_RATIOS = 3;
 const MAX_SAMPLES = 800;
 
+// Percent of the weekly limit per API-equivalent dollar, before this PC has measured its own.
+// Max 20x: measured 2026-11-11 on an account with a single PC, $140 of use = 7% (so about $20 per
+// point; the 7 is rounded, so 6.5..7.5). The other tiers scale by their limit relative to Max 20x.
+// Rough on purpose, and labelled as such on screen; a measured rate replaces it as soon as one exists
+const REFERENCE_RATE = { max_20x: 0.05, max_5x: 0.2, pro: 1 };
+function tierKey(tier) {
+  const t = String(tier || '').toLowerCase();
+  if (/20x/.test(t)) return 'max_20x';
+  if (/5x/.test(t)) return 'max_5x';
+  if (/pro/.test(t)) return 'pro';
+  if (/max/.test(t)) return 'max_20x';
+  return '';
+}
+
 // $ per million tokens [input, output, cache read]; cache write is 1.25 x input.
 // Used as relative weights only: the weekly limit tracks compute, and a cache read costs a small
 // fraction of an input token, so raw token counts would rank a cache-heavy session far too high
@@ -100,7 +114,8 @@ function firstUserText(o) {
   if (typeof c === 'string') s = c;
   else if (Array.isArray(c)) { for (const b of c) { if (b && b.type === 'text' && b.text) { s = b.text; break; } } }
   s = String(s).trim();
-  if (!s || s[0] === '<' || s.indexOf('Caveat:') === 0) return '';
+  // Text the harness injects into a user turn is not what the person asked
+  if (!s || s[0] === '<' || /^(Caveat:|Base directory for this skill|This session is being continued|\[Request interrupted)/.test(s)) return '';
   return s.replace(/\s+/g, ' ').slice(0, 80);
 }
 
@@ -113,7 +128,7 @@ function parseText(c, text, cutoff) {
     if (!hasUsage && !wantTitle) continue;
     let o;
     try { o = JSON.parse(line); } catch (e) { continue; }
-    if (o.cwd && c.project.indexOf('-') === 0) c.project = path.basename(o.cwd) || c.project;
+    if (o.cwd && !c.cwdSeen) { c.cwdSeen = true; c.project = String(o.cwd).split(/[\\/]/).filter(Boolean).pop() || c.project; }
     if (wantTitle && o.type === 'user') { const t = firstUserText(o); if (t) c.title = t; }
     if (!hasUsage) continue;
     const u = U.lineUsage(o);
@@ -274,7 +289,7 @@ function ranked(map, total, limit) {
     .map((e) => Object.assign(e, { share: total > 0 ? e.cost / total : 0 }));
 }
 
-async function report(sevenDay, now) {
+async function report(sevenDay, now, tier) {
   await scan(now);
   now = now || Date.now();
   const startToday = new Date(now); startToday.setHours(0, 0, 0, 0);
@@ -315,8 +330,13 @@ async function report(sevenDay, now) {
   // The rate (percent per weighted dollar) does not depend on which week it was measured in, so
   // readings from earlier windows count too; estimateRate only pairs readings within one window
   const est = estimateRate(samples);
-  let share = null;
-  if (est.rate != null) { share = windowCost * est.rate; if (pct != null) share = Math.min(share, pct); }
+  // A measured rate when there is one; otherwise the reference for the plan (assumed Max 20x when the
+  // plan cannot be read), so a full account, whose % can no longer rise, still gets a figure
+  const tk = tierKey(tier);
+  const basis = est.rate != null ? (est.rough ? 'rough' : 'measured') : 'reference';
+  const rate = est.rate != null ? est.rate : REFERENCE_RATE[tk || 'max_20x'];
+  let share = windowCost * rate;
+  if (pct != null) share = Math.min(share, pct);
 
   return {
     host: os.hostname(),
@@ -328,7 +348,7 @@ async function report(sevenDay, now) {
     models: ranked(models, total.cost, 6),
     kinds: ranked(kinds, total.cost, 6),
     sessions: topSessions,
-    plan: { pct, resetsAt, windowStart: wStart, windowCost, share, rough: est.rough, readings: est.n, needed: MIN_RATIOS, minStep: MIN_DP, samples: samples.length },
+    plan: { pct, resetsAt, windowStart: wStart, windowCost, share, basis, tier: tk, tierKnown: !!tk, perPoint: rate > 0 ? 1 / rate : null, rough: est.rough, readings: est.n, needed: MIN_RATIOS, minStep: MIN_DP, samples: samples.length },
     scannedAt: lastScanAt
   };
 }
@@ -336,5 +356,5 @@ async function report(sevenDay, now) {
 module.exports = {
   init, scan, sample, report, setProjectsDir,
   // exposed for tests
-  _internal: { costOf, priceOf, modelLabel, estimateRate, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
+  _internal: { tierKey, REFERENCE_RATE, costOf, priceOf, modelLabel, estimateRate, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
 };
