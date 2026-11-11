@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.20.0: This PC's week
+
+- **Details on the Weekly meter** opens this PC's last seven days: tokens per day (main sessions and subagents stacked), requests, and an API-equivalent figure for comparing machines, then where it went, by project, by model, by agent and by session.
+- **This PC's share of the weekly limit.** Several people on one account all draw on one weekly limit, and the usage endpoint only reports the total. Each PC now estimates its own part: every time the account's weekly % moves, it is compared with what this PC used over the same stretch. Other PCs only ever push that ratio up, so the low end of it is an upper estimate of this PC's share. It appears once the account's % has risen three points while this PC was in use, is marked rough until three such stretches are in, and keeps improving after that.
+- Readings come from the usage endpoint, from Claude Code's own usage fetches, and from the rate-limit headers on its responses. The first read of a week of transcripts runs in slices in the background, so the editor does not stall; after that only new bytes are read.
+
 ## 1.19.0: A coin market, dice, and ten more games
 
 - **Coin Market**: four coins, a three-hour candle chart, and a position that is still there when you come back. Buy with credits, sell whenever you like, 0.5% on the round trip. The fee is the small one on purpose: a coin moves about 1% to 2.5% in a day, so a position left overnight is worth more than what it costs to close, while a minute of it never is. The profit on an open position shows on the games list without opening the panel, because that number moving while you were away is the only reason to look.

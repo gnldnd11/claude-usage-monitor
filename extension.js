@@ -9,6 +9,7 @@ const { buildNpcCatalog } = require('./sprites');
 const spriteData = require('./sprite-data'); // character sprites as base64 (not shipped as raw png)
 const { lineUsage, usageKey, usageVec, addUsageOnce, localDayKey } = require('./usage');
 const credits = require('./credits');
+const weekly = require('./weekly'); // this PC's 7 days + its share of the account's week
 const IC = require('./icons');
 const registry = require('./games/registry');
 const tables = require('./games/tables'); // refusal(): one engine throw, one sentence (gameReply)
@@ -820,6 +821,21 @@ function applyRateLimitHeaders(hdrs, path, source) {
   }
   if (!Object.keys(rl).length) return;
   if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] [' + source + '] ' + String(path).slice(0, 24) + ' rate-limit headers: ' + JSON.stringify(rl));
+  // Every message response carries the account's 7-day utilization, so it is the densest source of
+  // weekly readings for the share estimate. The value may be a fraction (0..1) or a percent; it is
+  // read as whichever lies closer to the last known percent
+  let u7 = null, r7 = null;
+  for (const k in rl) {
+    if (/7d/.test(k) && /utilization/.test(k)) u7 = parseFloat(rl[k]);
+    else if (/7d/.test(k) && /reset/.test(k)) r7 = resetsToEpoch(isNaN(Number(rl[k])) ? rl[k] : Number(rl[k]));
+  }
+  if (u7 != null && !isNaN(u7)) {
+    const known = usageCache && usageCache.seven_day;
+    const ref = known && known.used_percentage != null ? known.used_percentage : null;
+    let pctVal = u7;
+    if (u7 <= 1 && (ref == null || Math.abs(u7 * 100 - ref) < Math.abs(u7 - ref))) pctVal = u7 * 100;
+    weekly.sample(Math.round(pctVal * 10) / 10, r7 || (known && known.resets_at));
+  }
 }
 
 // --- diagnostics_channel tap -------------------------------------------------
@@ -938,6 +954,7 @@ function processTapped(body) {
     fable: extractFable(u)
   };
   usageLoaded = true;
+  if (usageCache.seven_day) weekly.sample(usageCache.seven_day.used_percentage, usageCache.seven_day.resets_at);
   lastTapAt = Date.now();
   lastFetch = Date.now();
   if (log) log.appendLine('[' + new Date().toLocaleTimeString() + '] tap (Claude Code) -> '
@@ -967,6 +984,7 @@ async function refreshUsage() {
     fable: extractFable(u)
   };
   usageLoaded = true;
+  if (usageCache.seven_day) weekly.sample(usageCache.seven_day.used_percentage, usageCache.seven_day.resets_at);
   if (log) log.appendLine('[' + ts + '] fetch -> 200  session=' + (u.five_hour ? u.five_hour.utilization + '%' : '–') + '  weekly=' + (u.seven_day ? u.seven_day.utilization + '%' : '–'));
   saveUsage();
   push();
@@ -1093,6 +1111,11 @@ class UsageViewProvider {
     view.webview.onDidReceiveMessage((m) => {
       if (!m) return;
       if (m.type === 'ready') push();
+      else if (m.type === 'weeklyOpen') {
+        weekly.report(usageCache ? usageCache.seven_day : null).then((r) => {
+          if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
+        }).catch((e) => { if (log) log.appendLine('[weekly] report failed: ' + (e && e.message)); });
+      }
       // every game answers on its own message type, straight from the register
       else if (gameHandlers[m.type]) gameHandlers[m.type].handle(m);
       else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
@@ -1259,6 +1282,12 @@ function activate(context) {
     onError: (e) => logLine('credits: ledger write failed: ' + (e && e.message))
   });
   startCreditSweep(); // full backfill on first run, catch-up otherwise
+  // Weekly readings are kept so the share estimate survives reloads. The first scan reads up to
+  // a gigabyte, so it waits until startup has settled and then runs in slices
+  weekly.init({ load: () => context.globalState.get('weeklySamplesV1', []), save: (arr) => context.globalState.update('weeklySamplesV1', arr) });
+  const weeklyFirst = setTimeout(() => { weekly.scan().catch(() => {}); }, 20000);
+  const weeklyTimer = setInterval(() => { weekly.scan().catch(() => {}); }, 5 * 60 * 1000);
+  context.subscriptions.push({ dispose: () => { clearTimeout(weeklyFirst); clearInterval(weeklyTimer); } });
   context.subscriptions.push({ dispose: () => { if (creditRun) creditRun.cancel(); } });
   try {
     const saved = context.globalState.get('usageCacheV1');

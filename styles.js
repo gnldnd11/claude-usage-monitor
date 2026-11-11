@@ -375,6 +375,40 @@ module.exports = `
   button.cc:hover,button.cc[aria-pressed="true"]{background:var(--track);}
   /* the same token as the casino's rings: this button is the door into it, and ember measures
      2.57:1 on the light --card (#ffffff) the ring is drawn inside */
+  .wk-more{margin-left:6px;background:var(--track);border:0;color:var(--muted);font-size:10px;font-weight:600;padding:1px 7px;border-radius:6px;cursor:pointer;font-family:inherit;vertical-align:1px;}
+  .wk-more:hover{color:var(--text);}
+  .wk-card{max-width:420px;}
+  .wk-empty{color:var(--muted);font-size:12px;padding:18px 0;text-align:center;}
+  .wk-host{color:var(--muted);font-size:11px;margin:-6px 0 12px;}
+  .wk-share{display:flex;align-items:baseline;gap:8px;}
+  .wk-big{font-size:28px;font-weight:800;color:var(--text);line-height:1;}
+  .wk-big small{font-size:14px;font-weight:700;}
+  .wk-of{color:var(--muted);font-size:11.5px;line-height:1.35;}
+  .wk-meter{position:relative;height:8px;border-radius:5px;background:var(--track);margin:9px 0 4px;overflow:hidden;}
+  .wk-meter i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;}
+  .wk-meter .acc{background:rgba(232,137,90,.35);}
+  .wk-meter .me{background:#e8895a;}
+  .wk-legend{display:flex;gap:12px;color:var(--muted);font-size:10.5px;}
+  .wk-legend b{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0;}
+  .wk-note{color:var(--muted);font-size:10.5px;margin-top:6px;line-height:1.35;}
+  .wk-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px;}
+  .wk-stat{background:var(--track);border-radius:8px;padding:7px 8px;}
+  .wk-stat .v{font-size:14px;font-weight:700;color:var(--text);}
+  .wk-stat .l{font-size:10px;color:var(--muted);margin-top:1px;}
+  .wk-chart{display:flex;align-items:flex-end;gap:5px;height:96px;margin-top:6px;}
+  .wk-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;height:100%;justify-content:flex-end;}
+  .wk-bar{width:100%;max-width:30px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:4px 4px 2px 2px;overflow:hidden;background:transparent;}
+  .wk-bar .sub{background:rgba(232,137,90,.45);}
+  .wk-bar .main{background:#e8895a;}
+  .wk-col .n{font-size:9.5px;color:var(--muted);white-space:nowrap;}
+  .wk-col .d{font-size:10px;color:var(--muted);}
+  .wk-col.today .d{color:var(--text);font-weight:700;}
+  .wk-rows{display:flex;flex-direction:column;gap:6px;}
+  .wk-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;font-size:11.5px;color:var(--text);}
+  .wk-row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .wk-row .val{color:var(--muted);font-size:10.5px;white-space:nowrap;}
+  .wk-row .tr{grid-column:1 / -1;height:4px;border-radius:3px;background:var(--track);overflow:hidden;}
+  .wk-row .tr i{display:block;height:100%;background:#e8895a;border-radius:3px;}
   button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px var(--focus);} /* .ttl clips outside outlines */
   body.tab-games .mascot{display:none;} /* the crab climbs down to deal */
   /* Every game screen's CSS lives with that game: the casino chrome in games/casino.js and the

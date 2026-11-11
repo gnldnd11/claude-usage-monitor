@@ -1194,6 +1194,7 @@
       if (p.fig) { try { p.fig(m); } catch (e2) { /* one row's figure, not the whole list */ } }
       if (p.node) p.receive(m);
     }
+    else if (m.type === 'weekly') renderWeekly(m.data);
     else if (m.type === 'openSettings') { var s = el('settingsSheet'); if (s) s.hidden = !s.hidden; }
   });
 
@@ -1507,6 +1508,79 @@
   });
   if (el('amClose')) el('amClose').addEventListener('click', closeAgentModal);
   if (el('agentModal')) el('agentModal').addEventListener('click', function (e) { if (e.target === this) closeAgentModal(); });
+
+  // This PC's week (Details on the Weekly meter). The host reads the transcripts and estimates the
+  // share; this only draws what it is sent
+  function fmtBig(n) {
+    n = Math.round(n || 0);
+    if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 0 : 1).replace(/\.0$/, '') + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return Math.round(n / 1e3) + 'k';
+    return String(n);
+  }
+  function pctTxt(x) { return x == null ? '–' : (x < 10 ? x.toFixed(1).replace(/\.0$/, '') : String(Math.round(x))); }
+  var WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function wkRows(title, list, useTitle) {
+    if (!list || !list.length) return '';
+    return '<div class="sheet-sec">' + title + '</div><div class="wk-rows">' + list.map(function (e) {
+      var sh = Math.round((e.share || 0) * 100);
+      return '<div class="wk-row"' + (useTitle ? ' title="' + esc(e.name) + '"' : '') + '><span class="nm">' + esc(e.name) + '</span>'
+        + '<span class="val">' + fmtBig(e.tokens) + ' tok · ' + sh + '%</span>'
+        + '<span class="tr"><i style="width:' + Math.max(1, sh) + '%"></i></span></div>';
+    }).join('') + '</div>';
+  }
+  function renderWeekly(r) {
+    var body = el('wkBody'); if (!body || !r) return;
+    var pl = r.plan || {}, t = r.total || {};
+    var h = '<div class="wk-host">' + esc(r.host || '') + (r.user ? ' · ' + esc(r.user) : '') + ' · as of ' + new Date(r.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
+    // share of the plan
+    var acc = pl.pct, me = pl.share;
+    h += '<div class="wk-share"><span class="wk-big">' + (me != null ? (pl.rough ? '~' : '≈ ') + pctTxt(me) + '<small>%</small>' : '–') + '</span>'
+      + '<span class="wk-of">of this week\'s plan limit<br>account total (every PC) ' + (acc != null ? Math.round(acc) + '%' : '–') + '</span></div>';
+    h += '<div class="wk-meter">' + (acc != null ? '<i class="acc" style="width:' + Math.min(100, acc) + '%"></i>' : '')
+      + (me != null ? '<i class="me" style="width:' + Math.min(100, me) + '%"></i>' : '') + '</div>';
+    h += '<div class="wk-legend"><span><b style="background:#e8895a"></b>this PC</span><span><b style="background:rgba(232,137,90,.35)"></b>other PCs</span></div>';
+    if (me == null) {
+      h += '<div class="wk-note">This PC\'s share appears once the account\'s weekly % has risen ' + (pl.minStep || 3) + ' points while this PC is in use. Readings so far: ' + (pl.samples || 0) + '.</div>';
+    } else {
+      h += '<div class="wk-note">' + (pl.rough ? 'Rough: from ' + pl.readings + ' interval' + (pl.readings === 1 ? '' : 's') + ', firms up at ' + pl.needed + '. ' : '')
+        + 'Upper estimate: other PCs busy at the same moments push it up. Weighted by model price, not raw tokens.</div>';
+    }
+    // totals
+    h += '<div class="wk-stats">'
+      + '<div class="wk-stat"><div class="v">' + fmtBig((t.input || 0) + (t.output || 0) + (t.cache_creation || 0) + (t.cache_read || 0)) + '</div><div class="l">tokens · 7d</div></div>'
+      + '<div class="wk-stat"><div class="v">' + fmtBig(t.req || 0) + '</div><div class="l">requests</div></div>'
+      + '<div class="wk-stat" title="What the same tokens would cost at API prices. A plan is not billed this way; it is here to compare PCs."><div class="v">$' + Math.round(t.cost || 0).toLocaleString() + '</div><div class="l">API-equivalent</div></div>'
+      + '</div>';
+    // daily chart
+    var days = r.days || [], max = 0;
+    for (var i = 0; i < days.length; i++) if (days[i].tokens > max) max = days[i].tokens;
+    h += '<div class="sheet-sec">Tokens per day</div><div class="wk-chart">' + days.map(function (d, k) {
+      var p = d.day.split('-'), dt = new Date(+p[0], +p[1] - 1, +p[2]);
+      var hh = max ? Math.round(d.tokens / max * 70) : 0;
+      var hm = d.tokens ? Math.round(hh * d.main / d.tokens) : 0;
+      return '<div class="wk-col' + (k === days.length - 1 ? ' today' : '') + '" title="' + d.day + ': ' + fmtBig(d.tokens) + ' tokens (main ' + fmtBig(d.main) + ', subagents ' + fmtBig(d.sub) + ')">'
+        + '<span class="n">' + (d.tokens ? fmtBig(d.tokens) : '') + '</span>'
+        + '<div class="wk-bar" style="height:' + Math.max(d.tokens ? 2 : 0, hh) + 'px"><div class="sub" style="height:' + (hh - hm) + 'px"></div><div class="main" style="height:' + hm + 'px"></div></div>'
+        + '<span class="d">' + WD[dt.getDay()] + '</span></div>';
+    }).join('') + '</div>';
+    h += '<div class="wk-legend" style="margin-top:6px"><span><b style="background:#e8895a"></b>main sessions</span><span><b style="background:rgba(232,137,90,.45)"></b>subagents</span></div>';
+    // what it went on (ranked by weighted share)
+    h += wkRows('By project', r.projects);
+    h += wkRows('By model', r.models);
+    h += wkRows('By agent', r.kinds);
+    h += wkRows('Top sessions', r.sessions, true);
+    body.innerHTML = h;
+  }
+  function openWeekly() {
+    var m = el('weeklyModal'); if (!m) return;
+    var b = el('wkBody'); if (b && !b.querySelector('.wk-share')) b.innerHTML = '<div class="wk-empty">Reading transcripts…</div>';
+    m.hidden = false;
+    vscode.postMessage({ type: 'weeklyOpen' });
+  }
+  if (el('wkMore')) el('wkMore').addEventListener('click', function (e) { e.stopPropagation(); openWeekly(); });
+  if (el('wkClose')) el('wkClose').addEventListener('click', function () { el('weeklyModal').hidden = true; });
+  if (el('weeklyModal')) el('weeklyModal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
 
   var _sb = el('signinBtn');
   if (_sb) _sb.addEventListener('click', function () { vscode.postMessage({ type: 'login' }); });
