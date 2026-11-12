@@ -403,6 +403,9 @@ module.exports = `
   .wk-fold[open] > .wk-rows{animation:wkFold .22s ease-out;}
   @keyframes wkFold{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
   .wk-right{text-align:right;}
+  .wk-head-btns{display:flex;gap:2px;}
+  .sheet-x.wk-refresh svg{transform:none;width:14px;height:14px;}
+  .sheet-x.wk-refresh.busy svg{animation:wkSpin .8s linear infinite;}
   @media (prefers-reduced-motion:reduce){.wk-sheet,.wk-sheet .sheet-card,.wk-sheet.closing,.wk-sheet.closing .sheet-card,.wk-in,.wk-fold[open] > .wk-rows{animation:none;}}
   .wk-host{color:var(--muted);font-size:11px;margin:-6px 0 12px;}
   .wk-share{display:flex;align-items:baseline;gap:8px;}

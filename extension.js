@@ -65,12 +65,33 @@ function teamCfg() {
   const c = vscode.workspace.getConfiguration('claudeUsage');
   let pcId = extContext ? extContext.globalState.get('teamPcIdV1') : null;
   if (!pcId && extContext) { pcId = crypto.randomUUID(); extContext.globalState.update('teamPcIdV1', pcId); }
+  const gs = extContext ? extContext.globalState : null;
+  const kept = gs ? gs.get('teamShareV1') : undefined;
   return {
-    on: c.get('team.share', false) === true,
+    on: kept === true || (kept !== false && c.get('team.share', false) === true),
     key: team.accountKey(team.readAccountId()),
-    name: String(c.get('team.name', '') || ''),
+    name: String(c.get('team.name', '') || (gs && gs.get('teamNameV1')) || ''),
     pcId: pcId || 'unsaved-pc-id'
   };
+}
+
+// The choice goes to the extension's own storage first: a settings write can be refused (a window
+// still holding the settings of the version before an update does not know team.share yet), and a
+// refused write used to leave Share looking dead. The settings are written too, for anyone who
+// looks there, but nothing depends on that write
+async function setTeamShare(on, name) {
+  const c = vscode.workspace.getConfiguration('claudeUsage');
+  const G = vscode.ConfigurationTarget.Global;
+  if (extContext) {
+    await extContext.globalState.update('teamShareV1', on);
+    if (name != null) await extContext.globalState.update('teamNameV1', String(name).trim().slice(0, 24));
+  }
+  try {
+    if (name != null) await c.update('team.name', String(name).trim().slice(0, 24), G);
+    await c.update('team.share', on, G);
+  } catch (e) {
+    if (log) log.appendLine('[team] settings not written (' + (e && e.message) + '); the choice is kept in extension storage');
+  }
 }
 let teamBusy = null;
 function teamSync() {
@@ -1153,24 +1174,18 @@ class UsageViewProvider {
         push();
         if (weeklyOpenPending) { weeklyOpenPending = false; view.webview.postMessage({ type: 'openWeekly' }); }
       }
-      else if (m.type === 'weeklyOpen') {
-        const sd = usageCache ? usageCache.seven_day : null;
-        weekly.report(sd, Date.now(), readPlanTier()).then(async (r) => {
-          const cfg = teamCfg();
-          r.teamCfg = { on: cfg.on, account: !!cfg.key, name: cfg.name };
-          // the page first, then the team rows when the server answers (up to a few seconds)
-          if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
-          if (!cfg.on || !cfg.key) return;
-          const res = await teamSync();
-          r.team = res && res.ok ? team.split(res.summary, cfg.pcId, r.plan.rate, r.plan.pct) : { error: res ? res.error : 'off' };
-          if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
-        }).catch((e) => { if (log) log.appendLine('[weekly] report failed: ' + (e && e.message)); });
+      else if (m.type === 'weeklyOpen') this.sendWeekly();
+      else if (m.type === 'teamShare') {
+        setTeamShare(!!m.on, m.on ? (m.name || '') : null)
+          .catch((e) => { if (log) log.appendLine('[team] could not save the choice: ' + (e && e.message)); })
+          .then(() => this.sendWeekly());
       }
       // every game answers on its own message type, straight from the register
       else if (gameHandlers[m.type]) gameHandlers[m.type].handle(m);
       else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
       else if (m.type === 'setConfig' && m.key) {
-        vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global).then(function () { push(); });
+        vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global)
+          .then(function () { push(); }, function (e) { if (log) log.appendLine('[settings] ' + m.key + ' not written: ' + (e && e.message)); });
       }
       else if (m.type === 'dismissBurn') { lastSeenT = Date.now(); if (extContext) extContext.globalState.update('burnSeenT', lastSeenT); push(); }
       else if (m.type === 'setNickname' && m.name) {
@@ -1221,6 +1236,20 @@ class UsageViewProvider {
       if (view.visible && Date.now() - lastFetch > 300000) refreshUsage();
     });
     push();
+  }
+  // This PC's week for the Details page: drawn at once, again when the account's rows come back
+  sendWeekly() {
+    const sd = usageCache ? usageCache.seven_day : null;
+    weekly.report(sd, Date.now(), readPlanTier()).then(async (r) => {
+      const cfg = teamCfg();
+      r.teamCfg = { on: cfg.on, account: !!cfg.key, name: cfg.name };
+      // the page first, then the team rows when the server answers (up to a few seconds)
+      if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
+      if (!cfg.on || !cfg.key) return;
+      const res = await teamSync();
+      r.team = res && res.ok ? team.split(res.summary, cfg.pcId, r.plan.rate, r.plan.pct) : { error: res ? res.error : 'off' };
+      if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
+    }).catch((e) => { if (log) log.appendLine('[weekly] report failed: ' + (e && e.message)); });
   }
   post(data) {
     if (this.view) { try { this.view.webview.postMessage({ type: 'data', data }); } catch (e) { /* ignore */ } }
@@ -1315,10 +1344,10 @@ function teamMigrateAndAsk(context) {
   const c = vscode.workspace.getConfiguration('claudeUsage');
   const G = vscode.ConfigurationTarget.Global;
   if (team.validCode(String(c.get('team.code', '') || ''))) {
-    c.update('team.share', true, G).then(() => c.update('team.code', undefined, G), () => {});
+    setTeamShare(true, null).then(() => c.update('team.code', undefined, G)).catch(() => {});
     return;
   }
-  if (c.get('team.share', false) === true || context.globalState.get('teamAskedV1')) return;
+  if (teamCfg().on || context.globalState.get('teamAskedV1')) return;
   if (!(vscode.env && vscode.env.isTelemetryEnabled) || !team.readAccountId()) return;
   const t = setTimeout(async () => {
     context.globalState.update('teamAskedV1', Date.now());
@@ -1328,8 +1357,7 @@ function teamMigrateAndAsk(context) {
       'Share', 'Don\'t share');
     if (pick !== 'Share') return;
     const name = await vscode.window.showInputBox({ prompt: 'Your name as the others on this account see it', placeHolder: os.hostname().slice(0, 24), validateInput: (v) => v.length > 24 ? 'Up to 24 characters' : null });
-    if (name) await c.update('team.name', name.trim(), G);
-    await c.update('team.share', true, G);
+    await setTeamShare(true, name || null);
     teamSync().catch(() => {});
     // Sharing changes nothing on screen by itself, so say it is on and where the table is
     const go = await vscode.window.showInformationMessage('Claude Usage: sharing is on. This PC is listed under Weekly > Details, next to the other PCs on this account that share.', 'Open Details');
@@ -1414,6 +1442,10 @@ function activate(context) {
 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('claudeUsage.statusBar') && lastStatusData) renderStatusBar(lastStatusData);
+    // someone turned sharing on or off in the settings themselves: that is the choice now
+    if (e.affectsConfiguration('claudeUsage.team.share')) {
+      context.globalState.update('teamShareV1', vscode.workspace.getConfiguration('claudeUsage').get('team.share', false) === true);
+    }
   }));
 
   provider = new UsageViewProvider(context.extensionUri);

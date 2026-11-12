@@ -120,7 +120,7 @@ function renderHtml(vars) {
           <div class="msub" id="s_sub"></div>
         </div>
         <div class="meter" id="pm_weekly">
-          <div class="mtop"><span class="mlabel">Weekly <span class="munit">(7d)</span> <button type="button" class="wk-more" id="wkMore" title="This PC's last 7 days">Details</button></span><span class="mgrp"><span class="delta" id="w_delta"></span><span class="mval" id="w_pct">–</span></span></div>
+          <div class="mtop"><span class="mlabel">Weekly <span class="munit">(7d)</span> <button type="button" class="wk-more" id="wkMore" title="This PC's use this week">Details</button></span><span class="mgrp"><span class="delta" id="w_delta"></span><span class="mval" id="w_pct">–</span></span></div>
           <div class="mbar"><div class="mfill" id="w_fill"></div></div>
           <div class="msub" id="w_sub"></div>
         </div>
@@ -222,7 +222,7 @@ ${gameBlocks(gameList)}
   </div>
   <div class="sheet wk-sheet" id="weeklyModal" hidden>
     <div class="sheet-card wk-card">
-      <div class="sheet-head"><span>This PC · last 7 days</span><button class="sheet-x" id="wkClose" title="Close">${IC.chevron}</button></div>
+      <div class="sheet-head"><span id="wkTitle">This PC · this week</span><span class="wk-head-btns"><button class="sheet-x wk-refresh" id="wkRefresh" title="Refresh">${IC.refresh}</button><button class="sheet-x" id="wkClose" title="Close">${IC.chevron}</button></span></div>
       <div id="wkBody"><div class="wk-wait big"><span class="wk-spin"></span></div></div>
     </div>
   </div>

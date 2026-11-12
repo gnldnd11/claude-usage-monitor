@@ -29,10 +29,12 @@ const MIN_RATIOS = 3;
 const MAX_SAMPLES = 800;
 
 // Percent of the weekly limit per API-equivalent dollar, before this PC has measured its own.
-// Max 20x: measured 2026-11-11 on an account with a single PC, $140 of use = 7% (so about $20 per
-// point; the 7 is rounded, so 6.5..7.5). The other tiers scale by their limit relative to Max 20x.
-// Rough on purpose, and labelled as such on screen; a measured rate replaces it as soon as one exists
-const REFERENCE_RATE = { max_20x: 0.05, max_5x: 0.2, pro: 1 };
+// Max 20x: 2026-11-12 on a one-person account used from two PCs, both counted over the same weekly
+// window: $212.17 + $117.32 = $329.49 of use = 12% (so about $27.5 per point; the 12 is rounded, so
+// 11.5..12.5). The 2026-11-11 figure ($140 = 7%) counted one of the two PCs only and came out high.
+// The other tiers scale by their limit relative to Max 20x. Rough on purpose, and labelled as such
+// on screen; a measured rate replaces it as soon as one exists
+const REFERENCE_RATE = { max_20x: 0.0364, max_5x: 0.1456, pro: 0.728 };
 function tierKey(tier) {
   const t = String(tier || '').toLowerCase();
   if (/20x/.test(t)) return 'max_20x';
@@ -312,13 +314,18 @@ function ranked(map, total, limit) {
 async function report(sevenDay, now, tier) {
   await scan(now);
   now = now || Date.now();
-  const startToday = new Date(now); startToday.setHours(0, 0, 0, 0);
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(startToday); d.setDate(d.getDate() - i);
-    days.push({ day: U.localDayKey(d.getTime()), start: d.getTime(), tokens: 0, cost: 0, main: 0, sub: 0 });
+  // The page covers the account's current weekly window (since its last reset), the span the
+  // weekly % is about. Without a known reset it is the last seven days. A window that started
+  // mid-morning spans eight calendar days, the first and last of them partly
+  const resetsAt = sevenDay ? sevenDay.resets_at : null;
+  const wStart = windowStartOf(resetsAt, now);
+  const from = resetsAt ? wStart : (() => { const d = new Date(now); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 6); return d.getTime(); })();
+  const days = [], dayOf = new Map();
+  for (let d = new Date(from); d.setHours(0, 0, 0, 0), d.getTime() <= now; d.setDate(d.getDate() + 1)) {
+    const e = { day: U.localDayKey(d.getTime()), tokens: 0, cost: 0, main: 0, sub: 0 };
+    if (dayOf.has(e.day)) continue;
+    days.push(e); dayOf.set(e.day, e);
   }
-  const from = days[0].start;
   const total = Object.assign(U.zeroTokens(), { req: 0, cost: 0 });
   const projects = new Map(), models = new Map(), kinds = new Map(), sessions = new Map();
   const titles = new Map();
@@ -326,7 +333,7 @@ async function report(sevenDay, now, tier) {
   for (const c of files.values()) {
     for (const [h, byModel] of c.hours) {
       if (h < from) continue;
-      const day = days[days.length - 1 - Math.min(6, Math.floor((startToday.getTime() + DAY - 1 - h) / DAY))];
+      const day = dayOf.get(U.localDayKey(h));
       for (const [model, v] of byModel) {
         const cost = costOf(model, v);
         const tk = U.tokenTotal(v);
@@ -344,8 +351,6 @@ async function report(sevenDay, now, tier) {
   for (const [id, e] of sessions) if (!e.name) e.name = titles.get(id) || id.slice(0, 8);
 
   const pct = sevenDay && sevenDay.used_percentage != null ? sevenDay.used_percentage : null;
-  const resetsAt = sevenDay ? sevenDay.resets_at : null;
-  const wStart = windowStartOf(resetsAt, now);
   const windowCost = costSince(wStart);
   // The rate (percent per weighted dollar) does not depend on which week it was measured in, so
   // readings from earlier windows count too; estimateRate only pairs readings within one window
@@ -362,6 +367,7 @@ async function report(sevenDay, now, tier) {
     host: os.hostname(),
     user: (() => { try { return os.userInfo().username; } catch (e) { return ''; } })(),
     at: now,
+    from, sinceReset: !!resetsAt,
     days: days.map((d) => ({ day: d.day, tokens: d.tokens, cost: d.cost, main: d.main, sub: d.sub })),
     total,
     projects: ranked(projects, total.cost, 6),

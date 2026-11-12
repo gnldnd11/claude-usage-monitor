@@ -1551,8 +1551,8 @@
         + '<span class="tr"><i style="width:' + Math.min(100, x.pct) + '%"></i></span></div>';
     }).join('');
     if (t.unrecorded != null && t.unrecorded >= 0.5) {
-      h += '<div class="wk-trow other" title="Account total minus everyone above: claude.ai on the web, the apps, PCs that do not share">'
-        + '<span class="nm">Not recorded (web, apps, PCs not sharing)</span><span class="pc">' + pctTxt(t.unrecorded) + '%</span>'
+      h += '<div class="wk-trow other" title="Account total minus everyone above: PCs that do not share, claude.ai on the web, the apps">'
+        + '<span class="nm">Other PCs</span><span class="pc">' + pctTxt(t.unrecorded) + '%</span>'
         + '<span class="tr"><i style="width:' + Math.min(100, t.unrecorded) + '%"></i></span></div>';
     }
     h += '</div><div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
@@ -1561,6 +1561,15 @@
   var wkEditTeam = false, wkLast = null;
   function renderWeekly(r) {
     wkLast = r;
+    // the refresh turns until the last answer of this round is in (the account's rows, when sharing)
+    var tt = el('wkTitle');
+    if (tt && r.from) {
+      var f = new Date(r.from);
+      var hm = ('0' + f.getHours()).slice(-2) + ':' + ('0' + f.getMinutes()).slice(-2);
+      tt.textContent = r.sinceReset ? 'This PC · since ' + WD[f.getDay()] + ' ' + hm : 'This PC · last 7 days';
+    }
+    var rb = el('wkRefresh');
+    if (rb && (!r.teamCfg || !r.teamCfg.on || !r.teamCfg.account || r.team)) rb.classList.remove('busy');
     var body = el('wkBody'); if (!body || !r) return;
     var pl = r.plan || {}, t = r.total || {};
     var h = '<div class="wk-host">' + esc(r.host || '') + (r.user ? ' · ' + esc(r.user) : '') + ' · as of ' + new Date(r.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>';
@@ -1581,7 +1590,7 @@
     h += teamBlock(r);
     // totals
     h += '<div class="wk-stats">'
-      + '<div class="wk-stat"><div class="v">' + fmtBig((t.input || 0) + (t.output || 0) + (t.cache_creation || 0) + (t.cache_read || 0)) + '</div><div class="l">tokens · 7d</div></div>'
+      + '<div class="wk-stat"><div class="v">' + fmtBig((t.input || 0) + (t.output || 0) + (t.cache_creation || 0) + (t.cache_read || 0)) + '</div><div class="l">tokens</div></div>'
       + '<div class="wk-stat"><div class="v">' + fmtBig(t.req || 0) + '</div><div class="l">requests</div></div>'
       + '<div class="wk-stat" title="What the same tokens would cost at API prices. A plan is not billed this way; it is here to compare PCs."><div class="v">$' + Math.round(t.cost || 0).toLocaleString() + '</div><div class="l">API-equivalent</div></div>'
       + '</div>';
@@ -1626,12 +1635,18 @@
     if (id === 'wkTeamEdit') { e.preventDefault(); wkEditTeam = true; if (wkLast) renderWeekly(wkLast); return; }
     if (id !== 'wkTeamSave' && id !== 'wkTeamOff') return;
     var name = (el('wkTeamName') ? el('wkTeamName').value : '').trim();
-    if (id === 'wkTeamSave') vscode.postMessage({ type: 'setConfig', key: 'team.name', value: name });
-    vscode.postMessage({ type: 'setConfig', key: 'team.share', value: id === 'wkTeamSave' });
+    // answer the click at once; the page is drawn again when the choice is saved
+    var form = e.target.closest('.wk-team-form');
+    if (form) form.outerHTML = '<div class="wk-wait"><span class="wk-spin"></span></div>';
+    vscode.postMessage({ type: 'teamShare', on: id === 'wkTeamSave', name: name });
     wkEditTeam = false;
-    setTimeout(function () { vscode.postMessage({ type: 'weeklyOpen' }); }, 700);
   });
   if (el('wkClose')) el('wkClose').addEventListener('click', closeWeekly);
+  if (el('wkRefresh')) el('wkRefresh').addEventListener('click', function () {
+    if (this.classList.contains('busy')) return;
+    this.classList.add('busy');
+    vscode.postMessage({ type: 'weeklyOpen' });
+  });
   if (el('weeklyModal')) el('weeklyModal').addEventListener('click', function (e) { if (e.target === this) closeWeekly(); });
   if (el('wkBody')) el('wkBody').addEventListener('toggle', function (e) {
     var d = e.target; if (d && d.dataset && d.dataset.fold) wkOpenFolds[d.dataset.fold] = d.open;

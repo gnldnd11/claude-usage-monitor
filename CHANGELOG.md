@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.22.2: This week means since the reset
+
+- **The Details page covers the account's weekly window**, from its last reset to now, the span the weekly % is about. It used to show the last seven calendar days, so right after a reset it still counted last week. The title says when the window started.
+- **Share could do nothing.** In a window still holding the settings of the version before an update, the setting could not be written and the click was lost without a word. The choice is now kept in the extension's own storage, the page answers the click at once, and redraws when it is saved.
+- **The reference rate was too high.** It came from one PC of a two-PC account. Measured again with both PCs over one window, Max 20x is about $27.5 of API-equivalent use per 1% (it was $20), so a PC that has not measured its own rate no longer overstates its share.
+- The row for use nobody shared is now **Other PCs**; the web and the apps are on its tooltip.
+- **Refresh** button on the Details page.
+
 ## 1.22.1: A quieter Details page
 
 - Choosing Share in the question changed nothing on screen, so it looked as if the click had been lost. It now says sharing is on and offers to open Weekly > Details, where this PC is listed with the others on the account.

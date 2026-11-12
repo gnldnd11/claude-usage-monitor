@@ -16,6 +16,7 @@ function test(name, fn) { tests.push({ name, fn }); }
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-weekly-'));
 const HOUR = 3600 * 1000;
+const DAY = 24 * HOUR;
 
 function line(id, req, t, model, v) {
   return JSON.stringify({
@@ -88,16 +89,41 @@ test('report: duplicate content-block lines count once, subagents are labelled b
   assert.equal(r.days.reduce((a, d) => a + d.tokens, 0), 1370);
   // no measured rate yet: the reference for the plan applies, capped at the account total
   assert.equal(r.plan.basis, 'reference');
-  assert.ok(Math.abs(r.plan.share - r.plan.windowCost * 0.05) < 1e-12);
+  assert.ok(Math.abs(r.plan.share - r.plan.windowCost * W.REFERENCE_RATE.max_20x) < 1e-12);
 });
 
-test('reference rate: the two screens of 2026-11-11 come out as their plan percent', () => {
-  // $35 on an account at 99% -> about 1.75%; $140 on a single-PC account at 7% -> 7%
+test('report covers the weekly window since the reset, not the last seven days', async () => {
+  const proj = path.join(TMP, '-work-window');
+  fs.mkdirSync(proj, { recursive: true });
+  const now = Date.now();
+  // the account reset two days ago: a request three days ago belongs to last week
+  fs.writeFileSync(path.join(proj, 'w1.jsonl'), [
+    JSON.stringify({ type: 'user', timestamp: new Date(now - 3 * DAY).toISOString(), cwd: '/work/window', message: { role: 'user', content: 'window check' } }),
+    line('w-old', 'r-old', now - 3 * DAY, 'claude-opus-5-5', [7000, 777, 0, 0]),
+    line('w-new', 'r-new', now - HOUR, 'claude-opus-5-5', [40, 4, 0, 0]),
+    ''
+  ].join('\n'));
+  weekly.setProjectsDir(TMP);
+  const r = await weekly.report({ used_percentage: 5, resets_at: Math.floor((now + 5 * DAY) / 1000) }, now);
+  assert.equal(r.sinceReset, true);
+  assert.equal(r.days.length, 3);                                 // reset day, yesterday, today
+  const w = r.projects.find((p) => p.name === 'window');
+  assert.equal(w.tokens, 44);                                     // last week's request left out
+  assert.equal(r.days.reduce((a, d) => a + d.tokens, 0), r.total.input + r.total.output + r.total.cache_creation + r.total.cache_read);
+  // no reset known: the last seven days
+  const r7 = await weekly.report(null, now);
+  assert.equal(r7.sinceReset, false);
+  assert.equal(r7.days.length, 7);
+  assert.equal(r7.projects.find((p) => p.name === 'window').tokens, 7777 + 44);
+});
+
+test('reference rate: one account, both PCs over one window, comes out as its plan percent', () => {
+  // 2026-11-12: $212.17 + $117.32 over one weekly window on a Max 20x account at 12%
   assert.equal(W.tierKey('default_claude_max_20x'), 'max_20x');
   assert.equal(W.tierKey('default_claude_max_5x'), 'max_5x');
   assert.equal(W.tierKey(null), '');
-  assert.ok(Math.abs(35 * W.REFERENCE_RATE.max_20x - 1.75) < 1e-9);
-  assert.ok(Math.abs(140 * W.REFERENCE_RATE.max_20x - 7) < 1e-9);
+  assert.ok(Math.abs((212.17 + 117.32) * W.REFERENCE_RATE.max_20x - 12) < 0.05);
+  assert.ok(Math.abs(W.REFERENCE_RATE.max_5x / W.REFERENCE_RATE.max_20x - 4) < 1e-9);
 });
 
 test('project is named from the cwd, Windows paths included; injected text is no title', async () => {
