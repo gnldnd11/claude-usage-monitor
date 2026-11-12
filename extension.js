@@ -1143,11 +1143,16 @@ class UsageViewProvider {
   constructor(extensionUri) { this.extensionUri = extensionUri; this.view = null; }
   resolveWebviewView(view) {
     this.view = view;
+    this.ready = false;
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     view.webview.html = this.html(view.webview);
     view.webview.onDidReceiveMessage((m) => {
       if (!m) return;
-      if (m.type === 'ready') push();
+      if (m.type === 'ready') {
+        this.ready = true;
+        push();
+        if (weeklyOpenPending) { weeklyOpenPending = false; view.webview.postMessage({ type: 'openWeekly' }); }
+      }
       else if (m.type === 'weeklyOpen') {
         const sd = usageCache ? usageCache.seven_day : null;
         weekly.report(sd, Date.now(), readPlanTier()).then(async (r) => {
@@ -1290,6 +1295,19 @@ function scheduleRefresh() {
   debounceTimer = setTimeout(push, 200);
 }
 
+// Show the panel and open Weekly > Details in it. A panel that was never shown has no page yet, so
+// the request waits for the page's 'ready'
+let weeklyOpenPending = false;
+function openWeeklyDetails() {
+  weeklyOpenPending = true;
+  vscode.commands.executeCommand('claudeUsage.view.focus').then(() => {
+    if (weeklyOpenPending && provider && provider.view && provider.ready) {
+      weeklyOpenPending = false;
+      provider.view.webview.postMessage({ type: 'openWeekly' });
+    }
+  }, () => {});
+}
+
 // 1.21.0 shared by a typed code: those PCs already agreed, so they move to the account group as they
 // are. Everyone else is asked once, and only on a PC that is signed in to Claude Code and has not
 // turned VS Code telemetry off. Dismissing the question counts as no; the Details page can change it
@@ -1313,6 +1331,9 @@ function teamMigrateAndAsk(context) {
     if (name) await c.update('team.name', name.trim(), G);
     await c.update('team.share', true, G);
     teamSync().catch(() => {});
+    // Sharing changes nothing on screen by itself, so say it is on and where the table is
+    const go = await vscode.window.showInformationMessage('Claude Usage: sharing is on. This PC is listed under Weekly > Details, next to the other PCs on this account that share.', 'Open Details');
+    if (go) openWeeklyDetails();
   }, 30000);
   context.subscriptions.push({ dispose: () => clearTimeout(t) });
 }

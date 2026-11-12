@@ -220,10 +220,10 @@ ${gameBlocks(gameList)}
       <div class="room-grid" id="roomGrid"></div>
     </div>
   </div>
-  <div class="sheet" id="weeklyModal" hidden>
+  <div class="sheet wk-sheet" id="weeklyModal" hidden>
     <div class="sheet-card wk-card">
       <div class="sheet-head"><span>This PC · last 7 days</span><button class="sheet-x" id="wkClose" title="Close">${IC.chevron}</button></div>
-      <div id="wkBody"><div class="wk-empty">Reading transcripts…</div></div>
+      <div id="wkBody"><div class="wk-wait big"><span class="wk-spin"></span></div></div>
     </div>
   </div>
   <div class="sheet" id="agentModal" hidden>

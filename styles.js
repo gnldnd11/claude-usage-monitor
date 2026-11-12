@@ -379,6 +379,31 @@ module.exports = `
   .wk-more:hover{color:var(--text);}
   .wk-card{max-width:420px;}
   .wk-empty{color:var(--muted);font-size:12px;padding:18px 0;text-align:center;}
+  .wk-sheet{animation:wkFadeIn .2s ease-out;}
+  .wk-sheet .sheet-card{animation:wkCardIn .26s cubic-bezier(.2,.8,.2,1);}
+  .wk-sheet.closing{animation:wkFadeOut .18s ease-in forwards;}
+  .wk-sheet.closing .sheet-card{animation:wkCardOut .18s ease-in forwards;}
+  @keyframes wkFadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes wkFadeOut{from{opacity:1}to{opacity:0}}
+  @keyframes wkCardIn{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes wkCardOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(8px) scale(.98)}}
+  .wk-in{animation:wkFadeIn .22s ease-out;}
+  .wk-wait{display:flex;justify-content:center;padding:6px 0;}
+  .wk-wait.big{padding:26px 0;}
+  .wk-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--track);border-top-color:#e8895a;animation:wkSpin .7s linear infinite;}
+  .wk-wait.big .wk-spin{width:22px;height:22px;}
+  @keyframes wkSpin{to{transform:rotate(360deg)}}
+  .wk-fold > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;}
+  .wk-fold > summary::-webkit-details-marker{display:none;}
+  .wk-fold > summary::before{content:'';width:0;height:0;border-left:4px solid currentColor;border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;transition:transform .18s ease;flex:none;}
+  .wk-fold[open] > summary::before{transform:rotate(90deg);}
+  .wk-fold > summary:hover{color:var(--text);}
+  .wk-fold-top{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .wk-fold[open] .wk-fold-top{visibility:hidden;}
+  .wk-fold[open] > .wk-rows{animation:wkFold .22s ease-out;}
+  @keyframes wkFold{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .wk-right{text-align:right;}
+  @media (prefers-reduced-motion:reduce){.wk-sheet,.wk-sheet .sheet-card,.wk-sheet.closing,.wk-sheet.closing .sheet-card,.wk-in,.wk-fold[open] > .wk-rows{animation:none;}}
   .wk-host{color:var(--muted);font-size:11px;margin:-6px 0 12px;}
   .wk-share{display:flex;align-items:baseline;gap:8px;}
   .wk-big{font-size:28px;font-weight:800;color:var(--text);line-height:1;}

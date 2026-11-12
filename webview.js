@@ -1183,6 +1183,7 @@
   window.addEventListener('message', function (e) {
     var m = e.data; if (!m) return;
     if (m.type === 'data') render(m.data);
+    else if (m.type === 'openWeekly') openWeekly();
     // A reply for a game whose screen was never opened is dropped: that screen asks for the truth
     // when it opens, so there is nothing to keep in sync meanwhile.
     // Its list row is the exception. The row is in the page from the first paint, and a figure
@@ -1520,27 +1521,29 @@
   }
   function pctTxt(x) { return x == null ? '–' : (x < 10 ? x.toFixed(1).replace(/\.0$/, '') : String(Math.round(x))); }
   var WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var wkOpenFolds = {}; // which lists are unfolded, kept across re-renders while the page lives
   function wkRows(title, list, useTitle) {
     if (!list || !list.length) return '';
-    return '<div class="sheet-sec">' + title + '</div><div class="wk-rows">' + list.map(function (e) {
+    return '<details class="wk-fold" data-fold="' + esc(title) + '"' + (wkOpenFolds[title] ? ' open' : '') + '><summary class="sheet-sec">' + title
+      + '<span class="wk-fold-top">' + esc(list[0].name) + '</span></summary><div class="wk-rows">' + list.map(function (e) {
       var sh = Math.round((e.share || 0) * 100);
       return '<div class="wk-row"' + (useTitle ? ' title="' + esc(e.name) + '"' : '') + '><span class="nm">' + esc(e.name) + '</span>'
         + '<span class="val">' + fmtBig(e.tokens) + ' tok · ' + sh + '%</span>'
         + '<span class="tr"><i style="width:' + Math.max(1, sh) + '%"></i></span></div>';
-    }).join('') + '</div>';
+    }).join('') + '</div></details>';
   }
   function teamBlock(r) {
     var c = r.teamCfg || {}, t = r.team, h = '<div class="sheet-sec">This account\'s PCs</div>';
-    if (!c.account) return h + '<div class="wk-note">No Claude Code sign-in found on this PC, so there is no account to share with.</div>';
+    if (!c.account) return h + '<div class="wk-note">No Claude Code sign-in on this PC</div>';
     if (!c.on || wkEditTeam) {
       return h + '<div class="wk-team-form">'
         + '<input id="wkTeamName" type="text" maxlength="24" placeholder="Your name" value="' + esc(c.name || '') + '">'
-        + '<button type="button" id="wkTeamSave">' + (c.on ? 'Save' : 'Share') + '</button>'
+        + '<button type="button" id="wkTeamSave" title="Sends this PC\'s weekly totals and this name to the extension\'s server. Only PCs signed in to the same Claude account see them. Nothing from your work.">' + (c.on ? 'Save' : 'Share') + '</button>'
         + (c.on ? '<button type="button" id="wkTeamOff" class="ghost">Stop sharing</button>' : '')
-        + '</div><div class="wk-note">Off until you choose Share. Then this PC\'s weekly totals and the name go to the extension\'s server, and only PCs signed in to the same Claude account see them. Nothing from your work.</div>';
+        + '</div>';
     }
-    if (!t) return h + '<div class="wk-note">Reading the account\'s PCs…</div>';
-    if (t.error) return h + '<div class="wk-note">Sharing server not reachable (' + esc(t.error) + '). <a href="#" id="wkTeamEdit">Change</a></div>';
+    if (!t) return h + '<div class="wk-wait"><span class="wk-spin"></span></div>';
+    if (t.error) return h + '<div class="wk-note">Sharing server not reachable (' + esc(t.error) + ') <a href="#" id="wkTeamEdit">Change</a></div>';
     h += '<div class="wk-team">' + t.rows.map(function (x) {
       return '<div class="wk-trow' + (x.me ? ' me' : '') + (x.stale ? ' stale' : '') + '" title="' + esc(x.name) + ': ' + fmtBig(x.tokens) + ' tokens, $' + Math.round(x.cost) + ', ' + Math.round(x.ofTeam * 100) + '% of the team\'s recorded use' + (x.stale ? ' (no report for 6h+)' : '') + '">'
         + '<span class="nm">' + esc(x.name) + (x.me ? ' (you)' : '') + '</span>'
@@ -1552,7 +1555,7 @@
         + '<span class="nm">Not recorded (web, apps, PCs not sharing)</span><span class="pc">' + pctTxt(t.unrecorded) + '%</span>'
         + '<span class="tr"><i style="width:' + Math.min(100, t.unrecorded) + '%"></i></span></div>';
     }
-    h += '</div><div class="wk-note">Adds up to the account total ' + (t.accountPct != null ? Math.round(t.accountPct) + '%' : '') + '. <a href="#" id="wkTeamEdit">Change</a></div>';
+    h += '</div><div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
     return h;
   }
   var wkEditTeam = false, wkLast = null;
@@ -1566,21 +1569,15 @@
     var tm = r.team && r.team.rows ? r.team : null;
     var mine = tm ? tm.rows.filter(function (x) { return x.me; })[0] : null;
     if (mine) me = mine.pct; // the team split is the better number when there is one
-    h += '<div class="wk-share"><span class="wk-big">' + (me != null ? (pl.basis === 'measured' ? '≈ ' : '~') + pctTxt(me) + '<small>%</small>' : '–') + '</span>'
+    var TIER = { max_20x: 'Max 20x', max_5x: 'Max 5x', pro: 'Pro' };
+    var per = pl.perPoint ? '$' + Math.round(pl.perPoint) : '';
+    var how = pl.basis === 'reference' ? 'Reference rate for ' + (pl.tierKnown ? TIER[pl.tier] : 'Max 20x (assumed)') + ': about ' + per + ' per 1%'
+      : (pl.basis === 'rough' ? 'Measured on this PC, rough (' + pl.readings + ' of ' + pl.needed + '): about ' : 'Measured on this PC: about ') + per + ' per 1%';
+    h += '<div class="wk-share" title="' + esc(how) + '"><span class="wk-big">' + (me != null ? (pl.basis === 'measured' ? '≈ ' : '~') + pctTxt(me) + '<small>%</small>' : '–') + '</span>'
       + '<span class="wk-of">of this week\'s plan limit<br>account total (every PC) ' + (acc != null ? Math.round(acc) + '%' : '–') + '</span></div>';
     h += '<div class="wk-meter">' + (acc != null ? '<i class="acc" style="width:' + Math.min(100, acc) + '%"></i>' : '')
       + (me != null ? '<i class="me" style="width:' + Math.min(100, me) + '%"></i>' : '') + '</div>';
     h += '<div class="wk-legend"><span><b style="background:#e8895a"></b>this PC</span><span><b style="background:rgba(232,137,90,.35)"></b>other PCs</span></div>';
-    var TIER = { max_20x: 'Max 20x', max_5x: 'Max 5x', pro: 'Pro' };
-    var per = pl.perPoint ? '$' + Math.round(pl.perPoint) : '';
-    if (pl.basis === 'reference') {
-      h += '<div class="wk-note">Reference rate for ' + (pl.tierKnown ? TIER[pl.tier] : 'Max 20x (plan not readable here, assumed)')
-        + ': about ' + per + ' of API-equivalent use per 1%. This PC measures its own rate once the account\'s weekly % has risen '
-        + (pl.minStep || 3) + ' points while it is in use, and switches to that.</div>';
-    } else {
-      h += '<div class="wk-note">' + (pl.basis === 'rough' ? 'Measured on this PC, rough (' + pl.readings + ' of ' + pl.needed + ' intervals). ' : 'Measured on this PC. ')
-        + 'About ' + per + ' per 1%. Other PCs busy at the same moments can push it up.</div>';
-    }
     h += teamBlock(r);
     // totals
     h += '<div class="wk-stats">'
@@ -1606,11 +1603,20 @@
     h += wkRows('By model', r.models);
     h += wkRows('By agent', r.kinds);
     h += wkRows('Top sessions', r.sessions, true);
-    body.innerHTML = h;
+    var first = !body.querySelector('.wk-share');
+    body.innerHTML = first ? '<div class="wk-in">' + h + '</div>' : h;
+  }
+  // closing plays the card out before it is hidden
+  var wkCloseT = null;
+  function closeWeekly() {
+    var m = el('weeklyModal'); if (!m || m.hidden || m.classList.contains('closing')) return;
+    m.classList.add('closing');
+    wkCloseT = setTimeout(function () { m.hidden = true; m.classList.remove('closing'); }, 180);
   }
   function openWeekly() {
     var m = el('weeklyModal'); if (!m) return;
-    var b = el('wkBody'); if (b && !b.querySelector('.wk-share')) b.innerHTML = '<div class="wk-empty">Reading transcripts…</div>';
+    var b = el('wkBody'); if (b && !b.querySelector('.wk-share')) b.innerHTML = '<div class="wk-wait big"><span class="wk-spin"></span></div>';
+    clearTimeout(wkCloseT); m.classList.remove('closing');
     m.hidden = false;
     vscode.postMessage({ type: 'weeklyOpen' });
   }
@@ -1625,8 +1631,11 @@
     wkEditTeam = false;
     setTimeout(function () { vscode.postMessage({ type: 'weeklyOpen' }); }, 700);
   });
-  if (el('wkClose')) el('wkClose').addEventListener('click', function () { el('weeklyModal').hidden = true; });
-  if (el('weeklyModal')) el('weeklyModal').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+  if (el('wkClose')) el('wkClose').addEventListener('click', closeWeekly);
+  if (el('weeklyModal')) el('weeklyModal').addEventListener('click', function (e) { if (e.target === this) closeWeekly(); });
+  if (el('wkBody')) el('wkBody').addEventListener('toggle', function (e) {
+    var d = e.target; if (d && d.dataset && d.dataset.fold) wkOpenFolds[d.dataset.fold] = d.open;
+  }, true);
 
   var _sb = el('signinBtn');
   if (_sb) _sb.addEventListener('click', function () { vscode.postMessage({ type: 'login' }); });

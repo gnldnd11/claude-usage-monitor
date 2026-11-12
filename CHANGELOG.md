@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.22.1: A quieter Details page
+
+- Choosing Share in the question changed nothing on screen, so it looked as if the click had been lost. It now says sharing is on and offers to open Weekly > Details, where this PC is listed with the others on the account.
+- The explanations under the figures are gone; how the share was estimated is on the figure's tooltip, and what sharing sends is on the Share button's.
+- By project, by model, by agent and top sessions fold away, closed by default with the top entry beside the title, and stay as you left them while the page is open.
+- A spinner while the transcripts are read, and the page fades and slides in and out instead of appearing and vanishing.
+
 ## 1.22.0: Grouped by account, shared only with consent
 
 - **No team code.** PCs are grouped by the Claude account they are signed in to, so everyone on a shared account lands in one table without agreeing on a code first. The account is identified to the server only by a hash of its id; only PCs signed in to that account can read its table.
