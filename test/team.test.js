@@ -1,8 +1,10 @@
 // Team sharing: the split of the account's weekly % between the PCs that report. node's assert only.
 // Run: node test/team.test.js
-// No network: the split is pure, and sync is not called here.
+// No network: the split is pure, and sync is only called where it must stop before sending.
 'use strict';
 const assert = require('assert/strict');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const team = require(path.join(__dirname, '..', 'team.js'));
 
@@ -53,10 +55,40 @@ test('codes and names', () => {
   assert.ok(team.displayName('').length > 0);
 });
 
+test('the account id comes from .claude.json; only a hash of it is sent', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-acct-'));
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  try {
+    assert.equal(team.readAccountId(dir), null);                       // no file: not signed in
+    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-1234', emailAddress: 'a@example.com' } }));
+    assert.equal(team.readAccountId(dir), 'u-1234');
+    const k = team.accountKey('u-1234');
+    assert.match(k, /^acct-[0-9a-f]{40}$/);
+    assert.ok(!k.includes('u-1234'));
+    assert.equal(k, team.accountKey('u-1234'));                         // same account, same group
+    assert.notEqual(k, team.accountKey('u-5678'));
+    assert.equal(team.accountKey(null), null);
+    const alt = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-acct-'));  // CLAUDE_CONFIG_DIR wins
+    fs.writeFileSync(path.join(alt, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-alt' } }));
+    process.env.CLAUDE_CONFIG_DIR = alt;
+    assert.equal(team.readAccountId(dir), 'u-alt');
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
+  }
+});
+
+test('sync sends nothing without consent or an account', async () => {
+  assert.deepEqual(await team.sync({ on: false, key: 'acct-x', pcId: 'p' }, {}, { resets_at: 1 }), { ok: false, error: 'off' });
+  assert.deepEqual(await team.sync({ on: true, key: null, pcId: 'p' }, {}, { resets_at: 1 }), { ok: false, error: 'account' });
+});
+
 let failed = 0;
-for (const t of tests) {
-  try { t.fn(); console.log('PASS ' + t.name); }
-  catch (e) { failed++; console.log('FAIL ' + t.name + '\n  ' + (e && e.stack || e)); }
-}
-console.log(failed ? failed + ' of ' + tests.length + ' FAILED' : 'ALL ' + tests.length + ' PASSED');
-process.exit(failed ? 1 : 0);
+(async () => {
+  for (const t of tests) {
+    try { await t.fn(); console.log('PASS ' + t.name); }
+    catch (e) { failed++; console.log('FAIL ' + t.name + '\n  ' + (e && e.stack || e)); }
+  }
+  console.log(failed ? failed + ' of ' + tests.length + ' FAILED' : 'ALL ' + tests.length + ' PASSED');
+  process.exit(failed ? 1 : 0);
+})();

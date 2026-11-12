@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.22.0: Grouped by account, shared only with consent
+
+- **No team code.** PCs are grouped by the Claude account they are signed in to, so everyone on a shared account lands in one table without agreeing on a code first. The account is identified to the server only by a hash of its id; only PCs signed in to that account can read its table.
+- **Nothing is sent until you agree.** The extension asks once ("Share" or "Don't share"); closing the question counts as no. It is not asked at all where VS Code telemetry is off or Claude Code is not signed in. Turn it on or off later under Weekly > Details.
+- A PC that set a team code in 1.21.0 had already agreed, so it keeps sharing, now with its account; the code setting is cleared.
+
 ## 1.21.0: Team sharing
 
 - **One account, several PCs, one table.** Under Weekly > Details, PCs that enter the same team code list each other: each person's part of the account's weekly limit, side by side, adding up to the account total. What nobody on the team recorded (claude.ai on the web, the apps, PCs without sharing) shows as its own row, so a full account with small rows says where to look next.

@@ -94,7 +94,7 @@ The extension deals and judges, so a hand survives switching tabs; reloading the
 
 ## How it works and privacy
 
-Everything is read locally from your `~/.claude` folder. No telemetry, no third party, and no server of ours unless you turn on team sharing (below).
+Everything is read locally from your `~/.claude` folder. No telemetry, no third party, and no server of ours unless you agree to share with your account's other PCs (below).
 
 - **Agents, tokens, requests, context** are parsed from your local session transcripts (`~/.claude/projects/**/*.jsonl`), incrementally, so a long day of transcripts does not mean re-reading them every tick.
 - **Session, weekly and Fable limits** come from *listening* rather than polling. When the Claude Code extension checks its own usage in the same host process, this extension observes that response through Node's `diagnostics_channel` and reuses it. That means **zero extra API requests** in normal use, and numbers that match the built-in dialog exactly because they *are* the built-in dialog's numbers.
@@ -102,7 +102,7 @@ Everything is read locally from your `~/.claude` folder. No telemetry, no third 
 
 Your token is sent **only** to `api.anthropic.com` and nowhere else. The code is open, and it is plain JavaScript with no build step, so what ships in the `.vsix` is what is in the repo.
 
-**Team sharing (off by default).** For people who share one Claude account. Enter the same team code under Weekly > Details on each PC (or `claudeUsage.team.code` in settings) and the PCs see each other's week side by side, adding up to the account's weekly %. While a code is set, every 10 minutes this PC sends the extension author's server (`saegimai.up.railway.app`): your display name, the weekly window, the account's weekly %, and this PC's use in that window (tokens and an API-price equivalent, per model). Never prompts, file or project names, session titles, your plan or any token. The team code is kept only as a hash. Clear the code to stop.
+**Sharing with the same account's PCs (off until you agree).** For people who share one Claude account. Once, the extension asks whether to share; say yes (or choose Share under Weekly > Details, or set `claudeUsage.team.share`) and every PC signed in to the same Claude account that also agreed shows up side by side, adding up to the account's weekly %. No code to type: the group is the account, identified only by a hash of its id, so only PCs signed in to it can read it. While sharing is on, every 10 minutes this PC sends the extension author's server (`saegimai.up.railway.app`): your display name, the weekly window, the account's weekly %, and this PC's use in that window (tokens and an API-price equivalent, per model). Never prompts, file or project names, session titles, your plan or any token. A PC that does not agree sends nothing, and the question is not asked where VS Code telemetry is off. Stop sharing under Weekly > Details.
 
 The usage endpoint and the transcript format are both undocumented and may change. If they do, the affected numbers may stop updating until the extension is updated.
 

@@ -1,16 +1,24 @@
 // Team sharing: PCs on one Claude account put their weekly use side by side.
 //
-// Off unless claudeUsage.team.code is set. The usage endpoint only knows the account total, and each
-// PC only knows itself; pooled, the team's rows add up to that total. What is sent is the weekly
-// window, the account's weekly %, this PC's use in that window (tokens and API-equivalent $, per
-// model) and a display name. Nothing from a prompt, a file, a project or a session title.
+// Off until the person agrees (claudeUsage.team.share). The PCs are grouped by the Claude account they
+// are signed in to, so nobody types a code: Claude Code keeps the account's id in .claude.json, and
+// only a hash of it leaves this PC (the server hashes it again before storing). The id is a random
+// UUID, so only PCs signed in to that account can name the group or read it.
+//
+// The usage endpoint only knows the account total, and each PC only knows itself; pooled, the rows
+// add up to that total. What is sent is the weekly window, the account's weekly %, this PC's use in
+// that window (tokens and API-equivalent $, per model) and a display name. Nothing from a prompt, a
+// file, a project or a session title.
 //
 // The server stores and returns rows; the split is computed here, because the rate (percent per $)
 // is this PC's own knowledge (measured, or the plan's reference).
 'use strict';
+const crypto = require('crypto');
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const os = require('os');
+const path = require('path');
 
 // CUC_TEAM_SERVER points a test run at a local server; nobody sets it in normal use
 const SERVER = new URL(process.env.CUC_TEAM_SERVER || 'https://saegimai.up.railway.app/api/v1/usage-share');
@@ -43,13 +51,34 @@ function displayName(name) {
   return n || os.hostname().slice(0, 24) || 'PC';
 }
 
+// 1.21.0 grouped by a typed team code; a PC with one set has already agreed to share
 function validCode(code) { return typeof code === 'string' && code.trim().length >= 8 && code.trim().length <= 64; }
 
-// Send this PC's week, then read the team's. Returns { ok, summary?, error? }
+// The signed-in Claude account's id, from where Claude Code keeps it (CLAUDE_CONFIG_DIR moves it)
+function readAccountId(home) {
+  const files = [];
+  if (process.env.CLAUDE_CONFIG_DIR) files.push(path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json'));
+  files.push(path.join(home || os.homedir(), '.claude.json'));
+  for (const f of files) {
+    try {
+      const a = JSON.parse(fs.readFileSync(f, 'utf8')).oauthAccount;
+      if (a && typeof a.accountUuid === 'string' && a.accountUuid) return a.accountUuid;
+    } catch (e) { /* missing or unreadable: try the next */ }
+  }
+  return null;
+}
+
+// What the server sees instead of the id
+function accountKey(id) {
+  return id ? 'acct-' + crypto.createHash('sha256').update('cuc-account:' + id).digest('hex').slice(0, 40) : null;
+}
+
+// Send this PC's week, then read the account's. cfg: { on, key, name, pcId }. Returns { ok, summary?, error? }
 async function sync(cfg, totals, sevenDay, version) {
-  if (!validCode(cfg.code)) return { ok: false, error: cfg.code ? 'code' : 'off' };
+  if (!cfg.on) return { ok: false, error: 'off' };
+  if (!cfg.key) return { ok: false, error: 'account' };
   if (!sevenDay || !sevenDay.resets_at) return { ok: false, error: 'window' };
-  const team = cfg.code.trim();
+  const team = cfg.key;
   const byModel = {};
   for (const k of Object.keys(totals.byModel || {}).slice(0, 12)) {
     const v = totals.byModel[k];
@@ -88,4 +117,4 @@ function split(summary, myPcId, rate, accountPct) {
   };
 }
 
-module.exports = { sync, split, validCode, displayName, SERVER };
+module.exports = { sync, split, validCode, displayName, readAccountId, accountKey, SERVER };

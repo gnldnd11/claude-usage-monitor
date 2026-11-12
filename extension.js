@@ -59,18 +59,24 @@ function fmtCountdown(resetsAt) {
   return `${m}m`;
 }
 
-// Team sharing (team.js). The PC id is random and kept per install, so a renamed person is still one row
+// Team sharing (team.js). Nothing is sent until the person agrees (team.share). The PC id is random and
+// kept per install, so a renamed person is still one row; the group is the signed-in Claude account
 function teamCfg() {
   const c = vscode.workspace.getConfiguration('claudeUsage');
   let pcId = extContext ? extContext.globalState.get('teamPcIdV1') : null;
   if (!pcId && extContext) { pcId = crypto.randomUUID(); extContext.globalState.update('teamPcIdV1', pcId); }
-  return { code: String(c.get('team.code', '') || ''), name: String(c.get('team.name', '') || ''), pcId: pcId || 'unsaved-pc-id' };
+  return {
+    on: c.get('team.share', false) === true,
+    key: team.accountKey(team.readAccountId()),
+    name: String(c.get('team.name', '') || ''),
+    pcId: pcId || 'unsaved-pc-id'
+  };
 }
 let teamBusy = null;
 function teamSync() {
   const cfg = teamCfg();
   const sd = usageCache ? usageCache.seven_day : null;
-  if (!team.validCode(cfg.code) || !sd || !sd.resets_at) return Promise.resolve(null);
+  if (!cfg.on || !cfg.key || !sd || !sd.resets_at) return Promise.resolve(null);
   if (teamBusy) return teamBusy;
   const version = extContext && extContext.extension ? extContext.extension.packageJSON.version : '';
   teamBusy = weekly.scan()
@@ -1146,10 +1152,10 @@ class UsageViewProvider {
         const sd = usageCache ? usageCache.seven_day : null;
         weekly.report(sd, Date.now(), readPlanTier()).then(async (r) => {
           const cfg = teamCfg();
-          r.teamCfg = { on: team.validCode(cfg.code), set: !!cfg.code, name: cfg.name };
+          r.teamCfg = { on: cfg.on, account: !!cfg.key, name: cfg.name };
           // the page first, then the team rows when the server answers (up to a few seconds)
           if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
-          if (!r.teamCfg.on) return;
+          if (!cfg.on || !cfg.key) return;
           const res = await teamSync();
           r.team = res && res.ok ? team.split(res.summary, cfg.pcId, r.plan.rate, r.plan.pct) : { error: res ? res.error : 'off' };
           if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
@@ -1284,6 +1290,33 @@ function scheduleRefresh() {
   debounceTimer = setTimeout(push, 200);
 }
 
+// 1.21.0 shared by a typed code: those PCs already agreed, so they move to the account group as they
+// are. Everyone else is asked once, and only on a PC that is signed in to Claude Code and has not
+// turned VS Code telemetry off. Dismissing the question counts as no; the Details page can change it
+function teamMigrateAndAsk(context) {
+  const c = vscode.workspace.getConfiguration('claudeUsage');
+  const G = vscode.ConfigurationTarget.Global;
+  if (team.validCode(String(c.get('team.code', '') || ''))) {
+    c.update('team.share', true, G).then(() => c.update('team.code', undefined, G), () => {});
+    return;
+  }
+  if (c.get('team.share', false) === true || context.globalState.get('teamAskedV1')) return;
+  if (!(vscode.env && vscode.env.isTelemetryEnabled) || !team.readAccountId()) return;
+  const t = setTimeout(async () => {
+    context.globalState.update('teamAskedV1', Date.now());
+    const pick = await vscode.window.showInformationMessage(
+      'Claude Usage: share this PC\'s weekly usage with the other PCs signed in to the same Claude account? '
+      + 'Sent: a name you choose, tokens and an API-price equivalent per model. Never prompts, files or projects. Off unless you agree.',
+      'Share', 'Don\'t share');
+    if (pick !== 'Share') return;
+    const name = await vscode.window.showInputBox({ prompt: 'Your name as the others on this account see it', placeHolder: os.hostname().slice(0, 24), validateInput: (v) => v.length > 24 ? 'Up to 24 characters' : null });
+    if (name) await c.update('team.name', name.trim(), G);
+    await c.update('team.share', true, G);
+    teamSync().catch(() => {});
+  }, 30000);
+  context.subscriptions.push({ dispose: () => clearTimeout(t) });
+}
+
 function activate(context) {
   log = vscode.window.createOutputChannel('Claude Usage');
   context.subscriptions.push(log);
@@ -1326,6 +1359,7 @@ function activate(context) {
   weekly.init({ load: () => context.globalState.get('weeklySamplesV1', []), save: (arr) => context.globalState.update('weeklySamplesV1', arr) });
   const weeklyFirst = setTimeout(() => { weekly.scan().catch(() => {}); }, 20000);
   const weeklyTimer = setInterval(() => { weekly.scan().catch(() => {}); }, 5 * 60 * 1000);
+  teamMigrateAndAsk(context);
   // Team rows stay current for the others even when nobody here opens the page
   const teamTimer = setInterval(() => { teamSync().catch(() => {}); }, 10 * 60 * 1000);
   const teamFirst = setTimeout(() => { teamSync().catch(() => {}); }, 60000);
