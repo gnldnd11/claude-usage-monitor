@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.23.0: Buy as much as you like
+
+- **The coin market takes any amount.** The 10 / 100 / 1K chips are gone from the market: type a stake, or press 25%, 50% or Max for that part of what you can spend.
+- **Fractions of a coin.** Switch the box to coins and type 0.7: the stake is 0.7 times the price, and the line under the box says what it comes to. A position shows how many coins it holds.
+- **Buy a coin you already hold.** Each buy is kept with its own price (up to 16 a coin), the position shows the average, and selling sells the whole coin, paying every buy by its own price. Nothing is rounded into an average on the money path.
+- With a position open Enter no longer sells; press Sell or S.
+
 ## 1.22.4: Checking the estimate
 
 - **Sharing also sends the plan type** (Max 20x, Max 5x or Pro). One percent costs about four times more on each step down, so pooled numbers are only comparable within a plan.

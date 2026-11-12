@@ -67,7 +67,9 @@
     asked: 0,   // the minute an ask has already gone out for, so one boundary is one ask
     span: MK_SPAN_DEF   // the window on screen. The host remembers it too, for the pushes nobody asked for
   };
-  var SU = CUC.stakeUi('mk');   // the chips, the Buy button's stake, and the short-purse note
+  // The amount box: what was typed and in which unit. 'cr' is credits, 'sh' is coins (shares)
+  mk.unit = 'cr';
+  mk.typed = '100';
 
   // --- units the host declared, and nothing else -------------------------------------------------
 
@@ -159,7 +161,17 @@
       + '<div class="bj-sr" id="mkLive" aria-live="polite"></div>'
       + '<div class="bj-note" id="mkNote" hidden></div>'
       + '<div class="warnbar" id="mkErr" hidden></div>'
-      + '<div class="bj-ctl" id="mkCtl" hidden>' + CUC.stakesHtml('mk')
+      + '<div class="mk-amt" id="mkAmtRow" hidden>'
+      +   '<input id="mkAmt" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Amount" value="100">'
+      +   '<div class="mk-seg" id="mkUnit" role="group" aria-label="Unit">'
+      +     '<button type="button" data-u="cr" class="on" aria-pressed="true">cr</button>'
+      +     '<button type="button" data-u="sh" aria-pressed="false">coins</button></div>'
+      +   '<div class="mk-seg" id="mkPick" role="group" aria-label="Part of the purse">'
+      +     '<button type="button" data-f="25">25%</button><button type="button" data-f="50">50%</button>'
+      +     '<button type="button" data-f="100">Max</button></div>'
+      + '</div>'
+      + '<div class="mk-conv" id="mkConv"></div>'
+      + '<div class="bj-ctl" id="mkCtl" hidden>'
       +   '<button type="button" class="bj-btn primary" id="mkDeal" title="Buy (B)">Buy</button>'
       +   '<button type="button" class="bj-btn" id="mkSell" title="Sell (S)">Sell</button></div>'
       + '<div class="bj-note mk-fee" id="mkFee" hidden></div>';
@@ -351,7 +363,9 @@
     if (!p) { big.textContent = ''; sub.textContent = ''; return; }
     big.textContent = signed(p.pl);
     big.className = 'mk-pl ' + dirCls(p.pl);
-    sub.textContent = fmtInt(p.amount) + ' in at ' + fmtInt(credOf(c, p.entryTicks))
+    sub.textContent = units(p.unitsMilli) + ' ' + c.code + ' · ' + fmtInt(p.amount) + ' in at '
+      + (p.lots > 1 ? 'avg ' : '') + fmtInt(credOf(c, p.entryTicks))
+      + (p.lots > 1 ? ' (' + p.lots + ' buys)' : '')
       + ' · ' + pctSigned(p.plBp) + ' · held ' + age(p.heldMs + mk.since);
   }
   // Behind the one toggle every screen folds its table into (docs/game-panels.md, section 5). What
@@ -364,7 +378,7 @@
       + st.bandX + '× either way<br>'
       + 'Round trip ' + pct(st.feeBp) + ', taken on the sale · stake ' + fmtInt(st.minBuy)
       + ' to ' + fmtInt(st.maxBuy) + '<br>'
-      + 'One position a coin · ' + fmtInt(st.trades) + ' round trips closed, best ' + fmtInt(st.best);
+      + 'Up to ' + st.maxLots + ' buys a coin, sold together · ' + fmtInt(st.trades) + ' round trips closed, best ' + fmtInt(st.best);
   }
 
   // --- the line, the corner and the controls -----------------------------------------------------
@@ -390,6 +404,33 @@
     var c = coinOf(mk.st, mk.coin);
     line.innerHTML = (c && !c.position) ? CUC.pot(0, true) : '';
   }
+  // Thousandths of a coin, as a reader writes them: 0.7, 12.345, 3
+  function units(milli) {
+    var v = (milli || 0) / 1000;
+    return v.toFixed(3).replace(/\.?0+$/, '');
+  }
+  // A coin's price in credits as a fraction, for turning coins into credits and back. A unit change
+  // the host declared (ticksPerCredit), not a price: the price is c.ticks, which the host sent
+  function perCoin(c) { return c.ticks / (mk.st.ticksPerCredit || 100); }
+  // What the purse lets this market stake now, capped at one buy's ceiling
+  function room() {
+    var f = CUC.free('mk');
+    return f == null ? 0 : Math.min(f, mk.st.maxBuy);
+  }
+  // The box read as whole credits, or 0 when it does not read as a number. Coins are rounded to the
+  // nearest credit, which is the stake that actually goes in
+  function mkAmount(c) {
+    var v = Number(String(mk.typed).replace(/,/g, '').trim());
+    if (!isFinite(v) || v <= 0) return 0;
+    return mk.unit === 'sh' ? Math.round(v * perCoin(c)) : Math.floor(v);
+  }
+  function mkSetAmount(c, credits) {
+    if (mk.unit === 'sh') {
+      var u = Math.floor(credits / perCoin(c) * 1000) / 1000;
+      mk.typed = u.toFixed(3).replace(/\.?0+$/, '');
+    } else mk.typed = String(credits);
+    var box = el('mkAmt'); if (box) box.value = mk.typed;
+  }
   // The chip is the trade just made, kept here rather than read back off the state: an open carries
   // the last trade too, and coming back into the market is not that trade happening again.
   // Each line carries the figure that actually moved, all of it off the reply (market.js puts them
@@ -406,32 +447,59 @@
   // (docs/game-panels.md, sections 1 and 5-10)
   function mkButtons() {
     var st = mk.st, c = coinOf(st, mk.coin);
-    var buy = el('mkDeal'), sell = el('mkSell'), chips = el('mkStakes'), ctl = el('mkCtl');
+    var buy = el('mkDeal'), sell = el('mkSell'), row = el('mkAmtRow'), ctl = el('mkCtl');
     if (!buy || !sell || !ctl) return;
     var hold = !!(c && c.position);
     if (ctl) ctl.hidden = !c;
-    buy.hidden = !c || hold;
+    if (row) row.hidden = !c;
+    buy.hidden = !c;
     sell.hidden = !c || !hold;
-    if (chips) chips.hidden = buy.hidden;
-    if (!c) { CUC.note('mkNote', ''); CUC.note('mkFee', ''); return; }
+    if (!c) { CUC.note('mkNote', ''); CUC.note('mkFee', ''); var cv = el('mkConv'); if (cv) cv.textContent = ''; return; }
+    mkBuyBtn(buy, sell, st, c);
     if (hold) mkSellBtn(sell, c);
-    else mkBuyBtn(buy, sell, st, c);
   }
   // What the purse would be paid, which already has the fee in it (market.js's payoutOf). The price
   // rides on the button the way the forge's fee does, so the question the button asks is answered on
   // the button, and the fee is not said twice
   function mkSellBtn(sell, c) {
-    CUC.note('mkNote', '');
-    CUC.note('mkFee', '');              // the fee is the buyer's news, said once, on the buy screen
     sell.textContent = 'Sell ' + fmtInt(c.position.payout);
     sell.disabled = !!mk.locked || !c.can.sell;
     sell.title = c.can.sell ? 'Sell (S)' : (c.why.sell || 'Sell');
   }
+  // The amount, the unit, the shortcuts and the Buy button, from what is typed and what the purse holds.
+  // The host still checks all of it; this only keeps a button lit that the host would refuse dark
   function mkBuyBtn(buy, sell, st, c) {
-    sell.textContent = 'Sell';          // no position, so no price to leave on a hidden button
-    CUC.renderStakes(SU, mk.locked);    // the chips, the Buy button's stake, the short-purse note
-    if (!c.can.buy) buy.disabled = true;   // only ever tighter than the chips: never the other way
-    buy.title = c.can.buy ? 'Buy (B)' : (c.why.buy || 'Buy');
+    sell.textContent = 'Sell';
+    var amt = mkAmount(c), max = room(), known = CUC.free('mk') != null;
+    var us = document.querySelectorAll('#mkUnit button');
+    for (var i = 0; i < us.length; i++) {
+      var on = us[i].getAttribute('data-u') === mk.unit;
+      us[i].classList.toggle('on', on); us[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+      us[i].disabled = !!mk.locked;
+    }
+    var ps = document.querySelectorAll('#mkPick button');
+    for (var j = 0; j < ps.length; j++) ps[j].disabled = !!mk.locked || max < st.minBuy;
+    var box = el('mkAmt'); if (box) { box.disabled = !!mk.locked; if (document.activeElement !== box) box.value = mk.typed; }
+    var why = !c.can.buy ? (c.why.buy || 'Buy')
+      : !amt ? 'Type an amount'
+        : amt < st.minBuy ? 'At least ' + fmtInt(st.minBuy) + ' credits'
+          : amt > st.maxBuy ? 'At most ' + fmtInt(st.maxBuy) + ' credits a buy'
+            : known && amt > max ? 'Not enough credits'
+              : '';
+    buy.disabled = !!mk.locked || !!why;
+    buy.setAttribute('data-bet', why ? '0' : String(amt));
+    buy.textContent = (c.position ? 'Buy more ' : 'Buy ') + (amt ? fmtInt(amt) : '');
+    buy.title = why || 'Buy (B)';
+    var cv = el('mkConv');
+    if (cv) {
+      cv.textContent = why && amt ? why
+        : !amt ? ''
+          : mk.unit === 'sh' ? '= ' + fmtInt(amt) + ' credits'
+            : '≈ ' + units(Math.round(amt / perCoin(c) * 1000)) + ' ' + c.code;
+      cv.className = 'mk-conv' + (why && amt ? ' bad' : '');
+    }
+    var pv = document.querySelector('#mkLine .hl-pot.preview b'); if (pv) pv.textContent = fmtInt(amt);
+    CUC.note('mkNote', known && max < st.minBuy && !c.position ? (CUC.balance() >= st.minBuy ? CUC.heldElsewhere + '.' : 'You need ' + fmtInt(st.minBuy) + ' credits to play.') : '');
     CUC.note('mkFee', 'Round trip ' + pct(st.feeBp) + ', taken when you sell.');
   }
   function mkLock(locked) { mk.locked = !!locked; mkButtons(); mkSpanLock(); }
@@ -615,7 +683,30 @@
     markup: markup,
     init: function () {
       mkBlank();
-      CUC.wireStakes(SU, function () { mkLine(); mkButtons(); });
+      var amt = el('mkAmt');
+      amt.addEventListener('input', function () { mk.typed = this.value; mkButtons(); });
+      amt.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        var d = el('mkDeal'); if (d && !d.disabled && !d.hidden) d.click();
+      });
+      el('mkUnit').addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('button[data-u]') : null;
+        var c = coinOf(mk.st, mk.coin);
+        if (!b || b.disabled || !c) return;
+        var u = b.getAttribute('data-u'); if (u === mk.unit) return;
+        var credits = mkAmount(c);     // the same stake, said in the other unit
+        mk.unit = u;
+        if (credits) mkSetAmount(c, credits);
+        mkButtons();
+      });
+      el('mkPick').addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('button[data-f]') : null;
+        var c = coinOf(mk.st, mk.coin);
+        if (!b || b.disabled || !c) return;
+        mkSetAmount(c, Math.floor(room() * Number(b.getAttribute('data-f')) / 100));
+        mkButtons();
+      });
       el('mkList').addEventListener('click', function (e) {
         var row = e.target.closest ? e.target.closest('.mk-row') : null;
         if (!row) return;
@@ -671,8 +762,10 @@
       var k = String(e.key).toLowerCase();
       var hit = k === 'b' ? el('mkDeal') : k === 's' ? el('mkSell') : null;
       if (hit) { e.preventDefault(); if (!hit.disabled && !hit.hidden) hit.click(); return; }
+      // Enter buys only when nothing is held: with a position open both buttons are up, and a key
+      // that might sell is not a key to press by accident
       var t = e.target, sell = el('mkSell');
-      var prim = sell && !sell.hidden ? sell : el('mkDeal');
+      var prim = sell && !sell.hidden ? null : el('mkDeal');
       if (e.key === 'Enter' && (!t || t.tagName !== 'BUTTON') && prim && !prim.disabled && !prim.hidden) {
         e.preventDefault();
         prim.click();

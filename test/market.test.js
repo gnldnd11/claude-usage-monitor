@@ -460,9 +460,10 @@ test('a buy takes the stake, records the price it took it at, and act leaves its
     const out = M.act(st, buyOp('CRAB', 500, now));
     assert.equal(snapshot(st), was, 'act mutated the wallet it was handed');
     assert.notEqual(out, st);
-    assert.equal(out.pos.CRAB.amount, 500);
-    assert.equal(out.pos.CRAB.entryTicks, M.priceAt('CRAB', now));
-    assert.equal(out.pos.CRAB.at, now);
+    assert.equal(out.pos.CRAB.length, 1, 'one buy is one lot');
+    assert.equal(out.pos.CRAB[0].amount, 500);
+    assert.equal(out.pos.CRAB[0].entryTicks, M.priceAt('CRAB', now));
+    assert.equal(out.pos.CRAB[0].at, now);
     assert.equal(out.net, -500, 'the stake leaves at once: there is nothing on the table');
     assert.equal(out.staked, 500);
     assert.equal(out.earned, 0);
@@ -475,7 +476,7 @@ test('a buy takes the stake, records the price it took it at, and act leaves its
     assert.equal(Object.keys(out.pos).length, 1);
     const two = M.act(out, buyOp('KELP', 10, now));
     assert.equal(out.pos.KELP, undefined, 'a later buy reached back into the wallet it came from');
-    assert.equal(two.pos.CRAB.amount, 500);
+    assert.equal(two.pos.CRAB[0].amount, 500);
   });
 });
 
@@ -483,7 +484,7 @@ test('a sale pays the ratio of the two prices, less the whole round trip, and en
   const inMs = at(DAY * 100);
   const outMs = at(DAY * 100 + 4000);
   let st = atClock(inMs, () => M.act(wallet(), buyOp('SHEL', 20000, inMs)));
-  const entry = st.pos.SHEL.entryTicks;
+  const entry = st.pos.SHEL[0].entryTicks;
   atClock(outMs, () => {
     const exit = M.priceAt('SHEL', outMs);
     const sold = M.act(st, sellOp('SHEL', outMs));
@@ -508,19 +509,51 @@ test('a sale pays the ratio of the two prices, less the whole round trip, and en
   });
 });
 
-test('one position a coin: there is no averaging down', () => {
-  const now = at(DAY * 7);
-  atClock(now, () => {
-    let st = M.act(wallet(), buyOp('TIDE', 100, now));
-    assert.equal(M.whyNot(st, buyOp('TIDE', 100, now), Infinity), 'TIDE is already held');
-    assert.equal(M.act(st, buyOp('TIDE', 100, now)), st);
-    // the other three are still open, so four positions is the most there can be
-    for (const code of CODES) if (code !== 'TIDE') st = M.act(st, buyOp(code, 100, now));
-    assert.equal(Object.keys(st.pos).length, 4);
-    assert.equal(st.staked, 400);
-    const v = M.view(st, 0, now);
-    assert.equal(v.holding, 4);
-    assert.equal(v.held, 400);
+test('a held coin can be bought again: each buy is its own lot, and the sale pays each by its own price', () => {
+  const t1 = at(DAY * 7), t2 = at(DAY * 7 + 600), t3 = at(DAY * 7 + 3000);
+  let st = atClock(t1, () => M.act(wallet(), buyOp('TIDE', 100, t1)));
+  st = atClock(t2, () => {
+    assert.equal(M.whyNot(st, buyOp('TIDE', 250, t2), Infinity), null, 'buying more of a held coin is allowed');
+    return M.act(st, buyOp('TIDE', 250, t2));
+  });
+  assert.equal(st.pos.TIDE.length, 2);
+  assert.equal(st.staked, 350);
+  const e1 = st.pos.TIDE[0].entryTicks, e2 = st.pos.TIDE[1].entryTicks;
+  assert.equal(e1, M.priceAt('TIDE', t1));
+  assert.equal(e2, M.priceAt('TIDE', t2));
+  // no averaged entry on the money path: the payout is the sum of the two lots' own payouts
+  atClock(t3, () => {
+    const exit = M.priceAt('TIDE', t3);
+    const v = M.view(st, 0, t3).coins.find((c) => c.code === 'TIDE');
+    assert.equal(v.position.amount, 350);
+    assert.equal(v.position.lots, 2);
+    assert.equal(v.position.payout, M.payoutOf(100, e1, exit) + M.payoutOf(250, e2, exit));
+    assert.equal(v.position.unitsMilli, Math.round(100 * 100000 / e1) + Math.round(250 * 100000 / e2));
+    const sold = M.act(st, sellOp('TIDE', t3));
+    assert.equal(sold.net, M.payoutOf(100, e1, exit) + M.payoutOf(250, e2, exit));
+    assert.equal(sold.last.amount, 350);
+    assert.equal(sold.pos.TIDE, undefined, 'a sale sells the whole coin');
+    assert.equal(sold.trades, 1);
+  });
+  // a saved record keeps the first lot where a single position always was, so an older build still
+  // reads the coin as held, and the rest come back from `more`
+  const rec = M.save(st);
+  assert.equal(rec.pos.TIDE.amount, 100);
+  assert.equal(rec.pos.TIDE.more.length, 1);
+  assert.deepEqual(M.load(JSON.parse(JSON.stringify(rec))).pos.TIDE, st.pos.TIDE);
+  assert.ok(M.same(rec, M.save(M.load(rec))));
+  assert.ok(!M.same(rec, M.save(M.load({ ...rec, pos: { TIDE: { amount: 100, entryTicks: e1, at: t1 } } }))), 'a lost lot is a different record');
+  // and there is a ceiling on lots a coin can hold
+  const tn = at(DAY * 8);
+  atClock(tn, () => {
+    let w = wallet();
+    for (let i = 0; i < M.MAX_LOTS; i++) w = M.act(w, buyOp('KELP', 10, tn));
+    assert.equal(w.pos.KELP.length, M.MAX_LOTS);
+    assert.match(M.whyNot(w, buyOp('KELP', 10, tn), Infinity), /at most/);
+    assert.equal(M.act(w, buyOp('KELP', 10, tn)), w);
+    // four coins, each still its own position
+    for (const code of CODES) if (code !== 'KELP') w = M.act(w, buyOp(code, 100, tn));
+    assert.equal(M.view(w, 0, tn).holding, 4);
   });
 });
 
@@ -676,7 +709,15 @@ test('a record from somewhere else is read at the boundary, never trusted', () =
     }
   });
   assert.deepEqual(Object.keys(bad.pos), ['TIDE']);
-  assert.deepEqual(bad.pos.TIDE, { amount: 100, entryTicks: 120000, at: 99 });
+  assert.deepEqual(bad.pos.TIDE, [{ amount: 100, entryTicks: 120000, at: 99 }]);
+  assert.deepEqual(M.clean({ pos: { TIDE: { amount: 100, entryTicks: 120000, at: 99 } } }).pos.TIDE, { amount: 100, entryTicks: 120000, at: 99 }, 'a single lot is stored the way a position always was');
+  // extra lots are held to the same rule one by one, and to the ceiling on lots
+  const many = M.load({ pos: { TIDE: { amount: 100, entryTicks: 120000, at: 9, more: [
+    { amount: 1, entryTicks: 120000 }, { amount: 200, entryTicks: 120000, at: 10 }, 'junk', null,
+    ...Array.from({ length: 40 }, () => ({ amount: 10, entryTicks: 120000, at: 11 }))
+  ] } } });
+  assert.equal(many.pos.TIDE.length, M.MAX_LOTS - 3, 'the three bad entries inside the first ' + M.MAX_LOTS + ' were dropped');
+  assert.equal(many.pos.TIDE[1].amount, 200);
   assert.equal(Object.getPrototypeOf(bad.pos), Object.prototype);
   assert.equal(bad.pos.extra, undefined);
   // a price has to be one THAT coin can reach: outside its own band is a position the market never
@@ -818,12 +859,14 @@ function viewChecks(now) {
     assert.equal(c.can.sell, !M.whyNot(st, sellOp(c.code, now), 100000));
   }
   const crab = v.coins.find((c) => c.code === 'CRAB');
-  assert.equal(crab.can.buy, false, 'a held coin cannot be bought again');
+  assert.equal(crab.can.buy, true, 'a held coin can be bought again');
   assert.equal(crab.can.sell, true);
   const p = crab.position;
   // every one of these is a multiplication the screen does not have to do
   assert.equal(p.amount, 3000);
-  assert.equal(p.entryTicks, st.pos.CRAB.entryTicks);
+  assert.equal(p.entryTicks, st.pos.CRAB[0].entryTicks);
+  assert.equal(p.lots, 1);
+  assert.equal(p.unitsMilli, Math.round(3000 * M.TICKS_PER_CREDIT * 1000 / p.entryTicks));
   assert.equal(p.payout, M.payoutOf(3000, p.entryTicks, crab.ticks));
   assert.equal(p.gross, M.grossOf(3000, p.entryTicks, crab.ticks));
   assert.equal(p.pl, p.payout - 3000);

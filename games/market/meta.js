@@ -286,6 +286,20 @@ module.exports = {
   .mk-plbox[hidden]{display:none;}
   .mk-pl{display:block;font-size:26px;font-weight:800;line-height:1.1;color:var(--muted);font-variant-numeric:tabular-nums;}
   .mk-plsub{display:block;margin-top:2px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  /* --- the amount: any whole number of credits, typed in credits or in coins. A coin is bought in
+     fractions (0.7 of one is a stake of 0.7 times its price), so the box takes decimals in coins */
+  .mk-amt{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap;}
+  .mk-amt[hidden]{display:none;}
+  .mk-amt input{flex:1 1 90px;min-width:0;height:28px;box-sizing:border-box;padding:0 8px;border-radius:7px;border:1px solid var(--iborder);background:var(--inner);color:var(--text);font-family:inherit;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .mk-amt input:focus{outline:2px solid var(--focus);outline-offset:0;}
+  .mk-seg{display:flex;gap:2px;padding:2px;flex:none;background:var(--inner);border:1px solid var(--iborder);border-radius:9px;}
+  .mk-seg button{height:24px;padding:0 8px;border:0;border-radius:7px;background:transparent;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--muted);cursor:pointer;}
+  .mk-seg button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
+  .mk-seg button:hover:not(.on):not(:disabled){color:var(--text);}
+  .mk-seg button:disabled{opacity:.35;cursor:not-allowed;}
+  .mk-seg button:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .mk-conv{min-height:14px;margin-top:4px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .mk-conv.bad{color:var(--mk-dn);}
   /* --- the chart: 24 to 36 candles, depending on the window, as absolutely placed <i>. There is no
      chart library in this extension and there is not going to be one (CLAUDE.md: no dependencies,
      no build step).

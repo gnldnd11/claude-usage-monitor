@@ -325,12 +325,33 @@ module.exports = {
         bodies().length === CANDLES && txt('mkPx-' + code) !== '', bodies().length + ' bodies');
       ok('and a coin you do not hold has nothing to sell', $('mkSell').hidden && offered() === 'mkDeal', offered());
     } else {
-      doc.querySelector('#mkStakes button[data-v="100"]').click(); advance(2);
-      ok('the chips pick the stake and the line under the well previews it',
+      const typeAmt = (v) => { $('mkAmt').value = v; $('mkAmt').dispatchEvent({ type: 'input', preventDefault() {} }); advance(2); };
+      // the box takes any whole number of credits, and the line says how much of a coin that is
+      typeAmt('567');
+      ok('the box takes any stake, not only a chip, and says what it buys in coins',
+        $('mkDeal').getAttribute('data-bet') === '567' && /^≈ [\d.]+ /.test(txt('mkConv')),
+        $('mkDeal').getAttribute('data-bet') + ' | ' + txt('mkConv'));
+      // in coins, a fraction of one is a stake of that fraction of the price
+      doc.querySelector('#mkUnit button[data-u="sh"]').click(); advance(2);
+      typeAmt('0.5');
+      const want07 = Math.round(0.5 * Number(txt('mkNow').replace(/,/g, '')));
+      ok('half a coin is a stake of half its price',
+        Math.abs(Number($('mkDeal').getAttribute('data-bet')) - want07) <= 1 && /^= [\d,]+ credits$/.test(txt('mkConv')),
+        $('mkDeal').getAttribute('data-bet') + ' | want ' + want07 + ' | ' + txt('mkConv'));
+      doc.querySelector('#mkUnit button[data-u="cr"]').click(); advance(2);
+      // Max is the whole purse this table may use
+      doc.querySelector('#mkPick button[data-f="100"]').click(); advance(2);
+      ok('Max puts in everything the purse can stake here',
+        Number($('mkDeal').getAttribute('data-bet')) === Math.min(ledgerBalance(), market.MAX_BUY),
+        $('mkDeal').getAttribute('data-bet') + ' | purse ' + ledgerBalance());
+      typeAmt(String(ledgerBalance() + 1));
+      ok('more than the purse holds is refused on the screen before it is sent',
+        $('mkDeal').disabled && txt('mkConv') === 'Not enough credits', txt('mkConv'));
+      typeAmt('100');
+      ok('the stake typed is the stake the line under the well previews',
         $('mkDeal').getAttribute('data-bet') === '100'
-        && doc.querySelector('#mkLine .hl-pot.preview b').textContent === '100'
-        && activeName() === 'mkDeal',
-        $('mkDeal').getAttribute('data-bet') + ' | focus ' + activeName());
+        && doc.querySelector('#mkLine .hl-pot.preview b').textContent === '100',
+        $('mkDeal').getAttribute('data-bet'));
 
       // --- a buy
       const bal0 = ledgerBalance();
@@ -357,15 +378,15 @@ module.exports = {
       ok('the chip names what went in and the price it went in at',
         chip() === 'bj-chip Bought 100 at ' + txt('mkNow'), chip() + ' | now ' + txt('mkNow'));
       ok('the biggest block is now the profit, with its stake and its age under it',
-        !$('mkPlBox').hidden && txt('mkPlSub').indexOf('100 in at ' + txt('mkNow')) === 0
+        !$('mkPlBox').hidden && txt('mkPlSub').indexOf(' · 100 in at ' + txt('mkNow')) > 0
         && /held \d+s$/.test(txt('mkPlSub')), txt('mkPlSub'));
       ok('one figure, three places: the block, the heading’s corner and the row all say it',
         txt('mkPl') === txt('mkSide') && figOf(code) === txt('mkPl')
         && $('mkPl').className === 'mk-pl ' + (dirOf(txt('mkPl')) ? 'mk-' + dirOf(txt('mkPl')) : ''),
         txt('mkPl') + ' | ' + txt('mkSide') + ' | ' + figOf(code) + ' | ' + $('mkPl').className);
       ok('the chart marks where this position was opened', marks().length === 1, marks().length + ' marks');
-      ok('holding it, the screen offers the sale and only the sale, and the fee goes quiet',
-        offered() === 'mkSell' && $('mkStakes').hidden && $('mkFee').hidden, offered());
+      ok('holding it, the screen offers the sale and more of the same coin',
+        offered() === 'mkDeal,mkSell' && /^Buy more /.test(txt('mkDeal')), offered() + ' | ' + txt('mkDeal'));
       // The price on the button is what the purse will be paid, fee and all. Only its SHAPE is
       // asserted: the figure is the price of the minute the reply was drawn at, and a test that
       // compared it with what the sale fetches would be a test of whether the clock turned over

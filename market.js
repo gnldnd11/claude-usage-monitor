@@ -108,9 +108,17 @@
 // the first. MAX_BUY exists so the product cannot leave Number.MAX_SAFE_INTEGER at all, and it is
 // derived from the table at load time rather than picked.
 //
-// One position per coin, and buying a coin already held is refused. Averaging down would mean a
-// weighted entry price, which means a division, which means a rounded entry price that is nobody's
-// real price. There is a line in whyNot instead.
+// A coin can be bought again while it is held, up to MAX_LOTS times. Each buy is its own LOT with its
+// own entry price, and the sale pays every lot by its own ratio and adds the payouts. Folding the
+// buys into one averaged entry would mean a division, which means a rounded entry price that is
+// nobody's real price; a list of exact lots keeps every figure on the money path an integer. The
+// average the screen shows is computed for the screen only (coinView). A sale sells the whole coin.
+//
+// Fractional shares need nothing here: a stake is credits, so 0.7 of a coin is simply a stake of
+// 0.7 times its price, and the screen is told how many thousandths of a coin a position holds.
+//
+// Stored, the first lot keeps the shape a single position always had and the rest ride in `more`, so
+// a window still on an older build reads the coin as held (the first lot) instead of as empty.
 //
 // --- 7. the wallet outlives the window, and windows share it ----------------------------------
 // Like the sword, and for the same reason: a position is the player's property, not a round. So the
@@ -175,6 +183,8 @@ const FEE_DEN = 200;
 
 // The minimum bet of the other games. One number, so a player does not have to learn four
 const MIN_BUY = 10;
+//: buys a coin can hold at once before it has to be sold (the note, section 6)
+const MAX_LOTS = 16;
 
 // --- the lattice --------------------------------------------------------------------------------
 
@@ -560,6 +570,18 @@ function candles(code, opts) {
 
 // --- the sale's arithmetic ----------------------------------------------------------------------
 
+// The price several lots were bought at on average, weighted by coins rather than by credits (what
+// a broker shows as the average price). For the screen only: it is rounded, so it never prices a sale
+function avgEntry(lots) {
+  let amt = 0, units = 0;
+  for (const l of lots) { amt += l.amount; units += l.amount / l.entryTicks; }
+  return units > 0 ? Math.round(amt / units) : 0;
+}
+// How many thousandths of a coin `amount` credits bought at `entryTicks`. For the screen only
+function unitsMilli(amount, entryTicks) {
+  return entryTicks > 0 ? Math.round(amount * TICKS_PER_CREDIT * 1000 / entryTicks) : 0;
+}
+
 // What a position fetches, net of the whole round trip. Integer in, integer out, one floor.
 // FEE_NUM/FEE_DEN is 199/200, which is 995/1000 with a product five times smaller (see the note,
 // section 6). MAX_BUY keeps the product safe; this checks it anyway, because a cap that is only
@@ -581,8 +603,9 @@ function grossOf(amount, entryTicks, exitTicks) {
 
 // --- the wallet ---------------------------------------------------------------------------------
 //
-//   pos      code -> { amount, entryTicks, at }. At most one per coin, and a coin either has one or
-//            is absent from the object. `amount` is credits, never units (the note, section 6)
+//   pos      code -> [{ amount, entryTicks, at }, ...], the lots of that coin in the order they were
+//            bought, one to MAX_LOTS of them. A coin either has a list or is absent from the object.
+//            `amount` is credits, never units (the note, section 6)
 //   moves    accepted moves, buys and sales alike. The merge clock: it only grows, so of two copies
 //            the one with more moves is the later one (credits.js's register merge)
 //   trades   round trips closed, which is sales and not moves: a buy that has not been sold is not
@@ -629,9 +652,12 @@ function newWallet(opts) {
   return freshWallet(opts && opts.by);
 }
 
+function copyLots(lots) { return lots.map((l) => Object.assign({}, l)); }
+function lotsAmount(lots) { let n = 0; for (const l of lots) n += l.amount; return n; }
+
 function clone(st) {
   const pos = {};
-  for (const code of CODES) if (st.pos[code]) pos[code] = Object.assign({}, st.pos[code]);
+  for (const code of CODES) if (st.pos[code]) pos[code] = copyLots(st.pos[code]);
   return Object.assign({}, st, { pos, last: st.last ? Object.assign({}, st.last) : null });
 }
 
@@ -675,7 +701,7 @@ function badTime(st, nowMs) {
 // same). Comparisons are written as !(a <= b) so a NaN budget, which is a broken ledger, refuses
 function cannotBuy(st, code, amount, budget) {
   if (!rowOf(code)) return 'no such coin';
-  if (st.pos[code]) return code + ' is already held';
+  if (st.pos[code] && st.pos[code].length >= MAX_LOTS) return 'at most ' + MAX_LOTS + ' buys a coin; sell ' + code + ' to buy it again';
   if (!Number.isSafeInteger(amount) || !(amount >= MIN_BUY)) return 'the stake must be a whole number of at least ' + MIN_BUY;
   if (!(amount <= MAX_BUY)) return 'the market takes at most ' + MAX_BUY + ' credits a position';
   const room = budget == null ? Infinity : budget;
@@ -704,7 +730,8 @@ function whyNot(st, op, budget) {
 
 function buy(st, code, amount, nowMs) {
   const ticks = priceAt(code, nowMs);
-  st.pos[code] = { amount, entryTicks: ticks, at: nowMs };
+  if (!st.pos[code]) st.pos[code] = [];
+  st.pos[code].push({ amount, entryTicks: ticks, at: nowMs });
   st.moves += 1;
   st.staked += amount;
   st.at = nowMs;
@@ -713,9 +740,12 @@ function buy(st, code, amount, nowMs) {
 }
 
 function sell(st, code, nowMs) {
-  const p = st.pos[code];
+  const lots = st.pos[code];
   const ticks = priceAt(code, nowMs);
-  const paid = payoutOf(p.amount, p.entryTicks, ticks);
+  // every lot by its own ratio, then added: no averaged entry on the money path (the note, section 6)
+  let paid = 0;
+  for (const l of lots) paid += payoutOf(l.amount, l.entryTicks, ticks);
+  const p = { amount: lotsAmount(lots), entryTicks: lots.length === 1 ? lots[0].entryTicks : avgEntry(lots), at: lots[0].at };
   delete st.pos[code];
   st.moves += 1;
   st.trades += 1;
@@ -745,11 +775,22 @@ function act(st, op) {
 
 // The record the host stores. `last` and `net` are left out on purpose: they belong to the move, the
 // way the forge's chip does
+// Lots as a record stores them: the first in place, the rest in `more` (the note, section 6)
+function recOfLots(lots) {
+  const [p, ...rest] = lots;
+  const r = { amount: p.amount, entryTicks: p.entryTicks, at: p.at };
+  if (rest.length) r.more = rest.map((l) => ({ amount: l.amount, entryTicks: l.entryTicks, at: l.at }));
+  return r;
+}
+function lotsOfRec(r) {
+  return [{ amount: r.amount, entryTicks: r.entryTicks, at: r.at }].concat(r.more ? copyLots(r.more) : []);
+}
+
 function save(st) {
   const pos = {};
   for (const code of CODES) {
-    const p = st.pos[code];
-    if (p) pos[code] = { amount: p.amount, entryTicks: p.entryTicks, at: p.at };
+    const lots = st.pos[code];
+    if (lots && lots.length) pos[code] = recOfLots(lots);
   }
   const rec = { pos, by: st.by };
   for (const k of REC_FIELDS) rec[k] = st[k];
@@ -771,18 +812,23 @@ function clean(rec) {
     const p = src[code];
     if (!p || typeof p !== 'object') continue;
     const row = rowOf(code);
-    const amount = p.amount, entryTicks = p.entryTicks, at = p.at;
-    if (!Number.isSafeInteger(amount) || amount < MIN_BUY || amount > MAX_BUY) continue;
-    // the price has to be one THIS coin can reach, not one some coin can: a position bought at a
-    // tick outside its own band is a position the market never sold, and its sale would pay a ratio
-    // the band says is impossible
-    if (!Number.isSafeInteger(entryTicks) || entryTicks < row.floorTicks || entryTicks > row.capTicks) continue;
-    out.pos[code] = { amount, entryTicks, at: (Number.isSafeInteger(at) && at > 0 && at <= MAX_AT) ? at : 0 };
-  }
-  // a wallet cannot have moved before its own positions were opened
-  for (const code of CODES) {
-    const p = out.pos[code];
-    if (p && p.at > out.at) out.at = p.at;
+    // the first lot is the position as it was always stored; the rest ride in `more`
+    const raw = [p].concat(Array.isArray(p.more) ? p.more.slice(0, MAX_LOTS - 1) : []);
+    const lots = [];
+    for (const l of raw) {
+      if (!l || typeof l !== 'object') continue;
+      const amount = l.amount, entryTicks = l.entryTicks, at = l.at;
+      if (!Number.isSafeInteger(amount) || amount < MIN_BUY || amount > MAX_BUY) continue;
+      // the price has to be one THIS coin can reach, not one some coin can: a lot bought at a tick
+      // outside its own band is a lot the market never sold, and its sale would pay a ratio the
+      // band says is impossible
+      if (!Number.isSafeInteger(entryTicks) || entryTicks < row.floorTicks || entryTicks > row.capTicks) continue;
+      lots.push({ amount, entryTicks, at: (Number.isSafeInteger(at) && at > 0 && at <= MAX_AT) ? at : 0 });
+    }
+    if (!lots.length) continue;
+    // a wallet cannot have moved before its own positions were opened
+    for (const l of lots) if (l.at > out.at) out.at = l.at;
+    out.pos[code] = recOfLots(lots);
   }
   return out;
 }
@@ -800,7 +846,7 @@ function load(rec) {
   if (!c) return freshWallet('');
   const st = freshWallet(c.by);
   for (const k of REC_FIELDS) st[k] = c[k];
-  st.pos = c.pos;
+  for (const code of CODES) if (c.pos[code]) st.pos[code] = lotsOfRec(c.pos[code]);
   return st;
 }
 
@@ -830,7 +876,13 @@ function same(a, b) {
   for (const code of CODES) {
     const x = a.pos[code], y = b.pos[code];
     if (!x !== !y) return false;
-    if (x && (x.amount !== y.amount || x.entryTicks !== y.entryTicks || x.at !== y.at)) return false;
+    if (!x) continue;
+    // records: the first lot in place, the rest in `more` (save)
+    const xs = [x].concat(x.more || []), ys = [y].concat(y.more || []);
+    if (xs.length !== ys.length) return false;
+    for (let i = 0; i < xs.length; i++) {
+      if (xs[i].amount !== ys[i].amount || xs[i].entryTicks !== ys[i].entryTicks || xs[i].at !== ys[i].at) return false;
+    }
   }
   return true;
 }
@@ -844,7 +896,12 @@ function merge(cur, inc) {
   if (!inc) return cur || null;
   const win = newer(inc, cur) ? inc : cur;
   const pos = {};
-  for (const code of CODES) if (win.pos[code]) pos[code] = Object.assign({}, win.pos[code]);
+  for (const code of CODES) {
+    const p = win.pos[code];
+    if (!p) continue;
+    pos[code] = Object.assign({}, p);
+    if (Array.isArray(p.more)) pos[code].more = copyLots(p.more);
+  }
   const out = Object.assign({}, win, { pos });
   for (const k of MAX_FIELDS) {
     if (cur && cur[k] > out[k]) out[k] = cur[k];
@@ -911,17 +968,26 @@ function coinView(st, row, nowMs, shape, budget, late) {
   };
   if (!st) return out;
   if (held) {
-    const payout = payoutOf(held.amount, held.entryTicks, ticks);
+    // every money figure is the sum of the lots' own; the average entry is for reading only
+    let payout = 0, gross = 0, milli = 0;
+    for (const l of held) {
+      payout += payoutOf(l.amount, l.entryTicks, ticks);
+      gross += grossOf(l.amount, l.entryTicks, ticks);
+      milli += unitsMilli(l.amount, l.entryTicks);
+    }
+    const amount = lotsAmount(held), entry = held.length === 1 ? held[0].entryTicks : avgEntry(held);
     out.position = {
-      amount: held.amount,
-      entryTicks: held.entryTicks,
-      at: held.at,
-      heldMs: Math.max(0, nowMs - held.at),
-      gross: grossOf(held.amount, held.entryTicks, ticks),
+      amount,
+      entryTicks: entry,
+      lots: held.length,
+      unitsMilli: milli,
+      at: held[0].at,
+      heldMs: Math.max(0, nowMs - held[0].at),
+      gross,
       payout,
-      pl: payout - held.amount,
-      plBp: bpOf(payout, held.amount),
-      moveBp: bpOf(ticks, held.entryTicks)
+      pl: payout - amount,
+      plBp: bpOf(payout, amount),
+      moveBp: bpOf(ticks, entry)
     };
   }
   // `can.buy` is about the smallest buy there is: the screen greys the coin out when even the
@@ -963,6 +1029,8 @@ function view(st, budget, nowMs, shape) {
     nowMs: at,
     minBuy: MIN_BUY,
     maxBuy: MAX_BUY,
+    maxLots: MAX_LOTS,
+    ticksPerCredit: TICKS_PER_CREDIT,
     feeBp: (FEE_DEN - FEE_NUM) * (10000 / FEE_DEN),
     bandX: BAND_X,
     coins,
@@ -987,7 +1055,7 @@ module.exports = {
   // storage
   save, load, clean, newer, merge, same, kept, netOf, REC_FIELDS, MAX_FIELDS,
   // constants a host or a test reads
-  OPS, MIN_BUY, MAX_BUY, TICKS_PER_CREDIT, FEE_NUM, FEE_DEN,
+  OPS, MIN_BUY, MAX_BUY, MAX_LOTS, TICKS_PER_CREDIT, FEE_NUM, FEE_DEN,
   EPOCH_MS, MS_PER_MIN, MIN_PER_DAY, LEVELS, MAX_MINUTE,
   BAND, SPAN, HARD, BAND_X, DRIFT, FAIR_DRIFT, BEND_GUARD, ALIVE_DAYS, ALIVE_FRACTION,
   squash, liveliness,

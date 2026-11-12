@@ -1019,6 +1019,9 @@
     stakeUi: stakeUi, stake: gameStake, renderStakes: renderStakes, wireStakes: wireStakes,
     setHeld: setHeld, heldElsewhere: HELD_ELSEWHERE,
     balance: function () { return prev.cr; },
+    // what game `g` may stake now: the balance less what the other tables hold, or null before the
+    // first balance has landed
+    free: function (g) { return prev.cr == null ? null : Math.max(0, prev.cr - (gameHeld[g] || 0)); },
 
     // --- notices, and the one toggle every folded paytable shares
     live: setLive, err: setErr, note: setNote, rowFig: rowFig, why: wireWhy,
