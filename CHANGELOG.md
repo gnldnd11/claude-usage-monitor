@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.22.3: Everyone on one bar
+
+- **The bar on the Details page is split by PC.** When sharing is on, each PC on the account gets its own color, with Other PCs in grey; hovering a piece shows its name and %. The list below uses the same colors.
+- **The headline reads `this PC / account`**, such as `4.3% / 14%`, in place of two lines of text.
+- **No `~` or `≈` before the share.** How it was estimated is still on its tooltip.
+- **Sharing syncs every 5 minutes** (it was 10), and an open Details page redraws with the new rows.
+
 ## 1.22.2: This week means since the reset
 
 - **The Details page covers the account's weekly window**, from its last reset to now, the span the weekly % is about. It used to show the last seven calendar days, so right after a reset it still counted last week. The title says when the window started.

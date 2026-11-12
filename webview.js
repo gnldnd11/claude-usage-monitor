@@ -1544,11 +1544,12 @@
     }
     if (!t) return h + '<div class="wk-wait"><span class="wk-spin"></span></div>';
     if (t.error) return h + '<div class="wk-note">Sharing server not reachable (' + esc(t.error) + ') <a href="#" id="wkTeamEdit">Change</a></div>';
-    h += '<div class="wk-team">' + t.rows.map(function (x) {
+    var col = wkColors(t.rows);
+    h += '<div class="wk-team">' + t.rows.map(function (x, k) {
       return '<div class="wk-trow' + (x.me ? ' me' : '') + (x.stale ? ' stale' : '') + '" title="' + esc(x.name) + ': ' + fmtBig(x.tokens) + ' tokens, $' + Math.round(x.cost) + ', ' + Math.round(x.ofTeam * 100) + '% of the team\'s recorded use' + (x.stale ? ' (no report for 6h+)' : '') + '">'
         + '<span class="nm">' + esc(x.name) + (x.me ? ' (you)' : '') + '</span>'
         + '<span class="pc">' + pctTxt(x.pct) + '%</span>'
-        + '<span class="tr"><i style="width:' + Math.min(100, x.pct) + '%"></i></span></div>';
+        + '<span class="tr"><i style="width:' + Math.min(100, x.pct) + '%;background:' + col[k] + '"></i></span></div>';
     }).join('');
     if (t.unrecorded != null && t.unrecorded >= 0.5) {
       h += '<div class="wk-trow other" title="Account total minus everyone above: PCs that do not share, claude.ai on the web, the apps">'
@@ -1557,6 +1558,12 @@
     }
     h += '</div><div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
     return h;
+  }
+  // this PC keeps the extension's orange; the others get their own colors, in row order
+  var WK_PAL = ['#5b9bd5', '#6fbf73', '#b58ad8', '#d9b84f', '#4fbfb6', '#d9739a'];
+  function wkColors(rows) {
+    var n = 0;
+    return rows.map(function (x) { return x.me ? '#e8895a' : WK_PAL[n++ % WK_PAL.length]; });
   }
   var wkEditTeam = false, wkLast = null;
   function renderWeekly(r) {
@@ -1582,11 +1589,24 @@
     var per = pl.perPoint ? '$' + Math.round(pl.perPoint) : '';
     var how = pl.basis === 'reference' ? 'Reference rate for ' + (pl.tierKnown ? TIER[pl.tier] : 'Max 20x (assumed)') + ': about ' + per + ' per 1%'
       : (pl.basis === 'rough' ? 'Measured on this PC, rough (' + pl.readings + ' of ' + pl.needed + '): about ' : 'Measured on this PC: about ') + per + ' per 1%';
-    h += '<div class="wk-share" title="' + esc(how) + '"><span class="wk-big">' + (me != null ? (pl.basis === 'measured' ? '≈ ' : '~') + pctTxt(me) + '<small>%</small>' : '–') + '</span>'
-      + '<span class="wk-of">of this week\'s plan limit<br>account total (every PC) ' + (acc != null ? Math.round(acc) + '%' : '–') + '</span></div>';
-    h += '<div class="wk-meter">' + (acc != null ? '<i class="acc" style="width:' + Math.min(100, acc) + '%"></i>' : '')
-      + (me != null ? '<i class="me" style="width:' + Math.min(100, me) + '%"></i>' : '') + '</div>';
-    h += '<div class="wk-legend"><span><b style="background:#e8895a"></b>this PC</span><span><b style="background:rgba(232,137,90,.35)"></b>other PCs</span></div>';
+    var shown = tm && tm.accountPct != null ? tm.accountPct : acc;
+    h += '<div class="wk-share" title="' + esc('This PC / whole account, of this week\'s limit\n' + how) + '"><span class="wk-big">' + (me != null ? pctTxt(me) + '<small>%</small>' : '–') + '</span>'
+      + '<span class="wk-tot">/ ' + (shown != null ? pctTxt(shown) + '%' : '–') + '</span></div>';
+    // the account's bar, one piece per PC; hovering a piece names it
+    var segs = [];
+    if (tm) {
+      var cs = wkColors(tm.rows);
+      tm.rows.forEach(function (x, k) { segs.push({ n: x.name + (x.me ? ' (you)' : ''), p: x.pct, c: cs[k], me: x.me }); });
+      segs.sort(function (a, b) { return (b.me ? 1 : 0) - (a.me ? 1 : 0); });
+      if (tm.unrecorded != null) segs.push({ n: 'Other PCs', p: tm.unrecorded, c: 'var(--other)' });
+    } else {
+      if (me != null) segs.push({ n: 'This PC', p: me, c: '#e8895a', me: true });
+      if (acc != null) segs.push({ n: 'Other PCs', p: Math.max(0, acc - (me || 0)), c: 'var(--other)' });
+    }
+    h += '<div class="wk-mwrap"><div class="wk-meter">' + segs.filter(function (g) { return g.p > 0; }).map(function (g) {
+      return '<i style="width:' + Math.min(100, g.p) + '%;background:' + g.c + '" data-tip="' + esc(g.n + ' ' + pctTxt(g.p) + '%') + '"></i>';
+    }).join('') + '</div><div class="wk-tip" hidden></div></div>';
+    if (!tm) h += '<div class="wk-legend"><span><b style="background:#e8895a"></b>This PC</span><span><b style="background:var(--other)"></b>Other PCs</span></div>';
     h += teamBlock(r);
     // totals
     h += '<div class="wk-stats">'
@@ -1620,6 +1640,7 @@
   function closeWeekly() {
     var m = el('weeklyModal'); if (!m || m.hidden || m.classList.contains('closing')) return;
     m.classList.add('closing');
+    vscode.postMessage({ type: 'weeklyClose' });
     wkCloseT = setTimeout(function () { m.hidden = true; m.classList.remove('closing'); }, 180);
   }
   function openWeekly() {
@@ -1630,6 +1651,22 @@
     vscode.postMessage({ type: 'weeklyOpen' });
   }
   if (el('wkMore')) el('wkMore').addEventListener('click', function (e) { e.stopPropagation(); openWeekly(); });
+  if (el('wkBody')) {
+    var wkTip = function (e) {
+      var seg = e.target && e.target.closest ? e.target.closest('.wk-meter i[data-tip]') : null;
+      var wrap = e.target && e.target.closest ? e.target.closest('.wk-mwrap') : null;
+      var tipEl = wrap ? wrap.querySelector('.wk-tip') : el('wkBody').querySelector('.wk-tip');
+      if (!tipEl) return;
+      if (!seg || !wrap) { tipEl.hidden = true; return; }
+      tipEl.textContent = seg.getAttribute('data-tip');
+      tipEl.hidden = false;
+      var wr = wrap.getBoundingClientRect(), sr = seg.getBoundingClientRect();
+      var x = sr.left + sr.width / 2 - wr.left, w = tipEl.offsetWidth;
+      tipEl.style.left = Math.max(0, Math.min(wr.width - w, x - w / 2)) + 'px';
+    };
+    el('wkBody').addEventListener('mouseover', wkTip);
+    el('wkBody').addEventListener('mouseleave', wkTip);
+  }
   if (el('wkBody')) el('wkBody').addEventListener('click', function (e) {
     var id = e.target && e.target.id;
     if (id === 'wkTeamEdit') { e.preventDefault(); wkEditTeam = true; if (wkLast) renderWeekly(wkLast); return; }

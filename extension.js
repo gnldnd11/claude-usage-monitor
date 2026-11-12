@@ -1165,6 +1165,7 @@ class UsageViewProvider {
   resolveWebviewView(view) {
     this.view = view;
     this.ready = false;
+    this.weeklyShown = false; // a new page starts with Details closed
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
     view.webview.html = this.html(view.webview);
     view.webview.onDidReceiveMessage((m) => {
@@ -1174,7 +1175,8 @@ class UsageViewProvider {
         push();
         if (weeklyOpenPending) { weeklyOpenPending = false; view.webview.postMessage({ type: 'openWeekly' }); }
       }
-      else if (m.type === 'weeklyOpen') this.sendWeekly();
+      else if (m.type === 'weeklyOpen') { this.weeklyShown = true; this.sendWeekly(); }
+      else if (m.type === 'weeklyClose') this.weeklyShown = false;
       else if (m.type === 'teamShare') {
         setTeamShare(!!m.on, m.on ? (m.name || '') : null)
           .catch((e) => { if (log) log.appendLine('[team] could not save the choice: ' + (e && e.message)); })
@@ -1409,8 +1411,12 @@ function activate(context) {
   const weeklyFirst = setTimeout(() => { weekly.scan().catch(() => {}); }, 20000);
   const weeklyTimer = setInterval(() => { weekly.scan().catch(() => {}); }, 5 * 60 * 1000);
   teamMigrateAndAsk(context);
-  // Team rows stay current for the others even when nobody here opens the page
-  const teamTimer = setInterval(() => { teamSync().catch(() => {}); }, 10 * 60 * 1000);
+  // Team rows stay current for the others even when nobody here opens the page; an open Details
+  // page is drawn again with the new rows
+  const teamTimer = setInterval(() => {
+    if (provider && provider.view && provider.view.visible && provider.weeklyShown) provider.sendWeekly();
+    else teamSync().catch(() => {});
+  }, 5 * 60 * 1000);
   const teamFirst = setTimeout(() => { teamSync().catch(() => {}); }, 60000);
   context.subscriptions.push({ dispose: () => { clearTimeout(weeklyFirst); clearInterval(weeklyTimer); clearInterval(teamTimer); clearTimeout(teamFirst); } });
   context.subscriptions.push({ dispose: () => { if (creditRun) creditRun.cancel(); } });
