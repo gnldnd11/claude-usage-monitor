@@ -1538,7 +1538,7 @@
     if (!c.on || wkEditTeam) {
       return h + '<div class="wk-team-form">'
         + '<input id="wkTeamName" type="text" maxlength="24" placeholder="Your name" value="' + esc(c.name || '') + '">'
-        + '<button type="button" id="wkTeamSave" title="Sends this PC\'s weekly totals and this name to the extension\'s server. Only PCs signed in to the same Claude account see them. Nothing from your work.">' + (c.on ? 'Save' : 'Share') + '</button>'
+        + '<button type="button" id="wkTeamSave" title="Sends this PC\'s weekly totals, the plan type and this name to the extension\'s server, with an hourly snapshot kept for the week. Only PCs signed in to the same Claude account see them. Nothing from your work.">' + (c.on ? 'Save' : 'Share') + '</button>'
         + (c.on ? '<button type="button" id="wkTeamOff" class="ghost">Stop sharing</button>' : '')
         + '</div>';
     }

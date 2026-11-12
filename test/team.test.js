@@ -78,6 +78,21 @@ test('the account id comes from .claude.json; only a hash of it is sent', () => 
   }
 });
 
+test('the plan tier comes from .claude.json too (macOS keeps credentials in the keychain)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-tier-'));
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  try {
+    assert.equal(team.readAccountTier(dir), null);
+    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-1', userRateLimitTier: null, organizationRateLimitTier: 'default_claude_max_20x' } }));
+    assert.equal(team.readAccountTier(dir), 'default_claude_max_20x');
+    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-1', userRateLimitTier: 'default_claude_max_5x', organizationRateLimitTier: 'default_claude_max_20x' } }));
+    assert.equal(team.readAccountTier(dir), 'default_claude_max_5x');   // the person's own tier first
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
+  }
+});
+
 test('sync sends nothing without consent or an account', async () => {
   assert.deepEqual(await team.sync({ on: false, key: 'acct-x', pcId: 'p' }, {}, { resets_at: 1 }), { ok: false, error: 'off' });
   assert.deepEqual(await team.sync({ on: true, key: null, pcId: 'p' }, {}, { resets_at: 1 }), { ok: false, error: 'account' });

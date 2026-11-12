@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.22.4: Checking the estimate
+
+- **Sharing also sends the plan type** (Max 20x, Max 5x or Pro). One percent costs about four times more on each step down, so pooled numbers are only comparable within a plan.
+- **The server keeps one snapshot per PC per hour** of what sharing already sends, for the week. With these the percent-per-$ rate, and whether models wear the limit differently, can be measured instead of assumed.
+- **On macOS the plan is read from `.claude.json`**, so the page no longer says it assumed Max 20x there.
+
 ## 1.22.3: Everyone on one bar
 
 - **The bar on the Details page is split by PC.** When sharing is on, each PC on the account gets its own color, with Other PCs in grey; hovering a piece shows its name and %. The list below uses the same colors.

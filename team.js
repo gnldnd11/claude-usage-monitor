@@ -7,8 +7,9 @@
 //
 // The usage endpoint only knows the account total, and each PC only knows itself; pooled, the rows
 // add up to that total. What is sent is the weekly window, the account's weekly %, this PC's use in
-// that window (tokens and API-equivalent $, per model) and a display name. Nothing from a prompt, a
-// file, a project or a session title.
+// that window (tokens and API-equivalent $, per model), the plan type (Max 20x, Max 5x or Pro) and a
+// display name. Nothing from a prompt, a file, a project or a session title. The server keeps one
+// snapshot per PC per hour as well, so the percent-per-$ rate can be checked over a week.
 //
 // The server stores and returns rows; the split is computed here, because the rate (percent per $)
 // is this PC's own knowledge (measured, or the plan's reference).
@@ -23,6 +24,7 @@ const path = require('path');
 // CUC_TEAM_SERVER points a test run at a local server; nobody sets it in normal use
 const SERVER = new URL(process.env.CUC_TEAM_SERVER || 'https://saegimai.up.railway.app/api/v1/usage-share');
 const TIMEOUT_MS = 8000;
+const PLANS = ['max_20x', 'max_5x', 'pro'];
 
 function request(method, pathname, body) {
   return new Promise((resolve) => {
@@ -54,18 +56,26 @@ function displayName(name) {
 // 1.21.0 grouped by a typed team code; a PC with one set has already agreed to share
 function validCode(code) { return typeof code === 'string' && code.trim().length >= 8 && code.trim().length <= 64; }
 
-// The signed-in Claude account's id, from where Claude Code keeps it (CLAUDE_CONFIG_DIR moves it)
-function readAccountId(home) {
+// The signed-in account as Claude Code keeps it in .claude.json (CLAUDE_CONFIG_DIR moves it)
+function readOauthAccount(home) {
   const files = [];
   if (process.env.CLAUDE_CONFIG_DIR) files.push(path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json'));
   files.push(path.join(home || os.homedir(), '.claude.json'));
   for (const f of files) {
     try {
       const a = JSON.parse(fs.readFileSync(f, 'utf8')).oauthAccount;
-      if (a && typeof a.accountUuid === 'string' && a.accountUuid) return a.accountUuid;
+      if (a && typeof a.accountUuid === 'string' && a.accountUuid) return a;
     } catch (e) { /* missing or unreadable: try the next */ }
   }
   return null;
+}
+function readAccountId(home) { const a = readOauthAccount(home); return a ? a.accountUuid : null; }
+// The rate-limit tier name (such as default_claude_max_20x). Readable on every OS, unlike the
+// credentials file, which macOS keeps in the keychain
+function readAccountTier(home) {
+  const a = readOauthAccount(home);
+  const t = a && (a.userRateLimitTier || a.organizationRateLimitTier);
+  return typeof t === 'string' && t ? t : null;
 }
 
 // What the server sees instead of the id
@@ -87,7 +97,8 @@ async function sync(cfg, totals, sevenDay, version) {
   const post = await request('POST', '/report', {
     team, pc_id: cfg.pcId, name: displayName(cfg.name), window_reset: sevenDay.resets_at,
     account_pct: sevenDay.used_percentage == null ? null : Math.max(0, Math.min(100, sevenDay.used_percentage)),
-    cost: Math.round(totals.cost * 100) / 100, tokens: Math.round(totals.tokens), by_model: byModel, version: String(version || '').slice(0, 16)
+    cost: Math.round(totals.cost * 100) / 100, tokens: Math.round(totals.tokens), by_model: byModel, version: String(version || '').slice(0, 16),
+    plan: PLANS.indexOf(cfg.plan) >= 0 ? cfg.plan : null
   });
   if (post.status !== 200) return { ok: false, error: post.status ? 'http ' + post.status : 'offline' };
   const get = await request('GET', '/summary?team=' + encodeURIComponent(team) + '&window_reset=' + sevenDay.resets_at);
@@ -117,4 +128,4 @@ function split(summary, myPcId, rate, accountPct) {
   };
 }
 
-module.exports = { sync, split, validCode, displayName, readAccountId, accountKey, SERVER };
+module.exports = { sync, split, validCode, displayName, readAccountId, readAccountTier, accountKey, SERVER };

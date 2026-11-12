@@ -71,7 +71,8 @@ function teamCfg() {
     on: kept === true || (kept !== false && c.get('team.share', false) === true),
     key: team.accountKey(team.readAccountId()),
     name: String(c.get('team.name', '') || (gs && gs.get('teamNameV1')) || ''),
-    pcId: pcId || 'unsaved-pc-id'
+    pcId: pcId || 'unsaved-pc-id',
+    plan: weekly._internal.tierKey(readPlanTier()) || null
   };
 }
 
@@ -107,13 +108,14 @@ function teamSync() {
   return teamBusy;
 }
 
-// The plan tier, for the weekly share's reference rate. Only the tier field is read; on macOS the
-// credentials live in the keychain and this returns null (the page then says it assumed Max 20x)
+// The plan tier, for the weekly share's reference rate. Only the tier field is read. On macOS the
+// credentials live in the keychain, so the tier .claude.json keeps for the account is used there
 function readPlanTier() {
   try {
     const o = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf8')).claudeAiOauth || {};
-    return o.rateLimitTier || o.subscriptionType || null;
-  } catch (e) { return null; }
+    if (o.rateLimitTier || o.subscriptionType) return o.rateLimitTier || o.subscriptionType;
+  } catch (e) { /* not there: try .claude.json */ }
+  return team.readAccountTier();
 }
 
 function readRate() {
@@ -1355,7 +1357,7 @@ function teamMigrateAndAsk(context) {
     context.globalState.update('teamAskedV1', Date.now());
     const pick = await vscode.window.showInformationMessage(
       'Claude Usage: share this PC\'s weekly usage with the other PCs signed in to the same Claude account? '
-      + 'Sent: a name you choose, tokens and an API-price equivalent per model. Never prompts, files or projects. Off unless you agree.',
+      + 'Sent: a name you choose, your plan type, tokens and an API-price equivalent per model. Never prompts, files or projects. Off unless you agree.',
       'Share', 'Don\'t share');
     if (pick !== 'Share') return;
     const name = await vscode.window.showInputBox({ prompt: 'Your name as the others on this account see it', placeHolder: os.hostname().slice(0, 24), validateInput: (v) => v.length > 24 ? 'Up to 24 characters' : null });
