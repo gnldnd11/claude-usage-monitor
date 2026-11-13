@@ -81,7 +81,11 @@ function modelLabel(model) {
 // --- per-file state ---------------------------------------------------------------
 // path -> { size, carry: Buffer, seen: Map, session, kind, project, title, hours: Map(hourStart -> Map(model -> vec)) }
 const files = new Map();
-let projectsDir = path.join(os.homedir(), '.claude', 'projects');
+// The default only. extension.js calls setProjectsDir with the resolved one at activation, because
+// CLAUDE_CONFIG_DIR or a setting can move it (claudedir.js owns that, so the layout is not spelled
+// out twice: this PC's weekly figures being read from one account's folder while the account id
+// came from another is exactly what issue #2 was)
+let projectsDir = require('./claudedir').defaultPaths().projects;
 let scanning = null;
 let lastScanAt = 0;
 

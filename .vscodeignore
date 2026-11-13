@@ -17,3 +17,8 @@ test/**
 # The game contract is for whoever adds the next game, not for the people who install this.
 # The code it describes still ships; only the 19KB of prose is held back.
 games/README.md
+# CLAUDE.md routes an AI working on this repo: the publish steps, which agent to call, what broke on
+# which date. It is on GitHub for anyone who wants it, but it was also riding inside every .vsix,
+# where it is noise for the person installing a usage meter. Same for a git ignore list.
+CLAUDE.md
+.gitignore

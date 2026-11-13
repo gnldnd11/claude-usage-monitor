@@ -19,7 +19,6 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const os = require('os');
-const path = require('path');
 
 // CUC_TEAM_SERVER points a test run at a local server; nobody sets it in normal use
 const SERVER = new URL(process.env.CUC_TEAM_SERVER || 'https://saegimai.up.railway.app/api/v1/usage-share');
@@ -56,24 +55,24 @@ function displayName(name) {
 // 1.21.0 grouped by a typed team code; a PC with one set has already agreed to share
 function validCode(code) { return typeof code === 'string' && code.trim().length >= 8 && code.trim().length <= 64; }
 
-// The signed-in account as Claude Code keeps it in .claude.json (CLAUDE_CONFIG_DIR moves it)
-function readOauthAccount(home) {
-  const files = [];
-  if (process.env.CLAUDE_CONFIG_DIR) files.push(path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json'));
-  files.push(path.join(home || os.homedir(), '.claude.json'));
-  for (const f of files) {
-    try {
-      const a = JSON.parse(fs.readFileSync(f, 'utf8')).oauthAccount;
-      if (a && typeof a.accountUuid === 'string' && a.accountUuid) return a;
-    } catch (e) { /* missing or unreadable: try the next */ }
-  }
+// The signed-in account as Claude Code keeps it in .claude.json. WHERE that file is belongs to
+// claudedir.js, because CLAUDE_CONFIG_DIR moves it and a setting can move it again, so the path is
+// handed in and nothing here reads the environment. Working it out here as well is how one PC came
+// to read the account out of the moved directory and the usage out of the default one, which posted
+// a personal account's tokens into a work account's group (issue #2)
+function readOauthAccount(file) {
+  if (!file) return null;
+  try {
+    const a = JSON.parse(fs.readFileSync(file, 'utf8')).oauthAccount;
+    if (a && typeof a.accountUuid === 'string' && a.accountUuid) return a;
+  } catch (e) { /* missing or unreadable: nobody is signed in there */ }
   return null;
 }
-function readAccountId(home) { const a = readOauthAccount(home); return a ? a.accountUuid : null; }
+function readAccountId(file) { const a = readOauthAccount(file); return a ? a.accountUuid : null; }
 // The rate-limit tier name (such as default_claude_max_20x). Readable on every OS, unlike the
 // credentials file, which macOS keeps in the keychain
-function readAccountTier(home) {
-  const a = readOauthAccount(home);
+function readAccountTier(file) {
+  const a = readOauthAccount(file);
   const t = a && (a.userRateLimitTier || a.organizationRateLimitTier);
   return typeof t === 'string' && t ? t : null;
 }
@@ -82,6 +81,11 @@ function readAccountTier(home) {
 function accountKey(id) {
   return id ? 'acct-' + crypto.createHash('sha256').update('cuc-account:' + id).digest('hex').slice(0, 40) : null;
 }
+// The shape accountKey makes, asserted where it is made. extension.js stores one consent per
+// account under these keys, so it has to be able to tell a real one from whatever a hand-edited
+// store holds (a "__proto__" among them)
+const ACCOUNT_KEY_RE = /^acct-[0-9a-f]{40}$/;
+function validAccountKey(k) { return typeof k === 'string' && ACCOUNT_KEY_RE.test(k); }
 
 // Send this PC's week, then read the account's. cfg: { on, key, name, pcId }. Returns { ok, summary?, error? }
 async function sync(cfg, totals, sevenDay, version) {
@@ -128,4 +132,4 @@ function split(summary, myPcId, rate, accountPct) {
   };
 }
 
-module.exports = { sync, split, validCode, displayName, readAccountId, readAccountTier, accountKey, SERVER };
+module.exports = { sync, split, validCode, displayName, readAccountId, readAccountTier, accountKey, validAccountKey, SERVER };

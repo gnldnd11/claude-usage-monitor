@@ -65,7 +65,7 @@ Press **Details** on the Weekly meter for this PC's last seven days: tokens per 
 
 **One Claude account, several PCs.** If you share an account, the weekly percentage is the account's, so your own machine's share of it is not knowable from one PC. Turn on **Share** in that same Details sheet and every PC signed in to the same account that also agreed shows up side by side, adding up to the account's weekly percentage. What the rows leave of the account total is use nobody recorded: the web, the apps, a PC that did not agree.
 
-There is no code to type. The group is the account itself, identified only by a hash of its id, so only PCs signed in to it can read the group. It is off until you agree, the question is not asked where VS Code telemetry is off, and `claudeUsage.team.share` turns it on or off at any time. Exactly what leaves the PC is listed under [How it works and privacy](#how-it-works-and-privacy).
+There is no code to type. The group is the account itself, identified only by a hash of its id, so only PCs signed in to it can read the group. It is off until you agree, **and agreeing is per account**: if you sign in to a second account, that one is off and asked separately, because the people who would see your row are different ones. The question is not asked where VS Code telemetry is off, and `claudeUsage.team.share` turns the account you are signed in to on or off at any time. Exactly what leaves the PC is listed under [How it works and privacy](#how-it-works-and-privacy).
 
 ## Credits and games
 
@@ -101,15 +101,16 @@ The extension deals and judges, so a hand survives switching tabs; reloading the
 
 ## How it works and privacy
 
-Everything is read locally from your `~/.claude` folder. No telemetry, no third party, and no server of ours unless you agree to share with your account's other PCs (below).
+Everything is read locally from Claude Code's own configuration folder. No telemetry, no third party, and no server of ours unless you agree to share with your account's other PCs (below).
 
-- **Agents, tokens, requests, context** are parsed from your local session transcripts (`~/.claude/projects/**/*.jsonl`), incrementally, so a long day of transcripts does not mean re-reading them every tick.
+- **Which folder.** `~/.claude`, unless `CLAUDE_CONFIG_DIR` moves it, which is the usual way to keep a second account. It is resolved in this order: the `claudeUsage.configDir` setting, `CLAUDE_CONFIG_DIR` in the Claude Code extension's `claudeCode.environmentVariables` (where a VS Code profile sets it, and which never reaches the extension host as a real environment variable), `CLAUDE_CONFIG_DIR` in the environment, then `~/.claude`. A path that does not exist is passed over, with the reason in the Claude Usage output.
+- **Agents, tokens, requests, context** are parsed from your local session transcripts (`projects/**/*.jsonl` in that folder), incrementally, so a long day of transcripts does not mean re-reading them every tick.
 - **Session, weekly and Fable limits** come from *listening* rather than polling. When the Claude Code extension checks its own usage in the same host process, this extension observes that response through Node's `diagnostics_channel` and reuses it. That means **zero extra API requests** in normal use, and numbers that match the built-in dialog exactly because they *are* the built-in dialog's numbers.
 - **Fallback.** If that tap has been quiet for a while, the extension calls Anthropic's usage endpoint (`https://api.anthropic.com/api/oauth/usage`) itself, using your own signed-in token, or Claude Code's stored OAuth token if you have not signed in.
 
 Your token is sent **only** to `api.anthropic.com` and nowhere else. The code is open, and it is plain JavaScript with no build step, so what ships in the `.vsix` is what is in the repo.
 
-**Sharing with the same account's PCs (off until you agree).** For people who share one Claude account. Once, the extension asks whether to share; say yes (or choose Share under Weekly > Details, or set `claudeUsage.team.share`) and every PC signed in to the same Claude account that also agreed shows up side by side, adding up to the account's weekly %. No code to type: the group is the account, identified only by a hash of its id, so only PCs signed in to it can read it. While sharing is on, every 5 minutes this PC sends the extension author's server (`saegimai.up.railway.app`): your display name, the weekly window, the account's weekly %, the plan type (Max 20x, Max 5x or Pro), and this PC's use in that window (tokens and an API-price equivalent, per model). The server also keeps one snapshot of these per PC per hour, so the estimate can be checked over a week. Never prompts, file or project names, session titles or any token. A PC that does not agree sends nothing, and the question is not asked where VS Code telemetry is off. Stop sharing under Weekly > Details.
+**Sharing with the same account's PCs (off until you agree).** For people who share one Claude account. Once per Claude account, the extension asks whether to share; say yes (or choose Share under Weekly > Details, or set `claudeUsage.team.share`) and every PC signed in to the same Claude account that also agreed shows up side by side, adding up to the account's weekly %. **The answer belongs to that account.** What you agree to is who sees your row, so signing in to another account (a different configuration directory, above) starts off and asks again there; an answer is never carried from one account to another. The answers are kept under the same hash of the account id that the server sees, so agreeing to share does not put an account id in the extension's own storage either. No code to type: the group is the account, identified only by a hash of its id, so only PCs signed in to it can read it. While sharing is on, every 5 minutes this PC sends the extension author's server (`saegimai.up.railway.app`): your display name, the weekly window, the account's weekly %, the plan type (Max 20x, Max 5x or Pro), and this PC's use in that window (tokens and an API-price equivalent, per model). The server also keeps one snapshot of these per PC per hour, so the estimate can be checked over a week. Never prompts, file or project names, session titles or any token. A PC that does not agree sends nothing, and the question is not asked where VS Code telemetry is off. Stop sharing under Weekly > Details.
 
 The usage endpoint and the transcript format are both undocumented and may change. If they do, the affected numbers may stop updating until the extension is updated.
 
@@ -119,12 +120,12 @@ Install, then open the **Explorer** sidebar. The **Claude Usage** panel appears 
 
 Don't want it on the left? Drag the **Claude Usage** view header into the secondary side bar on the right, or down into the bottom panel next to the Terminal. VS Code remembers where you put it.
 
-Agents appear automatically for any `.claude/agents/*.md` in the workspace or in `~/.claude/agents/`. No hooks, no config.
+Agents appear automatically for any `.claude/agents/*.md` in the workspace or in `agents/` inside Claude Code's configuration folder (`~/.claude/agents/` unless `CLAUDE_CONFIG_DIR` moves it). No hooks, no config.
 
 ## Requirements
 
 - Claude Code (CLI or VS Code extension) signed in with a Claude account.
-- macOS, Linux or Windows. Data is read from `~/.claude`.
+- macOS, Linux or Windows. Data is read from `~/.claude`, or from wherever `CLAUDE_CONFIG_DIR` or `claudeUsage.configDir` points.
 
 ## License
 

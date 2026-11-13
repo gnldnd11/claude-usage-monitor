@@ -55,24 +55,34 @@ test('codes and names', () => {
   assert.ok(team.displayName('').length > 0);
 });
 
-test('the account id comes from .claude.json; only a hash of it is sent', () => {
+test('the account id comes from the .claude.json it is handed; only a hash of it is sent', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-acct-'));
+  const file = path.join(dir, '.claude.json');
+  assert.equal(team.readAccountId(file), null);                       // no file: not signed in
+  assert.equal(team.readAccountId(null), null);                       // nowhere to read: the same answer
+  fs.writeFileSync(file, JSON.stringify({ oauthAccount: { accountUuid: 'u-1234', emailAddress: 'a@example.com' } }));
+  assert.equal(team.readAccountId(file), 'u-1234');
+  const k = team.accountKey('u-1234');
+  assert.match(k, /^acct-[0-9a-f]{40}$/);
+  assert.ok(!k.includes('u-1234'));
+  assert.equal(k, team.accountKey('u-1234'));                         // same account, same group
+  assert.notEqual(k, team.accountKey('u-5678'));
+  assert.equal(team.accountKey(null), null);
+});
+
+// The regression that made issue #2 worse than a wrong folder. This file used to read
+// CLAUDE_CONFIG_DIR itself while extension.js read ~/.claude, so the group was named from one
+// account and filled with the other account's tokens. Resolving a path is claudedir.js's job now,
+// and this asserts that nothing here reaches for the environment again
+test('the environment is not consulted here: the path handed in is the only answer', () => {
+  const mine = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-acct-'));
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-acct-'));
+  fs.writeFileSync(path.join(mine, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-mine' } }));
+  fs.writeFileSync(path.join(other, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-other' } }));
   const saved = process.env.CLAUDE_CONFIG_DIR;
-  delete process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = other;
   try {
-    assert.equal(team.readAccountId(dir), null);                       // no file: not signed in
-    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-1234', emailAddress: 'a@example.com' } }));
-    assert.equal(team.readAccountId(dir), 'u-1234');
-    const k = team.accountKey('u-1234');
-    assert.match(k, /^acct-[0-9a-f]{40}$/);
-    assert.ok(!k.includes('u-1234'));
-    assert.equal(k, team.accountKey('u-1234'));                         // same account, same group
-    assert.notEqual(k, team.accountKey('u-5678'));
-    assert.equal(team.accountKey(null), null);
-    const alt = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-acct-'));  // CLAUDE_CONFIG_DIR wins
-    fs.writeFileSync(path.join(alt, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-alt' } }));
-    process.env.CLAUDE_CONFIG_DIR = alt;
-    assert.equal(team.readAccountId(dir), 'u-alt');
+    assert.equal(team.readAccountId(path.join(mine, '.claude.json')), 'u-mine');
   } finally {
     if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
   }
@@ -80,17 +90,12 @@ test('the account id comes from .claude.json; only a hash of it is sent', () => 
 
 test('the plan tier comes from .claude.json too (macOS keeps credentials in the keychain)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-tier-'));
-  const saved = process.env.CLAUDE_CONFIG_DIR;
-  delete process.env.CLAUDE_CONFIG_DIR;
-  try {
-    assert.equal(team.readAccountTier(dir), null);
-    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-1', userRateLimitTier: null, organizationRateLimitTier: 'default_claude_max_20x' } }));
-    assert.equal(team.readAccountTier(dir), 'default_claude_max_20x');
-    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-1', userRateLimitTier: 'default_claude_max_5x', organizationRateLimitTier: 'default_claude_max_20x' } }));
-    assert.equal(team.readAccountTier(dir), 'default_claude_max_5x');   // the person's own tier first
-  } finally {
-    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
-  }
+  const file = path.join(dir, '.claude.json');
+  assert.equal(team.readAccountTier(file), null);
+  fs.writeFileSync(file, JSON.stringify({ oauthAccount: { accountUuid: 'u-1', userRateLimitTier: null, organizationRateLimitTier: 'default_claude_max_20x' } }));
+  assert.equal(team.readAccountTier(file), 'default_claude_max_20x');
+  fs.writeFileSync(file, JSON.stringify({ oauthAccount: { accountUuid: 'u-1', userRateLimitTier: 'default_claude_max_5x', organizationRateLimitTier: 'default_claude_max_20x' } }));
+  assert.equal(team.readAccountTier(file), 'default_claude_max_5x');   // the person's own tier first
 });
 
 test('sync sends nothing without consent or an account', async () => {

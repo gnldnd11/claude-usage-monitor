@@ -43,6 +43,16 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 //          forge: { by, level, moves, tries, spent, heat, best, broke, earned },
 //          market: { by, pos: { CODE: {amount, entryTicks, at} }, moves, trades, staked, earned, best, at } }
 // Raw tokens per day are stored, not credits, so a changed rate or weighting also re-prices the past.
+// `days` is not per Claude account, and cannot be: a day's cell is the largest figure any reader has
+// seen for that day, which is what lets several windows count the same day without crediting it
+// twice. Someone who moves Claude Code's configuration directory between two accounts
+// (CLAUDE_CONFIG_DIR, 1.29.0) therefore has one row per day holding the busier of the two accounts
+// rather than the sum. That is under-counting and never over-counting, and no figure here can fall,
+// which is the property that matters: credits are a game currency earned by the person, so one
+// person has one purse (`bank`, `market`, what the forge paid) whichever account did the work.
+// What is NOT allowed to carry across is `backfilled` and `sweptAt`, which are claims about the
+// directory they were counted from; extension.js keeps the directory beside them and counts a new
+// one from the start.
 // `bank` holds game results. They can go down as well as up, which a per-day max merge cannot
 // express, so each window (replica) keeps its own won/lost/hands counters that only grow and only
 // that window raises: a grow-only counter per replica, merged field by field with max like days.

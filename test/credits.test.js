@@ -783,7 +783,13 @@ test('forge: two windows forging the same sword converge, and a stale copy heals
 // --- run --------------------------------------------------------------------------------
 let failed = 0;
 for (const t of tests) {
-  try { t.fn(); console.log('PASS ' + t.name); }
+  // A sync runner drops a promise on the floor: an async test would stop at its first await
+  // and still be counted as a pass. Refuse one instead of reporting a result nobody produced.
+  try {
+    const r = t.fn();
+    if (r && typeof r.then === 'function') throw new Error('async test in a sync runner: use await t.fn()');
+    console.log('PASS ' + t.name);
+  }
   catch (e) { failed++; console.log('FAIL ' + t.name + '\n  ' + (e && e.stack || e)); }
 }
 fs.rmSync(TMP, { recursive: true, force: true });

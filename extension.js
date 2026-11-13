@@ -14,10 +14,15 @@ const team = require('./team');     // opt-in: the same account's PCs side by si
 const IC = require('./icons');
 const registry = require('./games/registry');
 const tables = require('./games/tables'); // refusal(): one engine throw, one sentence (gameReply)
+const claudedir = require('./claudedir'); // where Claude Code's configuration directory is
 
-const CLAUDE_DIR = path.join(os.homedir(), '.claude');
-const RATE_FILE = path.join(CLAUDE_DIR, 'usage-bar.json');
-const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
+// Every path read off the disk, derived in one place from one directory (claudedir.js).
+// NOT a constant: the directory comes from the settings, so it is resolved again when they change
+// (repointConfigDir). Everything that reads a file takes it from here at the moment it reads, so
+// nothing can go on pointing at the directory the window started in.
+// This first value is the environment or the default, which is all that can be known before
+// activation; activate() resolves it again with the settings in hand.
+let claudePaths = claudedir.resolveConfigDir({});
 
 let statusItem;
 let lastStatusData = null;
@@ -67,17 +72,60 @@ function fmtCountdown(resetsAt) {
   return `${m}m`;
 }
 
-// Team sharing (team.js). Nothing is sent until the person agrees (team.share). The PC id is random and
-// kept per install, so a renamed person is still one row; the group is the signed-in Claude account
+// --- sharing consent, one answer per Claude account ------------------------------------------
+// Consent is not a property of this PC. The question is "share with the other PCs signed in to the
+// same Claude account", so what is being agreed to is WHO WILL SEE THE ROW, and changing the
+// configuration directory changes that set of people (claudedir.js, 1.29.0). Until then there was
+// one answer for the PC: switch to a work account and a yes given about your own two machines was
+// quietly a yes about your colleagues' machines too.
+// So: one answer per account, kept under accountKey(), which is a hash. The account's own id is
+// never written to storage, the same rule that holds for what is sent to the server.
+// An account with no answer is OFF and is asked once (teamAsk). Off first, then asked: an account
+// that started on would have sent one report to a group nobody agreed to before the question
+// appeared, and that report cannot be taken back.
+const SHARE_KEY = 'teamShareByAccountV1';   // { [accountKey]: true | false }; false is "asked, no"
+const SHARE_MOVED_KEY = 'teamShareMovedV1'; // the single pre-1.29.0 answer has been moved across
+
+// Rebuilt rather than read through, so only real account keys and real booleans travel and a
+// "__proto__" in a hand-edited store cannot ride along (credits.js does this with its replica ids)
+function shareMap() {
+  const out = {};
+  const raw = extContext ? extContext.globalState.get(SHARE_KEY) : null;
+  if (!raw || typeof raw !== 'object') return out;
+  for (const k in raw) if (team.validAccountKey(k) && typeof raw[k] === 'boolean') out[k] = raw[k];
+  return out;
+}
+
+// true (agreed), false (asked and declined), or undefined (this account has never been asked)
+function shareConsent(key) {
+  if (!team.validAccountKey(key)) return undefined;
+  const v = shareMap()[key];
+  return typeof v === 'boolean' ? v : undefined;
+}
+
+// Returns false when there is no account to record an answer about. The write itself is left to
+// run on its own, as every other globalState write in this file is: what the rest of the extension
+// reads back is this map, and shareMap reads it through the same memento
+function setShareConsent(key, on) {
+  if (!extContext || !team.validAccountKey(key)) return false;
+  const next = shareMap();
+  next[key] = !!on;
+  extContext.globalState.update(SHARE_KEY, next);
+  return true;
+}
+
+// Team sharing (team.js). Nothing is sent until the person agrees, for this account. The PC id is
+// random and kept per install, so a renamed person is still one row; the group is the signed-in
+// Claude account
 function teamCfg() {
   const c = vscode.workspace.getConfiguration('claudeUsage');
   let pcId = extContext ? extContext.globalState.get('teamPcIdV1') : null;
   if (!pcId && extContext) { pcId = crypto.randomUUID(); extContext.globalState.update('teamPcIdV1', pcId); }
   const gs = extContext ? extContext.globalState : null;
-  const kept = gs ? gs.get('teamShareV1') : undefined;
+  const key = team.accountKey(team.readAccountId(claudePaths.configJson));
   return {
-    on: kept === true || (kept !== false && c.get('team.share', false) === true),
-    key: team.accountKey(team.readAccountId()),
+    on: shareConsent(key) === true,
+    key,
     name: String(c.get('team.name', '') || (gs && gs.get('teamNameV1')) || ''),
     pcId: pcId || 'unsaved-pc-id',
     plan: weekly._internal.tierKey(readPlanTier()) || null
@@ -87,12 +135,16 @@ function teamCfg() {
 // The choice goes to the extension's own storage first: a settings write can be refused (a window
 // still holding the settings of the version before an update does not know team.share yet), and a
 // refused write used to leave Share looking dead. The settings are written too, for anyone who
-// looks there, but nothing depends on that write
-async function setTeamShare(on, name) {
+// looks there, but nothing depends on that write.
+// `key` names the account the choice is about. It is passed in rather than read here because the
+// question is asked on a delay and the directory can move while it is on screen: the answer has to
+// land on the account the person was shown, or on nothing at all
+async function setTeamShare(on, name, key) {
   const c = vscode.workspace.getConfiguration('claudeUsage');
   const G = vscode.ConfigurationTarget.Global;
+  const acct = key === undefined ? teamCfg().key : key;
   if (extContext) {
-    await extContext.globalState.update('teamShareV1', on);
+    if (!setShareConsent(acct, on) && log) log.appendLine('[team] no account could be read, so there is nobody to share with and nothing to remember');
     if (name != null) await extContext.globalState.update('teamNameV1', String(name).trim().slice(0, 24));
   }
   try {
@@ -120,14 +172,14 @@ function teamSync() {
 // credentials live in the keychain, so the tier .claude.json keeps for the account is used there
 function readPlanTier() {
   try {
-    const o = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf8')).claudeAiOauth || {};
+    const o = JSON.parse(fs.readFileSync(claudePaths.credentials, 'utf8')).claudeAiOauth || {};
     if (o.rateLimitTier || o.subscriptionType) return o.rateLimitTier || o.subscriptionType;
   } catch (e) { /* not there: try .claude.json */ }
-  return team.readAccountTier();
+  return team.readAccountTier(claudePaths.configJson);
 }
 
 function readRate() {
-  try { return JSON.parse(fs.readFileSync(RATE_FILE, 'utf8')); }
+  try { return JSON.parse(fs.readFileSync(claudePaths.usageBar, 'utf8')); }
   catch (e) { return null; }
 }
 
@@ -159,7 +211,7 @@ const FOLD_CASE = process.platform === 'win32';
 function foldPath(s) { return FOLD_CASE ? s.toLowerCase() : s; }
 
 function fileInProject(p, wsPaths) {
-  const rel = path.relative(PROJECTS_DIR, p);
+  const rel = path.relative(claudePaths.projects, p);
   const folder = foldPath(rel.split(path.sep)[0]); // top-level project folder under projects/, dash-encoded
   for (const ws of wsPaths) {
     const pre = foldPath(ws.replace(PATH_SEP_RE, '-'));
@@ -321,7 +373,7 @@ function readTokens(wsPaths) {
   const callsSince = startOfToday - AGENT_RUN_WINDOW_MS;
 
   const files = [];
-  const stack = [PROJECTS_DIR];
+  const stack = [claudePaths.projects];
   while (stack.length) {
     const dir = stack.pop();
     let ents;
@@ -524,7 +576,7 @@ function saveXp() {
 // One-time historical sweep. Same pairing as the live path (tool_use id -> agent),
 // but regex-only per line — no JSON.parse — so even big transcripts stay cheap.
 function backfillXp() {
-  const dirs = [PROJECTS_DIR];
+  const dirs = [claudePaths.projects];
   const files = [];
   while (dirs.length) {
     const dir = dirs.pop();
@@ -591,16 +643,36 @@ function logSweep(sweep, since, startedAt) {
   if (!since && sweep.stats.errors) logLine('credits: WARNING first backfill could not read ' + sweep.stats.errors + ' file(s); their history is missing from the balance');
 }
 
+// Which transcripts directory the ledger's `backfilled` is a claim about. A plain globalState key,
+// deliberately NOT a field in the ledger: the ledger merges by max across windows and a path is not
+// a number, so it has no place in those rules
+const CREDIT_SWEEP_DIR_KEY = 'creditSweepDirV1';
+
 // First run: full backfill. After that: catch up from the midnight before the last sweep's day.
 // A catch-up fills days Claude Code was used from the terminal with VS Code closed, and the
-// seconds between the last tick before midnight and midnight
+// seconds between the last tick before midnight and midnight.
+//
+// A configuration directory the ledger has not been swept from is a full backfill as well, because
+// `backfilled` means "the past has been counted" and the past it counted is the past of the
+// directory it read. Carried across to a second account's directory it claims the counting is done
+// when none of it has been done, and that account's history never arrives. Nothing is cleared to
+// arrange this: days merge per field with max, so reading a directory again can only raise a day
+// and can never take credits back. An install upgrading to 1.29.0 has no record here and is taken
+// to have been swept from the default directory, which is where every earlier version read.
 function startCreditSweep() {
   const led = creditStore.read();
-  const since = led.backfilled ? credits.catchUpSince(led.sweptAt) : 0;
+  const stored = extContext ? extContext.globalState.get(CREDIT_SWEEP_DIR_KEY) : null;
+  const sweptDir = (typeof stored === 'string' && stored) ? stored : claudedir.defaultPaths().projects;
+  const sameDir = foldPath(sweptDir) === foldPath(claudePaths.projects);
+  const since = (led.backfilled && sameDir) ? credits.catchUpSince(led.sweptAt) : 0;
+  if (led.backfilled && !sameDir) {
+    logLine('credits: the ledger was last counted from ' + sweptDir + '; counting ' + claudePaths.projects
+      + ' from the start. A day counted twice keeps the larger of the two figures, so nothing is taken off the balance.');
+  }
   // Taken before the file list (and so each file's size) is fixed: lines appended after it are
   // not in this sweep, so the next catch-up must start no later than here
   const startedAt = Date.now();
-  const sweep = credits.createSweep(PROJECTS_DIR, since);
+  const sweep = credits.createSweep(claudePaths.projects, since);
   creditRun = credits.runSweep(sweep, { sliceMs: 40, gapMs: 150, startDelayMs: CREDIT_SWEEP_DELAY_MS }, (err) => {
     creditRun = null;
     if (err) {
@@ -608,6 +680,7 @@ function startCreditSweep() {
       logLine('credits: sweep failed: ' + (err && err.message));
     } else {
       creditStore.record({ days: sweep.days, backfilled: true, sweptAt: startedAt }, true);
+      if (extContext) extContext.globalState.update(CREDIT_SWEEP_DIR_KEY, claudePaths.projects);
       logSweep(sweep, since, startedAt);
     }
     try { push(); } catch (e) { logLine('credits: push after sweep failed: ' + (e && e.message)); }
@@ -805,7 +878,7 @@ function readAgents() {
   // workspace agents win over user-level ones with the same name
   const folders = vscode.workspace.workspaceFolders || [];
   for (const f of folders) readAgentsFrom(path.join(f.uri.fsPath, '.claude', 'agents'), out, seen);
-  readAgentsFrom(path.join(CLAUDE_DIR, 'agents'), out, seen);
+  readAgentsFrom(claudePaths.agents, out, seen);
   out.sort((a, b) => a.name.localeCompare(b.name));
   // built-ins go last, after the user's own agents
   for (const b of BUILTIN_AGENTS) { if (!seen.has(b.name)) out.push(Object.assign({}, b)); }
@@ -834,7 +907,7 @@ function fetchUsage() {
     let token = auth && auth.getAccessToken();
     if (!token) {
       try {
-        const cred = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf8'));
+        const cred = JSON.parse(fs.readFileSync(claudePaths.credentials, 'utf8'));
         token = (cred.claudeAiOauth || {}).accessToken;
       } catch (e) { resolve({ status: 0, data: null }); return; }
     }
@@ -1110,12 +1183,12 @@ function logScope(wsPaths, calls) {
   if (!log || scopeLogged) return;
   scopeLogged = true; // once per activation, not every 10s
   let folders = [];
-  try { folders = fs.readdirSync(PROJECTS_DIR).slice(0, 8); } catch (e) { folders = ['<unreadable>']; }
+  try { folders = fs.readdirSync(claudePaths.projects).slice(0, 8); } catch (e) { folders = ['<unreadable>']; }
   const inProj = calls.filter((c) => c.inProj).length;
   log.appendLine('[scope] platform=' + process.platform + ' sep=' + JSON.stringify(path.sep));
   log.appendLine('[scope] workspace=' + JSON.stringify(wsPaths));
   log.appendLine('[scope] encoded=' + JSON.stringify(wsPaths.map((w) => w.replace(PATH_SEP_RE, '-'))));
-  log.appendLine('[scope] projectsDir=' + PROJECTS_DIR);
+  log.appendLine('[scope] projectsDir=' + claudePaths.projects + ' (from ' + claudedir.SOURCE_LABEL[claudePaths.source] + ')');
   log.appendLine('[scope] folders=' + JSON.stringify(folders));
   log.appendLine('[scope] calls=' + calls.length + ' inProj=' + inProj);
 }
@@ -1388,9 +1461,47 @@ function openWeeklyDetails() {
   }, () => {});
 }
 
-// 1.21.0 shared by a typed code: those PCs already agreed, so they move to the account group as they
-// are. Everyone else is asked once, and only on a PC that is signed in to Claude Code and has not
-// turned VS Code telemetry off. Dismissing the question counts as no; the Details page can change it
+// Ask about the account in front of the person, once. Called at activation and again whenever the
+// configuration directory moves, because a second account is a second set of people and has never
+// answered. Only on a PC that is signed in to Claude Code and has not turned VS Code telemetry off.
+// Dismissing the question counts as no, for that account; the Details page can change it later.
+let teamAskTimer = null;
+function teamAsk() {
+  clearTimeout(teamAskTimer);
+  const key = teamCfg().key;
+  if (!key) return;                            // not signed in here: nobody to ask about
+  if (shareConsent(key) !== undefined) return; // this account has already answered
+  if (!(vscode.env && vscode.env.isTelemetryEnabled)) return;
+  teamAskTimer = setTimeout(async () => {
+    // Written before the question is shown, so a dismissed dialog is a no rather than a question
+    // that comes back on the next window
+    setShareConsent(key, false);
+    const pick = await vscode.window.showInformationMessage(
+      'Claude Usage: share this PC\'s weekly usage with the other PCs signed in to the same Claude account? '
+      + 'Sent: a name you choose, your plan type, tokens and an API-price equivalent per model. Never prompts, files or projects. Off unless you agree. '
+      + 'Asked once per Claude account, so a second account is off until you say so there too.',
+      'Share', 'Don\'t share');
+    if (pick !== 'Share') return;
+    const name = await vscode.window.showInputBox({ prompt: 'Your name as the others on this account see it', placeHolder: os.hostname().slice(0, 24), validateInput: (v) => v.length > 24 ? 'Up to 24 characters' : null });
+    // The directory can have moved while the question was on screen. A yes about the account that
+    // was named in it must not land on whichever account is signed in now
+    if (teamCfg().key !== key) {
+      logLine('[team] the account changed while the question was open; the answer was not recorded');
+      return;
+    }
+    await setTeamShare(true, name || null, key);
+    teamSync().catch(() => {});
+    // Sharing changes nothing on screen by itself, so say it is on and where the table is
+    const go = await vscode.window.showInformationMessage('Claude Usage: sharing is on for this account. This PC is listed under Weekly > Details, next to the other PCs on this account that share.', 'Open Details');
+    if (go) openWeeklyDetails();
+  }, 30000);
+}
+
+// 1.21.0 shared by a typed code: those PCs already agreed, so they move to the account group as
+// they are. Then the single pre-1.29.0 answer becomes this account's answer, so nobody who turned
+// sharing on loses it on the upgrade. Activation only: the answer was given while the extension was
+// reading the directory it was reading then, so it belongs to the account that directory holds, and
+// if no account can be read now it waits for a later activation rather than landing on another one
 function teamMigrateAndAsk(context) {
   const c = vscode.workspace.getConfiguration('claudeUsage');
   const G = vscode.ConfigurationTarget.Global;
@@ -1398,23 +1509,92 @@ function teamMigrateAndAsk(context) {
     setTeamShare(true, null).then(() => c.update('team.code', undefined, G)).catch(() => {});
     return;
   }
-  if (teamCfg().on || context.globalState.get('teamAskedV1')) return;
-  if (!(vscode.env && vscode.env.isTelemetryEnabled) || !team.readAccountId()) return;
-  const t = setTimeout(async () => {
-    context.globalState.update('teamAskedV1', Date.now());
-    const pick = await vscode.window.showInformationMessage(
-      'Claude Usage: share this PC\'s weekly usage with the other PCs signed in to the same Claude account? '
-      + 'Sent: a name you choose, your plan type, tokens and an API-price equivalent per model. Never prompts, files or projects. Off unless you agree.',
-      'Share', 'Don\'t share');
-    if (pick !== 'Share') return;
-    const name = await vscode.window.showInputBox({ prompt: 'Your name as the others on this account see it', placeHolder: os.hostname().slice(0, 24), validateInput: (v) => v.length > 24 ? 'Up to 24 characters' : null });
-    await setTeamShare(true, name || null);
-    teamSync().catch(() => {});
-    // Sharing changes nothing on screen by itself, so say it is on and where the table is
-    const go = await vscode.window.showInformationMessage('Claude Usage: sharing is on. This PC is listed under Weekly > Details, next to the other PCs on this account that share.', 'Open Details');
-    if (go) openWeeklyDetails();
-  }, 30000);
-  context.subscriptions.push({ dispose: () => clearTimeout(t) });
+  moveLegacyShareConsent(context);
+  teamAsk();
+}
+
+function moveLegacyShareConsent(context) {
+  const gs = context.globalState;
+  if (gs.get(SHARE_MOVED_KEY) === true) return;
+  const key = teamCfg().key;
+  if (!key) return; // try again next activation
+  const kept = gs.get('teamShareV1');
+  // In order: the choice the extension kept, then the fact of having been asked (dismissing was a
+  // no), then the setting on its own for someone who only ever edited settings.json
+  const legacy = typeof kept === 'boolean' ? kept
+    : gs.get('teamAskedV1') ? false
+    : (vscode.workspace.getConfiguration('claudeUsage').get('team.share', false) === true ? true : undefined);
+  // The answer first, the "moved" mark second, the superseded blobs last, so an interruption
+  // between any two of them leaves either a repeat of a move that is already a no-op or a pair of
+  // keys nothing reads, and never an answer that was dropped on the way
+  if (legacy !== undefined && shareConsent(key) === undefined) {
+    setShareConsent(key, legacy);
+    logLine('[team] the sharing choice you had made is now this account\'s choice (' + (legacy ? 'on' : 'off') + '); another account is asked separately');
+  }
+  gs.update(SHARE_MOVED_KEY, true);
+  gs.update('teamShareV1', undefined); // superseded blobs go, so there is one answer to read
+  gs.update('teamAskedV1', undefined);
+}
+
+// --- the configuration directory ------------------------------------------------------------
+// fs.watch holds the directory it was handed, not the name of a variable, so a window that keeps
+// watching the old one shows nothing new after the setting changes, which looks exactly like the
+// setting having been ignored. Hence one place that puts them all back.
+function closeWatchers() {
+  while (watchers.length) { const w = watchers.pop(); try { w.close(); } catch (e) { /* already gone */ } }
+}
+
+function installWatchers() {
+  closeWatchers();
+  try {
+    watchers.push(fs.watch(claudePaths.dir, (ev, fn) => { if (!fn || fn === 'usage-bar.json') scheduleRefresh(); }));
+  } catch (e) { /* covered by timer */ }
+  try {
+    // A transcript write refreshes token/request counts (real-time) AND schedules a usage
+    // refresh ~7s later, in the post-turn reading lull when the window is free.
+    watchers.push(fs.watch(claudePaths.projects, { recursive: true }, () => { scheduleRefresh(); scheduleTurnRefresh(); }));
+  } catch (e) { /* covered by timer */ }
+  // watch .claude/agents/ dirs so newly created agents appear in the Crew immediately
+  // (workspace-level first, then user-level). Cold start — before the dir exists — is
+  // still covered by the 10s poll.
+  const dirs = (vscode.workspace.workspaceFolders || []).map((f) => path.join(f.uri.fsPath, '.claude', 'agents'));
+  dirs.push(claudePaths.agents);
+  dirs.forEach((dir) => { try { watchers.push(fs.watch(dir, () => scheduleRefresh())); } catch (e) { /* dir may not exist yet; timer covers it */ } });
+}
+
+// What the settings say, handed to the resolver. claudeCode.environmentVariables belongs to the
+// Claude Code extension, so it is read in a try of its own: if that setting is renamed there, this
+// one keeps working off our own
+function resolveConfigDirNow() {
+  let setting = '';
+  let claudeCodeEnv = null;
+  try { setting = vscode.workspace.getConfiguration('claudeUsage').get('configDir', ''); }
+  catch (e) { logLine('config: claudeUsage.configDir could not be read (' + (e && e.message) + ')'); }
+  try { claudeCodeEnv = vscode.workspace.getConfiguration('claudeCode').get('environmentVariables', null); }
+  catch (e) { logLine('config: claudeCode.environmentVariables could not be read (' + (e && e.message) + ')'); }
+  return claudedir.resolveConfigDir({ setting, claudeCodeEnv });
+}
+
+function logConfigDir() {
+  logLine('config dir: ' + claudePaths.dir + ' (from ' + claudedir.SOURCE_LABEL[claudePaths.source] + ')');
+  for (const n of claudePaths.notes) logLine('config dir: ' + n);
+}
+
+// The settings that feed the resolver changed. Re-point everything that reads off the directory,
+// and only then: re-resolving costs a stat, re-arming the watchers and re-sweeping does not
+function repointConfigDir() {
+  const next = resolveConfigDirNow();
+  if (foldPath(next.dir) === foldPath(claudePaths.dir)) { claudePaths = next; return; }
+  claudePaths = next;
+  logConfigDir();
+  weekly.setProjectsDir(claudePaths.projects); // clears its per-file state as well
+  for (const p in fileCache) delete fileCache[p]; // accumulators of a directory nobody reads now
+  scopeLogged = false;                            // the workspace match is worth logging again
+  installWatchers();
+  if (creditRun) { creditRun.cancel(); creditRun = null; }
+  startCreditSweep();
+  teamAsk(); // a moved directory is usually a different account, and that account has not answered
+  scheduleRefresh();
 }
 
 function activate(context) {
@@ -1425,6 +1605,11 @@ function activate(context) {
   // than taking the extension with it, so this is the only place a user can find out that it did.
   // The list is built at require time, which is before this channel exists, hence the replay here
   for (const line of registry.PROBLEMS) logLine(line);
+
+  // Where Claude Code keeps its configuration. Resolved before anything reads a file out of it,
+  // because the first value this module had was the environment's and the settings can override it
+  claudePaths = resolveConfigDirNow();
+  logConfigDir();
 
   // Restore last-good usage immediately so a reload never shows "loading" when we
   // have a prior value (this is what the other extensions do — show last, update later).
@@ -1458,6 +1643,7 @@ function activate(context) {
     onError: (e) => logLine('credits: ledger write failed: ' + (e && e.message))
   });
   startCreditSweep(); // full backfill on first run, catch-up otherwise
+  weekly.setProjectsDir(claudePaths.projects); // it defaults to the default directory on its own
   // Weekly readings are kept so the share estimate survives reloads. The first scan reads up to
   // a gigabyte, so it waits until startup has settled and then runs in slices
   weekly.init({ load: () => context.globalState.get('weeklySamplesV1', []), save: (arr) => context.globalState.update('weeklySamplesV1', arr) });
@@ -1471,7 +1657,7 @@ function activate(context) {
     else teamSync().catch(() => {});
   }, 5 * 60 * 1000);
   const teamFirst = setTimeout(() => { teamSync().catch(() => {}); }, 60000);
-  context.subscriptions.push({ dispose: () => { clearTimeout(weeklyFirst); clearInterval(weeklyTimer); clearInterval(teamTimer); clearTimeout(teamFirst); } });
+  context.subscriptions.push({ dispose: () => { clearTimeout(weeklyFirst); clearInterval(weeklyTimer); clearInterval(teamTimer); clearTimeout(teamFirst); clearTimeout(teamAskTimer); } });
   context.subscriptions.push({ dispose: () => { if (creditRun) creditRun.cancel(); } });
   try {
     const saved = context.globalState.get('usageCacheV1');
@@ -1501,9 +1687,15 @@ function activate(context) {
 
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('claudeUsage.statusBar') && lastStatusData) renderStatusBar(lastStatusData);
-    // someone turned sharing on or off in the settings themselves: that is the choice now
+    // the configuration directory can move while the window is open: our own setting, or the
+    // Claude Code extension's environment variables, which is where someone running a second
+    // account from a VS Code profile usually sets it
+    if (e.affectsConfiguration('claudeUsage.configDir') || e.affectsConfiguration('claudeCode.environmentVariables')) repointConfigDir();
+    // someone turned sharing on or off in the settings themselves: that is the choice now, and it
+    // is a choice about the account signed in here, which is the only group this PC could join
     if (e.affectsConfiguration('claudeUsage.team.share')) {
-      context.globalState.update('teamShareV1', vscode.workspace.getConfiguration('claudeUsage').get('team.share', false) === true);
+      const on = vscode.workspace.getConfiguration('claudeUsage').get('team.share', false) === true;
+      if (!setShareConsent(teamCfg().key, on)) logLine('[team] claudeUsage.team.share was changed, but no Claude account can be read here, so there is no group to join');
     }
   }));
 
@@ -1512,21 +1704,8 @@ function activate(context) {
 
   push();
 
-  try {
-    watchers.push(fs.watch(CLAUDE_DIR, (ev, fn) => { if (!fn || fn === 'usage-bar.json') scheduleRefresh(); }));
-  } catch (e) { /* covered by timer */ }
-  try {
-    // A transcript write refreshes token/request counts (real-time) AND schedules a usage
-    // refresh ~7s later, in the post-turn reading lull when the window is free.
-    watchers.push(fs.watch(PROJECTS_DIR, { recursive: true }, () => { scheduleRefresh(); scheduleTurnRefresh(); }));
-  } catch (e) { /* covered by timer */ }
-  // watch .claude/agents/ dirs so newly created agents appear in the Crew immediately
-  // (workspace-level first, then user-level). Cold start — before the dir exists — is
-  // still covered by the 10s poll.
-  const _agentDirs = (vscode.workspace.workspaceFolders || []).map((f) => path.join(f.uri.fsPath, '.claude', 'agents'));
-  _agentDirs.push(path.join(CLAUDE_DIR, 'agents'));
-  _agentDirs.forEach((dir) => { try { watchers.push(fs.watch(dir, () => scheduleRefresh())); } catch (e) { /* dir may not exist yet; timer covers it */ } });
-  context.subscriptions.push({ dispose: () => watchers.forEach((w) => { try { w.close(); } catch (e) {} }) });
+  installWatchers();
+  context.subscriptions.push({ dispose: closeWatchers });
 
   timer = setInterval(push, 10000);
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
@@ -1617,6 +1796,10 @@ function deactivate() {
 module.exports = { activate, deactivate };
 if (process.env.CUC_TEST) module.exports._test = {
   readTokens, parseLinesInto, freshAcc, collect, computeAgentActivity, parseSubUsage, contextPct,
+  // the resolved configuration directory, so a test can see that the settings really reach the readers
+  claudePaths: () => claudePaths,
+  // sharing consent, which is per Claude account: a test can answer for one and ask about another
+  teamCfg, shareConsent, setShareConsent, shareMap,
   // the swept-run set and its expiry, so a test can age one out without waiting four hours
   dismissedRuns: () => agentDismissed,
   pruneAgentDismissed,

@@ -11,7 +11,13 @@ const Module = require('module');
 const ROOT = path.join(__dirname, '..');
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-host-'));
 fs.mkdirSync(path.join(HOME, '.claude', 'projects'), { recursive: true });
+// A signed-in account, so sharing consent (which is per account) has an account to be about.
+// Beside .claude, not inside it: that is where Claude Code keeps this file (claudedir.js)
+fs.writeFileSync(path.join(HOME, '.claude.json'), JSON.stringify({ oauthAccount: { accountUuid: 'u-host-test' } }));
 process.env.HOME = HOME; // extension.js reads os.homedir() when it loads
+// A real CLAUDE_CONFIG_DIR on the machine running the tests would outrank the temp HOME, which is
+// the whole point of it (claudedir.js), so this lane states that it has none
+delete process.env.CLAUDE_CONFIG_DIR;
 process.env.CUC_TEST = '1'; // exposes _test.setBjSeeds / setHlSeeds / setSeeds, used to pick the cards
 
 // --- fake vscode ------------------------------------------------------------------------
@@ -47,7 +53,10 @@ const LEDGER = 'creditLedgerV1';
 const START_CREDITS = 1000; // 10M input tokens = 1,000 credits (10,000 weighted tokens a credit)
 const gs = memento({
   agentXpV2: { agents: {}, seen: {}, backfilled: true },
-  [LEDGER]: { days: { '2026-09-01': { input: 10000000, output: 0, cache_creation: 0, cache_read: 0 } }, backfilled: true, sweptAt: Date.now() }
+  [LEDGER]: { days: { '2026-09-01': { input: 10000000, output: 0, cache_creation: 0, cache_read: 0 } }, backfilled: true, sweptAt: Date.now() },
+  // what a PC upgrading from 1.28.0 holds: one answer, for no particular account
+  teamShareV1: true,
+  teamAskedV1: 1760000000000
 });
 
 const origLoad = Module._load;
@@ -89,6 +98,60 @@ const lastHeaderBalance = () => posted.filter((m) => m.type === 'data').pop().da
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
+
+// The settings really reach the readers: the fake vscode hands back every setting's default, so
+// claudeUsage.configDir is empty, there is no CLAUDE_CONFIG_DIR, and the directory is this lane's
+// temp HOME. A resolver nothing calls would leave this pointing at the real ~/.claude
+test('the configuration directory is resolved, not hard-coded', () => {
+  const cp = ext._test.claudePaths();
+  assert.equal(cp.source, 'default');
+  assert.equal(cp.dir, path.join(HOME, '.claude'));
+  assert.equal(cp.projects, path.join(HOME, '.claude', 'projects'));
+  assert.equal(cp.configJson, path.join(HOME, '.claude.json'));
+  // and the ledger records which directory it was counted from, so a moved one is counted again
+  assert.equal(gs.data.creditSweepDirV1, undefined); // not until a sweep finishes
+});
+
+// Sharing consent is about who will see the row, and that is the account, not this PC. These run
+// against the real activate() that has just happened, so they also assert the upgrade path.
+test('the one answer a PC upgrading from 1.28.0 held is now this account\'s answer', () => {
+  const key = ext._test.teamCfg().key;
+  assert.match(key, /^acct-[0-9a-f]{40}$/);      // a hash: the account id itself is never stored
+  assert.ok(!JSON.stringify(gs.data).includes('u-host-test'));
+  assert.equal(ext._test.shareConsent(key), true);
+  assert.equal(ext._test.teamCfg().on, true);
+  assert.equal(gs.data.teamShareMovedV1, true);
+  assert.equal(gs.data.teamShareV1, undefined);  // superseded blobs go: one answer to read
+  assert.equal(gs.data.teamAskedV1, undefined);
+});
+
+test('a second account inherits nothing and starts off, answered or not', () => {
+  const mine = ext._test.teamCfg().key;
+  const other = 'acct-' + 'b'.repeat(40);
+  assert.equal(ext._test.shareConsent(other), undefined); // never asked, which is not a no
+  assert.equal(ext._test.setShareConsent(other, true), true);
+  assert.equal(ext._test.shareConsent(other), true);
+  assert.equal(ext._test.shareConsent(mine), true);       // and the first one is untouched
+  ext._test.setShareConsent(other, false);
+  assert.equal(ext._test.shareConsent(other), false);      // asked and declined, not "unasked"
+  assert.equal(ext._test.shareConsent(mine), true);
+  assert.equal(ext._test.teamCfg().on, true);             // `on` is only ever about this account
+  ext._test.setShareConsent(mine, false);
+  assert.equal(ext._test.teamCfg().on, false);
+  ext._test.setShareConsent(mine, true);
+});
+
+test('a hand-edited consent store cannot put anything but an account\'s answer in', () => {
+  const mine = ext._test.teamCfg().key;
+  gs.update('teamShareByAccountV1', JSON.parse(
+    '{"' + mine + '":true,"acct-short":true,"__proto__":true,"' + 'acct-' + 'c'.repeat(40) + '":"yes"}'));
+  const m = ext._test.shareMap();
+  assert.deepEqual(Object.keys(m), [mine]);
+  assert.equal(ext._test.shareConsent('acct-short'), undefined);
+  assert.equal(ext._test.shareConsent(null), undefined);
+  assert.equal(({}).teamShareByAccountV1, undefined); // nothing reached Object.prototype
+  assert.equal(ext._test.setShareConsent('nonsense', true), false);
+});
 
 test('open with no round: phase bet, full balance', () => {
   const r = send({ type: 'bj', op: 'open' });
@@ -758,7 +821,13 @@ function closeRounds() {
 
 let failed = 0;
 for (const t of tests) {
-  try { t.fn(); console.log('PASS ' + t.name); }
+  // A sync runner drops a promise on the floor: an async test would stop at its first await
+  // and still be counted as a pass. Refuse one instead of reporting a result nobody produced.
+  try {
+    const r = t.fn();
+    if (r && typeof r.then === 'function') throw new Error('async test in a sync runner: use await t.fn()');
+    console.log('PASS ' + t.name);
+  }
   catch (e) { failed++; console.log('FAIL ' + t.name + '\n  ' + (e && e.stack || e)); }
   closeRounds();
 }
