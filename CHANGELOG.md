@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.31.1: The screenshot tool is not part of the extension
+
+- **`tools/shoot-panels.mjs` shipped inside 1.31.0.** It renders the screenshots for the marketplace listing and is no use to anyone who installed a usage meter. `.vscodeignore` is a blocklist, so a new directory is published unless a line says otherwise, and this one had no line.
+- **A position bought once no longer says `avg`.** An average of one price is that price.
+- **How many coins a position holds follows its own size.** Three decimals read right at 3.479 and were noise at 20.432, so the places now go three, two, one as the figure grows.
+
 ## 1.31.0: A market that moves while you are looking at it
 
 - **The price moved once a minute and the chart redrew once a second, which is the wrong way round.** On a one-hour candle chart, a minute of the clock slid all 24 bodies one place along while the newest close, the only figure that is news, moved once an hour. The picture was busy and the number was still.

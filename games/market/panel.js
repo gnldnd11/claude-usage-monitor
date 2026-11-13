@@ -437,7 +437,8 @@
     // What went in, at what price, for how long. Short on purpose: `1,000 in at avg 2.99 (3 buys)`
     // measured 208.22px at a sidebar of 250, which is two lines again, and the lot count has a home
     // on the line above now
-    sub.textContent = fmtInt(p.amount) + ' in · ' + credFix(c, p.entryTicks) + ' avg · '
+    // One buy has no average. The word is only true once there are two prices behind the figure
+    sub.textContent = fmtInt(p.amount) + ' in · ' + credFix(c, p.entryTicks) + (p.lots > 1 ? ' avg · ' : ' · ')
       + age(p.heldMs + mk.since);
   }
   // Behind the one toggle every screen folds its table into (docs/game-panels.md, section 5). What
@@ -475,9 +476,13 @@
     line.textContent = cv ? cv.text : '';
   }
   // Thousandths of a coin, as a reader writes them: 0.7, 12.345, 3
+  // Three decimals were right when a stake bought 3.479 of a coin. At 20.432 the last two digits
+  // are noise on a figure nobody reads that far, so the places follow the size: four significant
+  // digits, never fewer than one decimal place so the trailing-zero strip always has a point to cut
   function units(milli) {
     var v = (milli || 0) / 1000;
-    return v.toFixed(3).replace(/\.?0+$/, '');
+    var d = v >= 100 ? 1 : v >= 10 ? 2 : 3;
+    return v.toFixed(d).replace(/\.?0+$/, '');
   }
   // A coin's price in credits as a fraction, for turning coins into credits and back. A unit change
   // the host declared (ticksPerCredit), not a price: the price is c.ticks, which the host sent

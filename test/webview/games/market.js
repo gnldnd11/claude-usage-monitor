@@ -479,8 +479,10 @@ module.exports = {
         txt('mkPlQty'));
       // and the line under it is the stake, the entry price and the age. No percentage: 29px below
       // it the period row carries the market's own change in the same colours and the same sign
+      // One buy, so the price is not called an average: an average of one price is that price.
+      // The word comes back with the second buy, which the lots case below holds
       ok('and under it the stake, the price it went in at and the age, with no percentage',
-        !$('mkPlBox').hidden && /^100 in · [\d,]+\.\d\d avg · \d+s$/.test(txt('mkPlSub'))
+        !$('mkPlBox').hidden && /^100 in · [\d,]+\.\d\d · \d+s$/.test(txt('mkPlSub'))
         && txt('mkPlSub').indexOf(txt('mkSide')) > 0 && txt('mkPlSub').indexOf('%') < 0,
         txt('mkPlSub') + ' | corner ' + txt('mkSide'));
       // TWO places, not three. With one position open the corner's sum and the block are the same

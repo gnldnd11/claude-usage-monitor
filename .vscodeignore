@@ -22,3 +22,7 @@ games/README.md
 # where it is noise for the person installing a usage meter. Same for a git ignore list.
 CLAUDE.md
 .gitignore
+# tools/ builds the listing's screenshots. It ran once, shipped inside 1.31.0, and is no use at all
+# to someone who installed a usage meter. A reminder that this file is a blocklist: a directory
+# added to the repo is published unless a line here says otherwise (verify with: vsce ls).
+tools/**
