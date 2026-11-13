@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.30.1: A PC that was already sharing is not asked again
+
+- **A PC that had been sharing for weeks was asked to press Share again.** 1.29.0 made the answer per account and carried the single older answer across, but on a PC where that did not land there was nothing left to fall back on, because the same step deleted the older answer as soon as it had read it.
+- **The older answer is no longer deleted.** It stays in storage as the record of a choice already made, and the question now reads it one last time before it appears, so an account that answered before is not asked again.
+- **The log says which of the two happened.** It names the choice it carried across, or says plainly that no earlier choice was in storage, so the reason is readable rather than guessed at.
+
 ## 1.30.0: One account's week, the same figures on every PC
 
 - **The same PC's week read 27% on one screen and 19% on another.** One Claude account, one weekly window, two PCs that share it, and the table of PCs disagreed with itself depending on which of them you were looking at. The figure a person quoted to the other person was not the figure the other person could see.

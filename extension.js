@@ -1470,6 +1470,16 @@ function teamAsk() {
   clearTimeout(teamAskTimer);
   const key = teamCfg().key;
   if (!key) return;                            // not signed in here: nobody to ask about
+  // A choice made before 1.29.0 that did not make it across is still a choice. Read again here, and
+  // not only at activation, because this is the last point before the question appears and a PC that
+  // has been sharing for weeks must not be asked as though it never had.
+  if (shareConsent(key) === undefined) {
+    const legacy = legacyShareAnswer();
+    if (legacy !== undefined) {
+      setShareConsent(key, legacy);
+      logLine('[team] an earlier sharing choice (' + (legacy ? 'on' : 'off') + ') was still in storage, so this account is not asked again');
+    }
+  }
   if (shareConsent(key) !== undefined) return; // this account has already answered
   if (!(vscode.env && vscode.env.isTelemetryEnabled)) return;
   teamAskTimer = setTimeout(async () => {
@@ -1513,27 +1523,39 @@ function teamMigrateAndAsk(context) {
   teamAsk();
 }
 
+// The answer as versions before 1.29.0 stored it. In order: the choice the extension kept, then the
+// fact of having been asked (dismissing was a no), then the setting on its own for someone who only
+// ever edited settings.json.
+//
+// These keys are no longer deleted once read. 1.29.0 deleted them as soon as it had copied the
+// answer across, which is tidy right up to the moment the copy does not land: a PC that had been
+// sharing for weeks asked to Share again, with nothing left in storage to say it ever had. Two small
+// keys are a cheaper thing to carry than an answer that cannot be recovered, and keeping them is
+// what lets teamAsk fall back on one below.
+function legacyShareAnswer() {
+  const gs = extContext ? extContext.globalState : null;
+  if (!gs) return undefined;
+  const kept = gs.get('teamShareV1');
+  if (typeof kept === 'boolean') return kept;
+  if (gs.get('teamAskedV1')) return false;
+  return vscode.workspace.getConfiguration('claudeUsage').get('team.share', false) === true ? true : undefined;
+}
+
 function moveLegacyShareConsent(context) {
   const gs = context.globalState;
   if (gs.get(SHARE_MOVED_KEY) === true) return;
   const key = teamCfg().key;
   if (!key) return; // try again next activation
-  const kept = gs.get('teamShareV1');
-  // In order: the choice the extension kept, then the fact of having been asked (dismissing was a
-  // no), then the setting on its own for someone who only ever edited settings.json
-  const legacy = typeof kept === 'boolean' ? kept
-    : gs.get('teamAskedV1') ? false
-    : (vscode.workspace.getConfiguration('claudeUsage').get('team.share', false) === true ? true : undefined);
-  // The answer first, the "moved" mark second, the superseded blobs last, so an interruption
-  // between any two of them leaves either a repeat of a move that is already a no-op or a pair of
-  // keys nothing reads, and never an answer that was dropped on the way
+  const legacy = legacyShareAnswer();
+  // The answer first, the "moved" mark second, so an interruption between them repeats a move that
+  // is already a no-op rather than dropping an answer on the way
   if (legacy !== undefined && shareConsent(key) === undefined) {
     setShareConsent(key, legacy);
     logLine('[team] the sharing choice you had made is now this account\'s choice (' + (legacy ? 'on' : 'off') + '); another account is asked separately');
+  } else if (legacy === undefined) {
+    logLine('[team] no earlier sharing choice was found in storage, so this account is asked about it');
   }
   gs.update(SHARE_MOVED_KEY, true);
-  gs.update('teamShareV1', undefined); // superseded blobs go, so there is one answer to read
-  gs.update('teamAskedV1', undefined);
 }
 
 // --- the configuration directory ------------------------------------------------------------

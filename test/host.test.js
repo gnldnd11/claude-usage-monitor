@@ -121,8 +121,12 @@ test('the one answer a PC upgrading from 1.28.0 held is now this account\'s answ
   assert.equal(ext._test.shareConsent(key), true);
   assert.equal(ext._test.teamCfg().on, true);
   assert.equal(gs.data.teamShareMovedV1, true);
-  assert.equal(gs.data.teamShareV1, undefined);  // superseded blobs go: one answer to read
-  assert.equal(gs.data.teamAskedV1, undefined);
+  // The older keys are KEPT. 1.30.0 deleted them here, which is tidy until the copy does not land:
+  // a PC that had been sharing for weeks was asked to Share again with nothing left in storage to
+  // say it ever had. They are the record of a choice already made, and teamAsk reads one as a last
+  // resort before the question appears, so deleting them would remove that fallback too.
+  assert.equal(gs.data.teamShareV1, true);
+  assert.ok(gs.data.teamAskedV1);
 });
 
 test('a second account inherits nothing and starts off, answered or not', () => {
