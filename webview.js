@@ -1551,12 +1551,14 @@
         + '<span class="tr"><i style="width:' + Math.min(100, x.pct) + '%;background:' + col[k] + '"></i></span></div>';
     }).join('');
     // These rows divide the whole account total, so anything nobody here reported is inside them.
-    // Said, not drawn: it used to be a row named "Other PCs", which invented machines that were not
-    // on the account and whose figure was an artefact of one PC's rate estimate
-    h += '</div><div class="wk-note">' + (t.byAccount
-      ? 'The account\'s weekly % divided by what each PC spent. Use nobody here reports, claude.ai on the web, the apps, a PC with sharing off, is spread across these rows rather than shown apart.'
-      : 'No reading of the account\'s weekly % yet, so each row is this PC\'s percent-per-$ on that PC\'s spend.')
-      + '</div><div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
+    // That was two sentences of small print under four numbers, which is a lot of reading to put
+    // under a table that is already plain, so it lives in the README now. The line below is only
+    // for the state that is genuinely puzzling: rows that are not a division of the account at all
+    h += '</div>';
+    if (!t.byAccount) {
+      h += '<div class="wk-note">No reading of the account\'s weekly % yet, so each row is this PC\'s percent-per-$ on that PC\'s spend.</div>';
+    }
+    h += '<div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
     return h;
   }
   // this PC keeps the extension's orange; the others get their own colors, in row order

@@ -19,14 +19,30 @@
 // later. There is no "current price" to keep in sync, so the merge problem the sword has (credits.js)
 // simply does not exist here, and nothing can be rewound and rolled again.
 //
-// How: a hash-addressed lattice over log(price), walked top down. The whole span from the epoch to
-// year 2153 is one block of 2^LEVELS minutes with a hash-drawn total; a block of size 2^L splits into
-// halves whose totals are T/2 + D and T/2 - D, with D drawn from hash(coin, L, index) and scaled by
-// sqrt(v * 2^(L-2)). That scale is not decoration: it is what makes the two halves come out with
-// variance 2^(L-1) * v each AND uncorrelated, so the per-minute steps the lattice implies are exactly
-// the independent draws a random walk is made of. The sum over [0, n) is therefore one descent,
-// LEVELS nodes deep whatever n is, instead of n additions from the epoch. Adding from the epoch would
-// work today and be unusable in a year.
+// How: a hash-addressed lattice over log(price), walked top down. The lattice's own step is a NODE,
+// which is a 64th of a minute (SUB), and the whole span from the epoch to year 2153 is one block of
+// 2^LEVELS nodes with a hash-drawn total; a block of size 2^L splits into halves whose totals are
+// T/2 + D and T/2 - D, with D drawn from hash(coin, L, index) and scaled by sqrt(v * 2^(L-2)). That
+// scale is not decoration: it is what makes the two halves come out with variance 2^(L-1) * v each
+// AND uncorrelated, so the per-node steps the lattice implies are exactly the independent draws a
+// random walk is made of. The sum over [0, n) is therefore one descent, LEVELS nodes deep whatever n
+// is, instead of n additions from the epoch. Adding from the epoch would work today and be unusable
+// in a year.
+//
+// WHY A 64TH OF A MINUTE AND NOT A SECOND. The grid was the minute until 1.31.0, and cutting it
+// finer had to be done without moving a single price that is already stored: `entryTicks` is written
+// into 639 installs, and a price that is redrawn is a position that pays a ratio nobody bought at
+// (CRAB's log sigma over 316 days is 0.711, so one version bump could make a position +700% or half
+// of itself). A 64th is the one cut that moves nothing, and that is arithmetic rather than taste:
+// SUB has to be a power of two for the new grid to be an exact subdivision of the old one, because
+// then every old minute boundary is still a node boundary AND still a block edge at every level it
+// used to be one at. With SUB = 2^6 the per-step variance v falls by 64 and the lattice grows by 6
+// levels, so sd[L] = sqrt(v * 2^(L-2)) at the new level L is bit for bit the old sd[L-6]; address the
+// split draw at level L-6 and the root one level above the old root, and a descent to minute m is the
+// old descent with six levels of unused subdivision underneath it. A second (SUB = 60) is NOT a
+// subdivision of the minute in this sense: 60 is not a power of two, the minute boundary stops being
+// a block edge, and every stored price moves. test/market.test.js holds the old prices as a frozen
+// table and compares, so this is checked rather than argued.
 //
 // Why a random walk and not a sum of waves. A bounded wiggle (sines, value noise) oscillates inside a
 // band the player can learn, and then "buy at the floor of the band, sell at the ceiling" beats the
@@ -89,8 +105,8 @@
 // tags, or have any of its functions mirrored there.
 // The reason is that this game, alone among the five, has no secret to keep and therefore no secret
 // to lean on. A card game hides its shoe and the forge makes a fresh seed per attempt, so a screen
-// holding the whole engine still cannot see the next card. Here the next minute's price is simply
-// priceAt(code, now + 60000): a screen that could compute prices could read the future and buy the
+// holding the whole engine still cannot see the next card. Here the next node's price is simply
+// priceAt(code, now + 1000): a screen that could compute prices could read the future and buy the
 // winner. So the screen gets numbers, never the function:
 //  - the host computes candles and the current price and posts them
 //  - the host trades at ITS OWN clock, which is the one rule this file cannot check from state
@@ -182,6 +198,14 @@ const TICKS_PER_CREDIT = 100;
 // alone to be worth closing: the median wait for the price to clear the fee on the upside fell from
 // 10.9 days to 8 hours on TIDE and from 1.3 days to 58 minutes on CRAB.
 //
+// Cutting the grid to a 64th of a minute does not open it either, and that is the figure the cut had
+// to be checked against rather than a hope: a node's own move is 0.0035% to 0.0092% at the median,
+// its 99th percentile is 0.0128% to 0.0336%, and the largest over 200,000 consecutive nodes a coin is
+// 0.0243% on TIDE and 0.0601% on CRAB. So the fee is 8x to 20x the wildest single node in two hundred
+// thousand, and the share of nodes whose own move clears the fee is 0.000% on all four. A finer grid
+// is more chances at a smaller number, which is why the share is measured and not reasoned about
+// (test/market.test.js prints both, and asserts the share is zero).
+//
 // Written 199/200 rather than 995/1000: the same rational, the same floor on every integer input, and
 // a product five times smaller. That is not tidiness. MAX_BUY is solved from this numerator (below),
 // and at 995 the product only leaves room for a 565,778 credit position, which is under the floor
@@ -202,13 +226,27 @@ const EPOCH_MS = Date.UTC(2026, 0, 1);
 const MS_PER_MIN = 60000;
 const MIN_PER_DAY = 1440;
 
-// The lattice is one block of 2^LEVELS minutes, which runs out in 2153. A descent is LEVELS nodes
-// deep whatever the minute, so this is also the cost of a price. 26 rather than 40 because the root
-// total's size grows as sqrt(2^LEVELS) and every price is a difference of numbers that big: at 26
-// the root is about 11 log units wide against an answer of about 3, which costs one digit of the
-// double's fifteen. Past the end the price freezes, which is a better failure than a wrong number
-const LEVELS = 26;
-const MAX_MINUTE = Math.pow(2, LEVELS);
+// The lattice's step. A 64th of a minute, 937.5ms, which is the grid a price actually moves on: the
+// panel redraws once a second, so a minute grid meant 59 of those 60 redraws showed a number that
+// had not moved. 64 and not 60 because the new grid has to be an exact subdivision of the old one
+// (the note, section 1): a power of two keeps every minute boundary a block edge, so every price
+// that is already stored prices the same as it did
+const SUB = 64;
+const SUB_LEVELS = 6;                        // log2(SUB), which is how much deeper the lattice got
+const MS_PER_NODE = MS_PER_MIN / SUB;        // 937.5
+const NODES_PER_DAY = MIN_PER_DAY * SUB;     // 92,160
+
+// The lattice is one block of 2^LEVELS nodes, which runs out in 2153, the same year it ran out in
+// when the step was a minute and the levels were 26: six more levels for a 64 times finer step is
+// the same span. A descent is LEVELS nodes deep whatever the time, so this is also the cost of a
+// price. Not 40 because the root total's size grows as sqrt(2^LEVELS * v) and every price is a
+// difference of numbers that big: here the root is about 11 log units wide against an answer of
+// about 3, which costs one digit of the double's fifteen. (That width did not move with the step
+// either: v fell by 64 as 2^LEVELS grew by 64, so rootSd is the very number it was.) Past the end
+// the price freezes, which is a better failure than a wrong number
+const LEVELS = 32;
+const MAX_NODE = Math.pow(2, LEVELS);
+const MAX_MINUTE = MAX_NODE / SUB;           // 2^26, the last minute the lattice prices
 // block sizes, looked up rather than computed: the descent reads one per level and a chart is
 // hundreds of descents, so Math.pow in there is the difference between a redraw and a stutter
 const POW2 = [];
@@ -231,8 +269,10 @@ const BEND_GUARD = 0.13;
 const DRIFT = FAIR_DRIFT + BEND_GUARD;
 
 // A trade settles at the host's clock. The slack is for a message that crossed a tick boundary, not
-// for a choice of time
-const CLOCK_SLACK_MS = 5000;
+// for a choice of time, so it is held just over one node (937.5ms) rather than left at the five
+// seconds it was while the grid was a minute. Five seconds of slack on a 937.5ms grid is five nodes
+// of choice, and a choice of node is a choice of price
+const CLOCK_SLACK_MS = 1000;
 
 // A writer id is 16 hex characters (extension.js makes them). Same shape as credits.js's, and
 // checked here too so a hand-edited store cannot win a merge tie with "__proto__"
@@ -241,12 +281,16 @@ const REPLICA_RE = /^[0-9a-f]{16}$/;
 // --- the coins ----------------------------------------------------------------------------------
 //
 // Four of them, so the screen has a list rather than a toggle, and four volatilities so the choice
-// is a real one: a coin that moves 1.5% a day and one that moves 5% are different games at the same
+// is a real one: a coin that moves 1.5% a day and one that moves 4% are different games at the same
 // fee. Volatility is daily, in basis points, and it is the ONLY thing that differs between them.
 //
-// Names are sea and crab words. Nothing here is the name or ticker of a real coin, share or company,
-// and nothing should become one: this is a toy inside an editor, and a toy that borrows a real
-// market's name is making a claim about that market.
+// Names are jokes on names a player will recognise, bent back into the sea the crab lives in:
+// the front half points at the outside world and the back half is still tide, kelp, shell, claw.
+// None of them is a real coin, share or company, and none is close enough to be mistaken for one
+// at a glance, which is the line: a toy may make a joke about a market, it may not wear its name.
+// The CODE is not a name. It is the seed of the price history (seedOf) and the key a position is
+// stored under, so renaming a coin redraws its past and renaming a code deletes someone's position.
+// Codes are frozen. Names are not.
 //
 // Base prices are large in ticks on purpose. The price is rounded to a whole tick, so the rounding
 // is worth 0.5/ticks of the price, and that error is the one thing in this file the fee has to
@@ -259,12 +303,20 @@ const REPLICA_RE = /^[0-9a-f]{16}$/;
 // starts flattening the coin as well, so a coin that slides far enough stops MOVING. Ten years out,
 // 4% a day leaves a coin at 2.5% of its base and still moving at 58% of its nominal size; 5% leaves
 // it sitting on the floor of the band, flat, which is a dead coin inside the life of the extension.
-// checkCoins below turns that into a load-time refusal rather than a paragraph.
+// checkCoins below turns that into a load-time refusal rather than a paragraph, and solving
+// liveliness(vol, ALIVE_DAYS) = ALIVE_FRACTION puts the exact ceiling at 412bp: 412 loads and 413 is
+// refused. CRAB is at 400, so there are twelve basis points of room and they are not worth taking.
+// Twelve on four hundred is 3% more nominal volatility on a coin the band is ALREADY damping (CRAB's
+// realised daily sigma is 3.20% against a nominal 4.00% over ten years), and the chart autoscales to
+// the window's own low and high, so a louder coin is not even a different picture: the median body
+// height of a drawn candle is 10.1% of the well on TIDE at 150bp and 8.9% on CRAB at 400bp, measured
+// over 200 windows a coin. Volatility is what the four coins differ BY; it is not the knob for how
+// alive the screen looks. That knob is the grid (section 1) and the panel's own beat.
 const COINS = [
-  { code: 'TIDE', name: 'Tide Pool', grade: 'calm', base: 1200, volBp: 150 },
-  { code: 'KELP', name: 'Kelp Line', grade: 'steady', base: 2500, volBp: 240 },
-  { code: 'SHEL', name: 'Shellback', grade: 'choppy', base: 700, volBp: 320 },
-  { code: 'CRAB', name: 'Crabclaw', grade: 'wild', base: 1600, volBp: 400 }
+  { code: 'TIDE', name: 'Tidether', grade: 'calm', base: 1200, volBp: 150 },
+  { code: 'KELP', name: 'Kelpereum', grade: 'steady', base: 2500, volBp: 240 },
+  { code: 'SHEL', name: 'Shelliba', grade: 'choppy', base: 700, volBp: 320 },
+  { code: 'CRAB', name: 'Crabidia', grade: 'wild', base: 1600, volBp: 400 }
 ];
 
 // How long a coin has to still be worth watching. Not a tuning knob: it is the horizon the vol
@@ -277,8 +329,8 @@ const ALIVE_FRACTION = 0.5;
 // cards.js owns the one seeded stream in this repo, and the rule that comes with it is that a game
 // does not keep a second copy of it. This is not one. A stream is walked from a seed and gives its
 // values in order; the lattice needs the value AT an address (coin, level, index) without walking to
-// it, which a stream cannot do unless a fresh seed string is built per node, 26 of them per price,
-// which would make a chart the most expensive thing in the panel.
+// it, which a stream cannot do unless a fresh seed string is built per node, LEVELS of them per
+// price, which would make a chart the most expensive thing in the panel.
 // What makes the rule a rule does not apply either: there is no hidden outcome rolled from a seed
 // here, nothing face down, and no seed that leaves this module (see the note, section 5). The guard
 // against a bad mixer is not this paragraph but test/market.test.js, which measures the moments of
@@ -307,10 +359,10 @@ function seedOf(str) {
 
 // The normal quantile (Acklam's rational approximation, relative error under 1.2e-9). It is here
 // rather than Box-Muller because the middle branch has no log and no cos in it, and 95% of draws
-// take the middle branch: a price is 26 of these, and a chart is a few hundred prices.
+// take the middle branch: a price is LEVELS of these, and a chart is a few hundred prices.
 // Exactness matters more than it looks. The two halves of a split are uncorrelated by construction
 // whatever the distribution, but only GAUSSIAN draws make them independent, and only independence
-// makes the per-minute steps a real random walk rather than something with structure in it that a
+// makes the per-node steps a real random walk rather than something with structure in it that a
 // strategy could find
 const PA = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
 const PB = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
@@ -348,10 +400,16 @@ function nodeZ(row, level, index) {
 
 // Everything a price needs, built once. `sd` is the displacement scale per level: a block of size
 // 2^L splits with D ~ N(0, v * 2^(L-2)), which is what makes each half come out at variance
-// 2^(L-1) * v with zero covariance (the note, section 1). `path` is the descent cache (below)
+// 2^(L-1) * v with zero covariance (the note, section 1). `path` is the descent cache (below).
+//
+// This is one half of why a 64th of a minute moved no price. v is the per-NODE variance now, so it
+// is the old per-minute one divided by 64, and 64 is a power of two, so that division is exact to
+// the last bit. sd[L] = sqrt(v * 2^(L-2)) therefore equals the old sd[L-6] exactly, and rootSd,
+// which scales by 2^LEVELS, comes out the very number it was. The other half is the addressing, in
+// sumAt: the draw for a split at level L is read at L - SUB_LEVELS
 function buildRow(code, name, grade, base, volBp, seedKey) {
   const vol = volBp / 10000;                 // daily, as a fraction
-  const v = (vol * vol) / MIN_PER_DAY;       // per-minute variance of log(price)
+  const v = (vol * vol) / NODES_PER_DAY;     // per-node variance of log(price)
   const baseTicks = base * TICKS_PER_CREDIT;
   const sd = [];
   for (let L = 0; L <= LEVELS; L++) sd[L] = Math.sqrt(v * Math.pow(2, L - 2));
@@ -417,12 +475,18 @@ const MAX_BUY = Math.min(2500000, BUY_LIMIT);
 
 // --- the walk -----------------------------------------------------------------------------------
 
-// Minute index of a time, clamped at both ends of the lattice
-function minuteOf(tMs) {
+// Node index of a time, clamped at both ends of the lattice. A time on a minute boundary lands on a
+// multiple of SUB, which is what makes the old grid a subset of this one
+function nodeOf(tMs) {
   if (!Number.isFinite(tMs)) return 0;
-  const n = Math.floor((tMs - EPOCH_MS) / MS_PER_MIN);
+  const n = Math.floor((tMs - EPOCH_MS) / MS_PER_NODE);
   if (n < 0) return 0;
-  return n > MAX_MINUTE ? MAX_MINUTE : n;
+  return n > MAX_NODE ? MAX_NODE : n;
+}
+// and the time a node starts at, which is exact: MS_PER_NODE is 1875/2, so a node index times it is
+// a number a double holds whole up to the end of the lattice
+function msOfNode(n) {
+  return EPOCH_MS + n * MS_PER_NODE;
 }
 
 // Sum of the walk's steps over [0, n), by descent.
@@ -431,9 +495,11 @@ function minuteOf(tMs) {
 // block [lo, lo + 2^level). A block wholly inside [0, n) is added and done with; a block wholly
 // outside is dropped; otherwise it is split and the half that holds the boundary is descended into.
 //
-// The cache is the same descent, kept. Two prices a minute apart share every frame but the last few,
-// and a chart asks for prices in order, so keeping the frames turns a chart from LEVELS nodes a
-// price into about four.
+// The cache is the same descent, kept. Two prices next to each other share every frame but the last
+// few, and a chart asks for prices in order, so keeping the frames turns a chart from LEVELS nodes a
+// price into a handful. Cutting the step to a 64th of a minute made the lattice six levels deeper
+// and the cache six levels better at the same time: a step of one node moves the boundary inside the
+// deepest frames, which is exactly what the cache keeps.
 //
 // It may only ever skip work a cold descent would have done, and that is why the lookup below asks
 // for STRICT containment. A cold descent enters a block only when n falls strictly inside it; a
@@ -466,8 +532,10 @@ function sumAt(row, n) {
   let acc, lo, level, index, total;
   if (k < 0) {
     acc = 0; lo = 0; level = LEVELS; index = 0;
-    // the root's own draw, addressed one level above any split so it collides with none of them
-    total = nodeZ(row, LEVELS + 1, 0) * row.rootSd;
+    // The root's own draw, addressed one level above any split so it collides with none of them.
+    // LEVELS - SUB_LEVELS + 1 is 27, which is what this address was when the grid was the minute and
+    // LEVELS was 26: the root block covers the same span and so has to carry the same number
+    total = nodeZ(row, LEVELS - SUB_LEVELS + 1, 0) * row.rootSd;
     k = 0;
     keepFrame(path, 0, acc, lo, level, index, total);
   } else {
@@ -477,14 +545,19 @@ function sumAt(row, n) {
   let depth = k + 1;
   for (;;) {
     const size = POW2[level];
-    // the whole block is inside [0, n), or none of it is, or it is one minute wide and so neither
+    // the whole block is inside [0, n), or none of it is, or it is one node wide and so neither
     // (which cannot happen: a level-0 block is always one of the two)
     if (n >= lo + size || n <= lo || level === 0) {
       row.depth = depth;
       return n >= lo + size ? acc + total : acc;
     }
     const mid = lo + size / 2;
-    const left = total / 2 + nodeZ(row, level, index) * row.sd[level];
+    // The split draw, addressed SUB_LEVELS above its own level. A block of 2^level nodes is a block
+    // of 2^(level - SUB_LEVELS) minutes, which is the block this draw belonged to while the grid was
+    // the minute, so reading it at that address is what keeps every old price the price it was. The
+    // six levels under the old floor (levels 1..6 here) address at 0 and below, where the minute
+    // lattice never drew: they are the new subdivision and they collide with nothing
+    const left = total / 2 + nodeZ(row, level - SUB_LEVELS, index) * row.sd[level];
     if (n <= mid) { total = left; index = index * 2; }
     else { acc += left; total = total - left; lo = mid; index = index * 2 + 1; }
     level -= 1;
@@ -511,7 +584,7 @@ function liveliness(vol, days) {
   return c * c;
 }
 
-// log(price / base) at a minute: the walk, less the drift, through the band
+// log(price / base) at a node: the walk, less the drift, through the band
 function logDevAt(row, n) {
   return squash(sumAt(row, n) - DRIFT * row.v * n);
 }
@@ -519,7 +592,7 @@ function logDevAt(row, n) {
 // A price, in whole ticks. The clamp is belt and braces: squash already bounds the exponent, and
 // what is left for the clamp is the rounding at the very edge of the band
 function priceOn(row, tMs) {
-  const t = Math.round(row.baseTicks * Math.exp(logDevAt(row, minuteOf(tMs))));
+  const t = Math.round(row.baseTicks * Math.exp(logDevAt(row, nodeOf(tMs))));
   if (t < row.floorTicks) return row.floorTicks;
   return t > row.capTicks ? row.capTicks : t;
 }
@@ -537,43 +610,79 @@ function priceAt(code, tMs) {
 
 // --- candles ------------------------------------------------------------------------------------
 
-// A candle's high and low are read off samples inside it, not off every minute in it: a day-wide
-// candle holds 1,440 minutes and a chart of sixty of them would be 86,400 prices for two numbers
-// nobody can see the difference in. The open and the close are exact, and they are in the sample, so
-// the wick always contains the body
+// A candle's high and low are read off samples inside it, not off every node in it: a day-wide
+// candle holds 92,160 nodes and a chart of sixty of them would be five and a half million prices for
+// two numbers nobody can see the difference in. The open and the close are exact, and they are in
+// the sample, so the wick always contains the body.
+// Eight is unchanged from the minute grid, and what changed is where they land: at a five minute
+// step the old sampling asked for round(j*5/8) minutes, which is three pairs of duplicate minutes
+// and five distinct prices, while the nodes it asks for now are eight distinct instants. So the
+// wicks got longer and more honest without a price costing any more
 const WICK_SAMPLES = 8;
 const MAX_CANDLES = 240;
 
-// Display OHLC, oldest first. Candle k ends at toMs minus (count-1-k) steps and opens a step before
-// that, so consecutive candles touch: one candle's open is the one before it's close.
+// Display OHLC, oldest first.
+//
+// THE CANDLES SIT ON A GRID OF THEIR OWN STEP, and only the newest one is part way through. Until
+// 1.31.0 they hung off the end instead (candle i ended at `end - i * step`), so every candle on the
+// chart slid one place along whenever the end moved, and a 24-candle hour chart had all 24 of its
+// bodies redrawn once a minute while the newest close, the only figure that is actually news, moved
+// once an hour. The picture was busy and the number was still, which is the wrong way round and is
+// most of what made this screen feel dead. Snapped to the grid, the only candle that changes between
+// grid steps is the last one, and the base the change figure is read against (`rows[0].o`) stops
+// moving under the player as well.
+//
+// The newest candle therefore spans [grid, now) and is SHORT: that is not an error to be padded out,
+// it is the bar that is still open, and the close of it is the price being traded at. The ones behind
+// it are whole steps and consecutive candles touch, so one candle's open is the one before it's
+// close.
+//
 // `toMs` is the host's own clock (see the note, section 5). Nothing here refuses a future one,
 // because nothing here can know: a chart is drawn from what the host hands over, and the host is the
 // thing that knows what time it is. The refusal that matters is on the trade, in whyNot
-function candles(code, opts) {
-  const row = rowOf(code);
-  if (!row) throw new RangeError('no such coin: ' + code);
+function buildCandles(row, opts, withTime) {
   const o = opts || {};
   const stepMin = Math.max(1, Math.round((o.stepMs || MS_PER_MIN) / MS_PER_MIN));
   const count = Math.max(1, Math.min(MAX_CANDLES, Math.floor(o.count || 1)));
-  const endMin = minuteOf(o.toMs);
+  const step = stepMin * SUB;             // the step in nodes, which is what the grid is laid on
+  const endNode = nodeOf(o.toMs);
+  const grid = Math.floor(endNode / step) * step;
   const out = [];
   for (let i = count - 1; i >= 0; i--) {
-    const end = endMin - i * stepMin;
-    const start = end - stepMin;
-    const open = priceOn(row, EPOCH_MS + start * MS_PER_MIN);
-    const close = priceOn(row, EPOCH_MS + end * MS_PER_MIN);
+    const start = grid - i * step;
+    // only the newest one is cut short, at the node the clock is in
+    const end = i === 0 ? endNode : start + step;
+    const open = priceOn(row, msOfNode(start));
+    const close = priceOn(row, msOfNode(end));
     let hi = open > close ? open : close;
     let lo = open < close ? open : close;
-    const inner = Math.min(WICK_SAMPLES, stepMin);
+    // The inside of the candle, sampled. The open and the close are in it already, so the wick
+    // always holds the body whatever the sampling finds; what the samples add is the part of the
+    // move that happened between them. A bar that has only just opened has nothing inside it yet
+    const span = end - start;
+    const inner = Math.min(WICK_SAMPLES, Math.max(1, span));
     for (let j = 1; j < inner; j++) {
-      const m = start + Math.round((j * stepMin) / inner);
-      const p = priceOn(row, EPOCH_MS + m * MS_PER_MIN);
+      const p = priceOn(row, msOfNode(start + Math.round((j * span) / inner)));
       if (p > hi) hi = p;
       if (p < lo) lo = p;
     }
-    out.push({ t: EPOCH_MS + end * MS_PER_MIN, o: open, h: hi, l: lo, c: close });
+    const r = { o: open, h: hi, l: lo, c: close };
+    if (withTime) r.t = msOfNode(end);
+    out.push(r);
   }
   return out;
+}
+
+// The public one, which carries the time of each candle. `coinView` does not use it: the panel reads
+// o, h, l and c and nothing else (its candleHtml, sparkHtml, mkChart and markHtml), and a `t` nothing
+// reads is four coins' worth of thirteen-digit numbers in every reply, which since the panel asks
+// once a second is 1,730 bytes of a 7,557 byte view, measured on the default window. So view() calls
+// buildCandles directly, with no time on it. This shape is the public one and keeps its time, because
+// the suite reads it and because a candle without one cannot be checked against a clock
+function candles(code, opts) {
+  const row = rowOf(code);
+  if (!row) throw new RangeError('no such coin: ' + code);
+  return buildCandles(row, opts, true);
 }
 
 // --- the sale's arithmetic ----------------------------------------------------------------------
@@ -941,8 +1050,9 @@ function netOf(rec) {
 // enough of a line to see a shape in, and it is what the panel asks for too (games/market/meta.js
 // hands this same pair in). A thirty minute window was tried and is a straight line: the median
 // high-to-low of thirty one-minute candles is 0.28% on the calmest coin, against 0.75% over three
-// hours. A five minute step also means WICK_SAMPLES has something to sample, so the candles have
-// wicks; at one minute a step the high and low ARE the open and close and every wick is empty
+// hours. A wider step still buys a longer wick, but a one minute candle is no longer an empty one:
+// since the grid became a 64th of a minute, WICK_SAMPLES has 64 nodes to sample inside a minute,
+// where on the old grid the high and low of a one-minute candle WERE its open and close
 const VIEW_STEP_MS = 5 * MS_PER_MIN;
 const VIEW_COUNT = 36;
 
@@ -957,7 +1067,8 @@ function bpOf(now, then) {
 // the payout already has the fee in it, the profit is a subtraction already done, and the move is in
 // ten-thousandths. A screen that multiplies is a screen that will one day disagree with the host
 function coinView(st, row, nowMs, shape, budget, late) {
-  const rows = candles(row.code, { toMs: nowMs, stepMs: shape.stepMs, count: shape.count });
+  // no `t` on these: see candles(). The panel reads o, h, l, c
+  const rows = buildCandles(row, { toMs: nowMs, stepMs: shape.stepMs, count: shape.count }, false);
   const ticks = priceOn(row, nowMs);
   const first = rows[0];
   const held = st ? st.pos[row.code] : null;
@@ -1065,6 +1176,7 @@ module.exports = {
   // constants a host or a test reads
   OPS, MIN_BUY, MAX_BUY, MAX_LOTS, TICKS_PER_CREDIT, FEE_NUM, FEE_DEN,
   EPOCH_MS, MS_PER_MIN, MIN_PER_DAY, LEVELS, MAX_MINUTE,
+  SUB, SUB_LEVELS, MS_PER_NODE, NODES_PER_DAY, MAX_NODE, WICK_SAMPLES,
   BAND, SPAN, HARD, BAND_X, DRIFT, FAIR_DRIFT, BEND_GUARD, ALIVE_DAYS, ALIVE_FRACTION,
   squash, liveliness,
   // Test only, and nothing outside test/market.test.js may reach in here. `setClock` is in it
@@ -1079,6 +1191,6 @@ module.exports = {
     },
     // throws the descent cache away, so the next price is computed the cold way
     chill(row) { row.path.length = 0; row.depth = 0; },
-    setClock, priceOn, logDevAt, minuteOf, sumAt, nodeZ, probit, rowOf
+    setClock, priceOn, logDevAt, nodeOf, msOfNode, sumAt, nodeZ, probit, rowOf
   }
 };

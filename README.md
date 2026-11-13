@@ -61,6 +61,10 @@ Because a background subagent has no knowable progress, running agents show an i
 
 ## Weekly details
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/weekly-details.png" width="300" alt="Weekly details: this PC's share of the account percentage, the other PC on the same account beside it, then tokens and requests, a seven-day bar chart with subagents stacked, and folds for project, model, agent and session" />
+</p>
+
 Press **Details** on the Weekly meter for this PC's last seven days: tokens per day with main sessions and subagents stacked, requests, and an API-equivalent figure, then where it went, by project, by model, by agent and by session.
 
 **One Claude account, several PCs.** If you share an account, the weekly percentage is the account's, so your own machine's share of it is not knowable from one PC. Turn on **Share** in that same Details sheet and every PC signed in to the same account that also agreed shows up side by side, adding up to the account's weekly percentage. A row is that percentage divided by what the PC spent, measured at API-equivalent prices, so the table reads the same on every PC on the account. Because the rows divide the whole account total, use nobody there reports (the web, the apps, a PC that did not agree) is spread across them rather than shown apart.
@@ -70,7 +74,19 @@ There is no code to type. The group is the account itself, identified only by a 
 ## Credits and games
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/blackjack.png" width="300" alt="The credits balance under the panel title, and the blackjack table below it: a crab dealer, a pixel player, cards on dark green felt and the stake buttons" />
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/blackjack-table.png" width="290" alt="The credits balance under the panel title, and the blackjack table below it: a crab dealer, a pixel player, cards on dark green felt and the stake buttons" />
+  &nbsp;
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/highlow-run.png" width="290" alt="High-Low: one card face up on the felt, with the price of calling higher and the price of calling lower read off the cards left in the shoe" />
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/slots-reels.png" width="290" alt="Slots: three reels stopped in a window cut to one row, with the paying line lit" />
+  &nbsp;
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/wheel-stopped.png" width="290" alt="Wheel: the pointer resting on a slice, every slice carrying the multiplier written on it" />
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/market-coin.png" width="290" alt="Coin Market: a candle chart for one coin, the position's profit and how many coins it holds, and an amount box that takes either credits or coins" />
 </p>
 
 The tokens you spend earn credits: one per 10K, weighted the way the API prices them, so output counts five times an input token and a cache read a tenth. On first run your past sessions are counted once in the background, so you start with what you have already earned. The balance sits under the title, next to a coin that fills toward the next credit.
@@ -81,9 +97,9 @@ Click it for the games list, where the crab runs five games. Star the ones you c
 
 **Machines.** **Slots**: three rings of 24, rolled to the position the extension picked, so the reel you watch is the reel that paid. **Wheel**: every slice carries its own multiplier, written on it. The wide ones pay nothing and the thin one pays twelve.
 
-**What you keep.** **Coin Market**: four coins on a three-hour candle chart. Buy with any amount of credits, typed in credits or in coins (half a coin is fine), buy the same coin again as often as 16 times, sell whenever you like, 0.5% on the round trip, and the position is still there when you come back. The fee is small because the holding is long: a coin moves about 1% to 2.5% in a day, so coming back tomorrow is worth more than closing costs, while a minute of it is never worth the trip.
+**What you keep.** **Coin Market**: four coins (Tidether, Kelpereum, Shelliba and Crabidia) on a candle chart you pick the window of: three hours, a day, a week or a month. Buy with any amount of credits, typed in credits or in the coin itself (half a coin is fine), buy the same coin again as often as 16 times, sell whenever you like, 0.5% on the round trip, and the position is still there when you come back. The fee is small because the holding is long: a coin's realised move is 1.5% to 3.2% in a day, so coming back tomorrow is worth more than closing costs, while a second of it is never worth the trip.
 
-Nothing you do moves a coin's price. The chart is the same in every window and on every install, it is drawn from the minute it belongs to, and there is no way to buy into a rise you have already seen. Every game with a pay table returns between 96% and 97%, and no symbol line, slice or stopping rule beats another; each table was solved by counting every outcome rather than sampled. The market has no table and no round, so there is nothing to return a percentage of: what is proved about it instead is that no rule for deciding when to sell is worth more than any other, and the round trip costs 0.5%.
+Nothing you do moves a coin's price. The chart is the same in every window and on every install, it is drawn from the instant it belongs to, and there is no way to buy into a rise you have already seen. The price moves on a grid of a 64th of a minute, so the panel has something new to show every second it is open, and the figure it shows is the one the extension will trade at. Every game with a pay table returns between 96% and 97%, and no symbol line, slice or stopping rule beats another; each table was solved by counting every outcome rather than sampled. The market has no table and no round, so there is nothing to return a percentage of: what is proved about it instead is that no rule for deciding when to sell is worth more than any other, and the round trip costs 0.5%.
 
 The extension deals and judges, so a hand survives switching tabs; reloading the window voids it. Your coin positions are what is kept. Credits are earned by using Claude Code and nothing else. They cannot be bought, and they cash out to nothing.
 

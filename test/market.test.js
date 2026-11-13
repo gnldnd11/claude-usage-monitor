@@ -33,6 +33,9 @@
 const assert = require('assert/strict');
 const path = require('path');
 const M = require(path.join(__dirname, '..', 'market.js'));
+// the prices the MINUTE lattice gave, taken off 1.30.1 before the grid was cut (its own note says
+// why regenerating it is not a fix)
+const GRID = require(path.join(__dirname, 'market-grid.js'));
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -113,6 +116,188 @@ test('the fee is a 0.5% round trip, which is the one figure this game does not s
   assert.ok(M.MAX_BUY % 100000 === 0, 'the cap a player is shown is ' + M.MAX_BUY);
 });
 
+// --- the grid, and the prices that are already stored -------------------------------------------
+//
+// THIS IS THE MOST IMPORTANT TEST IN THIS FILE. 1.31.0 cut the lattice's step from a minute to a
+// 64th of a minute, and `entryTicks` is a stored field in 639 installs: a price that comes out one
+// tick different is a position paying a ratio nobody bought at, and CRAB's log sigma over 316 days
+// is 0.711, so a redrawn past could hand a player +700% or take half their position away on an
+// update they never asked for. The whole claim is that no price moved, and the only way to make that
+// claim is to compare against prices the OLD engine produced. test/market-grid.js holds them,
+// frozen, taken off 1.30.1 before a line of this engine changed.
+
+test('every price the minute lattice gave, the node lattice gives back, to the bit', () => {
+  const sweeps = [
+    ['20,000 consecutive minutes from day ' + (GRID.DENSE_FROM / DAY), GRID.denseMinutes(), GRID.EXPECT.dense],
+    ['20,000 minutes spread over the whole grid (0 to 6e7)', GRID.wideMinutes(), GRID.EXPECT.wide],
+    ['every power-of-two block edge and its neighbours', GRID.edgeMinutes(), GRID.EXPECT.edge]
+  ];
+  let compared = 0, differ = 0;
+  for (const [name, mins, want] of sweeps) {
+    for (const code of CODES) {
+      const got = GRID.digest(mins.map((m) => M.priceAt(code, at(m))));
+      compared += mins.length;
+      if (got !== want[code]) {
+        differ += 1;
+        console.log('    ' + code + ': ' + name + ' folds to ' + got + ', the minute lattice folded to ' + want[code]);
+      }
+    }
+  }
+  // the digest says whether anything moved; these say WHICH price moved, which is what a failure
+  // here needs to be readable at all
+  for (const code of CODES) {
+    for (const [m, p] of GRID.EXPECT.spot[code]) {
+      const got = M.priceAt(code, at(m));
+      compared += 1;
+      if (got !== p) {
+        differ += 1;
+        console.log('    ' + code + ' at minute ' + num(m) + ': ' + num(got) + ', was ' + num(p));
+      }
+    }
+  }
+  console.log('  ' + num(compared) + ' prices against the 1.30.1 table: ' + differ + ' differ');
+  assert.equal(differ, 0, differ + ' of the frozen readings moved: stored positions have been redrawn');
+});
+
+test('a node is a 64th of a minute, which is why the old grid is still inside this one', () => {
+  assert.equal(M.SUB, 64);
+  assert.equal(Math.pow(2, M.SUB_LEVELS), M.SUB,
+    'SUB has to be a power of two, or a minute boundary stops being a block edge and every stored price moves');
+  assert.equal(M.MS_PER_NODE, M.MS_PER_MIN / M.SUB);
+  assert.equal(M.MS_PER_NODE, 937.5);
+  assert.equal(M.NODES_PER_DAY, M.MIN_PER_DAY * M.SUB);
+  assert.equal(M.MAX_NODE, Math.pow(2, M.LEVELS));
+  assert.equal(M.MAX_MINUTE, M.MAX_NODE / M.SUB);
+  assert.equal(M.MAX_MINUTE, Math.pow(2, 26), 'the lattice has to run out in the year it always did');
+  // six more levels for a 64 times finer step is the same span, so the root draw is the same draw
+  assert.equal(M.LEVELS - M.SUB_LEVELS, 26);
+  // a node index, and the time a node starts at
+  assert.equal(M._test.nodeOf(EP), 0);
+  assert.equal(M._test.nodeOf(EP - 1e9), 0);
+  assert.equal(M._test.nodeOf(at(1)), M.SUB, 'a minute boundary has to land on a multiple of SUB');
+  assert.equal(M._test.nodeOf(at(DAY)), DAY * M.SUB);
+  assert.equal(M._test.nodeOf(EP + 1e18), M.MAX_NODE);
+  for (const n of [0, 1, 7, 12345, M.SUB, M.MAX_NODE]) {
+    assert.equal(M._test.nodeOf(M._test.msOfNode(n)), n, 'node ' + n);
+    assert.ok(Number.isFinite(M._test.msOfNode(n)));
+  }
+  // and the price moves INSIDE a minute now, which is the whole reason for the cut. On the old grid
+  // every one of these 64 readings was the same number
+  const now = at(DAY * 500);
+  for (const code of CODES) {
+    const inside = new Set();
+    for (let i = 0; i < M.SUB; i++) inside.add(M.priceAt(code, now + i * M.MS_PER_NODE));
+    assert.ok(inside.size > 8, code + ' took only ' + inside.size + ' prices across one minute');
+    // the minute's own price is still the first node of it, which is the frozen table's claim
+    assert.equal(M.priceAt(code, now), M.priceAt(code, now + M.MS_PER_NODE - 1));
+    assert.equal(M.priceAt(code, now), M.priceAt(code, now + 10));
+  }
+});
+
+test('the candles sit on a grid of their own step, and only the newest one is part way through', () => {
+  const endMin = GRID.CANDLE_END_MIN, stepMin = GRID.CANDLE_STEP_MIN, count = GRID.CANDLE_COUNT;
+  const edges = GRID.candleEdges();
+  const shape = { toMs: at(endMin), stepMs: stepMin * MIN, count };
+  assert.equal(edges.length, count);
+  assert.ok(endMin % stepMin !== 0, 'the window has to end between two grid steps or this proves nothing');
+  let differ = 0;
+  for (const code of CODES) {
+    const rows = M.candles(code, shape);
+    const want = GRID.EXPECT.closes[code];
+    assert.equal(rows.length, count);
+    for (let i = 0; i < count - 1; i++) {
+      // a fixed candle opens and closes on the grid, at the minute the minute lattice priced
+      if (rows[i].o !== want[i] || rows[i].c !== want[i + 1]) {
+        differ += 1;
+        console.log('    ' + code + ' candle ' + i + ': ' + rows[i].o + '/' + rows[i].c
+          + ', the minute lattice said ' + want[i] + '/' + want[i + 1]);
+      }
+      assert.equal(rows[i].t, at(edges[i + 1]), code + ' candle ' + i + ' does not end on the grid');
+    }
+    // the newest one opens on the grid and closes at the node the clock is in: a part candle, which
+    // is what makes it the only one that moves between grid steps
+    const last = rows[count - 1];
+    assert.equal(last.o, want[count - 1], code + ': the part candle does not open on the grid');
+    assert.equal(last.c, M.priceAt(code, at(endMin)), code + ': the part candle does not close at the price traded at');
+    assert.equal(last.t, M._test.msOfNode(M._test.nodeOf(at(endMin))));
+    assert.ok(last.t < at(edges[count - 1] + stepMin), code + ': the part candle is not short');
+  }
+  assert.equal(differ, 0, differ + ' fixed candles no longer open and close where they did');
+  // THE PICTURE DOES NOT SLIDE. Every candle but the newest is the same candle a second later, and
+  // the newest close is the figure that moves. On the old grid it was the other way round: all 24
+  // bodies were redrawn every minute and the newest close moved once an hour
+  for (const code of CODES) {
+    const a = M.candles(code, shape);
+    const closes = new Set();
+    for (let s = 0; s < M.SUB; s++) {
+      const b = M.candles(code, Object.assign({}, shape, { toMs: at(endMin) + s * M.MS_PER_NODE }));
+      for (let i = 0; i < count - 1; i++) {
+        assert.deepEqual(b[i], a[i], code + ' candle ' + i + ' slid ' + s + ' nodes along');
+      }
+      closes.add(b[count - 1].c);
+    }
+    assert.ok(closes.size > 8, code + ': the newest close took only ' + closes.size + ' values over a minute');
+  }
+});
+
+test('no single node clears the fee, which is what a finer grid had to be checked against', () => {
+  // A finer grid is more chances at a smaller number. The door this closes is "scrape the coin one
+  // step at a time": if a step's own move could clear the round trip, the panel would be a thing to
+  // sit in front of rather than a thing to come back to (market.js, at FEE_NUM)
+  const N = 200000;
+  const from = DAY * 500 * M.SUB;
+  console.log('  coin      median node        p99       worst of ' + num(N) + '     over the ' + pct(1 - FEE) + ' fee');
+  for (const t of M.TICKERS) {
+    const row = M._test.rowOf(t.code);
+    let prev = M._test.priceOn(row, M._test.msOfNode(from));
+    let worst = 0, over = 0;
+    const abs = [];
+    for (let i = 1; i <= N; i++) {
+      const p = M._test.priceOn(row, M._test.msOfNode(from + i));
+      const r = Math.abs(p / prev - 1);
+      if (r > worst) worst = r;
+      if (r > 1 - FEE) over += 1;
+      abs.push(r);
+      prev = p;
+    }
+    abs.sort((x, y) => x - y);
+    console.log('  ' + t.code.padEnd(8) + pct4(abs[N >> 1]).padStart(14) + pct4(abs[Math.floor(N * 0.99)]).padStart(14)
+      + pct4(worst).padStart(16) + ((over * 100 / N).toFixed(3) + '%').padStart(18));
+    assert.equal(over, 0, t.code + ': ' + over + ' of ' + N + ' nodes moved more than the fee');
+    // and not merely zero: the fee is still several times the wildest node in two hundred thousand
+    assert.ok(worst < (1 - FEE) / 4,
+      t.code + ': the wildest node moved ' + pct4(worst) + ' against a fee of ' + pct(1 - FEE));
+  }
+});
+
+test('the realised daily volatility is the table’s, and the grid is not what sets it', () => {
+  // Every reading here is a price at a minute boundary, so this measures the OLD engine as much as
+  // this one (the frozen table above is what says so). It is here because it is the figure a retune
+  // of the table shows up in, and because it is the answer to "make the coins wilder": the band is
+  // already damping the roughest one, so the nominal figure is not what the screen shows
+  console.log('  coin     nominal      realised 10y      realised 1y      damped to');
+  for (const t of M.TICKERS) {
+    const vol = t.volBp / 10000;
+    const sigma = (days) => {
+      let s1 = 0, s2 = 0, prev = Math.log(M.priceAt(t.code, at(0)));
+      for (let d = 1; d <= days; d++) {
+        const x = Math.log(M.priceAt(t.code, at(d * DAY)));
+        s1 += x - prev; s2 += (x - prev) * (x - prev);
+        prev = x;
+      }
+      const mean = s1 / days;
+      return Math.sqrt(Math.max(0, s2 / days - mean * mean));
+    };
+    const ten = sigma(3650), one = sigma(365);
+    console.log('  ' + t.code.padEnd(8) + pct(vol).padStart(8) + pct(ten).padStart(17)
+      + pct(one).padStart(17) + (M.liveliness(vol, M.ALIVE_DAYS) * 100).toFixed(0).padStart(14) + '%');
+    assert.ok(ten > vol * 0.7 && ten < vol * 1.1,
+      t.code + ' realises ' + pct(ten) + ' a day against a table that says ' + pct(vol));
+    assert.ok(one > vol * 0.7 && one < vol * 1.3,
+      t.code + ' realises ' + pct(one) + ' over its first year against ' + pct(vol));
+  }
+});
+
 // --- the price function -------------------------------------------------------------------------
 
 test('a price is the same every time it is asked for, in any order', () => {
@@ -147,7 +332,7 @@ test('a cached descent gives the very bits a cold one gives, not merely the same
     for (let n = 1; n <= 2500; n++) swept[n] = M._test.sumAt(row, n);
     for (let n = 1; n <= 2500; n++) {
       M._test.chill(row);
-      assert.equal(swept[n], M._test.sumAt(row, n), code + ' at minute ' + n);
+      assert.equal(swept[n], M._test.sumAt(row, n), code + ' at node ' + n);
       checked += 1;
     }
     // and the minutes that sit ON a lattice boundary, which is where the two descents part company
@@ -157,12 +342,12 @@ test('a cached descent gives the very bits a cold one gives, not merely the same
         M._test.chill(row);
         const cold = M._test.sumAt(row, n);
         for (let m = n - 3; m < n; m++) M._test.sumAt(row, m);
-        assert.equal(M._test.sumAt(row, n), cold, code + ' at minute ' + n + ' (a level-' + L + ' edge)');
+        assert.equal(M._test.sumAt(row, n), cold, code + ' at node ' + n + ' (a level-' + L + ' edge)');
         checked += 1;
       }
     }
   }
-  console.log('  ' + num(checked) + ' minutes compared warm against cold, to the bit');
+  console.log('  ' + num(checked) + ' nodes compared warm against cold, to the bit');
 });
 
 test('a price is whole ticks, inside the band, and still moving ten years out', () => {
@@ -257,8 +442,9 @@ test('a chart of a day is quick enough to redraw on every push', () => {
 
 test('candles touch end to end and their wicks hold their bodies', () => {
   const now = at(DAY * 300 + 77);
+  const step = 15;
   for (const code of CODES) {
-    const rows = M.candles(code, { toMs: now, stepMs: 15 * MIN, count: 40 });
+    const rows = M.candles(code, { toMs: now, stepMs: step * MIN, count: 40 });
     assert.equal(rows.length, 40);
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -267,31 +453,41 @@ test('candles touch end to end and their wicks hold their bodies', () => {
       assert.ok(r.l <= Math.min(r.o, r.c), code + ' candle ' + i + ' has a body outside its wick');
       if (i > 0) {
         assert.equal(r.o, rows[i - 1].c, code + ' candle ' + i + ' does not open where the last one closed');
-        assert.equal(r.t, rows[i - 1].t + 15 * MIN);
+        // ...and the fixed ones are a whole step apart. The LAST one is the part candle, which ends
+        // wherever the clock is, so it is the one that is not (see the grid test above)
+        if (i < rows.length - 1) assert.equal(r.t, rows[i - 1].t + step * MIN);
       }
     }
     // the last candle closes at the price the game trades at
     assert.equal(rows[rows.length - 1].c, M.priceAt(code, now));
-    assert.equal(rows[rows.length - 1].t, at(M._test.minuteOf(now)));
-    // a one-minute step still makes a candle, and then the wick is the body
-    const fine = M.candles(code, { toMs: now, stepMs: MIN, count: 3 });
+    assert.equal(rows[rows.length - 1].t, M._test.msOfNode(M._test.nodeOf(now)));
+    assert.ok(rows[rows.length - 1].t <= rows[rows.length - 2].t + step * MIN);
+    // A ONE-MINUTE STEP HAS AN INSIDE NOW. On the minute grid the high and low of a one-minute
+    // candle WERE its open and close and every wick was empty; a minute is 64 nodes, so it is a
+    // candle with 8 samples in it like any other. This is the assertion that moved with the grid
+    const fine = M.candles(code, { toMs: now, stepMs: MIN, count: 30 });
+    let bodied = 0;
     for (const r of fine) {
-      assert.equal(r.h, Math.max(r.o, r.c));
-      assert.equal(r.l, Math.min(r.o, r.c));
+      assert.ok(r.h >= Math.max(r.o, r.c) && r.l <= Math.min(r.o, r.c), code + ' a one-minute wick lost its body');
+      if (r.h > Math.max(r.o, r.c) || r.l < Math.min(r.o, r.c)) bodied += 1;
     }
+    assert.ok(bodied > 15, code + ': only ' + bodied + ' of 30 one-minute candles had a wick');
   }
 });
 
 // --- what the lattice is made of ----------------------------------------------------------------
 
 test('the walk is made of independent draws with the variance the table says', () => {
-  // The lattice is only a random walk if the per-minute steps it implies really are independent and
-  // the right size. That is a property of the node hash, which no comment can vouch for
+  // The lattice is only a random walk if the per-NODE steps it implies really are independent and
+  // the right size. That is a property of the node hash, which no comment can vouch for.
+  // The expected variance is the daily one over NODES_PER_DAY, not over MIN_PER_DAY: that division
+  // is the one place the 1/64 grid could have been got wrong without any price moving at a minute
+  // boundary, since a wrong v would show up as steps of the wrong size between them
   console.log('  coin     steps        mean/SE      var/expected      kurtosis      lag-1 r');
   const N = 120000;
   for (const t of M.TICKERS) {
     const row = M._test.rowOf(t.code);
-    const v = (t.volBp / 10000) * (t.volBp / 10000) / DAY;
+    const v = (t.volBp / 10000) * (t.volBp / 10000) / M.NODES_PER_DAY;
     let s1 = 0, s2 = 0, s4 = 0, cross = 0, prev = null;
     let last = M._test.sumAt(row, 0);
     const xs = [];
@@ -352,6 +548,12 @@ test('every level of every coin is a step the player cannot win, which is the wh
   // says E[P(sell)] <= P(buy) for EVERY rule for choosing when to sell, so every strategy returns at
   // most the fee. The Monte Carlo below cannot say that; no amount of sampling can.
   //
+  // THE STEP IS THE LATTICE'S OWN STEP, which since 1.31.0 is a NODE (a 64th of a minute) and not a
+  // minute. That is not a detail: optional stopping bounds the rules a player can actually follow,
+  // and a trade settles at a node, so the step integrated here has to be the step the player can
+  // stop on. v is therefore the per-node variance, and the day column below is it over
+  // NODES_PER_DAY.
+  //
   // The integral is a normalised Riemann sum of the normal density over +-9 sigma. Normalised, so a
   // constant integrand comes back as exactly 1 and the figure below is an excess and not a
   // quadrature artefact
@@ -364,7 +566,7 @@ test('every level of every coin is a step the player cannot win, which is the wh
   console.log('  coin     worst step edge     worst over a day     at level      a day of the guard');
   for (const t of M.TICKERS) {
     const vol = t.volBp / 10000;
-    const v = vol * vol / DAY;
+    const v = vol * vol / M.NODES_PER_DAY;
     const sd = Math.sqrt(v);
     let worst = -Infinity, worstAt = 0;
     // d is the walk before the band, so it has to be swept well past the band's own edge
@@ -376,9 +578,9 @@ test('every level of every coin is a step the player cannot win, which is the wh
       if (e - 1 > worst) { worst = e - 1; worstAt = d; }
     }
     console.log('  ' + t.code.padEnd(8) + worst.toExponential(2).padStart(14)
-      + (worst * DAY * 100).toFixed(4).padStart(20) + '%'
+      + (worst * M.NODES_PER_DAY * 100).toFixed(4).padStart(20) + '%'
       + ('d = ' + worstAt.toFixed(2)).padStart(14)
-      + (M.BEND_GUARD * v * DAY * 100).toFixed(4).padStart(20) + '%');
+      + (M.BEND_GUARD * v * M.NODES_PER_DAY * 100).toFixed(4).padStart(20) + '%');
     assert.ok(worst <= 1e-12, t.code + ': a step at d = ' + worstAt.toFixed(2) + ' pays ' + worst.toExponential(2) + ' over fair');
   }
 });
@@ -881,7 +1083,15 @@ function viewChecks(now) {
   const flat = leaves(v, []);
   assert.equal(flat.includes('seed'), false);
   assert.equal(flat.includes('path'), false);
-  for (const c of v.coins) for (const row of c.candles) assert.ok(row.t <= now, 'a view carried a candle from the future');
+  // and no candle carries a TIME. The panel reads o, h, l and c (candleHtml, sparkHtml, mkChart,
+  // markHtml), so a `t` on the wire is 1,440 thirteen-digit numbers a minute that nothing reads.
+  // candles() itself still carries one: it is the public shape and the suite above reads it
+  for (const c of v.coins) {
+    for (const row of c.candles) {
+      assert.deepEqual(Object.keys(row).sort(), ['c', 'h', 'l', 'o'], 'a view candle carries more than OHLC');
+    }
+  }
+  assert.ok('t' in M.candles('CRAB', { toMs: now, count: 2 })[0], 'candles() is the public shape and keeps its time');
   // a budget that cannot cover the minimum greys every coin out
   const poor = M.view(st, 0, now);
   for (const c of poor.coins) assert.equal(c.can.buy, false);
@@ -916,10 +1126,12 @@ test('a view of the same minute twice is the same view, so a redraw cannot flick
   const now = at(DAY * 801 + 5);
   const st = atClock(now, () => M.act(wallet(), buyOp('KELP', 900, now)));
   assert.equal(JSON.stringify(M.view(st, 5000, now)), JSON.stringify(M.view(st, 5000, now)));
-  // and the same minute at a different millisecond prices the same: the grid is the minute, which is
-  // also why "wait for the second the minute turns" buys nothing
+  // and the same NODE at a different millisecond prices the same: the grid is a 64th of a minute,
+  // which is also why "wait for the millisecond the node turns" buys nothing. A node is 937.5ms, so
+  // ten milliseconds later is the same node and sixty seconds later is not
   assert.equal(M.priceAt('KELP', now), M.priceAt('KELP', now + 10));
-  assert.equal(M.priceAt('KELP', at(M._test.minuteOf(now))), M.priceAt('KELP', now));
+  assert.equal(M.priceAt('KELP', M._test.msOfNode(M._test.nodeOf(now))), M.priceAt('KELP', now));
+  assert.notEqual(JSON.stringify(M.view(st, 5000, now)), JSON.stringify(M.view(st, 5000, now + MIN)));
 });
 
 // --- Monte Carlo: the strategies ----------------------------------------------------------------

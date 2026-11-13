@@ -16,9 +16,9 @@
 
   // There is no round here and no deal, so there is nothing to pace except the result of a trade,
   // which is one chip and one balance. docs/game-panels.md section 6 gives the market two numbers:
-  //   tick   the screen's own beat. The price moves on the MINUTE and only the host can price one,
-  //          so what this does between minutes is keep the held time counting, and on the minute it
-  //          asks. A held profit that sits frozen is the one thing this screen must not show
+  //   tick   the screen's own beat. The price moves on a 64th of a minute and only the host can
+  //          price one, so every beat asks the host and keeps the held time counting in between. A
+  //          held profit that sits frozen is the one thing this screen must not show
   //   trade  the pause between the state landing and the verdict chip that says what it did
   // The only animation on this screen is the shared .bj-chip's own pop (games/casino.js), which
   // nothing here counts, so there is no CSS length written twice and nothing to keep in step
@@ -33,9 +33,6 @@
   // narrowest this gets is the busiest window at the narrowest panel: 3H's 36 candles at 156px is
   // a 4.33px slot and a 2.69px body (docs/game-panels.md, section 5-10)
   var MK_BODY = 0.62;
-  // The minute, which is the grid the PRICE lives on and so the grid the beat lives on. It is not
-  // the width of a candle: the host decides that, from the key this screen sends it (MK_SPANS)
-  var MS_MIN = 60000;
 
   // The windows this screen can ask for, and the only four it can. What goes on the wire is the KEY
   // and nothing else: the {stepMs, count} behind it is the host's (games/market/meta.js), because
@@ -65,21 +62,43 @@
     timers: CUC.timers(), chip: null, conv: null, title: '', backTitle: '',
     codes: null, locked: false, wantFocus: false,
     since: 0,   // ms of this panel's own beats since the drawn state landed
-    asked: 0,   // the minute an ask has already gone out for, so one boundary is one ask
     span: MK_SPAN_DEF   // the window on screen. The host remembers it too, for the pushes nobody asked for
   };
-  // The amount box: what was typed and in which unit. 'cr' is credits, 'sh' is coins (shares)
+  // The amount box: what was typed and in which unit. 'cr' is credits, 'sh' is coins (shares).
+  // `typed` starts empty and is SEEDED from the purse the first time a coin is open and the balance
+  // is known (mkSeed): a fixed 100 was 0.024% of a real purse, which is not a stake, it is a rounding
+  // error with a Buy button on it
   mk.unit = 'cr';
-  mk.typed = '100';
+  mk.typed = '';
+  mk.seeded = false;
 
   // --- units the host declared, and nothing else -------------------------------------------------
 
   // Ticks to credits. A price is a whole number of hundredths of a credit, and the coin itself says
   // so: `baseTicks` IS `base` credits (market.js, section 6). Changing the unit of a number is not
   // deciding what it is worth
-  function credOf(c, ticks) {
+  function credVal(c, ticks) {
     if (!c || !c.baseTicks) return 0;
-    return Math.round(ticks * c.base / c.baseTicks);
+    return ticks * c.base / c.baseTicks;
+  }
+  function credOf(c, ticks) {
+    return Math.round(credVal(c, ticks));
+  }
+  // THE SAME PRICE, AT THE RESOLUTION IT ACTUALLY MOVES AT. A tick is a hundredth of a credit, so a
+  // price rounded to whole credits throws away the two digits that carry a minute's worth of news:
+  // rounded, a coin's printed price changes on about 2% to 14% of seconds, and in ticks on 90% to
+  // 98% of them. The grid being a 64th of a minute (market.js, section 1) buys nothing if the screen
+  // then rounds the movement off.
+  // Two decimals always, trailing zero and all: `271.20` beside `299.49` is a column, `271.2` is a
+  // number that moved one place. Only the COIN depth prints these. The list keeps whole credits,
+  // because `1,434.13` is 56.69px against a 38.62px slot at a sidebar dragged to 250 and would eat
+  // the coin's name, and because what is compared across the four rows is the change, not the price
+  function credFix(c, ticks) {
+    // back to whole ticks first, so the split into credits and hundredths is integer arithmetic and
+    // not a subtraction of two floats
+    var n = Math.round(credVal(c, ticks) * 100);
+    var whole = Math.floor(n / 100), cents = n - whole * 100;
+    return fmtInt(whole) + '.' + (cents < 10 ? '0' + cents : String(cents));
   }
   // Ten-thousandths to a percent. The host sends every move, every fee and every volatility in basis
   // points (market.js's bpOf) because the calmest coin moves 0.1% in an hour and a percent of that
@@ -105,7 +124,6 @@
   }
   function dirCls(v) { return v > 0 ? 'mk-u' : v < 0 ? 'mk-d' : ''; }
   function tint(v) { return v > 0 ? 'win' : v < 0 ? 'lose' : ''; }
-  function minuteOf(ms) { return Math.floor(ms / MS_MIN); }
   // How long a position has been open. Seconds for the first minute, so the beat has something to
   // show; after that the number that moves is the profit
   function age(ms) {
@@ -158,7 +176,8 @@
       + '<div class="mk-list" id="mkList"></div>'
       + '<div id="mkCoin" hidden>'
       +   '<div class="mk-plbox" id="mkPlBox" hidden>'
-      +     '<b class="mk-pl" id="mkPl"></b><span class="mk-plsub" id="mkPlSub"></span></div>'
+      +     '<b class="mk-pl" id="mkPl"></b><span class="mk-plqty" id="mkPlQty"></span>'
+      +     '<span class="mk-plsub" id="mkPlSub"></span></div>'
       +   '<div class="mk-spanrow">' + spanHtml()
       +     '<span class="mk-chg" id="mkChg"></span></div>'
       +   '<div class="mk-well">'
@@ -169,11 +188,20 @@
       + '<div class="bj-sr" id="mkLive" aria-live="polite"></div>'
       + '<div class="bj-note" id="mkNote" hidden></div>'
       + '<div class="warnbar" id="mkErr" hidden></div>'
+      // THE UNIT IS INSIDE THE BOX IT IS THE UNIT OF. It was a segment of its own beside the amount,
+      // which at a sidebar dragged to 250 made this row three identical rounded boxes stacked down
+      // the screen (100px of them), and the only thing naming what `cr` and `coins` meant was the
+      // conversion line 44px below. Inside the field there is no distance to carry: the box says
+      // `41000` and immediately `cr | CRAB`, which is the question answered at 0px.
+      // And the second button is the COIN'S OWN CODE rather than the word `coins`, so what it says
+      // is "this number is credits, or it is CRAB", not "this number is in some unit or other"
       + '<div class="mk-amt" id="mkAmtRow" hidden>'
-      +   '<input id="mkAmt" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Amount" value="100">'
-      +   '<div class="mk-seg" id="mkUnit" role="group" aria-label="Unit">'
-      +     '<button type="button" data-u="cr" class="on" aria-pressed="true">cr</button>'
-      +     '<button type="button" data-u="sh" aria-pressed="false">coins</button></div>'
+      +   '<div class="mk-field">'
+      +     '<input id="mkAmt" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Amount" value="">'
+      +     '<div class="mk-seg" id="mkUnit" role="group" aria-label="Unit">'
+      +       '<button type="button" data-u="cr" class="on" aria-pressed="true">cr</button>'
+      +       '<button type="button" data-u="sh" aria-pressed="false">coins</button></div>'
+      +   '</div>'
       +   '<div class="mk-seg" id="mkPick" role="group" aria-label="Part of the purse">'
       +     '<button type="button" data-f="25">25%</button><button type="button" data-f="50">50%</button>'
       +     '<button type="button" data-f="100">Max</button></div>'
@@ -287,9 +315,9 @@
     for (var k = 0; k < rows.length; k++) html += candleHtml(rows[k], k, slot, lo, span);
     html += markHtml(c, lo, hi, span);
     box.innerHTML = html;
-    box.setAttribute('aria-label', c.name + ' ' + fmtInt(credOf(c, c.ticks)) + ', '
-      + pctSaid(c.chgBp) + ' over ' + spanNow().said + ', low ' + fmtInt(credOf(c, lo))
-      + ', high ' + fmtInt(credOf(c, hi)));
+    box.setAttribute('aria-label', c.name + ' ' + credFix(c, c.ticks) + ', '
+      + pctSaid(c.chgBp) + ' over ' + spanNow().said + ', low ' + credFix(c, lo)
+      + ', high ' + credFix(c, hi));
     mkAxis(c, lo, hi);
   }
   function candleHtml(r, k, slot, lo, span) {
@@ -313,10 +341,14 @@
     if (!p || p.entryTicks < lo || p.entryTicks > hi) return '';
     return '<i class="mk-mark" style="top:' + yAt(p.entryTicks, lo, span) + '%"></i>';
   }
+  // The window's floor and ceiling. The WORD stays muted and the FIGURE comes up to --text: at this
+  // depth twelve of the twenty-one things with type on them were muted, which is a hierarchy with
+  // two steps in it, and the step that was missing is "this is a number you read". No new size and
+  // no new colour: `low` is a label, `271.20` is the reading
   function mkAxis(c, lo, hi) {
     var ax = el('mkAx'); if (!ax) return;
-    ax.innerHTML = '<span>low ' + esc(fmtInt(credOf(c, lo))) + '</span>'
-      + '<span>high ' + esc(fmtInt(credOf(c, hi))) + '</span>';
+    ax.innerHTML = '<span>low <b>' + esc(credFix(c, lo)) + '</b></span>'
+      + '<span>high <b>' + esc(credFix(c, hi)) + '</b></span>';
   }
   // The heading, which is this screen's only chrome and therefore says which of the two depths is
   // open. The title names it and the corner carries the one figure that outlives the panel at that
@@ -337,7 +369,7 @@
     if (b) b.title = c ? 'All coins (Esc)' : mk.backTitle;
     var s = el('mkSide'); if (!s) return;
     if (c) {
-      s.textContent = fmtInt(credOf(c, c.ticks));
+      s.textContent = credFix(c, c.ticks);
       s.className = 'bj-side';
       s.title = c.name + ' · ' + pctSaid(c.chgBp) + ' over ' + spanNow().said;
       return;
@@ -385,22 +417,28 @@
   // The max block when there is one, and nothing at all when there is not. What is drawn here is the
   // figure that moved while the panel was shut, which is the reason to open it again
   function mkPl(c) {
-    var box = el('mkPlBox'), big = el('mkPl'), sub = el('mkPlSub');
-    if (!box || !big || !sub) return;
+    var box = el('mkPlBox'), big = el('mkPl'), sub = el('mkPlSub'), qty = el('mkPlQty');
+    if (!box || !big || !sub || !qty) return;
     var p = c && c.position;
     box.hidden = !p;
-    if (!p) { big.textContent = ''; sub.textContent = ''; return; }
+    if (!p) { big.textContent = ''; qty.textContent = ''; sub.textContent = ''; return; }
     big.textContent = signed(p.pl);
     big.className = 'mk-pl ' + dirCls(p.pl);
+    // HOW MUCH OF THE COIN I HOLD, ON ITS OWN LINE. It was the first of four facts crammed into the
+    // 11px muted line under the profit, where the one thing a holder actually asks (how much of it
+    // is mine) read as part of a sentence about something else. 12px/700 in --text, which is a size
+    // and a colour this panel already uses
+    qty.textContent = units(p.unitsMilli) + ' ' + c.code + (p.lots > 1 ? ' · ' + p.lots + ' buys' : '');
     // The profit is NOT also said as a percentage here. It was, and 29px under it the period line
     // carries the market's own change in the same colours and the same sign, so the two read as one
     // figure and neither says which it is (docs/game-panels.md, section 5-10 already held this for
     // the list rows and missed it here). What is left is what the big number cannot say: what went
     // in, at what price, and for how long
-    sub.textContent = units(p.unitsMilli) + ' ' + c.code + ' · ' + fmtInt(p.amount) + ' in at '
-      + (p.lots > 1 ? 'avg ' : '') + fmtInt(credOf(c, p.entryTicks))
-      + (p.lots > 1 ? ' (' + p.lots + ' buys)' : '')
-      + ' · held ' + age(p.heldMs + mk.since);
+    // What went in, at what price, for how long. Short on purpose: `1,000 in at avg 2.99 (3 buys)`
+    // measured 208.22px at a sidebar of 250, which is two lines again, and the lot count has a home
+    // on the line above now
+    sub.textContent = fmtInt(p.amount) + ' in · ' + credFix(c, p.entryTicks) + ' avg · '
+      + age(p.heldMs + mk.since);
   }
   // Behind the one toggle every screen folds its table into (docs/game-panels.md, section 5). What
   // belongs here is what decides which coin to buy, and all of it is off the reply.
@@ -449,6 +487,35 @@
     var f = CUC.free('mk');
     return f == null ? 0 : Math.min(f, mk.st.maxBuy);
   }
+  // Two significant figures, rounded DOWN, so the stake the box opens with reads as a decision and
+  // not as an answer to a sum: a tenth of 410,862 is 41,086.2 and what goes in the box is 41,000.
+  // Under a hundred there are no figures to cut, so it is the floor
+  function sig2(n) {
+    if (!(n > 0)) return 0;
+    if (n < 100) return Math.floor(n);
+    var p = Math.pow(10, Math.floor(Math.log(n) / Math.LN10) - 1);
+    return Math.floor(n / p) * p;
+  }
+  // WHAT THE BOX OPENS WITH. A tenth of what this game may stake, which is the one figure that is
+  // right at every size of purse: the old fixed 100 was the other games' minimum bet and stayed
+  // there while 1.24.0 made a credit worth ten times as much, so on a 410,862 purse it offered
+  // 0.024% of the balance and the ratio chips were the only usable control on the screen.
+  // A tenth and not a half: this is the stake a player has not chosen yet, so it has to be one they
+  // can lose without the game being over, and `25% / 50% / Max` are right there for the other answer.
+  // A purse this panel has not been told about falls back to ten times the minimum, which is the 100
+  // it always was
+  function openStake() {
+    var min = mk.st ? mk.st.minBuy : 10;
+    if (CUC.free('mk') == null) return min * 10;
+    return Math.max(min, sig2(room() / 10));
+  }
+  // Once, and only when there is a purse to read it off. Not on every paint: the box is the player's
+  // the moment they touch it, and a default that kept re-deriving itself would type over them
+  function mkSeed(c) {
+    if (mk.seeded || !mk.st || CUC.free('mk') == null) return;
+    mk.seeded = true;
+    mkSetAmount(c, openStake());      // through setAmount, so the figure lands in the unit on screen
+  }
   // The box read as whole credits, or 0 when it does not read as a number. Coins are rounded to the
   // nearest credit, which is the stake that actually goes in
   function mkAmount(c) {
@@ -471,7 +538,7 @@
     if (!last) { mk.chip = null; return; }
     var c = coinOf(mk.st, last.ticker);
     mk.chip = last.op === 'buy'
-      ? { text: 'Bought ' + fmtInt(last.amount) + ' at ' + fmtInt(credOf(c, last.entryTicks)), tint: '' }
+      ? { text: 'Bought ' + fmtInt(last.amount) + ' at ' + credFix(c, last.entryTicks), tint: '' }
       : { text: 'Sold ' + signed(last.pl) + ' · paid ' + fmtInt(last.payout), tint: tint(last.pl) };
   }
   // Two buttons at most, which is the control row's own limit (docs/game-panels.md, section 1), and
@@ -513,12 +580,16 @@
   // The host still checks all of it; this only keeps a button lit that the host would refuse dark
   function mkBuyBtn(buy, sell, st, c) {
     sell.textContent = 'Sell';
+    mkSeed(c);
     var amt = mkAmount(c), max = room(), known = CUC.free('mk') != null;
     var us = document.querySelectorAll('#mkUnit button');
     for (var i = 0; i < us.length; i++) {
       var on = us[i].getAttribute('data-u') === mk.unit;
       us[i].classList.toggle('on', on); us[i].setAttribute('aria-pressed', on ? 'true' : 'false');
       us[i].disabled = !!mk.locked;
+      // the coin's own code, which is what makes this button an answer rather than a category: it
+      // follows whichever coin is open
+      if (us[i].getAttribute('data-u') === 'sh') us[i].textContent = c.code;
     }
     var ps = document.querySelectorAll('#mkPick button');
     for (var j = 0; j < ps.length; j++) ps[j].disabled = !!mk.locked || max < st.minBuy;
@@ -583,7 +654,7 @@
     if (!last || !mk.st) return;
     var c = coinOf(mk.st, last.ticker), nm = c ? c.name : last.ticker;
     var what = last.op === 'buy'
-      ? 'Bought ' + fmtInt(last.amount) + ' credits of ' + nm + ' at ' + fmtInt(credOf(c, last.entryTicks))
+      ? 'Bought ' + fmtInt(last.amount) + ' credits of ' + nm + ' at ' + credFix(c, last.entryTicks)
       : 'Sold ' + nm + ' for ' + fmtInt(last.payout) + ', ' + signed(last.pl) + ' on the trip';
     CUC.live('mkLive', what + '. ' + signed(mk.st.net || 0) + '. Balance ' + fmtInt(CUC.balance() || 0) + '.');
   }
@@ -592,21 +663,26 @@
 
   // Every MK_T.tick while the panel is open. Two jobs, and neither of them is pricing:
   //  - the held time keeps counting, so an open position is not a frozen picture
-  //  - when the minute the drawn state belongs to is over, the host is ASKED for the next one
-  // The beat is COUNTED, not read off a clock: `since` is this panel's own count of its own beats
-  // and the minute it is compared against is the host's `nowMs`. So the screen never holds a time of
-  // its own, which is what keeps the next minute's price out of its reach (market.js, section 5)
+  //  - the host is ASKED for the prices, every beat
+  //
+  // EVERY BEAT, NOT EVERY MINUTE. The ask used to wait for the minute the drawn state belonged to to
+  // be over, because the price only moved on the minute and six replies a minute would have been six
+  // views of one number. Since 1.31.0 the price moves on a 64th of a minute (market.js, section 1),
+  // so a once-a-minute ask would redraw a screen that is 59 seconds stale: the coin's printed price
+  // changes on 94% to 96% of the seconds it exists for and the panel would show one of them.
+  // Measured, one engine.view() is 0.21ms to 0.31ms depending on the window, so a reply a second is
+  // 13ms to 19ms of a minute's CPU.
+  // The beat is COUNTED, not read off a clock: `since` is this panel's own count of its own beats.
+  // So the screen never holds a time of its own, which is what keeps the next node's price out of
+  // its reach (market.js, section 5). Nothing is asked while a trade is in flight: the reply to that
+  // is the next state and a second question would race it
   function mkBeat() {
     mk.tick = setTimeout(mkBeat, MK_T.tick);
     var st = mk.st; if (!st) return;
     mk.since += MK_T.tick;
     var c = coinOf(st, mk.coin);
-    if (c && c.position) mkPl(c);          // between minutes this is the only figure that can move
-    // `asked` is a high-water mark and not the last value: a reply that came back still inside the
-    // old minute leaves the beat counting from a minute that has already been asked about, and
-    // asking again is the same question with a longer wait on it
-    var next = minuteOf(st.nowMs + mk.since);
-    if (next > minuteOf(st.nowMs) && next > mk.asked && !mk.busy) { mk.asked = next; mkAsk(); }
+    if (c && c.position) mkPl(c);          // the held time, which moves between replies
+    if (!mk.busy) mkAsk();
   }
   // An unasked redraw. It takes no button away and nothing is paced when it lands: the reply carries
   // a number this panel is not waiting on, so mkReceive draws it exactly as it stands.
@@ -654,15 +730,20 @@
     clearTimeout(mk.to); mk.timers.clear();
     mk.op = null;
     mk.st = m.state;
-    // the beat starts again from this state's own minute. `asked` is NOT reset: it is the last
-    // minute an ask went out for, and if the answer came back still inside the old minute (a host
-    // whose clock has not turned over yet) a second ask would be the same question again
-    mk.since = 0;
-    mk.chip = null;                          // the last verdict goes now; this one lands with its step
+    mk.since = 0;              // the held time counts from this state again
+    // THE VERDICT GOES WHEN SOMETHING ELSE IS ASKED, not on every reply. `op` is null for a redraw
+    // nobody asked for, and since the beat asks once a second a chip cleared on those would be a
+    // verdict the player had one second to read. A reply to a press is a newer fact and takes the
+    // line; a quiet redraw says nothing about the trade that just happened
+    if (op != null) mk.chip = null;
     var last = mk.st.last;
     var moved = !m.error && !!op && op !== 'open' && !!last && last.op === op;
     try {
-      CUC.err('mkErr', m.error || '');
+      // A reason stays up until something ANSWERS it. The beat asks once a second now, so clearing
+      // the bar on every reply would mean a refusal the player never got to read: it would be wiped
+      // by the next quiet redraw a second later. So a redraw nobody asked for leaves the bar alone,
+      // and the next thing the player presses clears it
+      if (current || m.error) CUC.err('mkErr', m.error || '');
       mkLock(true);
     } finally {
       mkRun(m, moved, last);
@@ -734,7 +815,9 @@
       var b = el('mkBack'); mk.backTitle = b ? b.title : '';
       mkBlank();
       var amt = el('mkAmt');
-      amt.addEventListener('input', function () { mk.typed = this.value; mkButtons(); });
+      // a newer amount is a newer fact than the trade that just landed, so the line goes back to
+      // saying what this one buys (mkConvLine has one owner and this is how it changes hands)
+      amt.addEventListener('input', function () { mk.typed = this.value; mk.chip = null; mkButtons(); });
       amt.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -746,7 +829,7 @@
         if (!b || b.disabled || !c) return;
         var u = b.getAttribute('data-u'); if (u === mk.unit) return;
         var credits = mkAmount(c);     // the same stake, said in the other unit
-        mk.unit = u;
+        mk.unit = u; mk.chip = null;
         if (credits) mkSetAmount(c, credits);
         mkButtons();
       });
@@ -754,6 +837,7 @@
         var b = e.target.closest ? e.target.closest('button[data-f]') : null;
         var c = coinOf(mk.st, mk.coin);
         if (!b || b.disabled || !c) return;
+        mk.chip = null;
         mkSetAmount(c, Math.floor(room() * Number(b.getAttribute('data-f')) / 100));
         mkButtons();
       });
@@ -781,7 +865,7 @@
     },
     enter: function () {
       mkLock(true);
-      mk.since = 0; mk.asked = 0;
+      mk.since = 0;
       mkSpanRow(null);                 // the chip that is on, before there is a figure beside it
       clearTimeout(mk.tick);
       mk.tick = setTimeout(mkBeat, MK_T.tick);

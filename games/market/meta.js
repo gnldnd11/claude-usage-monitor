@@ -286,15 +286,40 @@ module.exports = {
   .mk-plbox{margin-bottom:10px;}
   .mk-plbox[hidden]{display:none;}
   .mk-pl{display:block;font-size:22px;font-weight:800;line-height:1.1;color:var(--muted);font-variant-numeric:tabular-nums;}
+  /* HOW MUCH OF THE COIN IS MINE, on its own line. It was the first clause of the muted line below,
+     which is where a holder's own question went to be read last. 12px/700 in --text: at this depth
+     twelve of the twenty-one things carrying type were --muted, so the hierarchy had two steps and
+     the missing one was "a figure you read". 12px is one of section 2's six sizes.
+     The block grows 4.00px by this line and loses more than that from the one under it, which went
+     from two lines to one (panel.js's mkPl) */
+  .mk-plqty{display:block;margin-top:2px;font-size:12px;font-weight:700;
+    color:var(--text);font-variant-numeric:tabular-nums;}
   .mk-plsub{display:block;margin-top:2px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
   /* --- the amount: any whole number of credits, typed in credits or in coins. A coin is bought in
      fractions (0.7 of one is a stake of 0.7 times its price), so the box takes decimals in coins */
   .mk-amt{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap;}
   .mk-amt[hidden]{display:none;}
-  .mk-amt input{flex:1 1 90px;min-width:0;height:28px;box-sizing:border-box;padding:0 8px;border-radius:7px;border:1px solid var(--iborder);background:var(--inner);color:var(--text);font-family:inherit;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;}
-  .mk-amt input:focus{outline:2px solid var(--focus);outline-offset:0;}
+  /* THE UNIT LIVES IN THE FIELD. This row used to be three rounded boxes in a row that wrapped to
+     three STACKED rounded boxes at a sidebar dragged to 250 (100px of them), all three looking the
+     same, with the only thing naming the units 44px below in 4.06:1 muted text. The amount and its
+     unit are one control, so they are one box: a flex basis of 100% gives the field the whole line and
+     the ratio chips the next one, which is 2 lines and 70px at both 250 and 280, and takes the whole
+     panel from 557px to 530px */
+  .mk-field{display:flex;align-items:center;gap:6px;flex:1 1 100%;min-width:0;height:34px;
+    box-sizing:border-box;padding:0 4px 0 6px;border-radius:8px;
+    border:1px solid var(--iborder);background:var(--inner);}
+  .mk-field input{flex:1 1 auto;min-width:0;height:100%;padding:0;border:0;background:transparent;
+    color:var(--text);font-family:inherit;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;}
+  /* the ring goes round the whole control, because the segment inside it is part of the same answer */
+  .mk-field input:focus{outline:none;}
+  .mk-field:focus-within{outline:2px solid var(--focus);outline-offset:0;}
+  .mk-field .mk-seg{flex:none;}
   .mk-seg{display:flex;gap:2px;padding:2px;flex:none;background:var(--inner);border:1px solid var(--iborder);border-radius:9px;}
-  .mk-seg button{height:24px;padding:0 8px;border:0;border-radius:7px;background:transparent;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--muted);cursor:pointer;}
+  /* 6 and not 8, and it is not a taste: at a sidebar of 250 the field leaves 67.13px for the input
+     once the cr/CRAB segment (84.88px) is in it, and 2,500,000 is 69.45px, so the biggest stake the market
+     takes had its last digit cut off. At 6 the input is 77.1px, which clears it by 7.6px. 6 is in
+     section 2's spacing scale (4 6 8 10 12 14) and 7 is not */
+  .mk-seg button{height:24px;padding:0 6px;border:0;border-radius:7px;background:transparent;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--muted);cursor:pointer;}
   .mk-seg button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
   .mk-seg button:hover:not(.on):not(:disabled){color:var(--text);}
   .mk-seg button:disabled{opacity:.35;cursor:not-allowed;}
@@ -319,8 +344,11 @@ module.exports = {
   .mk-fall{background:var(--mk-dn);}
   /* where this position was opened. Ember, because it is the one thing on the chart that is mine */
   .mk-mark{left:0;right:0;height:1px;background:#e8895a;opacity:.8;}
+  /* the window's floor and ceiling. The WORD stays muted and the FIGURE is the reading, which is the
+     second step of the hierarchy this depth was missing. No new size, no new colour */
   .mk-ax{display:flex;justify-content:space-between;gap:8px;margin-top:6px;
     font-size:10.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .mk-ax b{font-weight:700;color:var(--text);}
   /* The fold sits BELOW the control row on this screen, which is the one place it differs from the
      other four, and 12px clears the 34px buttons the way 10px clears a felt. Above them it stood
      between the chart and the button that acts on it, and the fee sentence it now holds was a

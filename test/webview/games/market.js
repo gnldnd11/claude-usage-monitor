@@ -52,8 +52,24 @@ module.exports = {
     const saidOf = (bp) => (bp === 0 ? 'unchanged' : (bp > 0 ? 'up ' : 'down ') + pctAbs(bp));
     const money = (n) => Math.round(n).toLocaleString('en-US');
     const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + money(Math.abs(n));
-    // ticks to credits, the way the panel does it: the coin says its own unit (base is baseTicks)
+    // Ticks to credits, the way the panel does it: the coin says its own unit (base is baseTicks).
+    // TWO RESOLUTIONS, and which one is used where is a decision rather than a detail. The list
+    // rounds to whole credits, because at a sidebar of 250 a price slot is 38.62px and `1,434.13` is
+    // 56.69px, which eats the coin's name; the coin depth prints the TICK, because that is the
+    // resolution the price actually moves at and rounding it off throws away the news
     const cred = (ticks) => money(Math.round(ticks / market.TICKS_PER_CREDIT));
+    const credFix = (ticks) => {
+      const whole = Math.floor(ticks / market.TICKS_PER_CREDIT);
+      const cents = ticks - whole * market.TICKS_PER_CREDIT;
+      return money(whole) + '.' + (cents < 10 ? '0' + cents : String(cents));
+    };
+    // two significant figures, floored, which is what the box opens with (a tenth of the purse)
+    const sig2 = (n) => {
+      if (!(n > 0)) return 0;
+      if (n < 100) return Math.floor(n);
+      const p = Math.pow(10, Math.floor(Math.log10(n)) - 1);
+      return Math.floor(n / p) * p;
+    };
     const txt = (id) => { const e = $(id); return e ? e.textContent : null; };
     const rows = () => doc.querySelectorAll('#mkList .mk-row');
     const codes = () => rows().map((r) => r.getAttribute('data-code')).join(',');
@@ -67,6 +83,11 @@ module.exports = {
     const wicks = () => doc.querySelectorAll('#mkChart .mk-wick');
     const marks = () => doc.querySelectorAll('#mkChart .mk-mark');
     const ops = (from) => sentMk.slice(from == null ? 0 : from).map((m) => m.op).join();
+    // The same list with the beat's own asks taken out. The panel asks the host every second now
+    // (its MK_T.tick), so `open` is no longer evidence of anything a player did, and what these
+    // checks are about is the moves: a trade is a buy or a sale and nothing else goes out
+    const trades = (from) => sentMk.slice(from == null ? 0 : from)
+      .map((m) => m.op).filter((o) => o !== 'open').join();
     const rowFig = () => { const e = $('fig-market'); return e ? e.className + '|' + e.textContent : 'none'; };
     const chgOf = (code) => { const e = $('mkChg-' + code); return e ? e.className + '|' + e.textContent : 'none'; };
     const chipOf = (key) => doc.querySelector('#mkSpan button[data-span="' + key + '"]');
@@ -118,11 +139,12 @@ module.exports = {
 
     // --- the drawn half: a state the test priced itself, at one minute, once ----------------------
     const T0 = Date.UTC(2026, 5, 1, 12, 34, 0);
-    const drawn = market.view(market.load(null), 1000, T0, SHAPE);
+    const PURSE = 410862;            // a purse the size a real one reaches, so the default stake shows
+    const drawn = market.view(market.load(null), PURSE, T0, SHAPE);
     const c0 = drawn.coins[0];
     const hi = c0.candles.reduce((a, r) => (r.h > a ? r.h : a), c0.candles[0].h);
     const lo = c0.candles.reduce((a, r) => (r.l < a ? r.l : a), c0.candles[0].l);
-    toWebview({ type: 'mk', state: drawn, balance: 1000, free: 1000 });
+    toWebview({ type: 'mk', state: drawn, balance: PURSE, free: PURSE });
     advance(20);
     ok('every row prints the host’s own price, in credits',
       market.CODES.every((code, i) => txt('mkPx-' + code) === cred(drawn.coins[i].ticks)),
@@ -172,9 +194,16 @@ module.exports = {
     // the arrow is one button taking two different steps, so it has to say which one it is on
     ok('and the arrow says what it closes at this depth',
       $('mkBack').title === 'All coins (Esc)', $('mkBack').title);
-    ok('and the heading’s corner carries the host’s price for it',
-      txt('mkSide') === cred(c0.ticks) && $('mkSide').className === 'bj-side',
-      txt('mkSide') + ' | want ' + cred(c0.ticks) + ' | ' + $('mkSide').className);
+    ok('and the heading’s corner carries the host’s price for it, to the tick',
+      txt('mkSide') === credFix(c0.ticks) && $('mkSide').className === 'bj-side'
+      && /\.\d\d$/.test(txt('mkSide')),
+      txt('mkSide') + ' | want ' + credFix(c0.ticks) + ' | ' + $('mkSide').className);
+    // ...and the LIST does not, which is the other half of that decision: the four rows are read
+    // against each other and what is compared there is the change, not the price
+    ok('the list keeps whole credits, so a name is not pushed out by two decimals',
+      market.CODES.every((code, i) => txt('mkPx-' + code) === cred(drawn.coins[i].ticks))
+      && market.CODES.every((code) => !/\./.test(txt('mkPx-' + code))),
+      market.CODES.map((code) => txt('mkPx-' + code)).join());
     // The felt's line is not on a screen with no felt (see `chip` above)
     ok('and there is no .hl-line here at all, empty or otherwise',
       !doc.querySelector('#panelMarket .hl-line'),
@@ -224,13 +253,12 @@ module.exports = {
     const wickAt = (k) => wicks().filter((e) => sty(e, 'left') === Math.round((k * slotPc + slotPc / 2) * 100) / 100)[0];
     const withWick = c0.candles.filter((r) => r.h > Math.max(r.o, r.c) || r.l < Math.min(r.o, r.c)).length;
     // An hour-wide candle has an inside, and market.js samples it (WICK_SAMPLES), so the high and
-    // the low are no longer the open and the close and the chart has wicks. At one minute a candle
-    // it had none at all, which is most of why the window was widened: thirty bodies in a row and
-    // not one wick is a chart with the shape taken out of it.
-    // The count is measured, not inherited: 18 of 24 is what this coin's own 1D window holds at the
-    // minute above (the figure was 30 of 36 while the default window was 3H)
+    // the low are no longer the open and the close and the chart has wicks.
+    // The count is measured, not inherited: 19 of 24 is what this coin's own 1D window holds at the
+    // minute above. It was 18 on the minute grid, and it moved because the eight samples inside a
+    // candle now land on eight distinct instants instead of colliding on whole minutes
     ok('an hour-wide candle has an inside, so most of them carry a wick',
-      wicks().length === withWick && withWick === 18 && withWick < c0.candles.length,
+      wicks().length === withWick && withWick === 19 && withWick < c0.candles.length,
       wicks().length + ' wicks drawn | ' + withWick + ' candles whose high or low is outside the body');
     // The extremes of the WINDOW are wick ends now, not body ends: the body of the highest candle
     // stops at its close. The body is the fallback rather than the subject, so a panel that stopped
@@ -250,7 +278,12 @@ module.exports = {
           && sty(w, 'top') + sty(w, 'height') + 0.02 >= sty(b, 'top') + sty(b, 'height');
       }), withWick + ' wicks against ' + bodies().length + ' bodies');
     ok('the axis is the window the host sent and nothing the screen worked out',
-      txt('mkAx') === 'low ' + cred(lo) + 'high ' + cred(hi), txt('mkAx'));
+      txt('mkAx') === 'low ' + credFix(lo) + 'high ' + credFix(hi), txt('mkAx'));
+    // the WORD is the label and the FIGURE is the reading, which is the step of hierarchy this
+    // depth was missing: twelve of its twenty-one pieces of type were muted
+    ok('and its figures are lit while its words stay muted',
+      doc.querySelectorAll('#mkAx b').map((b) => b.textContent).join('') === credFix(lo) + credFix(hi),
+      $('mkAx').innerHTML);
     ok('with nothing held the chart is the biggest block: the profit place is empty, not zero',
       $('mkPlBox').hidden && txt('mkPl') === '' && marks().length === 0,
       'plbox hidden ' + $('mkPlBox').hidden + ' | ' + JSON.stringify(txt('mkPl')));
@@ -356,6 +389,29 @@ module.exports = {
         bodies().length === CANDLES && txt('mkPx-' + code) !== '', bodies().length + ' bodies');
       ok('and a coin you do not hold has nothing to sell', $('mkSell').hidden && offered() === 'mkDeal', offered());
     } else {
+      // THE AMOUNT AND ITS UNIT ARE ONE BOX. Three identical rounded boxes in a row became three
+      // STACKED identical rounded boxes at a sidebar of 250, and the only thing saying what `cr`
+      // meant was the conversion line 44px below it in 4.06:1 muted text
+      ok('the amount and its unit are one field, with the ratio chips on their own line',
+        !!doc.querySelector('#mkAmtRow .mk-field #mkAmt')
+        && !!doc.querySelector('#mkAmtRow .mk-field #mkUnit')
+        && !doc.querySelector('#mkAmtRow .mk-field #mkPick')
+        && !!doc.querySelector('#mkAmtRow #mkPick'),
+        $('mkAmtRow').innerHTML);
+      // and the second button is the COIN rather than the word `coins`: at 0px from the number it
+      // says which of the two things that number is
+      const unitBtn = (u) => doc.querySelector('#mkUnit button[data-u="' + u + '"]');
+      ok('the unit buttons are credits and this coin’s own code, not a category',
+        unitBtn('cr').textContent === 'cr' && unitBtn('sh').textContent === code
+        && unitBtn('cr').className === 'on',
+        unitBtn('cr').textContent + ' | ' + unitBtn('sh').textContent);
+      // THE BOX OPENS ON A TENTH OF THE PURSE. It opened on a flat 100 for every purse, which is the
+      // other games' minimum bet and was 0.024% of the balance above: not a stake, a rounding error
+      // with a Buy button on it. Seeded once, off the purse the panel was told about
+      ok('the box opens on a tenth of the purse, cut to two figures',
+        $('mkAmt').value === String(sig2(Math.min(PURSE, market.MAX_BUY) / 10))
+        && Number($('mkAmt').value) === 41000,
+        $('mkAmt').value + ' | want ' + sig2(Math.min(PURSE, market.MAX_BUY) / 10));
       const typeAmt = (v) => { $('mkAmt').value = v; $('mkAmt').dispatchEvent({ type: 'input', preventDefault() {} }); advance(2); };
       // the box takes any whole number of credits, and the line says how much of a coin that is
       typeAmt('567');
@@ -400,7 +456,7 @@ module.exports = {
       advance(2);
       const buyT = show(400);
       ok('the buy: one message, naming the coin and the stake and no time at all',
-        ops(n0) === 'buy' && sentMk[n0].ticker === code && sentMk[n0].amount === 100
+        trades(n0) === 'buy' && sentMk[n0].ticker === code && sentMk[n0].amount === 100
         && sentMk[n0].nowMs === undefined, JSON.stringify(sentMk[n0]));
       ok('the purse paid exactly the stake the chips offered', ledgerBalance() === bal0 - 100,
         'paid ' + (bal0 - ledgerBalance()));
@@ -414,9 +470,19 @@ module.exports = {
       // and the percentage is NOT in that line. 29px under it the period row carries the market's
       // own change in the same colours and the same sign, so the two read as one figure and neither
       // says which it is. What is left is what the big number cannot say
-      ok('the biggest block is now the profit, with its stake and its age under it and no percentage',
-        !$('mkPlBox').hidden && txt('mkPlSub').indexOf(' · 100 in at ' + txt('mkSide')) > 0
-        && /held \d+s$/.test(txt('mkPlSub')) && txt('mkPlSub').indexOf('%') < 0, txt('mkPlSub'));
+      // HOW MUCH OF THE COIN IS MINE, ON ITS OWN LINE. It was the first clause of the muted line
+      // under the profit, which is where a holder's own question went to be read last, and that line
+      // then ran to 208.22px at a sidebar of 250, which is two lines of 11px muted text
+      ok('the holding is a line of its own, in this coin’s own code',
+        new RegExp('^[\\d.,]+ ' + code + '$').test(txt('mkPlQty'))
+        && $('mkPlQty').className === 'mk-plqty',
+        txt('mkPlQty'));
+      // and the line under it is the stake, the entry price and the age. No percentage: 29px below
+      // it the period row carries the market's own change in the same colours and the same sign
+      ok('and under it the stake, the price it went in at and the age, with no percentage',
+        !$('mkPlBox').hidden && /^100 in · [\d,]+\.\d\d avg · \d+s$/.test(txt('mkPlSub'))
+        && txt('mkPlSub').indexOf(txt('mkSide')) > 0 && txt('mkPlSub').indexOf('%') < 0,
+        txt('mkPlSub') + ' | corner ' + txt('mkSide'));
       // TWO places, not three. With one position open the corner's sum and the block are the same
       // number 44px apart and the same colour, so at this depth the corner carries the price instead
       // and the sum is read on the list of coins (below)
@@ -425,7 +491,7 @@ module.exports = {
         && $('mkPl').className === 'mk-pl ' + (dirOf(txt('mkPl')) ? 'mk-' + dirOf(txt('mkPl')) : ''),
         txt('mkPl') + ' | ' + figOf(code) + ' | ' + $('mkPl').className);
       ok('and the corner is this coin’s price, not the same profit a second time',
-        /^[\d,]+$/.test(txt('mkSide')) && txt('mkSide') !== txt('mkPl')
+        /^[\d,]+\.\d\d$/.test(txt('mkSide')) && txt('mkSide') !== txt('mkPl')
         && $('mkSide').className === 'bj-side',
         txt('mkSide') + ' | ' + txt('mkPl'));
       ok('the chart marks where this position was opened', marks().length === 1, marks().length + ' marks');
@@ -475,7 +541,7 @@ module.exports = {
       const sellT = show(400);
       const paid = ledgerBalance() - bal1;
       ok('the sale: one message naming the coin, and no time on it either',
-        ops(n1) === 'sell' && sentMk[n1].ticker === code && sentMk[n1].nowMs === undefined,
+        trades(n1) === 'sell' && sentMk[n1].ticker === code && sentMk[n1].nowMs === undefined,
         JSON.stringify(sentMk[n1]));
       ok('the chip says exactly what the purse was paid and what the trip made',
         chip() === 'bj-chip ' + (paid > 100 ? 'win' : paid < 100 ? 'lose' : '') + ' Sold '
@@ -494,15 +560,15 @@ module.exports = {
       // --- the keys: a trip can be made without the mouse
       let n2 = sentMk.length;
       doc.dispatchKey('b'); advance(2);
-      ok('B buys', ops(n2) === 'buy', ops(n2));
+      ok('B buys', trades(n2) === 'buy', ops(n2));
       advance(400);
       n2 = sentMk.length;
       doc.dispatchKey('s'); advance(2);
-      ok('S sells', ops(n2) === 'sell', ops(n2));
+      ok('S sells', trades(n2) === 'sell', ops(n2));
       advance(400);
       n2 = sentMk.length;
       doc.pressKey('Enter', { target: doc.body }); advance(2);
-      ok('Enter presses whichever of the two is offered', ops(n2) === 'buy', ops(n2));
+      ok('Enter presses whichever of the two is offered', trades(n2) === 'buy', ops(n2));
       advance(400);
       doc.dispatchKey('s'); advance(420);    // and out again, so what follows starts from no position
       ok('the keys closed the trip they opened: nothing is held and the buy is back',
@@ -513,7 +579,7 @@ module.exports = {
         activeName());
       n2 = sentMk.length;
       doc.dispatchKey('b'); doc.dispatchKey('s'); advance(20);
-      ok('guard: on the list of coins no key trades', ops(n2) === '', ops(n2));
+      ok('guard: on the list of coins no key trades', trades(n2) === '', ops(n2));
       // THE ARROW'S SECOND STEP. One arrow, one step: from a coin it closed the coin (above), and
       // from the list of coins it leaves the game the way every other screen's arrow does. That is
       // the whole of why this screen needs no back button of its own (the panel's `up`)
@@ -523,24 +589,25 @@ module.exports = {
         h.bodyTabs() + ' | ' + $('panelMarket').style.display);
       n2 = sentMk.length;
       doc.dispatchKey('b'); doc.dispatchKey('s'); doc.pressKey('Enter', { target: doc.body }); advance(20);
-      ok('guard: on the games list no market key trades', ops(n2) === '', ops(n2));
+      ok('guard: on the games list no market key trades', trades(n2) === '', ops(n2));
       h.rowFor('market').click(); advance(20);
       $('mkRow-' + code).click();
 
-      // --- the beat. The price moves on the minute, so the screen asks on the minute
+      // --- the beat. THE PRICE MOVES ON A 64TH OF A MINUTE, SO THE SCREEN ASKS EVERY SECOND.
+      // It used to wait for the minute it had drawn to be over, which was right while the price only
+      // moved on the minute and is a 59-second-stale screen now: a coin's printed price changes on
+      // 94% to 96% of the seconds it exists for, against 1.7% on the minute grid (market.js,
+      // section 1). One engine.view() is 0.21ms to 0.31ms, so this is 13ms to 19ms of a minute's CPU
       const n3 = sentMk.length;
-      advance(59000);
       advance(1000);
       advance(20);     // the ask leaves on the beat; this is the reply landing
-      ok('when the minute it drew is over, the market asks the host again, once',
+      ok('the market asks the host again every beat, not once a minute',
         sentMk.length === n3 + 1 && ops(n3) === 'open', ops(n3));
       ok('an unasked redraw takes no button away and reads nothing out again',
         !$('mkDeal').disabled && chip() === 'none', 'disabled ' + $('mkDeal').disabled + ' | ' + chip());
-      // Two minutes of beats and one more ask: a minute that has already been asked about is never
-      // asked about again, however often the beat comes round
-      advance(120000); advance(20);
-      ok('and after that, one ask a minute and never two for the same minute',
-        sentMk.length === n3 + 2 && ops(n3) === 'open,open', ops(n3));
+      advance(10000); advance(20);
+      ok('ten seconds is ten more asks, one a beat and never two',
+        sentMk.length === n3 + 11 && trades(n3) === '', sentMk.length - n3 + ' asks');
 
       openList();
       const n4 = sentMk.length;
@@ -603,8 +670,8 @@ module.exports = {
         && figOf(other) === signed(cast.coins[1].position.pl) && figOf(code) === 'none',
         rowFig() + ' | ' + figOf(other));
       ok('and the open coin’s heading still carries its price, not another coin’s profit',
-        txt('mkSide') === cred(cast.coins[0].ticks) && $('mkSide').className === 'bj-side',
-        txt('mkSide') + ' | ' + cred(cast.coins[0].ticks));
+        txt('mkSide') === credFix(cast.coins[0].ticks) && $('mkSide').className === 'bj-side',
+        txt('mkSide') + ' | ' + credFix(cast.coins[0].ticks));
       $('mkBack').click();
       ok('one step up, the corner is that sum',
         txt('mkSide') === signed(cast.heldPl), txt('mkSide') + ' | ' + signed(cast.heldPl));
@@ -621,6 +688,12 @@ module.exports = {
       chipOf('1M').click(); advance(20);
       ok('the thirty-day window is on screen before the push',
         bodies().length === SPANS['1M'].count && onChip() === '1M', bodies().length + ' candles');
+      // The beat's own asks are stopped for the length of this check. They carry the key as well
+      // (every open this panel sends does), so with them running a chart still on 1M would prove
+      // only that the panel asked again, and what is being measured is the HOST's own memory of the
+      // window: a push carries no key, and a reply built on the default would pull a screen off the
+      // thirty-day chart with nobody having pressed anything
+      h.intercept = (m) => m.op === 'open';
       const n5 = sentMk.length;
       const mkPosts = () => h.hostLog.filter((e) => e.type === 'mk').length;
       const posts0 = mkPosts();
@@ -633,9 +706,10 @@ module.exports = {
       // The push HAS to have happened, or this reads as a pass over a chart nobody redrew: one
       // market reply more than before, and not one of ours
       ok('a redraw nobody asked for comes back on the chosen window, not on the default',
-        mkPosts() === posts0 + 1 && sentMk.length === n5 && bodies().length === SPANS['1M'].count,
+        mkPosts() === posts0 + 1 && bodies().length === SPANS['1M'].count,
         bodies().length + ' candles | ' + (mkPosts() - posts0) + ' pushed | '
-        + (sentMk.length - n5) + ' asked');
+        + (sentMk.length - n5) + ' asked and swallowed');
+      h.intercept = null;
     }
 
     // The whole safety of this game is that the screen cannot name a minute (market.js, section 5),
