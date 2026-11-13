@@ -200,6 +200,9 @@ function activeProjectPaths() {
   const folders = vscode.workspace.workspaceFolders || [];
   return folders.map((f) => f.uri.fsPath).filter(Boolean);
 }
+// 'all' drops the workspace filter on the room and the crew's activity. Default stays
+// 'workspace': one window showing one project's agents is the point of the room.
+function agentScopeAll() { return vscode.workspace.getConfiguration('claudeUsage').get('agents.scope', 'workspace') === 'all'; }
 // What becomes a dash. POSIX turns '/' into one; Windows turns both '\\' and the drive colon
 // into one, so c:\\dev\\workspace lands as c--dev-workspace. Every replacement is 1:1 in length,
 // which the ancestor test below depends on.
@@ -445,7 +448,10 @@ function readTokens(wsPaths) {
       if (!last || msg.t > last.t) last = msg;
       if (inProj && (!lastProj || msg.t > lastProj.t)) lastProj = msg;
     }
-    for (const call of s.calls) agentCalls.push({ agent: call.agent, id: call.id, t: call.t, today: call.today, inProj, desc: call.desc });
+    // dir is the dash-encoded project folder this transcript sits in. Nothing on screen reads it;
+    // it is what logScope compares against the encoded workspace when the room comes up empty.
+    const dir = path.relative(claudePaths.projects, f.p).split(path.sep)[0];
+    for (const call of s.calls) agentCalls.push({ agent: call.agent, id: call.id, t: call.t, today: call.today, inProj, dir, desc: call.desc });
     for (const id in s.results) agentResults[id] = s.results[id];
     // Freshness cut: a spike is only worth warning about while it's recent — an
     // undismissed one from a previous day would otherwise sit in the banner forever.
@@ -467,7 +473,10 @@ function readTokens(wsPaths) {
 // visible long enough to actually see.
 // `dismissed` is {tool_use_id: callTime} for invocations the user swept off the list. See
 // agentDismissed. It only ever subtracts the still-waiting ones, never a run with a real result.
-function computeAgentActivity(calls, results, dismissed) {
+// scopeAll: the user turned workspace scoping off (claudeUsage.agents.scope). It is opt-in and
+// not a fallback, because guessing the scope is what put a stray neighbour in the room before;
+// the empty-room note below hands the choice to the person who can actually see both paths.
+function computeAgentActivity(calls, results, dismissed, scopeAll) {
   const NOW = Date.now();
   const swept = dismissed || {};
   // The panel is pushed every 10s, so a run visible for less than that can fall entirely
@@ -491,7 +500,7 @@ function computeAgentActivity(calls, results, dismissed) {
   for (const c of calls) {
     // calls reach back before midnight so live runs survive the day roll; the daily
     // totals must not, so anything stamped as not-today is skipped here only.
-    if (!c.inProj || c.today === false) continue;
+    if (!(c.inProj || scopeAll) || c.today === false) continue;
     const r = results[c.id];
     if (!r) continue;
     const s = stats[c.agent] || (stats[c.agent] = { runs: 0, tokens: 0, medMs: 0 });
@@ -509,7 +518,7 @@ function computeAgentActivity(calls, results, dismissed) {
   // started yesterday evening and is still going is exactly what the room should be showing.
   const instances = [];
   for (const c of calls) {
-    if (!c.inProj || !c.t) continue; // scope to this workspace
+    if (!(c.inProj || scopeAll) || !c.t) continue; // scope to this workspace
     const r = results[c.id];
     const sweptHere = swept[c.id] != null;
     if (r) {
@@ -527,7 +536,20 @@ function computeAgentActivity(calls, results, dismissed) {
       instances.push({ key: c.id, agent: c.agent, state: NOW - c.t > limit ? 'stuck' : 'active', since: c.t, desc: c.desc });
     }
   }
-  return { instances, stats };
+  // What the room may not keep to itself. Three different situations drew the same empty room:
+  // nobody was invoked, someone is still running, and someone ran but matched no open folder.
+  // The third one looks exactly like a quiet afternoon, so it went unexplained for seven weeks
+  // while the crew cards' XP (which is awarded with no scoping at all) kept rising beside it.
+  // verdict is decided HERE and nowhere else. The diagnostic log and the room's note are the two
+  // readers, and they are read together when someone is chasing exactly this fault: a log that
+  // says none-matched beside a room that says nothing would send the next investigation sideways.
+  const todays = calls.filter((c) => c.today !== false);
+  const matched = todays.filter((c) => c.inProj).length;
+  const scope = {
+    all: !!scopeAll, calls: todays.length, matched,
+    verdict: !todays.length ? 'no-runs' : matched ? 'matched' : 'none-matched'
+  };
+  return { instances, stats, scope };
 }
 
 // Drop swept ids whose invocation has aged out of the window anyway.
@@ -1174,29 +1196,50 @@ function xpSummary() {
   return out;
 }
 
-// Why a diagnostic and not another guess: the Windows report was "XP rises, nobody walks in",
-// which is exactly what a failed workspace match looks like, and the first fix (path encoding)
-// did not change it. One line per scan showing what the match actually saw beats theorising
-// about a machine this session cannot reach.
-let scopeLogged = false;
-function logScope(wsPaths, calls) {
-  if (!log || scopeLogged) return;
-  scopeLogged = true; // once per activation, not every 10s
-  let folders = [];
-  try { folders = fs.readdirSync(claudePaths.projects).slice(0, 8); } catch (e) { folders = ['<unreadable>']; }
-  const inProj = calls.filter((c) => c.inProj).length;
-  log.appendLine('[scope] platform=' + process.platform + ' sep=' + JSON.stringify(path.sep));
-  log.appendLine('[scope] workspace=' + JSON.stringify(wsPaths));
-  log.appendLine('[scope] encoded=' + JSON.stringify(wsPaths.map((w) => w.replace(PATH_SEP_RE, '-'))));
-  log.appendLine('[scope] projectsDir=' + claudePaths.projects + ' (from ' + claudedir.SOURCE_LABEL[claudePaths.source] + ')');
-  log.appendLine('[scope] folders=' + JSON.stringify(folders));
-  log.appendLine('[scope] calls=' + calls.length + ' inProj=' + inProj);
+// Why a diagnostic and not another guess: the report is "XP rises, nobody walks in", which is
+// exactly what a failed workspace match looks like, and a first fix (path encoding) did not
+// change it. Showing what the match actually saw beats theorising about a machine this session
+// cannot reach.
+//
+// Printing only the first scan was itself a defect. Activation almost always happens BEFORE the
+// day's first agent runs, so the single line printed read calls=0, and that cannot tell "never
+// invoked" from "invoked and dropped by the scope test", the only question this exists to
+// answer. It now prints whenever that verdict changes, which is a handful of lines a session.
+//
+// The verdict is computeAgentActivity's, not this function's. Counting it here as well is how a
+// log and a screen end up disagreeing on the night a day rolls over, and this log is the tool for
+// chasing exactly that fault.
+//
+// `from` is the other half. The readdir below lists what exists under projects/; `from` lists
+// the folders the invocations actually came from, and that is the exact string the encoded
+// workspace has to equal. Without it the log printed everything except the comparison.
+let scopeState = '', scopeWs = null;
+function logScope(wsPaths, calls, scope) {
+  if (!log || !scope) return;
+  const wsSig = wsPaths.join('|');
+  if (wsSig !== scopeWs) { scopeWs = wsSig; scopeState = ''; } // folders changed: say it all again
+  if (scope.verdict === scopeState) return; // quiet unless the verdict itself moved
+  const first = !scopeState;
+  scopeState = scope.verdict;
+  if (first) {
+    let folders = [];
+    try { folders = fs.readdirSync(claudePaths.projects); } catch (e) { folders = ['<unreadable>']; }
+    log.appendLine('[scope] platform=' + process.platform + ' sep=' + JSON.stringify(path.sep));
+    log.appendLine('[scope] workspace=' + JSON.stringify(wsPaths));
+    log.appendLine('[scope] encoded=' + JSON.stringify(wsPaths.map((w) => w.replace(PATH_SEP_RE, '-'))));
+    log.appendLine('[scope] projectsDir=' + claudePaths.projects + ' (from ' + claudedir.SOURCE_LABEL[claudePaths.source] + ')');
+    log.appendLine('[scope] folders(' + folders.length + ')=' + JSON.stringify(folders.slice(0, 40)));
+  }
+  const from = {};
+  for (const c of calls) { if (c.today !== false) from[c.dir || '?'] = (from[c.dir || '?'] || 0) + 1; }
+  log.appendLine('[scope] ' + scope.verdict + ' calls=' + scope.calls + ' inProj=' + scope.matched
+    + (scope.all ? ' scope=all' : '')
+    + ' from=' + JSON.stringify(Object.keys(from).map((d) => d + ' x' + from[d])));
 }
 
 function collect() {
   const wsPaths = activeProjectPaths();
   const tokens = readTokens(wsPaths);
-  logScope(wsPaths, tokens.agentCalls);
   // XP accrues the moment a completed run shows up in today's transcripts
   for (const c of tokens.agentCalls) {
     const r = tokens.agentResults[c.id];
@@ -1204,6 +1247,8 @@ function collect() {
   }
   saveXp();
   pruneAgentDismissed(Date.now()); // before the activity pass, so an expired sweep stops hiding on the same tick
+  const activity = computeAgentActivity(tokens.agentCalls, tokens.agentResults, agentDismissed, agentScopeAll());
+  logScope(wsPaths, tokens.agentCalls, activity.scope); // the log reads the pass's verdict, never its own
   // Context reflects THIS workspace's most recent turn; fall back to the global
   // latest only when no workspace transcript is found (e.g. no folder open).
   const cp = contextPct(tokens.lastProj || tokens.last);
@@ -1221,7 +1266,7 @@ function collect() {
     avg: (tokens.count > 0) ? (((tokens.today.input || 0) + (tokens.today.output || 0) + (tokens.today.cache_creation || 0) + (tokens.today.cache_read || 0)) / tokens.count) : 0,
     peak: tokens.peak,
     agents: readAgents().map((a) => ({ name: a.name, model: a.model, description: a.description })),
-    agentActivity: computeAgentActivity(tokens.agentCalls, tokens.agentResults, agentDismissed),
+    agentActivity: activity,
     nicknames: agentNicknames,
     roles: agentRoles,
     appearance: agentAppearance,
@@ -1346,6 +1391,14 @@ class UsageViewProvider {
         if (m.appearance) agentAppearance[m.name] = m.appearance; else delete agentAppearance[m.name];
         if (extContext) extContext.globalState.update('agentAppearanceV1', agentAppearance);
         push();
+      }
+      // Global, not workspace: the person clicking this has just been told their launch path and
+      // their open folder do not line up, and that is a property of how they work, not of one repo.
+      else if (m.type === 'setAgentScope') {
+        // no push on success: onDidChangeConfiguration already does one, and it covers the person
+        // who edits settings.json by hand too. Pushing from both ran the whole collect() twice
+        vscode.workspace.getConfiguration('claudeUsage').update('agents.scope', m.all ? 'all' : 'workspace', vscode.ConfigurationTarget.Global)
+          .then(undefined, (e) => logLine('[scope] could not write claudeUsage.agents.scope: ' + (e && e.message)));
       }
       else if (m.type === 'setModel' && m.name && m.model) {
         const a = readAgents().find((x) => x.name === m.name);
@@ -1716,6 +1769,8 @@ function activate(context) {
     // Claude Code extension's environment variables, which is where someone running a second
     // account from a VS Code profile usually sets it
     if (e.affectsConfiguration('claudeUsage.configDir') || e.affectsConfiguration('claudeCode.environmentVariables')) repointConfigDir();
+    // the room's population changes with this one, so redraw now rather than on the next 10s tick
+    if (e.affectsConfiguration('claudeUsage.agents.scope')) push();
     // someone turned sharing on or off in the settings themselves: that is the choice now, and it
     // is a choice about the account signed in here, which is the only group this PC could join
     if (e.affectsConfiguration('claudeUsage.team.share')) {
@@ -1828,6 +1883,8 @@ if (process.env.CUC_TEST) module.exports._test = {
   // the swept-run set and its expiry, so a test can age one out without waiting four hours
   dismissedRuns: () => agentDismissed,
   pruneAgentDismissed,
+  // the scope log speaks once per verdict, so a test has to be able to start it listening again
+  resetScopeLog: () => { scopeState = ''; scopeWs = null; },
   // the names stay as they were: every seed hook now goes through the game's own handler
   setBjSeeds: (fn) => { gameHandlers.bj.setSeeds(fn); },
   setHlSeeds: (fn) => { gameHandlers.hl.setSeeds(fn); },

@@ -807,6 +807,102 @@ test('a sweep expires exactly when the row it hides would leave the list anyway'
   assert.deepEqual(Object.keys(gs.data.agentDismissedV1), ['toolu_fresh'], 'and storage was rewritten');
 });
 
+// --- Agents tab: what an empty room is allowed to leave unsaid --------------------------------
+// The reported fault was "XP rises, nobody walks in", and it held for seven weeks because the
+// screen could not tell three situations apart: nobody invoked, still running, and ran but matched
+// no open folder. XP is awarded over every call with no scoping; the room is scoped. This pins the
+// counts the room needs to say which one it is, and the opt-out for the people it is wrong for.
+function lastPush() { const d = posted.filter((m) => m.type === 'data').pop(); return d && d.data; }
+function withWorkspace(fsPath, scope, fn) {
+  const ws = vscode.workspace.workspaceFolders, cfg = vscode.workspace.getConfiguration;
+  vscode.workspace.workspaceFolders = [{ uri: { fsPath } }];
+  if (scope) vscode.workspace.getConfiguration = () => ({ get: (k, d) => (k === 'agents.scope' ? scope : d), update: () => Promise.resolve() });
+  try { return fn(); } finally { vscode.workspace.workspaceFolders = ws; vscode.workspace.getConfiguration = cfg; }
+}
+
+test('a run from a folder this window has not opened is counted but not shown', () => {
+  const NOW = Date.now();
+  fs.mkdirSync(AGENTS_PROJ, { recursive: true });
+  fs.writeFileSync(path.join(AGENTS_PROJ, 'scope.jsonl'),
+    JSON.stringify(agentCall('toolu_scope', 'code-reviewer', NOW - 5 * MIN, 'review')) + '\n');
+  // the window is open on /elsewhere, the transcript sits under projects/ws: the encoded names
+  // cannot line up, which is the whole failure mode
+  withWorkspace('/elsewhere', null, () => { onMessage({ type: 'ready' }); });
+  const sc = lastPush().agentActivity.scope;
+  assert.equal(instance('toolu_scope'), undefined, 'nobody walks in');
+  assert.equal(sc.matched, 0, 'and nothing matched this window');
+  assert.ok(sc.calls >= 1, 'but the room is told runs happened, which is what it must say out loud');
+  assert.equal(sc.all, false);
+});
+
+test('agents.scope=all puts that same run in the room, and says so', () => {
+  const NOW = Date.now();
+  // a file of its own: the transcript cache reads appends, so rewriting one in place would
+  // hand the parser a partial line rather than a new record
+  fs.writeFileSync(path.join(AGENTS_PROJ, 'scope2.jsonl'),
+    JSON.stringify(agentCall('toolu_scope2', 'code-reviewer', NOW - 5 * MIN, 'review again')) + '\n');
+  withWorkspace('/elsewhere', 'all', () => { onMessage({ type: 'ready' }); });
+  const sc = lastPush().agentActivity.scope;
+  assert.equal(instance('toolu_scope2').state, 'active', 'the run is in the room now');
+  assert.equal(sc.all, true, 'and the note can tell the user that is why');
+  assert.equal(sc.matched, 0, 'matched still reports the truth about the folder, not the setting');
+});
+
+test('the counts the room quotes are today\'s, not the four hours of yesterday the list keeps', () => {
+  // calls are collected from AGENT_RUN_WINDOW_MS BEFORE midnight so a run started last night and
+  // still going can walk in. A sentence that says "today" may not count those, or the room reads
+  // "3 runs today" at 00:05 on a day nothing has happened in yet.
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  let before;
+  withWorkspace('/elsewhere', null, () => { onMessage({ type: 'ready' }); });
+  before = lastPush().agentActivity.scope.calls;
+  fs.writeFileSync(path.join(AGENTS_PROJ, 'midnight.jsonl'), [
+    agentCall('toolu_lastnight', 'code-reviewer', midnight.getTime() - 60 * MIN, 'started last night'),
+    agentCall('toolu_today', 'code-reviewer', Date.now() - 3 * MIN, 'started today')
+  ].map((r) => JSON.stringify(r)).join('\n') + '\n');
+  withWorkspace('/elsewhere', null, () => { onMessage({ type: 'ready' }); });
+  const sc = lastPush().agentActivity.scope;
+  assert.equal(sc.calls, before + 1, 'only the one from today is counted');
+  assert.ok(instance('toolu_lastnight') === undefined, 'and neither of them is in the room, being out of scope');
+});
+
+test('the scope log prints the folder the calls came from, not only the ones on disk', () => {
+  logged.length = 0;
+  ext._test.resetScopeLog();
+  const NOW = Date.now();
+  fs.writeFileSync(path.join(AGENTS_PROJ, 'scope3.jsonl'),
+    JSON.stringify(agentCall('toolu_scope3', 'code-reviewer', NOW - 5 * MIN, 'review once more')) + '\n');
+  withWorkspace('/elsewhere', null, () => { onMessage({ type: 'ready' }); });
+  const lines = logged.filter((l) => l.indexOf('[scope]') === 0);
+  const verdict = lines.filter((l) => l.indexOf('[scope] none-matched') === 0).pop();
+  assert.ok(verdict, 'the verdict line is printed: ' + JSON.stringify(lines));
+  // encoded vs from is the comparison the report needed and the old log never printed
+  assert.ok(lines.some((l) => l.indexOf('encoded=["-elsewhere"]') >= 0), 'the encoded workspace: ' + JSON.stringify(lines));
+  assert.ok(verdict.indexOf('from=["ws x') >= 0, 'and the folder the calls came from: ' + verdict);
+});
+
+test('the scope log is quiet while the verdict holds, and speaks again when it changes', () => {
+  logged.length = 0;
+  ext._test.resetScopeLog();
+  // a transcript that WILL match /ws once the window is opened there. Claude Code encodes the
+  // leading separator too, so the folder for /ws is "-ws"
+  const match = path.join(HOME, '.claude', 'projects', '-ws');
+  fs.mkdirSync(match, { recursive: true });
+  fs.writeFileSync(path.join(match, 'here.jsonl'),
+    JSON.stringify(agentCall('toolu_here', 'test-runner', Date.now() - 4 * MIN, 'run the suite')) + '\n');
+  withWorkspace('/elsewhere', null, () => {
+    onMessage({ type: 'ready' });
+    const after1 = logged.filter((l) => l.indexOf('[scope]') === 0).length;
+    onMessage({ type: 'ready' });
+    assert.equal(logged.filter((l) => l.indexOf('[scope]') === 0).length, after1, 'an unchanged verdict says nothing');
+    // the same window, now opened on the folder the transcript belongs to
+    vscode.workspace.workspaceFolders = [{ uri: { fsPath: '/ws' } }];
+    onMessage({ type: 'ready' });
+    const lines = logged.filter((l) => l.indexOf('[scope]') === 0);
+    assert.ok(lines.some((l) => l.indexOf('[scope] matched') === 0), 'the change is printed: ' + JSON.stringify(lines));
+  });
+});
+
 // A test that throws mid-round leaves that round live, and every test after it then fails on
 // 'a round is already in progress'. Closing what is open keeps one fault from being reported as four
 function closeRounds() {

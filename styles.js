@@ -11,7 +11,11 @@ module.exports = `
        chrome and five in the market's own CSS). Ember measures 6.8:1 on the dark --inner and 2.38:1
        on the light one, so the light theme lowers it (below) instead of each place deciding for
        itself */
-    --focus:#e8895a;}
+    --focus:#e8895a;
+    /* the one surface that does not follow the theme: the room note's plate is rgba(0,0,0,.82)
+       in light and dark alike, so the lowered light --focus would sit at 3.25:1 on it while the
+       ember sits at 5.5:1. A second token rather than a literal, for the same reason as above */
+    --focus-plate:#e8895a;}
   body.vscode-light{--card:#ffffff;--inner:#f6f6f7;--track:#e4e4e7;--text:#1d1d1f;--muted:#78787f;
     --border:#e7e7ea;--iborder:#ededf0;--ringtrack:#e2e2e6;--bubble:#ffffff;--bubblebd:rgba(0,0,0,.14);
     /* 4.05:1 on --inner (#f6f6f7) and 3.44:1 on --track, where ember was 2.38:1. Same role, not a
@@ -201,6 +205,19 @@ module.exports = `
   .ws-hud-sep{opacity:.45;font-weight:400;}
   .ws-hud-delta{position:absolute;top:26px;left:9px;z-index:8;font-size:11px;font-weight:800;color:#e8895a;letter-spacing:.2px;opacity:0;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.7);}
   .ws-hud-delta.show{animation:flash 1.9s ease forwards;}
+  /* sits over a photographic background, so it carries its own opaque plate rather than
+     relying on a text shadow: at 9.5px a shadow is not contrast. Centred on the floor so it
+     reads as the room speaking, not as another HUD badge in the corner. */
+  /* wraps rather than nowrap: at 232px (body.narrow, a width this panel supports) a nowrap row
+     pushed the button off the plate and out of .ws-room's overflow, so the one way out of the
+     state this note describes was the part that got clipped. It only shows over an empty room,
+     so the extra line height covers nothing. z-index clears the walkers (73-80), which stand on
+     the same centre spot when the scope is widened. */
+  .ws-note{position:absolute;left:50%;bottom:7px;transform:translateX(-50%);z-index:90;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;text-align:center;gap:5px 7px;max-width:calc(100% - 14px);font-size:9.5px;font-weight:600;letter-spacing:.1px;color:#e9e4de;background:rgba(0,0,0,.82);padding:4px 9px;border-radius:9px;box-shadow:0 1px 6px rgba(0,0,0,.55);}
+  .ws-note button{flex:none;border:0;border-radius:6px;padding:2px 7px;font:inherit;font-weight:700;color:#1a1715;background:#e8895a;cursor:pointer;}
+  .ws-note button:hover{background:#f0a078;}
+  .ws-note button:focus-visible{outline:2px solid var(--focus-plate);outline-offset:1px;}
+  body.narrow .ws-note{font-size:8px;padding:3px 7px;gap:5px;bottom:5px;}
   .walker{position:absolute;transform:translate(-50%,-100%);transition:left 1.6s ease-in-out,top 1.6s ease-in-out,opacity .45s ease;pointer-events:none;}
   .wk-sprite{image-rendering:pixelated;}
   .wk-role,.wk-name{position:absolute;left:50%;transform:translateX(-50%);font-size:8.5px;font-weight:700;white-space:nowrap;letter-spacing:.2px;padding:1px 5px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.5);}

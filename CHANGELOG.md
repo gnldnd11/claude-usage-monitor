@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.31.3: An empty room says why it is empty
+
+- **Three different situations drew the same empty room.** Nobody was invoked, someone is still running, and someone ran but matched no folder open in this window. The third is a fault and it looked exactly like a quiet afternoon, which is how a report of it sat unanswered for seven weeks. The room now says `3 runs today, none from this folder` when that is what happened.
+- **The crew cards and the room read different sources, and nothing said so.** XP, levels and token counts are awarded for every run found on the machine, with no filtering at all; only the room is filtered to the folders this window has open. So the numbers rising while nobody walks in is not a contradiction, it is those two rules disagreeing, and now the room is the one that explains it.
+- **`claudeUsage.agents.scope` turns the filter off.** A run is matched to this window by the folder Claude Code was launched in, so a symlinked path, a second checkout or a container never matches and the room stays empty for good. The note carries the switch, and the switch comes back. It is a choice rather than a fallback, because a scope that widens on its own puts the neighbouring project's agents in your room.
+- **The diagnostic log could not answer the question it was added for.** It printed one scan, at activation, which is almost always before the day's first agent runs: it read `calls=0`, and that cannot tell "never invoked" from "invoked and dropped by the filter". It now prints when that verdict changes, and prints the folders the invocations actually came from next to the encoded workspace, which is the comparison that settles it. Listing what was on disk was printing everything except the answer.
+- The verdict is computed in one place and read by both the log and the room, so the tool for chasing this fault cannot disagree with the screen it is chasing it on.
+- An accessor and a local in the webview held the filtered stats and nothing read either. Removed rather than wired up: every number on that tab comes from the unfiltered store, and the dead code made it look otherwise.
+
 ## 1.31.2: The back arrow, and a verdict that stopped blinking
 
 - **Every game's back arrow was an empty button.** The chevron that draws it was read from the asset payload and the host never put it there, so on all five games the arrow was 6px of padding: clickable by accident, findable by nobody. Esc and the games tab hid how long that had been true.

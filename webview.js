@@ -158,9 +158,12 @@
     pool.innerHTML = html;
     if (selectedAgent) { var sc = pool.querySelector('.cr-card[data-agent="' + selectedAgent + '"]'); if (sc) sc.classList.add('selected'); } // survive rebuilds
   }
-  // activity = { instances: [{key, agent, state, since, desc, tokens?, durMs?}], stats: {name: {runs, tokens, medMs}} }
+  // activity = { instances: [{key, agent, state, since, desc, tokens?, durMs?}],
+  //              stats: {name: {runs, tokens, medMs}}, scope: {all, calls, matched} }
+  // stats is host-side only (it sets the "stuck" threshold). The webview had an accessor and a
+  // local for it that nothing read, which made the screen look scoped when every number on it
+  // comes from the unscoped XP store. Removed rather than wired up: see renderScopeNote.
   function actInstances(activity) { return (activity && activity.instances) || []; }
-  function actStats(activity) { return (activity && activity.stats) || {}; }
   var STATE_RANK = { stuck: 3, active: 2, done: 1 };
   // Per-agent rollup of live instances: worst state wins, count concurrent runs.
   function activityByAgent(activity) {
@@ -191,7 +194,6 @@
   function applyAgentStates(activity) {
     var pool = el('pool'); if (!pool) return;
     var by = activityByAgent(activity);
-    var stats = actStats(activity);
     var anyActive = false;
     var cards = pool.querySelectorAll('.cr-card');
     for (var i = 0; i < cards.length; i++) {
@@ -444,7 +446,13 @@
     clearTimeout(wk._t);
     wk._t = setTimeout(function () {
       wk.root.style.opacity = '0';
-      setTimeout(function () { if (wk.root.parentNode) wk.root.parentNode.removeChild(wk.root); delete walkers[key]; }, 450);
+      // the note waits for the room to be genuinely empty, and the next data push can be 10s
+      // away, so the walker that empties it says so on its way out
+      setTimeout(function () {
+        if (wk.root.parentNode) wk.root.parentNode.removeChild(wk.root);
+        delete walkers[key];
+        renderScopeNote(lastData && lastData.agentActivity);
+      }, 450);
     }, TRAVEL_MS);
   }
   function updateRoom(activity) {
@@ -473,7 +481,35 @@
       var _sd = SPOT_DESK(), _rk = (vscode.getState() || {}).map || 'cave';
       goTo(wk, _sd.x + off, _sd.y, _rk + ':desk' + off.toFixed(2), (function (w) { return function () { w.mode = 'working'; }; })(wk));
     }
+    renderScopeNote(activity); // after the walkers, so "empty" means empty
   }
+  // An empty room used to mean three different things and say none of them: nobody was invoked,
+  // someone is still running, or someone ran and matched no folder open in this window. Only the
+  // third is a fault, and it is the one that looks exactly like a quiet afternoon, which is why a
+  // reporter sat with it for seven weeks while the crew cards' XP (awarded with no scoping at all)
+  // rose beside it. The verdict is the host's: this reads scope.verdict rather than re-deriving it
+  // from the counts, so the room and the diagnostic log can never answer differently.
+  function renderScopeNote(activity) {
+    var box = el('wsNote'); if (!box) return;
+    var sc = (activity && activity.scope) || null;
+    var empty = !Object.keys(walkers).length;
+    var msg = '', act = '', all = false;
+    if (sc && sc.all) { msg = 'Showing runs from every folder.'; act = 'This folder only'; }
+    else if (sc && empty && sc.verdict === 'none-matched') {
+      msg = sc.calls + (sc.calls > 1 ? ' runs today, none' : ' run today, none') + ' from this folder.';
+      act = 'Show all folders'; all = true;
+    }
+    box.hidden = !msg;
+    if (!msg) { box.innerHTML = ''; return; } // not just hidden: a stale sentence must not come back on a later show
+    box.innerHTML = '<span>' + esc(msg) + '</span><button type="button" data-all="' + (all ? '1' : '0') + '">' + esc(act) + '</button>';
+  }
+  (function () {
+    var box = el('wsNote'); if (!box) return;
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
+      vscode.postMessage({ type: 'setAgentScope', all: b.getAttribute('data-all') === '1' });
+    });
+  })();
   // steady sprite-frame loop (idle slow, walking faster), independent of data pushes
   setInterval(function () {
     for (var name in walkers) {

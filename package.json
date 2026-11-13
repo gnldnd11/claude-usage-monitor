@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "See which Claude Code subagents are running, and spot the one that's stuck. Your agents as pixel characters in the sidebar, plus live session, weekly and context usage. Unofficial, read-only.",
-  "version": "1.31.2",
+  "version": "1.31.3",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
@@ -132,18 +132,18 @@
           "default": [],
           "markdownDescription": "Panel dashboard elements to hide. Toggle these from the panel's settings gear."
         },
-      "claudeUsage.team.share": {
+        "claudeUsage.team.share": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "Share this PC's weekly usage with the other PCs signed in to the same Claude account (off until you agree, and agreed to per account: this turns the account you are signed in to on or off, and another account stays off until you say so there). They see each other side by side in Weekly > Details. Sent to the extension author's server every 5 minutes: the name below, the weekly window, the account's weekly %, the plan type (Max 20x, Max 5x or Pro), and this PC's weekly usage (tokens and an API-price equivalent, per model). Never prompts, file or project names, or session titles. The account is identified only by a hash of its id."
         },
-      "claudeUsage.team.name": {
+        "claudeUsage.team.name": {
           "type": "string",
           "default": "",
           "maxLength": 24,
           "markdownDescription": "Your name as the other PCs on this account see it. Falls back to this computer's name."
         },
-      "claudeUsage.team.code": {
+        "claudeUsage.team.code": {
           "type": "string",
           "default": "",
           "deprecationMessage": "No longer used: PCs are grouped by the Claude account they are signed in to. A code set here turns sharing on once and is then cleared.",
@@ -154,6 +154,20 @@
           "default": "",
           "scope": "application",
           "markdownDescription": "Claude Code's configuration directory. Empty reads `~/.claude`, which is where Claude Code keeps it unless `CLAUDE_CONFIG_DIR` says otherwise. Set this when you run a second account from a moved directory and the panel shows the other one. `CLAUDE_CONFIG_DIR` is read too, first as the Claude Code extension's `claudeCode.environmentVariables` and then from the environment, so this is only needed when both of those are wrong or unset. A leading `~` is your home directory; a path that does not exist is passed over, with the reason in the Claude Usage output."
+        },
+        "claudeUsage.agents.scope": {
+          "type": "string",
+          "scope": "application",
+          "enum": [
+            "workspace",
+            "all"
+          ],
+          "enumDescriptions": [
+            "Only runs launched from a folder open in this window",
+            "Every run on this machine, whatever folder it came from"
+          ],
+          "default": "workspace",
+          "markdownDescription": "Which agent runs walk into the room and light up a crew card. A run is matched to this window by the folder Claude Code was launched in, so if you launch `claude` from a path that is not your open folder (a symlink, a second checkout, a container), nothing matches and the room stays empty while XP keeps rising. Set `all` when that is your setup. The room's own note says when this is what you are hitting."
         },
         "claudeUsage.burnRate.enabled": {
           "type": "boolean",

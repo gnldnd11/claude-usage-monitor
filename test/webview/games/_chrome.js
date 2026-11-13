@@ -177,6 +177,13 @@ module.exports = {
       !/focus-visible[^{]*\{[^}]*#e8895a/.test(css) && (css.match(/outline:2px solid var\(--focus\)/g) || []).length >= 9,
       (css.match(/outline:2px solid var\(--focus\)/g) || []).length + ' rings on the token');
     ok('and the light theme lowers that one token', /body\.vscode-light\{[^}]*--focus:#c25a34/.test(css));
+    // the single exception, and it has to stay single: a ring on a surface that does not follow
+    // the theme cannot use a token the theme lowers. It is still a token, declared once
+    ok('a ring on a theme-independent plate reads its own token, not a literal',
+      /\.ws-note button:focus-visible\{outline:2px solid var\(--focus-plate\)/.test(css)
+      && (css.match(/--focus-plate:/g) || []).length === 1
+      && (css.match(/var\(--focus-plate\)/g) || []).length === 1,
+      (css.match(/var\(--focus-plate\)/g) || []).length + ' uses');
     } else if (MODE === 'compact') {
     // Usage compact must survive the selector swap: tab-usage is on the body whenever Usage shows
     ok('initial load (stored tab usage, compact): body has tab-usage + compact', bodyTabs() === 'tab-usage compact', bodyTabs());

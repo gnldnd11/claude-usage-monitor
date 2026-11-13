@@ -149,6 +149,11 @@ function renderHtml(vars) {
       <div class="ws-hud"><span id="wsHudS">5h –</span><span class="ws-hud-sep">·</span><span id="wsHudW">7d –</span></div>
       <div class="ws-hud-delta" id="wsHudDelta"></div>
       <div class="ws-stage" id="wsStage"></div>
+      <!-- Why an empty room is not allowed to be the whole message: three different situations
+           drew the same nothing (nobody invoked, still running, ran but matched no open folder),
+           and the third one is indistinguishable from a quiet afternoon. Built by webview.js
+           (renderScopeNote) and hidden whenever there is nothing to say. -->
+      <div class="ws-note" id="wsNote" hidden></div>
     </div>
     <!-- Calls sitting on "?" with nothing written back. Outside the Crew fold on purpose: it is
          the one thing on this tab a user may need to act on, and the fold would hide it. Built by

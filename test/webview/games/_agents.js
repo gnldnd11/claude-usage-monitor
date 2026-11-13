@@ -89,6 +89,47 @@ module.exports = {
     clears()[0].click(); advance(5);
     ok('clearing the last one hides the block again', box().hidden && clears().length === 0);
     ok('and the healthy run was never touched', h.sent('dismissAgentRun').length === 2 && h.sent('dismissAgentRun').every((m) => m.key !== 'toolu_live'));
+    // 6. the room's own note. An empty room drew the same nothing for three different situations,
+    //    and the one that is a fault (runs happened, none matched a folder open here) was the one
+    //    that looked most like a quiet afternoon. The note exists to separate them, so what is
+    //    pinned is which of the three it speaks for, not how it looks.
+    // verdict is the host's word, exactly as computeAgentActivity sends it. The note reads that
+    // and never re-derives it from the counts, so the log and the screen cannot disagree
+    const pushScope = (scope, list) => {
+      scope.verdict = !scope.calls ? 'no-runs' : scope.matched ? 'matched' : 'none-matched';
+      toWebview({ type: 'data', data: Object.assign({}, base, { agentActivity: { instances: list || [], stats: {}, scope } }) });
+      advance(20);
+    };
+    const note = () => $('wsNote');
+    advance(3000); // let the last walkers finish leaving: "empty" has to mean empty
+    pushScope({ all: false, calls: 0, matched: 0 });
+    ok('nobody was invoked: the room says nothing', note().hidden, note().textContent);
+    pushScope({ all: false, calls: 3, matched: 3 }, [LIVE]);
+    ok('runs that matched need no note either', note().hidden, note().textContent);
+    // the live run above has to finish walking out first: a note that appeared over someone still
+    // on screen would be saying the room is empty while it plainly is not
+    pushScope({ all: false, calls: 3, matched: 0 });
+    ok('the note holds while the last walker is still leaving', note().hidden, note().textContent);
+    advance(3000);
+    pushScope({ all: false, calls: 3, matched: 0 });
+    ok('runs happened and none matched: the room says so', !note().hidden, 'still hidden');
+    ok('and it says how many, in plain words', /3 runs today, none from this folder/.test(note().textContent), note().textContent);
+    ok('no em dash in it', note().textContent.indexOf('—') < 0, note().textContent);
+    const sbtn = note().querySelector('button');
+    ok('the way out is on the note itself', sbtn && sbtn.textContent === 'Show all folders', sbtn && sbtn.textContent);
+    sbtn.click(); advance(5);
+    ok('clicking it asks the host to widen the scope', h.sent('setAgentScope').length === 1 && h.sent('setAgentScope')[0].all === true, JSON.stringify(h.sent('setAgentScope')));
+    // the host owns the setting, so the note only changes when the answer comes back
+    pushScope({ all: true, calls: 3, matched: 0 }, [LIVE]);
+    ok('with the scope widened the note says that is why', /every folder/.test(note().textContent) && !note().hidden, note().textContent);
+    const rbtn = note().querySelector('button');
+    ok('and the way back is on it too', rbtn.textContent === 'This folder only', rbtn.textContent);
+    rbtn.click(); advance(5);
+    ok('which asks for the narrow scope again', h.sent('setAgentScope').length === 2 && h.sent('setAgentScope')[1].all === false, JSON.stringify(h.sent('setAgentScope')));
+    // an older host sends no scope at all: the note must not invent one
+    toWebview({ type: 'data', data: Object.assign({}, base, { agentActivity: { instances: [], stats: {} } }) }); advance(20);
+    ok('a host that sends no scope leaves the room quiet', note().hidden, note().textContent);
+
     ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e.message).join('; '));
   }
 };
