@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.30.0: One account's week, the same figures on every PC
+
+- **The same PC's week read 27% on one screen and 19% on another.** One Claude account, one weekly window, two PCs that share it, and the table of PCs disagreed with itself depending on which of them you were looking at. The figure a person quoted to the other person was not the figure the other person could see.
+- **The cause was that the split was computed from the percent-per-$ of whichever PC was doing the looking.** Each row was that PC's rate times that row's spend, capped so the rows could not pass the account's weekly %. A PC whose estimate landed under the cap drew small rows; a PC whose estimate hit the cap drew the full account total. Both were drawing the same two PCs' identical reports.
+- **A row is now the account's weekly % divided by what that PC spent, at API-equivalent prices.** That needs no rate, it adds up to the account total exactly, and it comes out the same on every PC on the account. The PCs in the reported case read 27.1% and 13.9% from either screen.
+- **The row named `Other PCs` is gone.** On an account with two PCs, both of them sharing and both of them in the table, the screen was adding a third row at 13% and calling it other PCs. There were none. That figure was what one PC's rate estimate had left of the account total, and the rows now divide the whole total, so what nobody there reports (claude.ai on the web, the apps, a PC with sharing off) is inside them. The sheet says so in a line under the table instead of drawing a machine that does not exist.
+- **`Measured on this PC: about $27 per 1%` no longer says measured.** Percent-per-$ is not a constant to be pinned down: checked against a week of an account's hourly snapshots, the rate over individual intervals ran from 0.027 to 0.083 percent per dollar, threefold, because the weekly limit does not come off in proportion to an API-price equivalent. It reads as an estimate, with the swing named, and where a team split is on screen no rate is quoted at all, because none goes into it.
+- The rate is still how a PC that has no table, or has not yet read the account's weekly %, turns its own spend into a percentage. What changed is that it no longer decides how the account's % is divided between PCs, and the reason is written where it is estimated: between two readings the account's % moves for everything on the account while only this PC's own spend is known here, so the ratio is this PC's rate plus whatever the others were doing.
+- Reported from an account used from two PCs, by the person who could see both screens.
+
 ## 1.29.0: The second account's own folder
 
 - **Claude Code's configuration directory is resolved, not assumed.** It was `~/.claude` in one line of `extension.js` and nothing could move it. It is now, in order: the new `claudeUsage.configDir` setting, `CLAUDE_CONFIG_DIR` as the Claude Code extension holds it in `claudeCode.environmentVariables`, `CLAUDE_CONFIG_DIR` in the environment, and then `~/.claude`.

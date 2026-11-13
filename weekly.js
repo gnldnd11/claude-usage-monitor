@@ -265,6 +265,19 @@ function init(opts) {
 
 function sameWindow(a, b) { return Math.abs((a.r || 0) - (b.r || 0)) < 3600; }
 
+// An upper bound on this PC's percent-per-$, and only that.
+//
+// What it is not: on an account two PCs share, dp is the whole account's % moving and dc is this
+// PC's spend alone, so the other PC's work lands in dp and never in dc. The ratio is then not this
+// PC's rate but this PC's rate plus whatever the other PC was doing, divided by this PC's spend.
+// Taking the 25th percentile only finds the quietest interval; it does not remove the other PC.
+// Measured on a two-PC account on 2026-11-13 it came out at 0.03195 %/$ while account% / team $ was
+// 0.04624, so it ran low, and in an interval where the other PC was busy it runs high. team.js
+// therefore does not use it to divide the account's % between PCs; it divides by spend instead.
+// This value is for the PC that cannot see a team: its own week against the account total, labelled
+// as an estimate on screen. It is also not a constant to be pinned down by more readings. Pooled
+// over a week of hourly snapshots the interval rates ran 0.027 to 0.083 %/$, because the weekly
+// limit is not spent in proportion to an API-price equivalent
 function estimateRate(list) {
   const ratios = [];
   for (let i = 0; i < list.length; i++) {

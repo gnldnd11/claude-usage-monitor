@@ -11,29 +11,56 @@ const team = require(path.join(__dirname, '..', 'team.js'));
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 const near = (a, b) => Math.abs(a - b) < 1e-9;
+const round1 = (x) => Math.round(x * 10) / 10;
 
 const summary = (acct, costs) => ({
   window: '1', account_pct: acct,
   pcs: costs.map((c, i) => ({ pc_id: 'pc' + i, name: 'P' + i, cost: c, tokens: c * 1e6, updated_at: 0, stale: false }))
 });
 
-test('reference rate fits under the total: the rest is unrecorded use', () => {
-  // 0.05 %/$ : 140$ -> 7%, 35$ -> 1.75%, account 20% -> 11.25% nobody recorded
-  const s = team.split(summary(20, [140, 35]), 'pc1', 0.05, null);
+// The 1.30.0 report: the same account, the same window and the same two PCs read 27% / 14% on one
+// of them and 19% / 9.6% on the other, because the split was computed from the percent-per-$ the PC
+// doing the looking had measured. Whatever any PC measures, the rows have to come out the same
+test('the rows do not depend on which PC computed them', () => {
+  const s = summary(41, [586.21, 300.56]);
+  const base = team.split(s, 'pc0', 0.03195, 41).rows.map((p) => p.pct);   // one PC's measurement
+  const others = [
+    team.split(s, 'pc0', 0.04624, 41),   // the other's, which happened to equal account% / team $
+    team.split(s, 'pc0', 0.0364, 41),    // the Max 20x reference rate
+    team.split(s, 'pc0', 999, 41),       // absurd
+    team.split(s, 'pc0', null, 41)       // nothing measured yet
+  ];
+  for (const o of others) assert.deepEqual(o.rows.map((p) => p.pct), base);
+  // and looking from the other PC only moves which row is marked `me`
+  assert.deepEqual(team.split(s, 'pc1', 0.03195, 41).rows.map((p) => p.pct), base);
+});
+
+test('the account total is divided by what each PC spent', () => {
+  // The reported week: $586.21 + $300.56 of the account's 41%
+  const s = team.split(summary(41, [586.21, 300.56]), 'pc1', 0.03195, 41);
+  assert.equal(round1(s.rows[0].pct), 27.1);
+  assert.equal(round1(s.rows[1].pct), 13.9);
+  assert.equal(s.rows[1].me, true);
+  assert.ok(near(s.rows[0].pct + s.rows[1].pct, 41));  // the whole account total, nothing left over
+  assert.equal(s.byAccount, true);
+  // nothing for a screen to draw as a PC that is not on the account
+  assert.ok(!('unrecorded' in s));
+});
+
+test('without a reading of the account %, the rows are this PC rate on each PC spend', () => {
+  // 0.05 %/$ : 140$ -> 7%, 35$ -> 1.75%. Uncapped, because there is no account total to cap at
+  const s = team.split(summary(null, [140, 35]), 'pc1', 0.05, null);
   assert.ok(near(s.rows[0].pct, 7));
   assert.ok(near(s.rows[1].pct, 1.75));
   assert.equal(s.rows[1].me, true);
-  assert.ok(near(s.unrecorded, 11.25));
-  assert.equal(s.capped, false);
+  assert.equal(s.accountPct, null);
+  assert.equal(s.byAccount, false);
 });
 
-test('a rate that would overshoot the account is capped: rows add up to the total', () => {
-  // account 5% but the team spent 175$: 0.05 %/$ would make 8.75%. Cap at 5/175
-  const s = team.split(summary(5, [140, 35]), 'pc0', 0.05, null);
-  assert.ok(near(s.rows[0].pct + s.rows[1].pct, 5));
-  assert.ok(near(s.rows[0].pct / s.rows[1].pct, 4)); // who used how much more is untouched by the cap
-  assert.ok(near(s.unrecorded, 0));
-  assert.equal(s.capped, true);
+test('the account % on the summary stands in when this PC has not read one', () => {
+  const s = team.split(summary(41, [586.21, 300.56]), 'pc0', 0.05, null);
+  assert.equal(s.accountPct, 41);
+  assert.equal(round1(s.rows[0].pct), 27.1);
 });
 
 test('share of the team is exact whatever the rate', () => {
@@ -45,7 +72,8 @@ test('share of the team is exact whatever the rate', () => {
 test('no rate and no account %: zero shares, nothing invented', () => {
   const s = team.split(summary(null, [10]), 'pc0', null, null);
   assert.equal(s.rows[0].pct, 0);
-  assert.equal(s.unrecorded, null);
+  assert.equal(s.accountPct, null);
+  assert.equal(s.byAccount, false);
 });
 
 test('codes and names', () => {

@@ -467,8 +467,6 @@ module.exports = `
   .wk-trow.me .tr i{background:#e8895a;}
   .wk-trow.me .nm{font-weight:700;}
   .wk-trow.stale{opacity:.55;}
-  .wk-trow.other .nm,.wk-trow.other .pc{color:var(--muted);font-weight:500;}
-  .wk-trow.other .tr i{background:var(--muted);opacity:.5;}
   .wk-note a{color:#e8895a;}
   button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px var(--focus);} /* .ttl clips outside outlines */
   body.tab-games .mascot{display:none;} /* the crab climbs down to deal */

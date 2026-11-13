@@ -1550,12 +1550,13 @@
         + '<span class="pc">' + pctTxt(x.pct) + '%</span>'
         + '<span class="tr"><i style="width:' + Math.min(100, x.pct) + '%;background:' + col[k] + '"></i></span></div>';
     }).join('');
-    if (t.unrecorded != null && t.unrecorded >= 0.5) {
-      h += '<div class="wk-trow other" title="Account total minus everyone above: PCs that do not share, claude.ai on the web, the apps">'
-        + '<span class="nm">Other PCs</span><span class="pc">' + pctTxt(t.unrecorded) + '%</span>'
-        + '<span class="tr"><i style="width:' + Math.min(100, t.unrecorded) + '%"></i></span></div>';
-    }
-    h += '</div><div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
+    // These rows divide the whole account total, so anything nobody here reported is inside them.
+    // Said, not drawn: it used to be a row named "Other PCs", which invented machines that were not
+    // on the account and whose figure was an artefact of one PC's rate estimate
+    h += '</div><div class="wk-note">' + (t.byAccount
+      ? 'The account\'s weekly % divided by what each PC spent. Use nobody here reports, claude.ai on the web, the apps, a PC with sharing off, is spread across these rows rather than shown apart.'
+      : 'No reading of the account\'s weekly % yet, so each row is this PC\'s percent-per-$ on that PC\'s spend.')
+      + '</div><div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
     return h;
   }
   // this PC keeps the extension's orange; the others get their own colors, in row order
@@ -1586,8 +1587,15 @@
     if (mine) me = mine.pct; // the team split is the better number when there is one
     var TIER = { max_20x: 'Max 20x', max_5x: 'Max 5x', pro: 'Pro' };
     var per = pl.perPoint ? '$' + Math.round(pl.perPoint) : '';
-    var how = pl.basis === 'reference' ? 'Reference rate for ' + (pl.tierKnown ? TIER[pl.tier] : 'Max 20x (assumed)') + ': about ' + per + ' per 1%'
-      : (pl.basis === 'rough' ? 'Measured on this PC, rough (' + pl.readings + ' of ' + pl.needed + '): about ' : 'Measured on this PC: about ') + per + ' per 1%';
+    // Where the figure on the left came from. A team split is the account's own % divided by spend
+    // and no rate goes into it, so a rate is not quoted there at all. Elsewhere the rate does set
+    // the figure, and it is not called measured: percent-per-$ varied threefold between intervals
+    // on one account's hourly records over a week, so the word promised a precision it has not got
+    var how;
+    if (tm && tm.byAccount) how = 'The account\'s weekly % divided by what each PC spent';
+    else if (pl.basis === 'reference') how = 'Rough guide for ' + (pl.tierKnown ? TIER[pl.tier] : 'Max 20x (assumed)') + ': around ' + per + ' per 1%';
+    else how = 'Estimated from this PC\'s readings' + (pl.basis === 'rough' ? ' (' + pl.readings + ' of ' + pl.needed + ')' : '')
+      + ': around ' + per + ' per 1%, and the real rate swings by severalfold with the models used';
     var shown = tm && tm.accountPct != null ? tm.accountPct : acc;
     h += '<div class="wk-share" title="' + esc('This PC / whole account, of this week\'s limit\n' + how) + '"><span class="wk-big">' + (me != null ? pctTxt(me) + '<small>%</small>' : '–') + '</span>'
       + '<span class="wk-tot">/ ' + (shown != null ? pctTxt(shown) + '%' : '–') + '</span></div>';
@@ -1597,7 +1605,7 @@
       var cs = wkColors(tm.rows);
       tm.rows.forEach(function (x, k) { segs.push({ n: x.name + (x.me ? ' (you)' : ''), p: x.pct, c: cs[k], me: x.me }); });
       segs.sort(function (a, b) { return (b.me ? 1 : 0) - (a.me ? 1 : 0); });
-      if (tm.unrecorded != null) segs.push({ n: 'Other PCs', p: tm.unrecorded, c: 'var(--other)' });
+      // no remainder piece: the pieces are the account total, divided
     } else {
       if (me != null) segs.push({ n: 'This PC', p: me, c: '#e8895a', me: true });
       if (acc != null) segs.push({ n: 'Other PCs', p: Math.max(0, acc - (me || 0)), c: 'var(--other)' });

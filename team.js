@@ -11,8 +11,8 @@
 // display name. Nothing from a prompt, a file, a project or a session title. The server keeps one
 // snapshot per PC per hour as well, so the percent-per-$ rate can be checked over a week.
 //
-// The server stores and returns rows; the split is computed here, because the rate (percent per $)
-// is this PC's own knowledge (measured, or the plan's reference).
+// The server stores and returns rows; the split is computed here, from the account's weekly % and
+// what each PC spent, so every PC on the account arrives at the same figures.
 'use strict';
 const crypto = require('crypto');
 const fs = require('fs');
@@ -110,26 +110,40 @@ async function sync(cfg, totals, sevenDay, version) {
   return { ok: true, summary: get.data };
 }
 
-// The split. rate is this PC's percent per $ (measured or the plan reference). Capped at
-// account% / team $ so the rows never add up to more than the account; what the rows leave of the
-// account total is use nobody on the team recorded (claude.ai on the web, the apps, PCs without
-// sharing on)
+// The split. With the account's weekly % in hand, the one answer that contradicts nothing is to
+// divide it by what each PC spent: share = account% x this PC's $ / the team's $. byAccount says
+// that is what happened, and the figures then do not depend on which PC is looking.
+//
+// They used to. The rows were this PC's percent-per-$ (rate, from weekly.js) times each PC's $,
+// capped so the sum could not pass account%, and whatever the sum left of account% was handed to
+// the screen as a separate row. A PC whose measured rate landed under the cap drew small rows and
+// a large remainder; a PC whose rate hit the cap drew the full account total. The same PC's week
+// therefore read 27% on one screen and 19% on another, and the 13% difference was drawn as PCs
+// that were not there (reported 1.30.0).
+//
+// There is no fixing that by measuring better: percent-per-$ is not a constant. Pooled over one
+// account's hourly snapshots for a week, the interval rates ran 0.027 to 0.083 %/$, threefold,
+// because the weekly limit does not come off in proportion to an API-price equivalent. So the
+// remainder a rate leaves is not evidence of anything and is no longer computed. Use nobody here
+// recorded (claude.ai on the web, the apps, a PC without sharing) is inside these rows, because
+// they divide the whole account total; the screen says so instead of drawing a row for it.
+//
+// rate still matters where the account % cannot be read (no reading has arrived yet): then a row's
+// $ is all there is to turn into a percent, and that path is unchanged.
 function split(summary, myPcId, rate, accountPct) {
   const pcs = (summary && summary.pcs) || [];
   const acct = accountPct != null ? accountPct : (summary ? summary.account_pct : null);
   const total = pcs.reduce((a, p) => a + (p.cost || 0), 0);
-  let r = rate || 0;
-  if (acct != null && total > 0) r = Math.min(r || Infinity, acct / total);
-  const rows = pcs.map((p) => ({
-    name: p.name, me: p.pc_id === myPcId, stale: !!p.stale, cost: p.cost || 0, tokens: p.tokens || 0,
-    pct: (p.cost || 0) * r, ofTeam: total > 0 ? (p.cost || 0) / total : 0
-  })).sort((a, b) => b.cost - a.cost);
-  const recorded = rows.reduce((a, x) => a + x.pct, 0);
-  return {
-    rows, accountPct: acct, recorded,
-    unrecorded: acct != null ? Math.max(0, acct - recorded) : null,
-    capped: !!(acct != null && total > 0 && rate && acct / total < rate)
-  };
+  const byAccount = acct != null && total > 0;
+  const r = rate || 0;
+  const rows = pcs.map((p) => {
+    const ofTeam = total > 0 ? (p.cost || 0) / total : 0;
+    return {
+      name: p.name, me: p.pc_id === myPcId, stale: !!p.stale, cost: p.cost || 0, tokens: p.tokens || 0,
+      pct: byAccount ? acct * ofTeam : (p.cost || 0) * r, ofTeam
+    };
+  }).sort((a, b) => b.cost - a.cost);
+  return { rows, accountPct: acct, byAccount };
 }
 
 module.exports = { sync, split, validCode, displayName, readAccountId, readAccountTier, accountKey, validAccountKey, SERVER };
