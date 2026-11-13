@@ -1422,7 +1422,10 @@ class UsageViewProvider {
     for (const k in rooms) rooms[k].thumb = spriteUri('thumb-' + k + '.png');
     // `ui` is what a game's panel needs to build its own markup at open time: the dealer image and
     // its own row of the register (title, hint, glyph)
-    const assetsJson = JSON.stringify({ rooms, npcs, ui: { crab: spriteUri('crab.png'), games: gameList } })
+    // chevron draws every game's back arrow (webview.js frameHtml). It was never sent, so the arrow
+    // was a button with nothing in it: 6px of padding, clickable by accident and findable by nobody,
+    // on all five games at once. Esc and the games tab hid how long that had been true
+    const assetsJson = JSON.stringify({ rooms, npcs, ui: { crab: spriteUri('crab.png'), chevron: IC.chevron, games: gameList } })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
     return renderHtml({
       csp: webview.cspSource,

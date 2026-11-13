@@ -78,7 +78,17 @@ module.exports = {
     // screen: that line belongs to the felt, and every other game has it INSIDE one, where an empty
     // one cannot be seen. Here it was a visible 22px of nothing (30px with its margin) whenever a
     // position was open, so what it carried moved to the line that was already there
-    const chip = () => { const c = doc.querySelector('#mkConv .bj-chip'); return c ? c.className + ' ' + c.textContent : 'none'; };
+    // `still` is dropped here: it says only that this paint is a redraw of a verdict already shown
+    // (casino.js turns bjPop off for it), and whether the beat has redrawn once more by the time a
+    // case reads the chip is not what any of these cases is about. chipStill asks that directly
+    const chip = () => {
+      const c = doc.querySelector('#mkConv .bj-chip');
+      return c ? c.className.replace(/\bstill\b/, '').replace(/\s+/g, ' ').trim() + ' ' + c.textContent : 'none';
+    };
+    const chipStill = () => {
+      const c = doc.querySelector('#mkConv .bj-chip');
+      return !!c && /\bstill\b/.test(c.className);
+    };
     const bodies = () => doc.querySelectorAll('#mkChart .mk-body');
     const wicks = () => doc.querySelectorAll('#mkChart .mk-wick');
     const marks = () => doc.querySelectorAll('#mkChart .mk-mark');
@@ -485,6 +495,15 @@ module.exports = {
         !$('mkPlBox').hidden && /^100 in · [\d,]+\.\d\d · \d+s$/.test(txt('mkPlSub'))
         && txt('mkPlSub').indexOf(txt('mkSide')) > 0 && txt('mkPlSub').indexOf('%') < 0,
         txt('mkPlSub') + ' | corner ' + txt('mkSide'));
+      // The verdict pops once. The beat redraws this line every second and innerHTML builds a new
+      // span each time, so without `still` the verdict of a trade already made blinks once a second.
+      // Last of this group on purpose: it moves the clock, and the cases above read a price that is
+      // only the entry price while no time has passed
+      const said = chip();
+      advance(1000); advance(20);   // the beat asks and the reply lands: a redraw nobody pressed for
+      ok('and a redraw of the same verdict carries still, so the entry does not play again',
+        chipStill() && chip() === said,
+        'still ' + chipStill() + ' | ' + chip() + ' | was ' + said);
       // TWO places, not three. With one position open the corner's sum and the block are the same
       // number 44px apart and the same colour, so at this depth the corner carries the price instead
       // and the sum is read on the list of coins (below)

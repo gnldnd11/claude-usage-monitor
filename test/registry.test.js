@@ -116,6 +116,21 @@ test('order is spaced by ten, so a game can be put between two of them', () => {
   }
 });
 
+// The back arrow on every game was drawn from ASSET_UI.chevron, which the host never put in the
+// payload, so for five games it was a button with nothing inside it: findable by nobody, clickable
+// by accident, and quiet about it because Esc still worked. A missing key reads as the empty string
+// and draws nothing, so no error says so. This compares the two lists instead of that one name.
+test('every ui asset the webview reads is one the host actually sends', () => {
+  const view = fs.readFileSync(path.join(ROOT, 'webview.js'), 'utf8');
+  const host = fs.readFileSync(path.join(ROOT, 'extension.js'), 'utf8');
+  const read = [...new Set([...view.matchAll(/ASSET_UI\.([A-Za-z_$][\w$]*)/g)].map((m) => m[1]))];
+  assert.ok(read.length >= 3, 'found no ASSET_UI reads at all: this test stopped testing anything');
+  const lit = host.match(/ui:\s*\{([^}]*)\}/);
+  assert.ok(lit, 'extension.js no longer builds the ui payload as one object literal');
+  const sent = [...lit[1].matchAll(/([A-Za-z_$][\w$]*)\s*:/g)].map((m) => m[1]);
+  for (const k of read) assert.ok(sent.indexOf(k) >= 0, 'webview reads ASSET_UI.' + k + ', host sends ' + sent.join());
+});
+
 test('every panel the register names is a file that is published', () => {
   const ignore = fs.readFileSync(path.join(ROOT, '.vscodeignore'), 'utf8').split('\n').map((s) => s.trim());
   assert.ok(ignore.indexOf('games/**') < 0, 'games/** is excluded from the .vsix: the panels would 404');

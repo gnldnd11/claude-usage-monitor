@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.31.2: The back arrow, and a verdict that stopped blinking
+
+- **Every game's back arrow was an empty button.** The chevron that draws it was read from the asset payload and the host never put it there, so on all five games the arrow was 6px of padding: clickable by accident, findable by nobody. Esc and the games tab hid how long that had been true.
+- **The market's trade verdict blinked once a second.** The line is rebuilt on every redraw, and since 1.31.0 that is every second, so the chip played its entry animation again each time. It now carries the class the other tables have used for exactly this since blackjack.
+- A test compares the asset keys the webview reads against the ones the host sends, because a missing one reads as the empty string and draws nothing without an error anywhere.
+
 ## 1.31.1: The screenshot tool is not part of the extension
 
 - **`tools/shoot-panels.mjs` shipped inside 1.31.0.** It renders the screenshots for the marketplace listing and is no use to anyone who installed a usage meter. `.vscodeignore` is a blocklist, so a new directory is published unless a line says otherwise, and this one had no line.

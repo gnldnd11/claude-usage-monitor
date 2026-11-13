@@ -466,8 +466,13 @@
   function mkConvLine() {
     var line = el('mkConv'); if (!line) return;
     if (mk.chip) {
+      // `still` on every paint after the first. innerHTML builds a NEW span, so bjPop runs again
+      // each time, and since 1.31.0 this line is redrawn once a second: the verdict of a trade
+      // already made sat there blinking. casino.js has carried the class for this since blackjack
+      var pop = mk.chip.shown ? ' still' : '';
+      mk.chip.shown = true;
       line.className = 'mk-conv';
-      line.innerHTML = '<span class="bj-chip' + (mk.chip.tint ? ' ' + mk.chip.tint : '') + '">'
+      line.innerHTML = '<span class="bj-chip' + (mk.chip.tint ? ' ' + mk.chip.tint : '') + pop + '">'
         + esc(mk.chip.text) + '</span>';
       return;
     }
