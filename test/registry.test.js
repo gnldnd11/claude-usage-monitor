@@ -36,7 +36,7 @@ fs.cpSync(path.join(ROOT, 'games'), path.join(TMP, 'games'), { recursive: true }
 // A meta with no engine behind it: enough shape to be listed, and a handler that answers nothing.
 // Used for the ordering and duplicate cases, where what the game DOES is beside the point
 function fakeMeta(opts) {
-  const extra = Object.keys(opts).filter((k) => ['order', 'group'].indexOf(k) >= 0)
+  const extra = Object.keys(opts).filter((k) => ['order'].indexOf(k) >= 0)
     .map((k) => '  ' + k + ': ' + JSON.stringify(opts[k]) + ',\n').join('');
   return "'use strict';\nmodule.exports = {\n"
     + '  id: ' + JSON.stringify(opts.id) + ',\n'
@@ -59,7 +59,7 @@ function putGame(dir, metaSource, withPanel) {
 // order of its own
 putGame('zzsecond', fakeMeta({ id: 'zzsecond', key: 'z2', dir: 'zzsecond', order: 15 }));
 putGame('aathird', fakeMeta({ id: 'aathird', key: 'a3', dir: 'aathird', order: 15 }));
-putGame('noorder', fakeMeta({ id: 'noorder', key: 'no', dir: 'noorder', group: 'Later' }));
+putGame('noorder', fakeMeta({ id: 'noorder', key: 'no', dir: 'noorder' }));
 // and the four shapes of broken
 putGame('throws', "'use strict';\nthrow new Error('this meta is broken on purpose');\n");
 putGame('noid', "'use strict';\nmodule.exports = { key: 'ni', name: 'No Id', panel: 'games/noid/panel.js', createHandler() { return {}; } };\n");
@@ -124,27 +124,15 @@ test('every panel the register names is a file that is published', () => {
   }
 });
 
-// html.js draws a heading wherever `group` changes down this already-sorted list, so a group that
-// is not contiguous gets its heading printed twice and its rows split in half. The mistake is in
-// the `order` numbers of two metas and it is invisible on the screen: the second heading just
-// looks like another family. This is the test that names it
-test('every game declares a group, and each group is one unbroken run', () => {
-  const seen = [];
-  let last = null;
-  for (const g of real.GAMES) {
-    assert.ok(g.group, g.id + ' declares no group, so it would sit under whatever heading precedes it');
-    if (g.group !== last) {
-      assert.ok(seen.indexOf(g.group) < 0,
-        'group "' + g.group + '" comes back at ' + g.id + ' after another group: its order numbers interleave');
-      seen.push(g.group);
-      last = g.group;
-    }
-  }
-});
+// There used to be a test here that every game declared a `group` and that each group was one
+// unbroken run of `order`, because html.js drew a heading wherever the group changed and a group
+// that came back printed its heading twice. THE LIST IS FLAT AS OF 1.28.0 (docs/game-panels.md,
+// section 7-2): there are no headings, so there is no mistake of that shape left to name and the
+// test went with the thing it was testing. What `order` still has to do is below, and the page
+// having no headings on it is checked where the page is (test/webview/games/blackjack.js).
 
 test('a list row carries a picture exactly one way: painted art or a drawn tile', () => {
   for (const row of real.view((f) => 'uri:' + f, () => '<svg/>')) {
-    assert.equal(typeof row.group, 'string', row.id + ' has no group field');
     assert.equal(typeof row.tile, 'string', row.id + ': tile is not a string');
     assert.equal(typeof row.thumb, 'string', row.id + ': thumb is not a string');
     // both would stack two pictures in one 48px square, neither leaves the glyph alone in it
@@ -192,8 +180,6 @@ test('a tie on order is settled by the id, so the list is the same in every wind
 test('a game with no order of its own goes last', () => {
   assert.equal(ids[ids.length - 1], 'noorder', ids.join(','));
   assert.equal(sandbox.BY_ID.noorder.order, sandbox.NO_ORDER);
-  assert.equal(sandbox.BY_ID.noorder.group, 'Later', 'the group it declared was dropped');
-  assert.equal(sandbox.BY_ID.zzsecond.group, '', 'a game with no group of its own gets an empty one');
 });
 
 // --- the sandbox: one broken game does not take the rest ------------------------------------

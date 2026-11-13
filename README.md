@@ -59,6 +59,14 @@ Because a background subagent has no knowable progress, running agents show an i
 </p>
 <p align="center"><sub>The crab reads your session usage: calm under 50%, heads-down at 50%, unravelling past 70%, flat-out near the limit.</sub></p>
 
+## Weekly details
+
+Press **Details** on the Weekly meter for this PC's last seven days: tokens per day with main sessions and subagents stacked, requests, and an API-equivalent figure, then where it went, by project, by model, by agent and by session.
+
+**One Claude account, several PCs.** If you share an account, the weekly percentage is the account's, so your own machine's share of it is not knowable from one PC. Turn on **Share** in that same Details sheet and every PC signed in to the same account that also agreed shows up side by side, adding up to the account's weekly percentage. What the rows leave of the account total is use nobody recorded: the web, the apps, a PC that did not agree.
+
+There is no code to type. The group is the account itself, identified only by a hash of its id, so only PCs signed in to it can read the group. It is off until you agree, the question is not asked where VS Code telemetry is off, and `claudeUsage.team.share` turns it on or off at any time. Exactly what leaves the PC is listed under [How it works and privacy](#how-it-works-and-privacy).
+
 ## Credits and games
 
 <p align="center">
@@ -67,7 +75,7 @@ Because a background subagent has no knowable progress, running agents show an i
 
 The tokens you spend earn credits: one per 10K, weighted the way the API prices them, so output counts five times an input token and a cache read a tenth. On first run your past sessions are counted once in the background, so you start with what you have already earned. The balance sits under the title, next to a coin that fills toward the next credit.
 
-Click it for the games list, where the crab runs five games in three families. Star the ones you come back to and they move to the top; each family folds away.
+Click it for the games list, where the crab runs five games. Star the ones you come back to and they move to the top.
 
 **Card tables.** **Blackjack**: six decks, the dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once. **High-Low**: one card lies face up and you call whether the next one beats it, with each side priced off the cards actually left in the shoe, so the odds move as the run goes on.
 
@@ -84,6 +92,7 @@ The extension deals and judges, so a hand survives switching tabs; reloading the
 - **Agents.** Your subagents as distinct pixel characters that walk into a room when invoked, with levels, lifetime stats and per-agent nickname, role, character and model. Read-only, hook-free.
 - **Credits and games.** Your token spend becomes credits, and the crab runs five games for them: two card tables, two machines and a coin market. Hide the whole thing from the settings gear if you would rather not have it.
 - **Session (5h) / Weekly (7d) / Fable (7d).** The same live numbers as Claude Code's built-in usage dialog.
+- **Weekly details.** Seven days of this PC broken down by project, model, agent and session, and, if you share an account, every PC on it side by side so you can see your own share of the weekly limit. Off until you agree.
 - **Context window.** How full the current conversation is, scoped to the workspace you are actually in, with the window tier detected per session.
 - **Today's tokens and requests.** Summed across your local Claude Code sessions, with a `+N k` delta after each response. Resets at local midnight.
 - **Status bar.** A compact `5h 54% · wk 46%`, turning red as you approach the limit.

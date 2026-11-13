@@ -64,7 +64,6 @@ module.exports = {
   // The same heading as the forge, and not a bag for leftovers: these two are the games that leave
   // something behind when the window closes (a sword, a position), which is also why these two rows
   // are the only ones allowed a figure on the right (docs/game-panels.md, section 7)
-  group: 'What you keep',
   rowTitle: 'Coin Market',
 
   // deps: reply, afterMove, budget, random, ensureReplica, replica, record, storedForge,

@@ -8,18 +8,52 @@
 //
 // A spin settles on the press, so there is no live phase: the bet row is the only control row this
 // screen has, and `phase` is 'bet' before the first spin and 'done' after every one.
+//
+// THE RINGS ARE ROLLED BY ONE TRANSITION EACH, not by swapping the three cells in the window on a
+// timer. The timer version replaced the window's symbols every 70ms while a 5px CSS keyframe
+// shivered the reel: a cell is 48px and the ring's pitch is 52px, so 5px is not scrolling, and six
+// swaps in 420ms is not a ring going past either. A reel now holds the run of the ring it is about
+// to cross and is slid to its stop in one composited transition, which is the same mechanism the
+// wheel uses, and it costs one innerHTML and no timers instead of twelve and thirty-six.
+//
+// AND NOTHING IS LIT UNTIL ALL THREE HAVE STOPPED. Each reel used to carry its own `hit` into its
+// own stop, so a three-alike spin ringed reel one at 520 while reel three was still rolling: the
+// answer, 820ms early. The rings go on with the chip, which is what makes the third reel's own
+// moment the first moment this screen says anything.
 (function () {
   var CUC = window.CUC;
   var el = CUC.el, fmtInt = CUC.fmtInt, signed = CUC.signed;
 
-  // The reels stop 200 then 220 apart, which is what makes the third one feel like it was nearly
-  // the one, and the chip follows the last of them (docs/game-panels.md, section 6).
-  // `tick` is how often a rolling reel swaps the symbols in its window, and it is the same fact as
-  // the .07s on `.sl-reel.spin` in games/slots/meta.js
-  var SL_T = { reels: [420, 620, 840], tick: 70, chip: 940, noReply: 4000 };
+  // The reels stop 520, 880 and 1,340 in, and the chip follows the last of them
+  // (docs/game-panels.md, section 6). The gaps WIDEN (520 / 360 / 460): at the old 420 / 200 / 220
+  // the last two were so nearly the same that all three landed as one event.
+  // `near` is the same three with the third held back, used when the first two cells already match
+  // (slNear below). 1,760 is the longest this screen ever runs, and the cap is 2,000.
+  var SL_T = {
+    reels: [520, 880, 1340], chip: 1460,
+    nearReels: [520, 880, 1640], nearChip: 1760,
+    noReply: 4000
+  };
+  // THE PLATE'S GEOMETRY, which the roll is solved from rather than guessing at.
+  // A cell is 48px and the ring's pitch is 52 (48 + the 4px gap). The window is 112: the pay line's
+  // own 48 with 28 of the ring showing above and below it (28 + 4 + 48 + 4 + 28), which is a crop
+  // and not a resize, so the symbol grid is still two whole pixels a unit (docs 8-3).
+  var SL_CELL = 48, SL_PITCH = 52, SL_WIN = 112;
+  // The wheel's curve, on the reels (games/wheel/meta.js says what it does). Its peak speed is
+  // 2.573x its own average, so holding the PEAK fixed makes the distance travelled proportional to
+  // the time: 70 symbols a second, 3,640px/s, 1.17 cells a frame at 60fps. That is what puts 14
+  // cells behind reel one, exactly one whole ring behind reel two and one and a half behind reel
+  // three: a jackpot symbol is one cell in twenty-four, so reel three is the first that was ever
+  // certain to show the player the crab going past.
+  var SL_EASE = 'cubic-bezier(.12,.01,.2,1)', SL_PEAK = 3640, SL_PEAK_AVG = 2.573;
 
   var sl = { st: null, busy: false, op: null, n: 0, timers: CUC.timers(), to: null, wantFocus: false };
   var SU = CUC.stakeUi('sl');
+
+  // How many cells of ring a reel crosses on its way to a stop `ms` away, and where the strip has
+  // to sit for cell `i` of it to be the one on the pay line
+  function cellsIn(ms) { return Math.max(1, Math.round(SL_PEAK / SL_PEAK_AVG * (ms / 1000) / SL_PITCH)); }
+  function offsetFor(i) { return (SL_WIN - SL_CELL) / 2 - i * SL_PITCH; }
 
   // The names this machine pays in. The drawings are aria-hidden (games/symbols.js), so whatever
   // shows a symbol has to carry its name, which is CUC.cardWord's rule for the pixel cards and is
@@ -43,7 +77,8 @@
 
   function markup() {
     var reels = '';
-    for (var r = 0; r < 3; r++) reels += '<div class="sl-reel" id="slR' + r + '"></div>';
+    // the reel is the WINDOW and the strip inside it is what moves: a run of the ring, slid
+    for (var r = 0; r < 3; r++) reels += '<div class="sl-reel" id="slR' + r + '"><div class="sl-strip" id="slS' + r + '"></div></div>';
     return CUC.frame('slots')
       + '<div class="bj-felt">'
       +   '<div class="sl-plate gm-plate tight">' + reels
@@ -60,62 +95,85 @@
       +   '<button type="button" class="bj-btn primary" id="slDeal" title="Spin (Enter)">Spin</button></div>';
   }
 
-  // A window on a ring: the symbol at `pos` and the ring's own neighbours either side of it. The
-  // ring is `strips[r]`, which the host sent, so this scrolls the machine rather than inventing one
-  function window3(strip, pos) {
-    var n = strip.length, i = ((pos % n) + n) % n;
-    return [strip[(i + n - 1) % n], strip[i], strip[(i + 1) % n]];
+  // The symbol `pos` round a ring. The ring is `strips[r]`, which the host sent, so this scrolls
+  // the machine rather than inventing one
+  function ringAt(strip, pos) {
+    var n = strip.length;
+    return strip[((pos % n) + n) % n];
   }
-  function drawRolling(r, strip, pos) {
-    var e = el('slR' + r); if (!e) return;
-    var w = window3(strip, pos);
-    e.innerHTML = art(w[0]) + face(w[1], false) + art(w[2]);
+  // A strip of cells, top to bottom, with cell `centre` carrying the pay line's own name and its
+  // ring if it has one. The rows either side of the line are the ring going past, which is art
+  function stripHtml(syms, centre, hit) {
+    var out = '';
+    for (var i = 0; i < syms.length; i++) out += i === centre ? face(syms[i], !!hit) : art(syms[i]);
+    return out;
+  }
+  function placeStrip(r, html, i) {
+    var e = el('slS' + r); if (!e) return null;
+    e.style.transition = 'none';
+    e.style.transform = 'translateY(' + offsetFor(i) + 'px)';
+    e.innerHTML = html;
+    return e;
   }
   // Where a reel came to rest, taken from the host's own three symbols rather than read off the
   // ring again: the two have to agree, and the one that is allowed to be right is the host's
   function drawStopped(r, rv, hit) {
-    var e = el('slR' + r); if (!e || !rv) return;
-    e.innerHTML = art(rv.above) + face(rv.sym, hit) + art(rv.below);
+    if (!rv) return;
+    placeStrip(r, stripHtml([rv.above, rv.sym, rv.below], 1, hit), 1);
+  }
+  // The machine standing still, which is what the player is about to press: the ring at its own
+  // position 0, in the window, nothing claimed
+  function drawIdle(r, strip) {
+    placeStrip(r, stripHtml([ringAt(strip, -1), ringAt(strip, 0), ringAt(strip, 1)], 1), 1);
   }
   function hitAt(st, r) {
     var w = st && st.win;
     return !!(w && w.reels && w.reels.indexOf(r) >= 0);
   }
-  // The whole plate, at rest. Before the first spin there are no stops, so the rings are shown at
-  // their own position 0: the machine standing still, which is what the player is about to press
+  // The whole plate, at rest. `lit` is what puts the rings on, and it is false for every drawing of
+  // the plate except the one at the chip: see the header
   function drawPlate(st, lit) {
     var strips = (st && st.strips) || null; if (!strips) return;
     var reels = (st && st.reels) || [];
     for (var r = 0; r < strips.length; r++) {
-      var e = el('slR' + r); if (e) e.classList.remove('spin');
-      if (reels[r]) drawStopped(r, reels[r], lit && hitAt(st, r));
-      else drawRolling(r, strips[r], 0);
+      if (reels[r]) drawStopped(r, reels[r], !!lit && hitAt(st, r));
+      else drawIdle(r, strips[r]);
     }
   }
-  // One reel, rolled to its stop. `n` swaps of the window, evenly spread over the reel's own stop
-  // time, walking the ring forwards so the last swap before the stop is the ring's real neighbour.
-  // The final frame is the host's, which is what keeps the two from disagreeing
-  function rollReel(r, strip, rv, stopMs, hit) {
-    var e = el('slR' + r);
-    var n = Math.max(1, Math.round(stopMs / SL_T.tick));
-    if (e) e.classList.add('spin');
-    // the first frame is drawn now rather than on a timer, or the last spin's stopped reels (rings
-    // and all) would stay on the plate until the first swap fired
-    drawRolling(r, strip, rv.at - n);
-    for (var k = 1; k < n; k++) {
-      (function (step) {
-        sl.timers.at(Math.round(stopMs * step / n), function () { drawRolling(r, strip, rv.at - (n - step)); });
-      })(k);
-    }
-    sl.timers.at(stopMs, function () {
-      if (e) e.classList.remove('spin');
-      drawStopped(r, rv, hit);
-    });
+  // One reel, rolled to its stop in one transition. The strip holds the whole run of ring the reel
+  // is about to cross, laid out so the cell that ends up on the pay line IS the host's own frame:
+  // the reel lands right by arriving there, not by being redrawn when it does.
+  //
+  // THE RING RUNS DOWNWARD through the window, which is the way a drum turns towards the player,
+  // and it is also what makes the arithmetic honest: the cell about to come in over the top is the
+  // one before the stop on the ring, which is the host's own `above`
+  function rollReel(r, strip, rv, stopMs) {
+    var n = cellsIn(stopMs), syms = [rv.above, rv.sym, rv.below], i;
+    for (i = 3; i <= n + 2; i++) syms.push(ringAt(strip, rv.at - 1 + i));
+    var e = placeStrip(r, stripHtml(syms, 1), n + 1);
+    if (!e) return;
+    // the start has to be committed before the end is set, or both land in one frame and the
+    // transition has nothing to run over. Reading a layout property is what commits it
+    void e.offsetHeight;
+    e.style.transition = 'transform ' + stopMs + 'ms ' + SL_EASE;
+    e.style.transform = 'translateY(' + offsetFor(1) + 'px)';
   }
+  // THE THIRD REEL IS HELD BACK WHEN THE FIRST TWO ALREADY MATCH, and the two it reads are the two
+  // that are already on the screen by the time the delay can be seen (reel two stops at 880, reel
+  // three would have stopped at 1,340). So the pacing is following the player rather than telling
+  // them something: it says nothing whatever about the third cell.
+  // NOT `st.win`: that is the third cell read early, and it would also miss a kelp pair, which
+  // winOf() returns as NO_WIN
+  function slNear(st) {
+    var rs = (st && st.reels) || [];
+    return !!(rs.length >= 2 && rs[0] && rs[1] && rs[0].sym === rs[1].sym);
+  }
+  function slStops(st) { return slNear(st) ? SL_T.nearReels : SL_T.reels; }
+  function slChip(st) { return slNear(st) ? SL_T.nearChip : SL_T.chip; }
   function rollAll(st) {
-    var strips = st.strips || [], reels = st.reels || [];
+    var strips = st.strips || [], reels = st.reels || [], stops = slStops(st);
     for (var r = 0; r < strips.length && r < reels.length; r++) {
-      rollReel(r, strips[r], reels[r], SL_T.reels[r] != null ? SL_T.reels[r] : SL_T.reels[SL_T.reels.length - 1], hitAt(st, r));
+      rollReel(r, strips[r], reels[r], stops[r] != null ? stops[r] : stops[stops.length - 1]);
     }
   }
 
@@ -206,6 +264,7 @@
     // both are drawn where they stand: rolling either would spin the same rings a second time
     var spun = current && op === 'deal' && !m.error && m.state.phase === 'done';
     var fresh = spun && !CUC.reduceMotion();
+    var chipAt = fresh ? slChip(sl.st) : 0;
     try {
       CUC.err('slErr', m.error || '');
       if (fresh) rollAll(sl.st);
@@ -215,8 +274,10 @@
       slControls(sl.st, true);
     } finally {
       CUC.hold();   // the header waits for the reels
-      if (fresh) sl.timers.at(SL_T.chip, function () { slLine(sl.st, true); });
-      sl.timers.at(fresh ? SL_T.chip : 0, function () { slSettle(m, spun); });
+      // the rings and the chip at once, after the LAST reel: the plate is redrawn at rest here, so
+      // the three long strips go with it and the rings go on all three in the same frame
+      if (fresh) sl.timers.at(chipAt, function () { drawPlate(sl.st, true); slLine(sl.st, true); });
+      sl.timers.at(chipAt, function () { slSettle(m, spun); });
     }
   }
   // A reply with no state: the host could not describe the spin (games/README.md, section 5). The

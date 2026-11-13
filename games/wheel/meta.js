@@ -33,7 +33,6 @@ module.exports = {
   panel: 'games/wheel/panel.js',
   cls: 'wh',
   order: 70,
-  group: 'Machines',
 
   table: {
     key: 'wh',
@@ -62,8 +61,12 @@ module.exports = {
   .wh-face{position:absolute;inset:0;border-radius:50%;
     box-shadow:inset 0 0 0 1px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.06);}
   /* the slowdown is on a CLASS and not on the element, because a redraw, a broadcast and a walk
-     back into the screen all set the same transform and none of them may turn the wheel */
-  .wh-face.turning{transition:transform .86s cubic-bezier(.17,.67,.2,1);}   /* pairs with WH_T.stop */
+     back into the screen all set the same transform and none of them may turn the wheel.
+     1.8s pairs with WH_T.stop, and the curve is the point of it: this one accelerates from a
+     standstill over 191ms to 1,801 deg/s (five turns a second, 30deg a frame) and spends the
+     remaining 1,609ms slowing down. The curve before this one was at its fastest on its very first
+     frame, 5,892 deg/s over .86s, so there was no getting going at all: the dial teleported */
+  .wh-face.turning{transition:transform 1.8s cubic-bezier(.12,.01,.2,1);}   /* pairs with WH_T.stop */
   /* the hub, so the wedges read as a wheel rather than as a pie chart */
   .wh-hub{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;
     border-radius:50%;background:#15181c;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);}
@@ -79,6 +82,17 @@ module.exports = {
      the widest label is 17.98px of ink. Measured in this panel at 10.5px/700, not guessed.
      10.5px is the smallest size the panel spec has, and these are at it (docs/game-panels.md 2) */
   .wh-nums{position:absolute;inset:0;pointer-events:none;}
+  /* AND THEY GET OUT OF THE WAY WHILE THE DIAL IS TOO FAST TO READ THEM. Measured on this dial:
+     a label is 17.98px of ink at radius 56, so above about 1,100 deg/s it moves 29px a frame and
+     arrives as a smear, and below about 370 deg/s it reads. On the curve above that is 0-532ms and
+     1,130-1,800ms, so the figures fade out by the end of the acceleration and come back as the
+     wheel becomes legible: their returning IS the cue to start reading. The timings are the
+     keyframe percentages of 1.8s (10% = 180ms, the top of the acceleration; 30% = 540ms, through
+     1,100 deg/s; 63% = 1,134ms, through 370 deg/s), so the animation itself is linear.
+     NOT A BLUR FILTER: a CSS blur is the same in every direction, so it reads as fog rather than
+     as speed, and it would blur the wedges with the figures */
+  @keyframes whLabels{0%{opacity:1;}10%{opacity:0;}30%{opacity:0;}63%{opacity:1;}100%{opacity:1;}}
+  .wh-face.turning .wh-nums{animation:whLabels 1.8s linear;}   /* pairs with WH_T.stop */
   .wh-num{position:absolute;left:50%;top:50%;width:40px;height:12px;margin:-6px 0 0 -20px;
     line-height:12px;text-align:center;font-size:10.5px;font-weight:700;font-style:normal;
     font-variant-numeric:tabular-nums;color:var(--felt-ink);text-shadow:0 1px 1px rgba(0,0,0,.55);}
@@ -99,6 +113,7 @@ module.exports = {
   .wh-row.on b,.wh-row.on span{color:#e8895a;}
   /* the wheel chooser: the same segmented control the stakes use, on its own row above them */
   .wh-risks{margin-top:10px;}
-  @media (prefers-reduced-motion:reduce){.wh-face.turning{transition:none;}}
+  @media (prefers-reduced-motion:reduce){.wh-face.turning{transition:none;}
+    .wh-face.turning .wh-nums{animation:none;}}
 `
 };

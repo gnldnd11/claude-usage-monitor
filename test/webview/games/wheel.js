@@ -1,9 +1,14 @@
 // The wheel, end to end. The spins are found by searching the engine for a seed, so the slice the
 // screen is checked against is the one the host will really stop on.
 //
-// Four claims this file exists for:
+// Five claims this file exists for:
 //  - WHILE THE ROUND IS LIVE THE SCREEN KNOWS NO SLICE. The host sends `stop: null` until the wheel
 //    has turned, so there is nothing lit, nothing in the legend and no figure anywhere
+//  - AND WHILE THE WHEEL IS TURNING IT STILL SHOWS NOTHING, which is the one this screen got wrong
+//    until 1.28.0: the reply carries the slice, and the panel painted it on the first frame of the
+//    turn. The lit wedge, that slice's inverted figure and an aria-label reading "Stopped on slice
+//    N" all went round with the dial, the wedge solid ember and the brightest thing on it. Every
+//    millisecond of the turn is walked here and all three have to say nothing until 1,800
 //  - THE FIGURES ON THE DIAL ARE THE HOST'S OWN, at the host's own angles. The panel is checked
 //    against `WHEEL_VIEWS` label for label and degree for degree, because a screen that worked out
 //    its own angles would be a second copy of the wheel
@@ -26,6 +31,10 @@ module.exports = {
     const R = MODE === 'wheel-reduce';
     const BET = 10;
     const sent = h.sent('wh');
+    // the pacing, as the independent copy of games/wheel/panel.js's WH_T: the dial arrives at 1,800
+    // and the figure follows at 1,900. TURNS is the whole turns every spin makes before the gap to
+    // the new slice, which is what bounds the distance below
+    const STOP = 1800, CHIP = 1900, TURNS = 3;
     const viewOf = (risk) => engine.WHEEL_VIEWS[engine.RISKS.indexOf(risk)];
 
     function whSeed(want, risk, tag) {
@@ -67,7 +76,7 @@ module.exports = {
     const picks = () => doc.querySelectorAll('#whRiskBox button').map((b) => b.getAttribute('data-risk') + (b.classList.contains('on') ? '-on' : '')).join(' ');
     const said = () => $('whLive').textContent;
     const money = (n) => Math.round(n).toLocaleString('en-US');
-    const settle = () => advance(1400);
+    const settle = () => advance(2200);
 
     openGame('wheel');
     ok('the Wheel row opens the wheel and asks the host for its state',
@@ -81,6 +90,22 @@ module.exports = {
     ok('nothing is lit before a spin, and the wheel says so',
       layers() === 1 && label() === 'Mild wheel, ' + mild.segments.length + ' slices' && onRow() === '' && litNum() === '',
       label() + ' lit ' + JSON.stringify(onRow() + litNum()));
+    // The duration is written twice, in CSS and in WH_T, and this is what keeps the two copies the
+    // same number: a transition of one length paced by timers of another is a wheel that lights its
+    // wedge while it is still moving, or stands still before it does.
+    // The curve is the other half of the fix: this one accelerates out of a standstill, where
+    // cubic-bezier(.17,.67,.2,1) was at its fastest on the first frame. And the labels step out of
+    // the way over the stretch where the dial is too fast to read them (10% to 63% of the turn)
+    const css = doc.querySelector('style').textContent;
+    ok('the CSS turn is the same 1,800ms the panel paces, on an easing that starts from a standstill',
+      /\.wh-face\.turning\{transition:transform 1\.8s cubic-bezier\(\.12,\.01,\.2,1\);\}/.test(css)
+      && css.indexOf('cubic-bezier(.17,.67,.2,1)') < 0,
+      (/\.wh-face\.turning\{[^}]*\}/.exec(css) || [''])[0]);
+    ok('and the figures fade out and come back inside that same 1.8s, with no blur filter anywhere',
+      /@keyframes whLabels\{0%\{opacity:1;\}10%\{opacity:0;\}30%\{opacity:0;\}63%\{opacity:1;\}100%\{opacity:1;\}\}/.test(css)
+      && /\.wh-face\.turning \.wh-nums\{animation:whLabels 1\.8s linear;\}/.test(css)
+      && !/\.wh-[a-z-]+\{[^}]*filter:blur/.test(css),
+      (/@keyframes whLabels\{[^@]*/.exec(css) || [''])[0]);
 
     if (MODE === 'wheel-poor') {
       ok('not enough credits: chips off, Deal off, and the note says why',
@@ -142,10 +167,15 @@ module.exports = {
 
     doc.pressKey('s'); advance(2);
     let chipAt = null, litAt = null, balAt = null;
-    for (let t = 0; t <= 1200; t++) {
+    const told = [];   // every millisecond of the turn on which the dial gave the answer away
+    for (let t = 0; t <= 2100; t++) {
       if (litAt == null && layers() === 2) litAt = t;
       // the header balance at the moment the figure landed: the ledger is live in this harness
       if (chipAt == null && doc.querySelector('#whLine .bj-chip')) { chipAt = t; balAt = hdrBal(); }
+      if (t < STOP && (layers() !== 1 || litNum() !== '' || onRow() !== '' || /Stopped/.test(label() || ''))) {
+        if (told.length < 3) told.push(t + 'ms: ' + layers() + ' layers, figure ' + JSON.stringify(litNum())
+          + ', row ' + JSON.stringify(onRow()) + ', "' + label() + '"');
+      }
       advance(1);
     }
     ok('the spin carried the chosen wheel to the host',
@@ -153,9 +183,23 @@ module.exports = {
     ok('the wheel turns whole turns and settles on the host’s own slice',
       atTop('medium') === spun.stop && (R ? true : rot() < before - 360),
       'top ' + atTop('medium') + ' engine ' + spun.stop + ', ' + before + ' -> ' + rot());
+    // EVERY SPIN GOES FORWARDS BY WHOLE TURNS PLUS THE GAP TO THE NEW SLICE, so the distance is
+    // 1,080 to 1,428 whichever slice comes up. Taking -mid outright, which is what this did, made
+    // the distance the SIZE of the new slice's own angle: 744 to 1,416, a 1.9x spread in peak speed
+    // for one duration, so every ms figure above was a different speed on every spin
+    if (!R) {
+      const travel = before - rot();
+      ok('and it goes FORWARDS a distance that does not depend on which slice came up',
+        travel >= TURNS * 360 && travel < TURNS * 360 + 360, travel + 'deg, want ' + (TURNS * 360) + ' to ' + (TURNS * 360 + 360));
+    }
     const hit = medium.segments[spun.stop];
-    ok('the slice lights as the wheel stops and the figure follows at 960',
-      R ? (litAt <= 2 && chipAt <= 2) : (litAt === 0 && chipAt === 960), 'lit ' + litAt + ' chip ' + chipAt);
+    // THE CLAIM THIS FILE EXISTS FOR (see the header)
+    if (!R) {
+      ok('while it turns, the dial says nothing about where it will stop, on any frame',
+        told.length === 0, told.join(' | '));
+    }
+    ok('the wedge, its figure and its name all land at 1,800, and the figure in the line at 1,900',
+      R ? (litAt <= 2 && chipAt <= 2) : (litAt === STOP && chipAt === CHIP), 'lit ' + litAt + ' chip ' + chipAt);
     ok('the lit slice is the one the host stopped on, over the host’s own arc, and the wheel names it',
       bg().indexOf('#e8895a ' + hit.from + 'deg ' + (hit.from + hit.span) + 'deg') >= 0 && zeroed()
       && label() === 'Stopped on slice ' + (spun.stop + 1) + ' of ' + medium.segments.length + ', ' + spunLabel,

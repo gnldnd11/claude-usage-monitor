@@ -18,7 +18,6 @@ module.exports = {
   panel: 'games/highlow/panel.js',
   cls: 'hl',
   order: 30,   // the list's order and its heading, spaced by ten: see games/blackjack/meta.js
-  group: 'Card tables',
 
   table: {
     key: 'hl',

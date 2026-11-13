@@ -59,11 +59,18 @@ games/<id>/panel.js   화면. 웹뷰 스크립트로 로드된다
 ## 발행 절차 (순서 중요)
 
 ```
-1. subtree push  (공개 미러 레포로 먼저)
-2. vsce publish  (패키징은 맨 뒤)
+0. 미러의 이슈를 읽는다  gh issue list --repo gnldnd11/claude-usage-monitor --state open
+1. subtree push          (공개 미러 레포로 먼저)
+2. vsce publish          (패키징은 맨 뒤)
 ```
 
 **순서를 바꾸면 사고다.** 그리고 `--packagePath`를 쓰지 않는다.
+
+**0번이 왜 절차인가.** 이 절차에 「보낸다」만 있고 「돌아온 것을 읽는다」가 없었다.
+그래서 2026-11-13 까지 이슈 둘을 아무도 몰랐다. 하나는 09-26 에 올라와 7주를 방치했다.
+미러 저장소의 watcher 가 0 이라 깃허브도 메일을 안 보낸다. **묻지 않으면 안 온다.**
+`~/.claude/scripts/crab-metrics.py` 가 매일 이슈 수를 찍지만 그건 사후 통보이고,
+발행 전에 읽는 것은 이 줄이 한다.
 
 - 원본: 이 모노레포 `projects/claude-usage-monitor`
 - 공개 미러: github `gnldnd11` (remote `usage-monitor`, subtree)

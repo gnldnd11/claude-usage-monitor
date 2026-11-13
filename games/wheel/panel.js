@@ -19,6 +19,13 @@
 // `stop` is null while the round is live, which is the one thing the host keeps back: a screen that
 // knew the segment before it animated getting there would be animating a result it already had.
 //
+// AND THE SCREEN DOES NOT PAINT THE STOP IT WAS SENT UNTIL THE WHEEL HAS GOT THERE. The host keeps
+// the slice back until the spin is over, but once it arrives this panel held three copies of the
+// answer from the first frame of the turn: the stopped wedge solid ember (the brightest thing on
+// the dial, 6.06:1 against a dead one), that slice's own figure inverted, and an aria-label already
+// reading "Stopped on slice N". All three went round with the wheel. The one question this game
+// asks is where it will stop, so all three now land together at WH_T.stop and not before.
+//
 // Two presses, and that is the engine's shape rather than a stutter: Deal puts the bet on the table
 // (it is held from the other games from that moment) and Spin turns the wheel WITH the chosen
 // wheel, because that choice is part of the move (see games/wheel/meta.js).
@@ -26,9 +33,13 @@
   var CUC = window.CUC;
   var el = CUC.el, fmtInt = CUC.fmtInt, signed = CUC.signed;
 
-  // The wheel slows to a stop in 860 and the figure follows it (docs/game-panels.md, section 6).
-  // `stop` is also the .86s on `.wh-face` in games/wheel/meta.js
-  var WH_T = { stop: 860, chip: 960, noReply: 4000 };
+  // The wheel takes 1,800 to stop and the figure follows it (docs/game-panels.md, section 6).
+  // `stop` is also the 1.8s on `.wh-face.turning` and on the labels' own keyframes in
+  // games/wheel/meta.js, and the easing there is what makes these three numbers mean anything:
+  // cubic-bezier(.12,.01,.2,1) ACCELERATES for the first 191ms (to 1,801 deg/s, five turns a
+  // second) and spends the rest slowing down. The old curve, (.17,.67,.2,1), was at its fastest at
+  // t=0, so the dial teleported out of a standstill instead of being set going.
+  var WH_T = { stop: 1800, chip: 1900, noReply: 4000 };
   var TURNS = 3;   // whole turns before it settles, so a short hop and a long one look the same
   // How far out the figures sit, on a dial 150px across (radius 75). Measured rather than chosen:
   // the widest label on any wheel is ×12 at 17.98px of ink at 10.5px/700, and in a 12px line box
@@ -36,7 +47,7 @@
   // engine will build is 24deg (wheel.js, MIN_UNITS), so every label clears its own edges by 1.8deg
   var WH_R = 56;
 
-  var wh = { st: null, busy: false, op: null, n: 0, timers: CUC.timers(), to: null, wantFocus: false, risk: null, phase: null, spins: 0 };
+  var wh = { st: null, busy: false, op: null, n: 0, timers: CUC.timers(), to: null, wantFocus: false, risk: null, phase: null, angle: 0 };
   var SU = CUC.stakeUi('wh');
   var RISK_KEY = 'whRisk';   // the chosen wheel, remembered the way the stakes remember theirs
 
@@ -150,22 +161,56 @@
     for (var i = 1; i < w.segments.length; i++) if (w.segments[i].halves < w.segments[best].halves) best = i;
     return best;
   }
-  function spinWord(st, w, stop) {
-    if (stop == null) return w ? w.name + ' wheel, ' + w.segments.length + ' slices' : 'Wheel';
+  function spinWord(st, w, stop, turning) {
+    if (!w) return 'Wheel';
+    if (stop == null) return w.name + ' wheel, ' + w.segments.length + ' slices' + (turning ? ', spinning' : '');
     return 'Stopped on slice ' + (stop + 1) + ' of ' + w.segments.length
       + ', ' + (w.segments[stop].dead ? 'nothing' : st.label);
   }
+  // HOW FAR THE DIAL TURNS, which is not the same question as where it ends up. The slice under the
+  // pointer is whichever one's own `mid` the angle cancels, so any angle congruent to -mid will do
+  // and the one chosen decides how fast the wheel went. Taking -mid outright, the way this used to,
+  // made the distance depend on the SIZE of the new slice's angle: 744deg to 1,416deg over the
+  // three wheels, a 1.9x spread in peak speed for one duration. Always going FORWARDS by whole
+  // turns plus the gap to the new slice narrows that to 1,080-1,428 (1.33x) and makes every spin a
+  // forward spin, which is what a wheel does.
+  function angleFor(w, at, turn) {
+    var mid = w.segments[at].mid;
+    if (!turn) return -mid;   // nothing is animating, so the angle may simply be set
+    var from = (((-wh.angle) % 360) + 360) % 360;
+    return wh.angle - (TURNS * 360 + ((((mid - from) % 360) + 360) % 360));
+  }
   // The wheel at rest. `turn` is false when nothing should be animated: a redraw, a broadcast, or a
-  // walk back into the screen must not spin a wheel that has already stopped
+  // walk back into the screen must not spin a wheel that has already stopped.
+  //
+  // WHILE IT TURNS, `stop` IS WITHHELD FROM THE DIAL as well as from the host. The wedge, the
+  // figure and the aria-label are the three places the answer can show, and lightStop() is the one
+  // place any of them is allowed to show it
   function drawFace(st, stop, turn) {
     var face = el('whFace'), w = wheelOf(st); if (!face || !w) return;
     var at = stop == null ? homeStop(w) : stop;
-    face.style.background = faceCss(w, stop);
-    face.setAttribute('aria-label', spinWord(st, w, stop));
-    drawNums(w, stop);   // the lit label goes dark WITH its wedge, or it vanishes into the ember
-    face.classList.toggle('turning', !!turn);   // no class, no transition, so this lands at once
-    if (turn) wh.spins += 1; else wh.spins = 0;
-    face.style.transform = 'rotate(' + (-(wh.spins * TURNS * 360 + w.segments[at].mid)) + 'deg)';
+    var show = turn ? null : stop;
+    face.style.background = faceCss(w, show);
+    face.setAttribute('aria-label', spinWord(st, w, show, turn));
+    drawNums(w, show);   // the lit label goes dark WITH its wedge, or it vanishes into the ember
+    // off and on again rather than toggled: re-adding a class that is already there restarts
+    // nothing, so a second turn with no resting draw between would get no transition and no label
+    // fade. The read is what commits the angle it is leaving from
+    face.classList.remove('turning');
+    if (turn) { void face.offsetHeight; face.classList.add('turning'); }
+    wh.angle = angleFor(w, at, turn);
+    face.style.transform = 'rotate(' + wh.angle + 'deg)';
+  }
+  // THE ANSWER, LANDED, and the only place it is painted. Called at WH_T.stop, which is where the
+  // dial itself arrives, so the lit wedge, the darkened figure and the slice's name appear at the
+  // moment the wheel settles rather than riding round on it. The angle and the transition are left
+  // exactly as they are: this says what came up, it does not move anything
+  function lightStop(st) {
+    var face = el('whFace'), w = wheelOf(st);
+    if (!face || !w || !st || st.phase !== 'done' || st.stop == null) return;
+    face.style.background = faceCss(w, st.stop);
+    face.setAttribute('aria-label', spinWord(st, w, st.stop, false));
+    drawNums(w, st.stop);
   }
   // The legend. The dial already carries the figures, so this is the OTHER half of the question:
   // how much of the wheel each figure is. The chances are num/den exactly as sent, NEVER divided
@@ -219,7 +264,7 @@
     if (!st) return;
     var w = wheelOf(st);
     if (st.phase === 'done') {
-      CUC.live('whLive', spinWord(st, w, st.stop) + '. Pays ' + fmtInt(st.pay || 0) + '. '
+      CUC.live('whLive', spinWord(st, w, st.stop, false) + '. Pays ' + fmtInt(st.pay || 0) + '. '
         + signed(st.net || 0) + '. Balance ' + fmtInt(CUC.balance() || 0) + '.');
       return;
     }
@@ -292,7 +337,11 @@
       whControls(wh.st, true);
     } finally {
       CUC.hold();   // the header waits for the wheel
-      if (fresh) wh.timers.at(WH_T.chip, function () { drawKey(wh.st, wh.st.stop); whLine(wh.st, true); });
+      if (fresh) {
+        // the dial arrives, and only then does the dial say where
+        wh.timers.at(WH_T.stop, function () { lightStop(wh.st); });
+        wh.timers.at(WH_T.chip, function () { drawKey(wh.st, wh.st.stop); whLine(wh.st, true); });
+      }
       wh.timers.at(fresh ? WH_T.chip : 0, function () { whSettle(m, current && !m.error && op !== 'open'); });
     }
   }

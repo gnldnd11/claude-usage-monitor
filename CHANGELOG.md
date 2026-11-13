@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.28.0: Two games that gave the answer away
+
+- **The wheel no longer paints the slice it will stop on before it gets there.** The segment was lit solid orange from the first frame of the spin, the brightest thing on the dial, and it went round with it. On the wild wheel, where 24 of the 30 units pay nothing, that was the whole game given away on the press. The lit segment, its figure and the screen reader's wording now all arrive when the wheel does.
+- **The wheel takes 1.8 seconds and starts from a standstill.** It used to be at its fastest on its first frame, so it jumped rather than being set going. It now accelerates for the first fifth of a second and spends the rest slowing down, and every spin turns forwards by three whole turns plus the gap to the new slice, so one spin is not twice the speed of the next.
+- **The figures on the dial step out of the way while it is too fast to read them** and come back as it slows, which is the cue that it is worth reading again.
+- **The slot machine's reels do not ring themselves as they stop.** Reel one used to light its match 1.1 seconds before reel three had stopped. Nothing is ringed until all three have, which is the first time the third reel's own moment means anything.
+- **The reels roll.** They were swapping the three symbols in the window every 70ms while a 5px shiver ran under them, which looked like a flickering grid rather than a drum, and reel one crossed six symbols in its whole spin. Each reel now slides a real run of its own ring in one movement: 14 symbols, then 24, then 36, so the third reel crosses the ring one and a half times and the one-in-24 crab is something you watch go past.
+- **A third reel with two matches to beat holds on 300ms longer**, read off the two symbols already on the screen and nothing else.
+- **The slots window is 112px instead of 152px.** The pay line keeps its full size and the rows either side are cropped, so the winning row is the window rather than a band inside a box.
+- **The games list is flat.** `Card tables`, `Machines` and `What you keep` are gone, and so is folding them away: five rows whose names and pictures are all different were being told which family they were in, and the one row that carries a figure now stands out because the other five are identical. Favourites still rise to the top, marked by the lit star.
+- The list is 228px, down from 295px.
+
 ## 1.27.0: Clearing a call that never answered
 
 - **A call stuck on "?" can be cleared off the Agents tab.** A new **Waiting on a result** block sits under the room, one row per call, with the agent, the task and how long it has waited. Press **Clear** and that row goes.

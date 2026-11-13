@@ -110,7 +110,6 @@ module.exports = {
   panel: 'games/mygame/panel.js',
   cls: 'mg',                      // goes on the panel element next to .inner
   order: 70,                      // WHERE ON THE LIST. See below
-  group: '',                      // optional heading the list may group under. See below
   rowTitle: '',                   // optional tooltip on the list row
 
   // EITHER a round-based game (games/tables.js drives it)...
@@ -141,7 +140,7 @@ module.exports = {
 market pays for a coin the instant it is bought and the position is stored), and it then has to keep
 every rule in section 6 by hand.
 
-### `order` and `group`: where it goes on the list
+### `order`: where it goes on the list
 
 `order` is a number, and the register sorts on it. **The existing games are spaced by ten**
 (blackjack 10, high-low 30, the slots 50, the wheel 70, the market 140), so a game that belongs
@@ -152,17 +151,18 @@ games on the same number are ordered by their `id`, alphabetically, never by the
 system's order differs between APFS, ext4 and a `.vsix` unpacked by another version, and a list that
 is in a different order in every window is a list nobody can learn.
 
-`group` is an optional string, and it is the heading your row sits under. Three things hang off it
-now, so it is worth getting right:
+**That is the whole of where a row goes. THE LIST IS FLAT.** There was a `group` field beside
+`order` until 1.28.0: an optional heading the row sat under, which the list drew wherever the group
+changed down the sorted rows and which was also the button that folded the block away. It is gone,
+along with the three rules that hung off it (`order` had to keep a group contiguous or the heading
+printed twice; the fold was remembered by the heading's own string; a block the stars emptied drew
+no heading). The reasoning is in `docs/game-panels.md`, section 7-2, and the short version is that
+five rows whose names and pictures are all different were being told which family they belonged to.
 
-- the list draws one heading wherever `group` changes down the already-sorted rows, so **`order` has
-  to keep a group contiguous.** A group that comes back later prints its heading twice
-- the heading is the button that folds its block away, and the fold is remembered **by this string**.
-  Renaming a group forgets whether it was folded, which is the cheaper of the two mistakes
-- a game the player has starred leaves the block, and a block the stars empty draws no heading at all
-
-Leave it `''` if you are not sure: a row with no group keeps its place in `order` and simply has no
-heading over it.
+A new game therefore declares no family and inherits none: `order` puts it somewhere, and what says
+what it is, is its name and its tile. The one place a row can still differ from the others is the
+figure on its right, which is for what MOVED while the panel was shut (section 7-4 of the same
+document), and it reads as a figure **because** every other row is shaped identically.
 
 ### What the register does with it
 
@@ -419,6 +419,12 @@ naming any CSS animation that has to match. Every panel does this:
 - A refused move changed nothing, so nothing moves.
 - A reply with **no `state`** is a reason, not a table: show it and keep what is drawn (below).
 - `reduceMotion()` skips the pacing and keeps the state.
+- **What the host withheld and what the screen has not drawn yet are two different rules.** The
+  host keeps a live round's `seed` and the wheel's `stop` back, and that is section 6 below. What a
+  panel does with an answer it has been *sent* is its own: a reel that rings itself as it stops, or
+  a wedge painted on the first frame of a turn, is the answer arriving before the pacing that was
+  supposed to deliver it. Both of those shipped. The test is to pick a frame in the middle of your
+  pacing and ask whether that frame alone gives the result away (`docs/game-panels.md`, section 6).
 
 ### A reply with no `state`
 

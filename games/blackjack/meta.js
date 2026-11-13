@@ -21,12 +21,9 @@ module.exports = {
   // Spaced by ten on purpose: a game that belongs between two of these takes 15 and nothing is
   // renumbered. A tie, or no order at all, falls back to the id alphabetically.
   //
-  // `group` is the heading the row sits under, and the list draws a heading wherever the group
-  // changes down the sorted rows. So the numbers have to keep a group contiguous: the four groups
-  // are 10-40 (card tables), 50-80 (machines), 90-120 (boards), 130-140 (what the player keeps).
-  // A game inserted inside a group takes a number between two of its own and nothing else moves
+  // There is no `group` any more: the list is flat (docs/game-panels.md, section 7-2), so `order`
+  // is the whole of where a row goes and nothing has to keep a family contiguous
   order: 10,
-  group: 'Card tables',
 
   table: {
     key: 'bj',

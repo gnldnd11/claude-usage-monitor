@@ -34,7 +34,7 @@ const CSS = `
   .bj-btn:disabled{opacity:.4;cursor:default;}
   .bj-stakes button:focus-visible,.bj-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .bj-btn.primary:focus-visible{outline-color:var(--text);}
-  @media (prefers-reduced-motion:reduce){.bj-chip{animation:none;}.gm-sec svg{transition:none;}}
+  @media (prefers-reduced-motion:reduce){.bj-chip{animation:none;}}
   /* --- the paytable, folded. A screen that lays its table out is a table and not a screen, so
      every ladder, every ways[] and every pays[] lives behind this one toggle and the one-line
      version lives in the heading's title= (docs/game-panels.md, section 5) --- */
@@ -77,30 +77,17 @@ const CSS = `
   /* --- games list: the third view. A game screen opens from a row --- */
   .bj-games .ihead{margin-bottom:8px;}
   .gm-it svg{width:16px;height:16px;} /* the pixel coin needs its 2px grid */
-  /* The headings turn one scan of the whole list into one scan per family. Same recipe as
-     .sheet-sec, and a BUTTON, because the heading is also what folds the block away.
-     They earned their keep on a list of fourteen; on five they are what still says WHY the market
-     carries a figure on the right and the other four do not (docs/game-panels.md, 7-2) */
-  .gm-grp{margin-top:10px;}
-  .gm-grp[hidden]{display:none;}
-  /* the first block that SHOWS, which :first-of-type cannot say: the Favourites block is in the
-     page from the first paint and stays hidden until something is starred, and every heading is
-     the first of its type inside its own block anyway */
-  .gm-grp.gm-top{margin-top:2px;}
-  .gm-sec{display:flex;align-items:center;gap:4px;width:100%;margin:0 0 3px;padding:0 10px;
-    border:0;background:transparent;font-family:inherit;font-size:10px;text-transform:uppercase;
-    letter-spacing:.6px;color:var(--muted);font-weight:700;text-align:left;}
-  /* Favourites does not fold (folding what I put at the top says nothing), so its heading has no
-     chevron. The indent is the chevron's, so every heading reads as one column */
-  .gm-favs .gm-sec{padding-left:28px;}
-  .gm-fold{cursor:pointer;}
-  .gm-fold:hover{color:var(--text);}
-  .gm-fold:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;border-radius:6px;}
-  /* the same chevron, the same 14px, the same flip as .ws-fold (styles.js): up while the block is
-     open, down while it is shut. A second fold mark in one panel would be two vocabularies */
-  .gm-sec svg{width:14px;height:14px;flex:none;transition:transform .3s ease;}
-  .gm-grp.folded .gm-sec svg{transform:rotate(180deg);}
-  .gm-grp.folded .gm-rows{display:none;}
+  /* THE LIST IS FLAT. The headings (Card tables, Machines, What you keep) and the folding that
+     hung off them went in 1.28.0: five rows whose names and pictures are all different, so the
+     three headings were 67px of a 295px list saying what the rows already said, and "What you
+     keep" was a heading over one row. The reasoning is in docs/game-panels.md, section 7-2.
+     TWO BOXES, not one, and only because a starred row moves to the top. Neither carries a
+     heading: the lit star is what says a row is kept (section 7-3) */
+  .gm-rows[hidden]{display:none;}
+  /* the box that SHOWS, which :first-of-type cannot say: the Favourites box is in the page from
+     the first paint and stays hidden until something is starred */
+  .gm-rows{margin-top:10px;}
+  .gm-rows.gm-top{margin-top:2px;}
   /* The row is a DIV with two buttons in it: a game cannot be opened and kept by the same button,
      and a button cannot be nested in a button. The hover and the rounding stay on the wrapper so
      the pair still reads as one row */

@@ -515,11 +515,10 @@
     var def = PANELS[curGame()];
     if (def) { if (def.node && def.enter) def.enter(); }
     else {
-      // The row is a div now, and a div takes no focus: the button inside it is what opens a game.
-      // It also has to be a row that can be SEEN — one inside a folded or emptied block is not —
-      // and if every block is folded there are no rows at all, so a heading takes it instead
-      var first = document.querySelector('#panelGames .gm-grp:not([hidden]):not(.folded) .gm-open')
-        || document.querySelector('#panelGames .gm-fold');
+      // The row is a div, and a div takes no focus: the button inside it is what opens a game.
+      // The list is flat and nothing folds any more, so the first open button in the page is the
+      // first row anybody can see, Favourites included (it comes first in the document)
+      var first = document.querySelector('#panelGames .gm-rows:not([hidden]) .gm-open');
       if (first) first.focus();
     }
   }
@@ -1263,13 +1262,14 @@
   // about me, not about this window, and a second window showing a different set of favourites
   // would be a second answer to the same question. So the star asks and the row moves when the host
   // answers, like every number on this page.
-  // Which blocks are folded is this window's (`gamesFold` in getState), the way `rosterCollapsed`
-  // already is: that IS a statement about what this window is looking at.
+  // There is no second memory any more: the headings that could be folded went in 1.28.0 and the
+  // `gamesFold` they were remembered in went with them (docs/game-panels.md, section 7-2).
   //
-  // A starred game LEAVES its family and goes to the Favourites block. In two places at once it
-  // would be the reader's job to work out whether the two are the same game. Inside the block it
-  // keeps the register's order rather than the order it was starred in, so the block is a short
-  // copy of the same list and not a third order to learn.
+  // A starred game LEAVES the list and goes to the box above it. In two places at once it would be
+  // the reader's job to work out whether the two are the same game. Up there it keeps the register's
+  // order rather than the order it was starred in, so the box is a short copy of the same list and
+  // not a third order to learn, and the LIT STAR is what says it is kept: on a list with no
+  // headings on it, a `Favourites` heading would be the one heading left.
   //
   // The rows are MOVED, never re-made. Each one holds the figure CUC.rowFig writes (#fig-<id>) and
   // a redraw would blank it until the next reply, which is a figure that cannot be the reason the
@@ -1297,46 +1297,24 @@
       var home = keep ? into : el(row.getAttribute('data-home'));
       if (home) home.appendChild(row);
     }
-    trimBlocks();
+    trimBoxes();
     if (act && act.focus && _gmList && _gmList.contains(act)) act.focus();
   }
-  // A heading with nothing behind it is a heading for a family the favourites emptied, and the
-  // Favourites block itself is the same rule: no stars, no block (no empty box, no dotted outline,
-  // no "put your favourites here"). The top margin goes to the first block that SHOWS, which is
-  // why it is a class and not :first-of-type
-  function trimBlocks() {
-    var grps = document.querySelectorAll('#panelGames .gm-grp'), top = null;
-    for (var i = 0; i < grps.length; i++) {
-      var box = grps[i].querySelector('.gm-rows');
-      grps[i].hidden = !box || box.children.length === 0;
-      grps[i].classList.remove('gm-top');
-      if (!grps[i].hidden && !top) top = grps[i];
+  // No stars, no box: no empty box, no dotted outline, no "put your favourites here". The same rule
+  // covers the other end, where every game is starred and the list below is the empty one. The top
+  // margin goes to the box that SHOWS, which is why it is a class and not :first-of-type
+  function trimBoxes() {
+    var boxes = document.querySelectorAll('#panelGames .gm-rows'), top = null;
+    for (var i = 0; i < boxes.length; i++) {
+      boxes[i].hidden = boxes[i].children.length === 0;
+      boxes[i].classList.remove('gm-top');
+      if (!boxes[i].hidden && !top) top = boxes[i];
     }
     if (top) top.classList.add('gm-top');
   }
   function toggleFav(id) {
     var row = id && favRowOf(id); if (!row) return;
     vscode.postMessage({ type: 'favGame', id: id, on: !row.classList.contains('fav') });
-  }
-  function applyFolds() {
-    var shut = (vscode.getState() || {}).gamesFold || {};
-    var grps = document.querySelectorAll('#panelGames .gm-grp');
-    for (var i = 0; i < grps.length; i++) {
-      var head = grps[i].querySelector('.gm-fold'); if (!head) continue; // Favourites does not fold
-      var f = !!shut[grps[i].getAttribute('data-grp')];
-      grps[i].classList.toggle('folded', f);
-      head.setAttribute('aria-expanded', f ? 'false' : 'true');
-    }
-  }
-  // Keyed by the heading's own text, not by where the block sits: a game added later renumbers the
-  // blocks, and a fold that then applies to somebody else's family is worse than one forgotten
-  function toggleFold(head) {
-    var grp = head.closest ? head.closest('.gm-grp') : null; if (!grp) return;
-    var k = grp.getAttribute('data-grp'); if (!k) return;
-    var s = vscode.getState() || {}, f = s.gamesFold || {};
-    if (f[k]) delete f[k]; else f[k] = 1;
-    s.gamesFold = f; vscode.setState(s);
-    applyFolds();
   }
   var _gmList = el('panelGames');
   // The star first: it sits inside the row, so asking what was clicked in the other order opens
@@ -1345,12 +1323,9 @@
     var t = e.target; if (!t || !t.closest) return;
     var star = t.closest('.gm-fav');
     if (star) { toggleFav(star.getAttribute('data-fav')); return; }
-    var head = t.closest('.gm-fold');
-    if (head) { toggleFold(head); return; }
     var open = t.closest('.gm-open');
     if (open) openGame(open.getAttribute('data-game'));
   });
-  applyFolds();
   applyFavs(null);   // before boot(): the empty list is a state too, and boot takes the focus
   if (el('bjBack')) el('bjBack').addEventListener('click', function () { openGame(null); });
 

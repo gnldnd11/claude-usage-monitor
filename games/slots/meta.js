@@ -25,7 +25,6 @@ module.exports = {
   panel: 'games/slots/panel.js',
   cls: 'sl',
   order: 50,
-  group: 'Machines',
 
   table: {
     key: 'sl',
@@ -51,28 +50,39 @@ module.exports = {
      The side padding is .gm-plate.tight's (games/casino.js) and the gutters are what centring 144
      inside 152 leaves over, which is the same two 4px the carets stand in */
   .sl-plate{position:relative;display:flex;justify-content:center;width:152px;max-width:100%;margin:0 auto;overflow:hidden;}
-  .sl-reel{display:flex;flex-direction:column;gap:4px;flex:none;}
+  /* THE WINDOW IS 112px, DOWN FROM 152, and it is a crop and not a resize: the pay line keeps its
+     own 48px and the rows either side show 28 of theirs (28 + 4 + 48 + 4 + 28). The cell is still
+     48, so the symbol grid is still two whole pixels a unit (docs/game-panels.md 8-3).
+     What it buys: the winning row stops being a 48px band inside a 152px box and becomes the
+     window itself, with the ring plainly passing above and below it. This screen was the fullest
+     in the casino at 183% of the design height, so it is the one with the room to give back */
+  .sl-reel{position:relative;flex:none;width:48px;height:112px;overflow:hidden;}
   .sl-reel+.sl-reel{box-shadow:inset 1px 0 0 rgba(0,0,0,.55);}
+  /* the run of ring inside the window. The transition is set per reel in games/slots/panel.js,
+     because its length is the reel's own stop time and the easing is the wheel's
+     (games/wheel/meta.js). Reduced motion is handled there too, by CUC.reduceMotion() drawing the
+     plate at rest instead of rolling it: there is no transition here for a media query to cancel */
+  .sl-strip{display:flex;flex-direction:column;gap:4px;}
   .sl-reel .sy-cell{flex:none;}
   /* the pay line is the middle row, so the rows either side of it are the ring going past */
   .sl-reel .sy-cell.dim{opacity:.5;}
   /* ONE RING PER MATCHED REEL, never one box around the line: a box makes three cells into one
      thing and deletes "three of them matched", and a pair matches only two of the three */
   .sl-reel .sy-cell.hit{box-shadow:inset 0 0 0 2px #e8895a;}
+  /* the drum. The reels are told apart by the 1px inset above, which costs no width; this is the
+     other half of reading them as cylinders rather than as a grid, and it costs no width either
+     because it is drawn inside the window the ring is already clipped to */
+  .sl-reel:after{content:"";position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 10px 10px -8px rgba(0,0,0,.9), inset 0 -10px 10px -8px rgba(0,0,0,.9);}
   /* the carets: the pay line, marked from outside the reels */
   .sl-caret{position:absolute;top:50%;width:0;height:0;margin-top:-5px;
     border-top:5px solid transparent;border-bottom:5px solid transparent;}
   .sl-caret.l{left:0;border-left:4px solid #e8895a;}
   .sl-caret.r{right:0;border-right:4px solid #e8895a;}
-  /* a rolling reel. The .07s here is the same fact as SL_T.tick in games/slots/panel.js: one lurch
-     of the strip per symbol swapped into the window */
-  .sl-reel.spin{animation:slRoll .07s linear infinite;}
-  @keyframes slRoll{from{transform:translateY(-5px);}to{transform:translateY(0);}}
   /* the paytable, behind the shared ? toggle (docs/game-panels.md, section 5) */
   .sl-pay{display:flex;gap:6px;line-height:1.5;}
   .sl-pay span{flex:1 1 auto;min-width:0;}
   .sl-pay b{flex:none;width:48px;text-align:right;font-weight:700;}
   .sl-pay.head{color:var(--muted);opacity:.8;}
-  @media (prefers-reduced-motion:reduce){.sl-reel.spin{animation:none;}}
 `
 };

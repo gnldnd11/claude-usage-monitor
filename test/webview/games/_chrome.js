@@ -76,28 +76,24 @@ module.exports = {
     push(C(18250), { cfg: { panelHidden: [] } }); advance(5);
     ok('shown again', box.style.display === '');
     } else if (MODE === 'favs') {
-    // The games list's two tops: the star that lifts a game out of its family, and the heading that
-    // folds one away. THE TWO MEMORIES ARE NOT THE SAME MEMORY and that is most of what is checked
-    // here: a favourite is the HOST's (globalState, so a second window cannot show a different set)
-    // and a fold is this window's (getState, like rosterCollapsed). Starring therefore round-trips
-    // through the real host in this harness, which is why every star click is followed by advance().
+    // The games list's one top: the star that lifts a game out of the list and puts it above it.
+    //
+    // THE LIST IS FLAT (docs/game-panels.md, section 7-2), so this mode is half what it was: the
+    // headings and the folding they carried are gone, and with them the second memory (`gamesFold`
+    // in getState) that used to be the other half of what was checked here. What is left is the one
+    // memory that stayed, and it is the HOST's: globalState, so a second window cannot show a
+    // different set of favourites. Starring therefore round-trips through the real host in this
+    // harness, which is why every star click is followed by advance().
     const css = doc.querySelector('style').textContent;
     const listed = () => doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game'));
     const rowsIn = (box) => doc.querySelectorAll('#' + box + ' .gm-row').map((r) => r.getAttribute('data-game'));
-    const heads = () => doc.querySelectorAll('#panelGames .gm-grp:not([hidden]) .gm-sec').map((e) => e.textContent);
     const star = (id) => h.favFor(id);
     const kept = () => Object.keys(gs.data.gameFavoritesV1 || {}).join();
-    const groups = registry.GAMES.map((g) => g.group).filter((g, i, a) => g && g !== a[i - 1]);
-    // The market is the only game in its family, so starring it is also what empties a family. The
-    // second star is therefore taken on a game whose family has someone left in it, and the two
-    // cases are checked one after the other rather than at once
-    const keep = registry.BY_ID.market.group;             // the family the market has to itself
     const home = h.rowBox('market').getAttribute('data-home');
-    const homeBj = h.rowBox('blackjack').getAttribute('data-home');
     const fig0 = $('fig-market');
     // ---------- nothing starred ----------
-    ok('nothing starred: the block is not there at all (no empty box, no dotted slot)',
-      $('gmFavs').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0
+    ok('nothing starred: the box is not there at all (no empty box, no dotted slot)',
+      $('gmFavRows').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0
       && listed().join() === registry.GAMES.map((g) => g.id).join(), listed().join());
     ok('every star is off and says so, and names the game it keeps',
       doc.querySelectorAll('#panelGames .gm-fav').every((s) => s.getAttribute('aria-pressed') === 'false')
@@ -107,83 +103,75 @@ module.exports = {
       star('market').getAttribute('aria-label'));
     // the first paint has to be right on its own: the scripts run after it, and a star that only
     // says it is off once webview.js has been through the list is a star that says nothing at first
-    ok('the markup itself says every star is off and every family is open',
+    ok('the markup itself says every star is off, and carries no heading and nothing to fold',
       (h.rawHtml.match(/class="gm-fav" data-fav="[a-z]+" aria-pressed="false"/g) || []).length === registry.GAMES.length
-      && (h.rawHtml.match(/class="gm-sec gm-fold" aria-expanded="true"/g) || []).length === groups.length,
+      && h.rawHtml.indexOf('gm-sec') < 0 && h.rawHtml.indexOf('gm-fold') < 0,
       (h.rawHtml.match(/aria-pressed="false"/g) || []).length + ' stars, '
-        + (h.rawHtml.match(/aria-expanded="true"/g) || []).length + ' headings');
-    ok('one heading per family in the page, plus the hidden Favourites one',
-      doc.querySelectorAll('#panelGames .gm-sec').length === groups.length + 1
-      && heads().join() === groups.join(), heads().join());
-    ok('the first family that SHOWS carries the top margin, not the hidden block',
-      doc.querySelectorAll('#panelGames .gm-grp.gm-top').length === 1
-      && !$('gmFavs').classList.contains('gm-top'));
+        + (h.rawHtml.match(/gm-sec/g) || []).length + ' headings');
+    ok('two boxes and no headings: every row lives in the one below',
+      doc.querySelectorAll('#panelGames .gm-rows').length === 2
+      && doc.querySelectorAll('#panelGames .gm-sec').length === 0
+      && rowsIn('gmRows').join() === registry.GAMES.map((g) => g.id).join(),
+      rowsIn('gmRows').join());
+    ok('the box that SHOWS carries the top margin, not the hidden one',
+      doc.querySelectorAll('#panelGames .gm-rows.gm-top').length === 1
+      && !$('gmFavRows').classList.contains('gm-top'));
     ok('the list takes the focus on the open button, never on the row div',
       active() === h.rowFor('blackjack') && active().localName === 'button', activeName());
     // ---------- one star ----------
     mouseClick(star('market')); advance(20);
     ok('a star does not open the game it is on', $('panelGames').style.display === '' && notShown('panelTable') && inGames() && !atTable(), bodyTabs());
-    ok('starring lifts the row into Favourites and out of its family',
-      rowsIn('gmFavRows').join() === 'market' && rowsIn(home).indexOf('market') < 0 && !$('gmFavs').hidden,
+    ok('starring lifts the row out of the list and into the box above it',
+      rowsIn('gmFavRows').join() === 'market' && rowsIn(home).indexOf('market') < 0 && !$('gmFavRows').hidden,
       rowsIn('gmFavRows').join() + ' | ' + rowsIn(home).join());
     ok('the HOST is what remembers it: globalState, not the webview’s own state', kept() === 'market', kept());
     ok('the row moved whole, so its figure came with it (same element, not a redraw)',
       $('fig-market') === fig0 && fig0.closest('.gm-rows').id === 'gmFavRows',
       fig0.closest('.gm-rows').id);
+    // THE LIT STAR IS THE WHOLE MARKER. There is no heading saying Favourites, so a kept row has to
+    // be legible as kept on its own: the star is filled, always shown, and says aria-pressed
     ok('the star is on, is still the focus, and the row says so too',
       star('market').getAttribute('aria-pressed') === 'true' && active() === star('market')
       && h.rowBox('market').classList.contains('fav'), activeName());
-    // the market is alone in its family, so that one star has also emptied a family
-    ok('a family the favourites emptied draws no heading, and is hidden rather than removed',
-      heads().join() === ['Favourites'].concat(groups.filter((g) => g !== keep)).join()
-      && doc.querySelectorAll('#panelGames .gm-grp[hidden]').length === 1
-      && rowsIn(home).length === 0 && listed().length === registry.GAMES.length,
-      heads().join());
-    ok('Favourites is now the first block that shows', $('gmFavs').classList.contains('gm-top'));
-    // ---------- the second one, out of a family that still has someone in it ----------
+    ok('and the ember star is what shows it is kept, with no heading anywhere',
+      /\.gm-row\.fav \.gm-fav\{opacity:1;color:#e8895a;\}/.test(css)
+      && /\.gm-row\.fav \.gm-fav svg\{fill:currentColor;\}/.test(css)
+      && doc.querySelectorAll('#panelGames .gm-sec').length === 0);
+    ok('Favourites is now the box that carries the top margin', $('gmFavRows').classList.contains('gm-top'));
+    // ---------- the second one ----------
     mouseClick(star('blackjack')); advance(20);
-    ok('the block keeps the register’s order, not the order they were starred in',
+    ok('the box keeps the register’s order, not the order they were starred in',
       rowsIn('gmFavRows').join() === 'blackjack,market', rowsIn('gmFavRows').join());
-    ok('a family that still has a row keeps its heading',
-      heads().indexOf(registry.BY_ID.blackjack.group) >= 0
-      && rowsIn(homeBj).length > 0 && listed().length === registry.GAMES.length,
-      heads().join() + ' | ' + rowsIn(homeBj).join());
+    ok('and the rows left behind keep theirs, with every game still listed once',
+      rowsIn(home).join() === registry.GAMES.map((g) => g.id).filter((id) => ['blackjack', 'market'].indexOf(id) < 0).join()
+      && listed().length === registry.GAMES.length, rowsIn(home).join());
     // ---------- off again, from the keyboard ----------
     star('market').focus(); doc.pressKey('Enter'); advance(20);
     ok('Enter on the star unstars it and the row goes home, in its own order',
-      rowsIn('gmFavRows').join() === 'blackjack' && rowsIn(home).join() === 'market' && kept() === 'blackjack',
+      rowsIn('gmFavRows').join() === 'blackjack' && rowsIn(home).join() === 'hilo,slots,wheel,market'
+      && kept() === 'blackjack',
       rowsIn('gmFavRows').join() + ' | ' + rowsIn(home).join());
-    ok('its family comes back with it', heads().join() === ['Favourites'].concat(groups).join(), heads().join());
     star('blackjack').focus(); doc.pressKey('Enter'); advance(20);
-    ok('the last one off takes the block away again',
-      $('gmFavs').hidden && kept() === '' && listed().join() === registry.GAMES.map((g) => g.id).join(),
+    ok('the last one off takes the box away again',
+      $('gmFavRows').hidden && kept() === '' && listed().join() === registry.GAMES.map((g) => g.id).join(),
       listed().join());
-    // ---------- folding (no favourites, so the first block is a family) ----------
-    const head0 = doc.querySelector('#panelGames .gm-fold'), grp0 = head0.closest('.gm-grp');
-    const n0 = listed().length;
-    head0.click(); advance(5);
-    ok('folding a heading keeps the heading and the rows in the page',
-      grp0.classList.contains('folded') && head0.getAttribute('aria-expanded') === 'false'
-      && !grp0.hidden && listed().length === n0 && heads().length === groups.length,
-      heads().join());
-    ok('and what hides the rows is the sheet, with the chevron .ws-fold already uses',
-      /\.gm-grp\.folded \.gm-rows\{display:none;\}/.test(css)
-      && /\.gm-grp\.folded \.gm-sec svg\{transform:rotate\(180deg\);\}/.test(css));
-    ok('the heading says what it controls', head0.getAttribute('aria-controls') === grp0.querySelector('.gm-rows').id);
-    // a push arrives every ten seconds: it must not unfold what this window folded
+    // every game starred: the list below is the empty box now, and the same rule hides it
+    for (const g of registry.GAMES) { mouseClick(star(g.id)); advance(20); }
+    ok('every game starred: the list below is hidden rather than left as an empty box',
+      $('gmRows').hidden && !$('gmFavRows').hidden
+      && rowsIn('gmFavRows').join() === registry.GAMES.map((g) => g.id).join(),
+      rowsIn('gmFavRows').join());
+    $('hdCredits').click(); advance(5); $('hdCredits').click(); advance(5);
+    ok('and the focus still lands on a row that can be seen', active() === h.rowFor('blackjack'), activeName());
+    // a push arrives every ten seconds: it must not undo what the host was told
     const base = { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: 0, today: 0, frac: 0, perCredit: 10000 } };
-    toWebview({ type: 'data', data: Object.assign({}, base, { favGames: {} }) }); advance(20);
-    ok('a data push does not unfold anything', grp0.classList.contains('folded') && head0.getAttribute('aria-expanded') === 'false');
-    head0.click(); advance(5);
-    ok('pressing it again unfolds it', !grp0.classList.contains('folded') && head0.getAttribute('aria-expanded') === 'true');
-    // every family folded: there is no row anybody can see, so the focus has to land on a heading
-    doc.querySelectorAll('#panelGames .gm-fold').forEach((hd) => { hd.click(); advance(5); });
-    $('hdCredits').click(); advance(5); $('hdCredits').click(); advance(5);
-    ok('with every family folded the focus lands on a heading, not on a row nobody can see',
-      !!active() && active().classList.contains('gm-fold'), activeName() + ' ' + (active() && active().className));
-    active().click(); advance(5);
-    $('hdCredits').click(); advance(5); $('hdCredits').click(); advance(5);
-    ok('unfolding one hands the focus back to its first row', active() === h.rowFor('blackjack'), activeName());
+    toWebview({ type: 'data', data: Object.assign({}, base, { favGames: gs.data.gameFavoritesV1 }) }); advance(20);
+    ok('a data push leaves the starred rows where they are',
+      rowsIn('gmFavRows').join() === registry.GAMES.map((g) => g.id).join() && $('gmRows').hidden,
+      rowsIn('gmFavRows').join());
+    for (const g of registry.GAMES) { mouseClick(star(g.id)); advance(20); }
+    ok('and clearing them all puts every row back in the list', $('gmFavRows').hidden
+      && rowsIn('gmRows').join() === registry.GAMES.map((g) => g.id).join(), rowsIn('gmRows').join());
     // ---------- the ring, lowered for the light theme in one place ----------
     ok('no focus ring writes the ember straight into the rule any more',
       !/focus-visible[^{]*\{[^}]*#e8895a/.test(css) && (css.match(/outline:2px solid var\(--focus\)/g) || []).length >= 9,

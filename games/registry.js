@@ -55,7 +55,6 @@ function whyNotMeta(g) {
   // row that opens an empty screen. Cheaper to find out here than on the player's first click
   if (!fs.existsSync(path.join(ROOT, g.panel))) return 'panel ' + g.panel + ' does not exist';
   if (g.order != null && !Number.isFinite(g.order)) return 'order must be a number when it is given';
-  if (g.group != null && typeof g.group !== 'string') return 'group must be a string when it is given';
   // the tile is markup, written straight into the list row. A non-string here is "[object Object]"
   // sitting in the icon square, which is a row that looks broken with nothing saying why
   if (g.tile != null && typeof g.tile !== 'string') return 'tile must be a string when it is given';
@@ -64,12 +63,12 @@ function whyNotMeta(g) {
   return null;
 }
 
-// `order` and `group` filled in, so every reader downstream sees the same shape whether the meta
-// bothered with them or not
+// `order` filled in, so every reader downstream sees the same shape whether the meta bothered with
+// it or not. There was a `group` beside it until 1.28.0 and the list is flat now
+// (docs/game-panels.md, section 7-2)
 function normalize(g) {
   return Object.assign({}, g, {
-    order: Number.isFinite(g.order) ? g.order : NO_ORDER,
-    group: typeof g.group === 'string' ? g.group : ''
+    order: Number.isFinite(g.order) ? g.order : NO_ORDER
   });
 }
 
@@ -140,9 +139,6 @@ function css() {
 // What the webview needs to draw a list row and a panel heading. `uri` turns an asset filename
 // into something the webview may load; `icon` looks a glyph up in icons.js. Both are the host's to
 // resolve, so this stays free of vscode.
-// `group` is the heading this row sits under; html.js draws one wherever it changes down the
-// already-sorted list, which is why the `order` numbers have to keep a group contiguous.
-//
 // A game's list picture comes one of two ways and never both: `thumb` is a painted PNG the host
 // has to turn into a webview URI, `tile` is an SVG string that needs no request and no URI. The
 // four original games have art, the other ten are drawn in games/tiles.js
@@ -151,7 +147,6 @@ function view(uri, icon) {
     id: g.id, key: g.key, name: g.name, sub: g.sub,
     title: g.title, hint: g.hint, cls: g.cls || g.key,
     rowTitle: g.rowTitle || '',
-    group: g.group,
     icon: icon(g.icon) || '', thumb: g.thumb ? uri(g.thumb) : '', tile: g.tile || ''
   }));
 }

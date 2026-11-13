@@ -37,42 +37,26 @@ function renderHtml(vars) {
   // `.gm-fig` is left empty for the webview to fill (CUC.rowFig) and `:empty` hides it, so the
   // rows that have no figure also have no gap where one would be.
   // `data-home` is the rows box this game belongs in. The webview MOVES the row into the
-  // Favourites block and back, and it has to put it back without guessing from the heading text
-  const gameRow = (g, home) => `        <div class="gm-row" data-game="${g.id}" data-home="${home}">
-          <button type="button" class="gm-open" data-game="${g.id}"${g.rowTitle ? ` title="${g.rowTitle}"` : ''}>
-            <span class="gm-ic">${g.icon}${g.tile || ''}${g.thumb ? `<img src="${g.thumb}" alt=""/>` : ''}</span>
-            <span class="gm-txt"><span class="gm-nm">${g.name}</span>${g.sub ? `<span class="gm-sub">${g.sub}</span>` : ''}</span>
-            <span class="gm-fig" id="fig-${g.id}"></span>
-          </button>
-          <button type="button" class="gm-fav" data-fav="${g.id}" aria-pressed="false" aria-label="Favourite ${g.name}" title="Favourite ${g.name}">${IC.star}</button>
-        </div>`;
-  // The list in blocks, one per `group`, each with its own heading and its own rows box.
+  // Favourites box and back, and it has to put it back without reading anything off the screen
+  const gameRow = (g, home) => `      <div class="gm-row" data-game="${g.id}" data-home="${home}">
+        <button type="button" class="gm-open" data-game="${g.id}"${g.rowTitle ? ` title="${g.rowTitle}"` : ''}>
+          <span class="gm-ic">${g.icon}${g.tile || ''}${g.thumb ? `<img src="${g.thumb}" alt=""/>` : ''}</span>
+          <span class="gm-txt"><span class="gm-nm">${g.name}</span>${g.sub ? `<span class="gm-sub">${g.sub}</span>` : ''}</span>
+          <span class="gm-fig" id="fig-${g.id}"></span>
+        </button>
+        <button type="button" class="gm-fav" data-fav="${g.id}" aria-pressed="false" aria-label="Favourite ${g.name}" title="Favourite ${g.name}">${IC.star}</button>
+      </div>`;
+  // ONE FLAT LIST, and the only reason there are two boxes is that a starred row moves to the top.
   //
-  // A block rather than a loose heading because both things that move rows need a container: the
-  // heading has to disappear when the favourites have emptied its family (an empty heading is a
-  // heading for nothing), and folding it has to hide its rows and keep the heading.
-  //
-  // The register has already sorted the rows (games/registry.js), so this walks them once and never
-  // re-groups: a group that is not contiguous in `order` is an ordering mistake in a meta.js, and it
-  // shows up here as a heading printed twice rather than as rows quietly moving somewhere else.
-  // The rows boxes are therefore numbered, not named: two blocks may legitimately carry one name
-  const gameBlocks = (list) => {
-    const blocks = [];
-    for (const g of list) {
-      const last = blocks[blocks.length - 1];
-      if (last && last.group === (g.group || '')) last.rows.push(g);
-      else blocks.push({ group: g.group || '', rows: [g] });
-    }
-    return blocks.map((b, i) => {
-      const rid = 'gmRows' + i;
-      // A group with no name is not a mistake (games/registry.js lets a game not care), and it has
-      // no heading, so there is nothing to fold it by: it just shows its rows
-      const head = b.group
-        ? `      <button type="button" class="gm-sec gm-fold" aria-expanded="true" aria-controls="${rid}">${IC.chevron}<span>${b.group}</span></button>\n`
-        : '';
-      return `    <div class="gm-grp" data-grp="${b.group}">\n${head}      <div class="gm-rows" id="${rid}">\n${b.rows.map((g) => gameRow(g, rid)).join('\n')}\n      </div>\n    </div>`;
-    }).join('\n');
-  };
+  // The headings went in 1.28.0 (docs/game-panels.md, section 7-2). Five rows whose names and
+  // pictures are all different do not need `Machines` to say that Slots is a machine, `What you
+  // keep` was a heading over a single row and therefore a label rather than a family, and the one
+  // figure on the right reads as a figure precisely because every other row is identically shaped:
+  // with the headings there were eight blocks of text to scan, and without them there are five rows
+  // the same and one thing that is not.
+  // Folding went with them, since five rows are all on screen at once, and so did the stored state
+  // that remembered which families were shut.
+  const gameRows = (list) => list.map((g) => gameRow(g, 'gmRows')).join('\n');
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
 <style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}<div class="wrap"><div class="card">
@@ -180,11 +164,10 @@ function renderHtml(vars) {
   </div>
   <div class="inner bj-games" id="panelGames" style="display:none">
     <div class="ihead"><div class="it gm-it">${IC.coin} Games</div></div>
-    <div class="gm-grp gm-favs" id="gmFavs" data-grp="" hidden>
-      <div class="gm-sec">Favourites</div>
-      <div class="gm-rows" id="gmFavRows"></div>
+    <div class="gm-rows" id="gmFavRows" hidden></div>
+    <div class="gm-rows" id="gmRows">
+${gameRows(gameList)}
     </div>
-${gameBlocks(gameList)}
   </div>
   <div id="gameStage"></div>
 </div></div>

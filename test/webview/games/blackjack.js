@@ -61,15 +61,20 @@ module.exports = {
       && doc.querySelectorAll('#panelGames .gm-ic .gm-tile').length === registry.GAMES.filter((g) => g.tile).length
       && doc.querySelectorAll('#panelGames .gm-ic svg:not(.gm-tile)').length === registry.GAMES.length,
       doc.querySelectorAll('#panelGames .gm-ic img').map((e) => /[^/]+$/.exec(e.getAttribute('src'))[0] + ' alt=' + JSON.stringify(e.getAttribute('alt'))).join(' '));
-    // One heading where the group changes, and a group that comes back would print its heading
-    // twice: see test/registry.test.js, which is where that mistake is named.
-    // Favourites is one more heading, in the page from the first paint and hidden with its block
-    // while nothing is starred (test/webview/games/_chrome.js, the favs mode, is where that lives)
-    ok('one heading per family, in the order the register sorted them, under an empty Favourites',
-      doc.querySelectorAll('#panelGames .gm-sec').map((e) => e.textContent).join()
-        === ['Favourites'].concat(registry.GAMES.map((g) => g.group).filter((g, i, a) => g && g !== a[i - 1])).join()
-      && $('gmFavs').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0,
-      doc.querySelectorAll('#panelGames .gm-sec').map((e) => e.textContent).join());
+    // THE LIST IS FLAT: five rows in the register's own order, no headings over them and nothing to
+    // fold (docs/game-panels.md, section 7-2). This is the assertion that keeps the next reader from
+    // putting `Machines` and `What you keep` back: there is no heading element of any kind in the
+    // list, and the one row that differs from the other five differs by carrying a figure, not by
+    // sitting under a different word. The empty Favourites box is hidden rather than drawn
+    // (test/webview/games/_chrome.js, the favs mode, is where the starring itself lives)
+    ok('the list is five flat rows in the register’s order, with no headings and nothing folded',
+      doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join()
+        === registry.GAMES.map((g) => g.id).join()
+      && doc.querySelectorAll('#panelGames .gm-sec').length === 0
+      && doc.querySelectorAll('#panelGames .gm-fold').length === 0
+      && $('gmFavRows').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0,
+      doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join()
+        + ' / ' + doc.querySelectorAll('#panelGames .gm-sec').length + ' headings');
     // the figure slot is in the page from the first paint, because the game that fills it (the
     // market's open profit) has to be able to fill it before it is opened: the host answers its own
     // first data push with the stored wallet, so the market can put a figure on its row before
