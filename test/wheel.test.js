@@ -23,8 +23,8 @@ const deal = (bet, seed) => wh.newRound({ seed: seed == null ? 'seed' : seed, id
 const BETS = [wh.MIN_BET, 12, 14, 26, 100, 998, 1000, 123456];
 
 // The first seed (from a fixed list) that stops `risk` in slice `slot`. The host makes a fresh seed
-// per round and keeps it, so this is how a test picks an outcome: the same way the forge's tests
-// search a seed for a roll
+// per round and keeps it, so this is how a test picks an outcome: search the seed against the
+// engine until it deals the one the test is about
 function seedForSlot(slot, risk, tag) {
   for (let i = 0; i < 40000; i++) {
     const seed = (tag || 'pin') + '-' + risk + '-' + slot + '-' + i;

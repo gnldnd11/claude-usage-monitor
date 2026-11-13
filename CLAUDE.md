@@ -18,7 +18,7 @@
 
 ## 카지노는 디렉터리다
 
-게임 14개가 있고, **게임 하나 = 디렉터리 하나**다. `games/<id>/meta.js` + `games/<id>/panel.js`.
+게임 5개가 있고(1.25.0 에서 아홉을 폐지했다), **게임 하나 = 디렉터리 하나**다. `games/<id>/meta.js` + `games/<id>/panel.js`.
 `games/registry.js`가 디렉터리를 읽어서 목록을 만들므로 **게임을 추가할 때 공유 파일을 고칠 일이 없다.**
 `extension.js`·`webview.js`·`html.js`·`styles.js`에 게임 이름이 한 번도 안 나온다. 그 성질을 깨지 않는다.
 

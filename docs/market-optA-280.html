@@ -1,0 +1,782 @@
+<!doctype html><html><head><meta charset="utf-8">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;padding:0;background:transparent;color:var(--text);font-size:12px;
+    font-family:var(--vscode-font-family),-apple-system,"SF Pro",sans-serif;
+    --card:#232326;--inner:#191919;--track:#3a3a3d;--text:#ececec;--muted:#8b8b90;
+    --border:#303034;--iborder:#2c2c30;--ringtrack:#333;--bubble:#fff;--bubblebd:rgba(0,0,0,.06);
+    --felt:#17462f;--felt-lo:#0f3423;--felt-ink:#f2f6f3;--felt-dim:#9fb9a9;
+    /* the focus ring, as a token, because the casino writes one in eleven places. Ember measures
+       6.8:1 on the dark --inner and 2.38:1 on the light one, so the light theme lowers it (below)
+       instead of each of the nine deciding for itself */
+    --focus:#e8895a;
+    --forge:#2b2320;--forge-lo:#15100e;--forge-ink:#f4efe9;--forge-dim:#b7a79c;}
+  body.vscode-light{--card:#ffffff;--inner:#f6f6f7;--track:#e4e4e7;--text:#1d1d1f;--muted:#78787f;
+    --border:#e7e7ea;--iborder:#ededf0;--ringtrack:#e2e2e6;--bubble:#ffffff;--bubblebd:rgba(0,0,0,.14);
+    /* 4.05:1 on --inner (#f6f6f7) and 3.44:1 on --track, where ember was 2.38:1. Same role, not a
+       new colour: it is tiles.js's emberLo, the pixel coin's rim */
+    --focus:#c25a34;}
+  body.vscode-high-contrast{--card:#000;--inner:#000;--border:#6fc3df;--iborder:#6fc3df;--text:#fff;--track:#555;}
+  .wrap{padding:10px;}
+  .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;}
+  .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:13px;}
+  .brand{display:flex;align-items:center;gap:10px;min-width:0;}
+  .logo{width:28px;height:28px;flex:none;}
+  .ttl{min-width:0;flex:1 1 auto;overflow:hidden;}
+  .ttl .t1{font-size:16px;font-weight:700;line-height:1.1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ttl .t2{color:var(--muted);font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mascot{position:relative;flex:none;}
+  .mascot img{width:44px;height:auto;image-rendering:pixelated;display:block;}
+  .bubble{position:absolute;top:-10px;right:-13px;background:var(--bubble);border:1px solid var(--bubblebd);
+    border-radius:8px;padding:3px 4px;line-height:0;box-shadow:0 2px 5px rgba(0,0,0,.2);}
+  .bubble svg{width:12px;height:12px;display:block;}
+  .warnbar{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;margin-bottom:11px;border-radius:9px;background:rgba(229,72,77,.13);border:1px solid rgba(229,72,77,.55);color:var(--text);font-size:11.5px;line-height:1.35;}
+  .warnbar[hidden]{display:none;}
+  .warnbar svg{width:15px;height:15px;flex:none;}
+  .warnbar .wbmsg{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
+  .warnbar .wbq{display:block;margin-top:4px;color:var(--muted);font-style:italic;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .warnbar .wbx{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:1px 5px;border-radius:5px;align-self:flex-start;}
+  .warnbar .wbx:hover{background:rgba(255,255,255,.12);color:var(--text);}
+  .mascot-wrap{position:relative;display:inline-flex;}
+  .mwarn{position:absolute;top:-15px;left:50%;transform:translateX(-50%);background:#fff;border-radius:10px;padding:3px 5px 4px;box-shadow:0 3px 9px rgba(0,0,0,.25);cursor:pointer;z-index:6;}
+  .mwarn.calm{animation:none;cursor:default;}
+  .mwarn.mid{animation:pulse 1.9s ease-in-out infinite;}
+  .mwarn.high{animation:pulse 1.2s ease-in-out infinite;}
+  .warnbar.mid{border-color:rgba(245,166,35,.6);}
+  .mwarn[hidden]{display:none;}
+  .mwarn svg{width:17px;height:17px;display:block;}
+  .mwarn::after{content:'';position:absolute;bottom:-6px;left:50%;margin-left:-6px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #fff;}
+  .inner{position:relative;background:var(--inner);border:1px solid var(--iborder);border-radius:13px;padding:13px;}
+  .ihead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;padding-right:5px;}
+  .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);white-space:nowrap;min-width:0;overflow:hidden;flex:0 1 auto;}
+  .ihead .it svg{width:15px;height:15px;color:#e8895a;}
+  .upd{color:var(--muted);font-size:10.5px;display:flex;align-items:center;gap:5px;white-space:nowrap;flex:none;}
+  .upd .d{width:6px;height:6px;border-radius:50%;background:#e8895a;box-shadow:0 0 3px #e8895a;flex:none;}
+  .body{display:flex;gap:14px;align-items:center;flex-wrap:nowrap;}
+  .meters{flex:1 1 auto;min-width:0;}
+  .meter{margin-bottom:10px;}
+  .meter:last-child{margin-bottom:0;}
+  .mtop{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
+  .mlabel{color:var(--muted);font-size:11.5px;}
+  .mval{font-weight:700;font-size:13px;color:var(--text);}
+  .mbar{position:relative;height:7px;border-radius:4px;background:var(--track);overflow:hidden;}
+  .mfill{position:absolute;left:0;top:0;height:100%;border-radius:4px;
+    background:linear-gradient(90deg,#e8895a,#f0a882);transition:width .5s ease;width:0;}
+  .msub{color:var(--muted);font-size:10px;margin-top:3px;text-align:right;opacity:.85;}
+  .ringbox{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;}
+  .ringwrap{position:relative;width:88px;height:88px;}
+  .ringwrap svg{transform:rotate(-90deg);}
+  .rtrack{stroke:var(--ringtrack);}
+  .rcenter{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .rpct{font-size:22px;font-weight:800;color:#e8895a;line-height:1;}
+  .rpct span:last-child{font-size:12px;}
+  .rtext{font-size:9.5px;color:var(--muted);margin-top:2px;}
+  .sparkle{width:88px;height:auto;margin-top:2px;image-rendering:pixelated;}
+  .stats{display:flex;gap:1px;margin-top:13px;background:var(--iborder);border-radius:11px;overflow:hidden;}
+  .stat{flex:1;background:var(--inner);padding:10px 8px;min-width:0;position:relative;}
+  .stat .stop{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+  .stat svg{width:14px;height:14px;color:#e8895a;flex:none;}
+  .stat .sval{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .stat .slabel{color:var(--muted);font-size:10px;white-space:nowrap;}
+  /* narrow panel: hide the stat tiles so values never truncate */
+  body.narrow .stats{display:none;}
+  .mgrp{display:flex;align-items:baseline;gap:6px;}
+  .srow{display:flex;align-items:baseline;gap:5px;}
+  .delta,.sdelta{color:#e8895a;font-weight:700;opacity:0;}
+  .delta{font-size:11px;}
+  .sdelta{font-size:10px;position:absolute;top:7px;right:8px;}
+  .delta.show,.sdelta.show{animation:flash 1.9s ease forwards;}
+  #ringArc{transition:stroke-dashoffset .6s ease, stroke .3s ease;}
+  .roll{display:inline-block;animation:roll .45s ease;}
+  .upd .d{animation:pulse 2.2s ease-in-out infinite;}
+  .notrans *{transition:none !important;}
+  .hactions{display:flex;align-items:center;gap:6px;flex:none;}
+  .toggle{background:transparent;border:0;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px;display:flex;line-height:0;}
+  .toggle:hover{background:var(--track);color:var(--text);}
+  .toggle svg{width:16px;height:16px;transition:transform .4s cubic-bezier(.34,1.56,.64,1);}
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:flex-start;justify-content:center;padding:14px;z-index:1000;animation:fade .16s ease;}
+  .sheet[hidden]{display:none;}
+  .sheet-card{background:var(--inner);border:1px solid var(--iborder);border-radius:12px;width:100%;max-width:280px;padding:13px 15px;box-shadow:0 8px 28px rgba(0,0,0,.32);max-height:100%;overflow-y:auto;box-sizing:border-box;}
+  .sheet-head{display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:13px;color:var(--text);margin-bottom:12px;}
+  .sheet-x{background:transparent;border:0;color:var(--muted);cursor:pointer;padding:3px;border-radius:6px;display:flex;line-height:0;}
+  .sheet-x:hover{background:var(--track);color:var(--text);}
+  .sheet-x svg{width:15px;height:15px;transform:rotate(180deg);}
+  .sheet-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;color:var(--text);}
+  .sheet-row + .sheet-row{margin-top:11px;}
+  .sheet-row label{color:var(--muted);}
+  .sheet-row select{background:var(--track);color:var(--text);border:1px solid var(--iborder);border-radius:7px;padding:5px 8px;font-size:12px;cursor:pointer;}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .sheet-sec{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:15px 0 7px;font-weight:700;}
+  .sheet-check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text);cursor:pointer;padding:4px 0;}
+  .sheet-check input{accent-color:#e8895a;cursor:pointer;width:14px;height:14px;flex:none;}
+  .sparkle-hd{width:0;opacity:0;flex:none;object-fit:contain;transition:width .4s cubic-bezier(.34,1.56,.64,1),opacity .35s ease;}
+  /* the small crab stands in for the mascot while compact hides it. Both rules are scoped to
+     the Usage tab (body.tab-usage) together, or the two crabs show up side by side elsewhere */
+  body.tab-usage.compact .sparkle-hd{width:32px;opacity:1;}
+  .card,.inner{transition:padding .4s cubic-bezier(.4,0,.2,1);}
+  .body{transition:gap .4s cubic-bezier(.4,0,.2,1);}
+  .ttl .t2,.ihead,.stats{overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s ease,margin .4s cubic-bezier(.4,0,.2,1);}
+  .ringbox{max-width:150px;overflow:visible;transition:max-width .45s cubic-bezier(.4,0,.2,1),opacity .35s ease;}
+  .ttl .t2{max-height:20px;}
+  .ihead{max-height:34px;}
+  .stats{max-height:90px;}
+  /* compact mode is a Usage-tab concept (bars only). The Agents tab and the blackjack table
+     have nothing to compress, so the hiding below applies on body.tab-usage only; otherwise
+     switching views while compact leaves the title and section headers missing. */
+  body.tab-usage.compact .mascot{display:none;}
+  body.tab-usage.compact .ttl .t2{max-height:0;opacity:0;}
+  body.tab-usage.compact .ihead{max-height:0;opacity:0;margin-bottom:0;}
+  body.tab-usage.compact .stats{max-height:0;opacity:0;margin-top:0;}
+  body.tab-usage.compact .ttl{display:none;}
+  .compact .ringbox{max-width:0;opacity:0;overflow:hidden;}
+  .compact .body{gap:0;}
+  .compact .card{padding:12px;}
+  .compact .inner{padding:11px;}
+  .compact .head{margin-bottom:10px;}
+  .compact .meter{margin-bottom:9px;}
+  @keyframes flash{0%{opacity:0;transform:translateY(5px);}12%{opacity:1;transform:translateY(0);}70%{opacity:1;}100%{opacity:0;transform:translateY(-3px);}}
+  @keyframes roll{0%{opacity:.25;transform:translateY(6px);}100%{opacity:1;transform:translateY(0);}}
+  @keyframes pulse{0%,100%{opacity:.4;}50%{opacity:1;}}
+  body.wrapcols .body{flex-wrap:wrap;}
+  body.wrapcols .ringbox{margin:6px auto 0;}
+  @media (max-width:270px){.stat .slabel{display:none;}.stat .sval{font-size:11px;text-overflow:clip;}.stat .sdelta{display:none;}.stat{padding:8px 6px;}.munit{display:none;}}
+  /* --- tab switcher + agent roster (tide pool) --- */
+  .tabs{display:flex;gap:3px;margin-bottom:11px;background:var(--inner);border:1px solid var(--iborder);border-radius:10px;padding:3px;}
+  .tab{position:relative;flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:transparent;border:0;color:var(--muted);font-size:12px;font-weight:600;padding:6px 8px;border-radius:7px;cursor:pointer;font-family:inherit;transition:color .15s ease,background .15s ease;}
+  .tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
+  .tab:hover:not(.active){color:var(--text);}
+  .inner.agents{padding:11px 11px 14px;}
+  .ws-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;min-width:0;}
+  .ws-head .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);min-width:0;overflow:hidden;flex:1 1 auto;}
+  .ws-head .it svg{width:15px;height:15px;color:#e8895a;flex:none;}
+  .ws-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  body.narrow .ws-title{display:none;}
+  .ws-map{display:flex;align-items:center;gap:3px;flex:none;max-width:60%;color:var(--text);background:var(--inner);border:1px solid var(--iborder);border-radius:8px;padding:3px 5px 3px 8px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;line-height:1.2;}
+  .ws-map:hover{border-color:var(--track);}
+  .ws-map span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ws-map svg{width:13px;height:13px;flex:none;color:var(--muted);transform:rotate(180deg);}
+  .sheet-wide{max-width:340px;}
+  .room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:7px;}
+  .room-opt{display:flex;flex-direction:column;gap:4px;padding:0 0 5px;border:1px solid var(--iborder);border-radius:9px;background:var(--card);cursor:pointer;overflow:hidden;font-family:inherit;text-align:center;transition:border-color .15s ease,transform .15s ease;}
+  .room-opt:hover{border-color:#e8895a;transform:translateY(-1px);}
+  .room-opt.on{border-color:#e8895a;box-shadow:0 0 0 1px #e8895a inset;}
+  .room-opt img{width:100%;height:auto;display:block;image-rendering:pixelated;}
+  .room-opt span{font-size:9.5px;font-weight:700;color:var(--text);padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .room-opt.on span{color:#e8895a;}
+  /* wide interior vignette: the art is cropped inside the room, so the frame fills edge to
+     edge — no backdrop showing through (which is what made light mode look broken), and
+     less than half the height of the old square. */
+  /* isolate + z-index:0 pins every room child (walkers, HUD, pops) inside one stacking
+     context, so their z-index can never compete with panel-level overlays. Without it the
+     transformed walkers leaked out and painted over the hover card and the modal. */
+  .ws-room{position:relative;isolation:isolate;z-index:0;width:100%;aspect-ratio:1.8/1;border-radius:11px;overflow:hidden;background:#0c0c0d;border:1px solid var(--iborder);transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .28s ease,border-width .34s ease;max-height:380px;}
+  .room-collapsed .ws-room{max-height:0;opacity:0;border-width:0;}
+  .ws-fold{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;padding:3px;border-radius:6px;display:flex;line-height:0;}
+  .ws-fold:hover{background:var(--track);color:var(--text);}
+  .ws-fold svg{width:14px;height:14px;transition:transform .3s ease;}
+  .ws-fold.folded svg{transform:rotate(180deg);}
+  /* on the Agents tab both sections fold from their own headers, so the panel-level
+     chevron beside the mascot has nothing left to do there */
+  body:not(.tab-usage) .toggle{display:none;}
+  /* .ihead reserves 5px on the right for text; the Crew header ends in the same fold
+     button as Room, so drop it or the two chevrons sit on different columns */
+  .ihead.crew-head{padding-right:0;}
+  /* space-between with three children stranded "N agents" in the middle — let the
+     title eat the slack so the count sits next to the chevron it belongs with */
+  .ihead.crew-head .it{flex:1 1 auto;}
+  .ws-run{display:inline-flex;align-items:center;gap:3px;margin-left:2px;font-size:9px;font-weight:800;color:#e5484d;flex:none;}
+  .ws-run::before{content:'';width:6px;height:6px;border-radius:50%;background:#e5484d;box-shadow:0 0 4px #e5484d;animation:pulse 1.4s ease-in-out infinite;}
+  #panelAgents:not(.room-collapsed) .ws-run{display:none;} /* redundant while the room itself is visible */
+  body.vscode-light .ws-room{background:#ececef;}
+  .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
+  .ws-stage{position:absolute;inset:0;overflow:hidden;}
+  .ws-hud{position:absolute;top:6px;left:7px;z-index:8;display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;letter-spacing:.2px;color:#fff;background:rgba(0,0,0,.68);padding:2px 8px;border-radius:8px;pointer-events:none;box-shadow:0 1px 5px rgba(0,0,0,.5);white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.6);}
+  /* narrow: the room is tiny, so the HUD scales down instead of covering it,
+     the header icon goes away, and the map dropdown gets the full row */
+  body.narrow .ws-hud{font-size:8px;padding:1px 6px;gap:4px;top:4px;left:5px;}
+  body.narrow .ws-hud-delta{font-size:9.5px;top:19px;left:6px;}
+  body.narrow .ws-head .it{display:none;}
+  body.narrow .ws-map{flex:1 1 auto;max-width:none;justify-content:space-between;}
+  .ws-hud-sep{opacity:.45;font-weight:400;}
+  .ws-hud-delta{position:absolute;top:26px;left:9px;z-index:8;font-size:11px;font-weight:800;color:#e8895a;letter-spacing:.2px;opacity:0;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.7);}
+  .ws-hud-delta.show{animation:flash 1.9s ease forwards;}
+  .walker{position:absolute;transform:translate(-50%,-100%);transition:left 1.6s ease-in-out,top 1.6s ease-in-out,opacity .45s ease;pointer-events:none;}
+  .wk-sprite{image-rendering:pixelated;}
+  .wk-role,.wk-name{position:absolute;left:50%;transform:translateX(-50%);font-size:8.5px;font-weight:700;white-space:nowrap;letter-spacing:.2px;padding:1px 5px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.5);}
+  .wk-role{bottom:100%;margin-bottom:3px;color:#ffcaa8;background:rgba(20,12,8,.82);}
+  .wk-name{top:100%;margin-top:3px;color:#fff;background:rgba(20,12,8,.82);}
+  .ws-stage.crowded .wk-role,.ws-stage.crowded .wk-name{display:none;}
+  /* working: a busy typing bob + a blinking "..." bubble so an agent at the desk
+     reads as WORKING, not just standing there */
+  .walker.working .wk-sprite{animation:wkBob .46s steps(2) infinite;}
+  @keyframes wkBob{0%,100%{transform:translateY(0);}50%{transform:translateY(-1.5px);}}
+  .wk-dots{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:3px;padding:2px 5px;border-radius:7px;background:rgba(20,12,8,.82);box-shadow:0 1px 3px rgba(0,0,0,.5);white-space:nowrap;line-height:0;}
+  .walker.working .wk-dots{display:inline-flex;gap:2.5px;align-items:center;}
+  .walker.working .wk-role{display:none;} /* dots take the overhead slot while working */
+  .wk-dots i{width:3px;height:3px;border-radius:50%;background:#ffcaa8;display:inline-block;animation:wkDot 1.1s ease-in-out infinite;}
+  .wk-dots i:nth-child(2){animation-delay:.18s;}
+  .wk-dots i:nth-child(3){animation-delay:.36s;}
+  @keyframes wkDot{0%,60%,100%{opacity:.25;transform:translateY(0);}30%{opacity:1;transform:translateY(-1.5px);}}
+  .walker.stuck .wk-dots{display:none;} /* a wedged agent isn't typing */
+  .walker.stuck .wk-sprite{animation:none;}
+  .cr-sprite{image-rendering:pixelated;cursor:pointer;}
+  .pool{display:flex;flex-wrap:wrap;justify-content:center;row-gap:8px;padding:8px 2px 2px;overflow:hidden;max-height:600px;opacity:1;transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .24s ease;}
+  .crew-mini{overflow:hidden;max-height:0;opacity:0;transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .24s ease;}
+  .crew-collapsed .pool{max-height:0;opacity:0;padding-top:0;padding-bottom:0;}
+  .crew-collapsed .crew-mini{max-height:420px;opacity:1;}
+  .cr-card{position:relative;flex:0 0 25%;display:flex;flex-direction:column;align-items:center;min-width:0;padding:5px 1px 8px;border-radius:10px;cursor:pointer;transition:opacity .3s ease,box-shadow .18s ease,background .18s ease;}
+  .cr-card:hover:not(.selected){background:rgba(127,127,127,.09);}
+  .cr-card:hover .cr-sprite{filter:brightness(1.1);}
+  .cr-card.selected{background:rgba(232,137,90,.13);box-shadow:0 0 0 1.5px #e8895a;}
+  .cr-gear{position:absolute;top:2px;left:3px;display:none;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:rgba(232,137,90,.92);color:#fff;cursor:pointer;line-height:0;box-shadow:0 1px 4px rgba(0,0,0,.3);z-index:5;}
+  .cr-card.selected .cr-gear{display:inline-flex;}
+  .cr-gear:hover{background:#e8895a;}
+  .cr-gear svg{width:12px;height:12px;}
+  /* agent settings modal */
+  .sheet-row input[type=text]{background:var(--track);color:var(--text);border:1px solid var(--iborder);border-radius:7px;padding:5px 8px;font-size:12px;font-family:inherit;width:130px;}
+  .am-appearance{display:block;}
+  .am-tabs{display:flex;gap:4px;margin-bottom:10px;}
+  .am-tab{flex:1;background:var(--track);border:0;color:var(--muted);font-size:11px;font-weight:600;padding:6px 4px;border-radius:7px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .am-tab.on{background:#e8895a;color:#fff;}
+  .am-tab:hover:not(.on){color:var(--text);}
+  .am-row{display:flex;flex-wrap:wrap;gap:6px;}
+  .am-npc{width:50px;height:50px;border-radius:9px;border:2px solid transparent;background:var(--track);display:flex;align-items:flex-end;justify-content:center;overflow:hidden;cursor:pointer;}
+  .am-npc:hover{border-color:var(--muted);}
+  .am-npc.on{border-color:#e8895a;background:rgba(232,137,90,.18);}
+  .am-npc .cr-sprite{image-rendering:pixelated;}
+  .cr-modelsel.m-opus{background:rgba(232,137,90,.95);}
+  .cr-modelsel.m-sonnet{background:rgba(90,154,232,.95);}
+  .cr-modelsel.m-haiku{background:rgba(95,184,122,.95);}
+  .cr-modelsel.m-other{background:rgba(127,127,127,.8);}
+  .cr-badge{position:absolute;top:-3px;left:50%;transform:translateX(-50%) translateY(-4px);min-width:15px;height:15px;padding:0 2px;border-radius:8px;background:#4fae74;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s ease,transform .2s ease;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.4);z-index:5;font-size:9px;font-weight:800;color:#fff;line-height:1;}
+  .cr-badge svg{width:10px;height:10px;}
+  .cr-card.stuck .cr-badge,.cr-card.done .cr-badge:not(:empty),.cr-card.active .cr-badge:not(:empty){opacity:1;transform:translateX(-50%) translateY(0);}
+  .cr-card.active .cr-badge{background:#e5484d;}
+  .cr-card.stuck .cr-badge{background:#f5a623;}
+  .cr-card.active{animation:crPulseR 1.1s ease-in-out infinite;}
+  .cr-card.done{animation:crPulseG 1.1s ease-in-out infinite;}
+  .cr-card.stuck{animation:crPulseA 1.6s ease-in-out infinite;}
+  @keyframes crPulseR{0%,100%{box-shadow:0 0 0 1.5px rgba(229,72,77,.5);}50%{box-shadow:0 0 0 2.5px rgba(229,72,77,1);}}
+  @keyframes crPulseG{0%,100%{box-shadow:0 0 0 1.5px rgba(79,174,116,.5);}50%{box-shadow:0 0 0 2.5px rgba(79,174,116,1);}}
+  @keyframes crPulseA{0%,100%{box-shadow:0 0 0 1.5px rgba(245,166,35,.5);}50%{box-shadow:0 0 0 2.5px rgba(245,166,35,1);}}
+  .cr-card.active .cr-sprite{filter:drop-shadow(0 0 5px rgba(229,72,77,.55));}
+  .cr-card.done .cr-sprite{filter:drop-shadow(0 0 5px rgba(79,174,116,.55));}
+  .cr-card.stuck .cr-sprite{filter:grayscale(.55) drop-shadow(0 0 5px rgba(245,166,35,.55));}
+  /* when any agent is active, dim the resting ones so the caller stands out */
+  .pool.has-active .cr-card:not(.active):not(.done):not(.stuck){opacity:.42;}
+  /* today's real per-agent cost (runs · tokens · median), parsed from the transcript */
+  .cr-body{display:flex;align-items:flex-end;justify-content:center;height:calc(52px * var(--cr-scale, 1));overflow:hidden;line-height:0;}
+  .cr-body .cr-sprite{transform:scale(var(--cr-scale, 1));transform-origin:bottom center;}
+  .cr-name{font-size:clamp(8px, calc(10.5px * var(--cr-scale, 1)), 10.5px);font-weight:600;color:var(--text);margin-top:3px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cr-role{font-size:clamp(7.5px, calc(9.5px * var(--cr-scale, 1)), 9.5px);font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* XP: level badge, "+N XP" float on completion, gold flash on level-up */
+  .cr-lv{position:absolute;top:2px;right:3px;font-size:clamp(7px, calc(8.5px * var(--cr-scale, 1)), 8.5px);font-weight:800;color:var(--muted);background:var(--inner);border:1px solid var(--iborder);border-radius:6px;padding:1px 4px;line-height:1.2;pointer-events:none;z-index:4;font-variant-numeric:tabular-nums;}
+  /* rises straight up over the head. The status badge shares that seat, so it waits
+     out the 1.5s flash (.xp-flash) and lands after — a sequence, not a pile-up. */
+  .xp-pop{position:absolute;top:6px;left:50%;font-size:10px;font-weight:800;color:#4fae74;background:var(--card);padding:0 4px;border-radius:5px;box-shadow:0 1px 3px rgba(0,0,0,.22);pointer-events:none;z-index:6;white-space:nowrap;animation:xpFloat 1.5s ease-out forwards;}
+  .xp-pop.lvup{color:#e8b23a;letter-spacing:.4px;}
+  /* On a white card these two are 2.75:1 and 2.21:1, both under 4.5. Same two roles, brought down
+     for the light theme: this chip has an opaque --card background, so it is "the room" and the
+     room follows the theme (docs/game-panels.md, section 4). The .wk variants below are not
+     corrected here and must not be: they sit over the room art with a dark halo, not on --card */
+  body.vscode-light .xp-pop{color:#1f7a49;}   /* 5.33:1 */
+  body.vscode-light .xp-pop.lvup{color:#8a5a00;}  /* 4.84:1 */
+  @keyframes xpFloat{0%{opacity:0;transform:translateX(-50%) translateY(7px);}15%{opacity:1;}100%{opacity:0;transform:translateX(-50%) translateY(-12px);}}
+  .cr-card.xp-flash .cr-badge{opacity:0;}
+  /* same pop over the room walker: sits above the head, where the role tag and the
+     typing dots live, so those step aside for the 1.5s it is on screen */
+  /* over the room art a filled chip reads as a sticker — bare text with a dark halo
+     stays legible on both the light and the dark rooms */
+  .xp-pop.wk{top:auto;bottom:100%;margin-bottom:5px;z-index:9;background:none;box-shadow:none;padding:0;font-size:11px;color:#7ee6a4;text-shadow:0 1px 3px rgba(0,0,0,.95),0 0 7px rgba(0,0,0,.8);}
+  .xp-pop.wk.lvup{color:#ffd166;}
+  .walker.xp-flash .wk-role,.walker.xp-flash .wk-dots{opacity:0;}
+  .walker.done .wk-dots{display:none;}
+  .walker.done .wk-sprite{animation:none;}
+  .cr-card.levelup{animation:crLevelUp 1.4s ease;}
+  @keyframes crLevelUp{0%,100%{box-shadow:none;}25%{box-shadow:0 0 0 2px rgba(232,178,58,.9),0 0 14px rgba(232,178,58,.55);background:rgba(232,178,58,.10);}70%{box-shadow:0 0 0 2px rgba(232,178,58,.45),0 0 8px rgba(232,178,58,.3);}}
+  .cr-card.levelup .cr-lv{color:#e8b23a;border-color:rgba(232,178,58,.6);}
+  /* hover profile: an employee-badge card — photo, name/role, XP bar, the level's receipts */
+  .inner.agents{position:relative;}
+  .prof-card{position:absolute;z-index:900;width:186px;background:var(--card);border:1px solid var(--iborder);border-radius:11px;padding:5px 11px 9px;box-shadow:0 8px 22px rgba(0,0,0,.4);pointer-events:none;opacity:0;transition:opacity .14s ease;font-size:10.5px;line-height:1.4;}
+  .prof-card.show{opacity:1;}
+  .pf-hole{width:24px;height:4px;border-radius:3px;background:var(--track);margin:2px auto 5px;}
+  .pf-band{display:flex;align-items:center;justify-content:space-between;font-size:7.5px;font-weight:800;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase;padding-bottom:5px;border-bottom:1px dashed var(--iborder);margin-bottom:7px;}
+  .pf-band .pf-lvl{font-size:10.5px;letter-spacing:.3px;color:#e8895a;}
+  .pf-main{display:flex;align-items:center;gap:9px;}
+  .pf-photo{flex:none;width:42px;height:46px;display:flex;align-items:center;justify-content:center;background:var(--inner);border:1px solid var(--iborder);border-radius:7px;}
+  .pf-id{min-width:0;}
+  .pf-nm{font-size:12px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pf-tag{flex:none;font-size:7px;font-weight:800;color:var(--muted);border:1px solid var(--iborder);border-radius:4px;padding:0 3px;letter-spacing:.5px;}
+  .pf-role{font-size:9.5px;font-weight:700;color:#e8895a;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pf-orig{font-size:8.5px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pf-xpbar{height:5px;border-radius:3px;background:var(--track);margin-top:8px;overflow:hidden;}
+  .pf-xpfill{height:100%;border-radius:3px;background:linear-gradient(90deg,#e8895a,#e8b23a);}
+  .pf-xptxt{font-size:8.5px;font-weight:700;color:var(--muted);text-align:right;margin-top:2px;font-variant-numeric:tabular-nums;}
+  .pf-stats{display:flex;margin-top:6px;border-top:1px dashed var(--iborder);padding-top:7px;}
+  .pf-stats>div{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0;}
+  .pf-stats b{font-size:11px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .pf-stats span{font-size:7.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
+  /* hidden agents: restore row + dimmed mini cards */
+  .hid-row{flex:1 1 100%;display:flex;align-items:center;gap:6px;margin-top:8px;padding:5px 8px;border-radius:8px;font-size:10.5px;font-weight:700;color:var(--muted);cursor:pointer;user-select:none;}
+  .hid-row:hover{background:var(--inner);}
+  .hid-chev{display:inline-block;transition:transform .18s ease;font-size:12px;line-height:1;}
+  .hid-chev.open{transform:rotate(90deg);}
+  .hid-pool{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:5px;padding:2px 4px 4px;}
+  .hid-card{display:flex;align-items:center;gap:6px;padding:3px 8px 3px 5px;border-radius:8px;background:var(--inner);border:1px solid var(--iborder);cursor:pointer;opacity:.62;transition:opacity .15s ease;}
+  .hid-card:hover{opacity:1;}
+  .hid-name{font-size:10px;font-weight:600;color:var(--text);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .hid-restore{font-size:9px;font-weight:700;color:#e8895a;text-transform:uppercase;letter-spacing:.4px;}
+  .am-hide{margin-top:10px;width:100%;padding:6px 0;border:1px solid var(--iborder);border-radius:8px;background:transparent;color:var(--muted);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;}
+  .am-hide:hover{color:#e5484d;border-color:rgba(229,72,77,.45);}
+  /* built-in Claude Code agents: present but visually second-class to the user's own */
+  .cr-card.builtin .cr-role{color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+  .cr-card.builtin .cr-sprite{opacity:.85;}
+  .pool-empty{flex:1 1 100%;color:var(--muted);font-size:11.5px;text-align:center;padding:22px 12px 14px;line-height:1.55;}
+  /* collapsed Crew: compact "now running" strip */
+  .crew-mini{padding:4px 2px 2px;}
+  .crew-idle{color:var(--muted);font-size:11px;text-align:center;padding:12px 8px;}
+  .cm-row{display:flex;align-items:center;gap:9px;padding:7px 4px;}
+  .cm-row + .cm-row{border-top:1px solid var(--iborder);}
+  .cm-sprite{flex:none;width:34px;height:38px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;}
+  .cm-mid{flex:1 1 auto;min-width:0;}
+  .cm-top{display:flex;align-items:baseline;gap:6px;}
+  .cm-name{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cm-model{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.2px;flex:none;}
+  .cm-desc{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+  .cm-bar{position:relative;height:4px;border-radius:3px;background:var(--track);overflow:hidden;margin-top:5px;}
+  .cm-bar::after{content:'';position:absolute;top:0;left:0;height:100%;width:40%;border-radius:3px;background:linear-gradient(90deg,#e8895a,#f0a882);animation:cmSweep 1.3s ease-in-out infinite;}
+  .cm-row.done .cm-bar::after{width:100%;animation:none;background:#4fae74;}
+  .cm-row.stuck .cm-bar::after{background:linear-gradient(90deg,#f5a623,#f7c46a);animation-duration:2.4s;}
+  .cm-row.stuck .cm-desc{color:#f5a623;}
+  .walker.stuck .wk-sprite{filter:grayscale(.55) drop-shadow(0 0 4px rgba(245,166,35,.6));}
+  .walker.stuck .wk-name{color:#f5a623;}
+  .cm-time{flex:none;font-size:9.5px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums;}
+  @keyframes cmSweep{0%{left:-40%;}100%{left:100%;}}
+  /* --- credits: header second line. The coin fills bottom-up in 6 rows toward the next credit --- */
+  .ttl .t2.cc{display:flex;align-items:center;gap:4px;margin-top:3px;font-size:12px;line-height:16px;}
+  .cc-coin{width:16px;height:16px;flex:none;display:block;shape-rendering:crispEdges;}
+  .cc-r{opacity:.3;transition:opacity .25s ease;}
+  .cc-r.on{opacity:1;}
+  .cc-bal{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .cc-unit{color:var(--muted);white-space:nowrap;}
+  .cc.counting .cc-bal{color:var(--muted);}
+  .cc.counting .cc-coin{animation:pulse 1.4s ease-in-out infinite;}
+  .cc-coin.flip{animation:ccFlip .4s ease-in-out;}
+  @keyframes ccFlip{0%,100%{transform:scaleX(1);}50%{transform:scaleX(.12);}}
+  /* the word goes by width, not by measurement, so it doesn't blink when switching tabs
+     (the Agents tab has no chevron and is 30px wider) */
+  @media (max-width:290px){.cc-unit{display:none;}}
+  .cc.fit1 .cc-unit{display:none;}
+  .cc.fit2 .cc-bal{display:none;}
+  @media (prefers-reduced-motion:reduce){.cc-coin.flip,.cc.counting .cc-coin{animation:none;}.cc-r{transition:none;}}
+  /* --- header credits: the way into the blackjack table --- */
+  button.cc{background:transparent;border:0;font-family:inherit;color:inherit;text-align:left;cursor:pointer;padding:1px 6px 1px 3px;border-radius:6px;width:fit-content;max-width:100%;}
+  button.cc:hover,button.cc[aria-pressed="true"]{background:var(--track);}
+  /* the same token as the casino's rings: this button is the door into it, and ember measures
+     2.57:1 on the light --card (#ffffff) the ring is drawn inside */
+  .wk-more{margin-left:6px;background:var(--track);border:0;color:var(--muted);font-size:10px;font-weight:600;padding:1px 7px;border-radius:6px;cursor:pointer;font-family:inherit;vertical-align:1px;}
+  .wk-more:hover{color:var(--text);}
+  .wk-card{max-width:420px;}
+  .wk-empty{color:var(--muted);font-size:12px;padding:18px 0;text-align:center;}
+  .wk-sheet{animation:wkFadeIn .2s ease-out;}
+  .wk-sheet .sheet-card{animation:wkCardIn .26s cubic-bezier(.2,.8,.2,1);}
+  .wk-sheet.closing{animation:wkFadeOut .18s ease-in forwards;}
+  .wk-sheet.closing .sheet-card{animation:wkCardOut .18s ease-in forwards;}
+  @keyframes wkFadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes wkFadeOut{from{opacity:1}to{opacity:0}}
+  @keyframes wkCardIn{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes wkCardOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(8px) scale(.98)}}
+  .wk-in{animation:wkFadeIn .22s ease-out;}
+  .wk-wait{display:flex;justify-content:center;padding:6px 0;}
+  .wk-wait.big{padding:26px 0;}
+  .wk-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--track);border-top-color:#e8895a;animation:wkSpin .7s linear infinite;}
+  .wk-wait.big .wk-spin{width:22px;height:22px;}
+  @keyframes wkSpin{to{transform:rotate(360deg)}}
+  .wk-fold > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;}
+  .wk-fold > summary::-webkit-details-marker{display:none;}
+  .wk-fold > summary::before{content:'';width:0;height:0;border-left:4px solid currentColor;border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;transition:transform .18s ease;flex:none;}
+  .wk-fold[open] > summary::before{transform:rotate(90deg);}
+  .wk-fold > summary:hover{color:var(--text);}
+  .wk-fold-top{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .wk-fold[open] .wk-fold-top{visibility:hidden;}
+  .wk-fold[open] > .wk-rows{animation:wkFold .22s ease-out;}
+  @keyframes wkFold{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .wk-right{text-align:right;}
+  .wk-head-btns{display:flex;gap:2px;}
+  .sheet-x.wk-refresh svg{transform:none;width:14px;height:14px;}
+  .sheet-x.wk-refresh.busy svg{animation:wkSpin .8s linear infinite;}
+  @media (prefers-reduced-motion:reduce){.wk-sheet,.wk-sheet .sheet-card,.wk-sheet.closing,.wk-sheet.closing .sheet-card,.wk-in,.wk-fold[open] > .wk-rows{animation:none;}}
+  .wk-host{color:var(--muted);font-size:11px;margin:-6px 0 12px;}
+  .wk-share{display:flex;align-items:baseline;gap:8px;}
+  .wk-big{font-size:28px;font-weight:800;color:var(--text);line-height:1;}
+  .wk-big small{font-size:14px;font-weight:700;}
+  .wk-tot{color:var(--muted);font-size:16px;font-weight:700;}
+  .wk-mwrap{position:relative;--other:rgba(140,140,140,.45);}
+  .wk-legend{--other:rgba(140,140,140,.45);}
+  .wk-meter{display:flex;height:10px;border-radius:5px;background:var(--track);margin:9px 0 4px;overflow:hidden;}
+  .wk-meter i{display:block;height:100%;flex:none;cursor:default;transition:filter .12s;}
+  .wk-meter i + i{box-shadow:inset 1px 0 0 var(--card);}
+  .wk-meter i:hover{filter:brightness(1.18);}
+  .wk-tip{position:absolute;top:100%;margin-top:-1px;z-index:2;white-space:nowrap;pointer-events:none;background:var(--text);color:var(--card);font-size:11px;font-weight:600;padding:3px 7px;border-radius:5px;}
+  .wk-legend{display:flex;gap:12px;color:var(--muted);font-size:10.5px;}
+  .wk-legend b{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0;}
+  .wk-note{color:var(--muted);font-size:10.5px;margin-top:6px;line-height:1.35;}
+  .wk-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px;}
+  .wk-stat{background:var(--track);border-radius:8px;padding:7px 8px;}
+  .wk-stat .v{font-size:14px;font-weight:700;color:var(--text);}
+  .wk-stat .l{font-size:10px;color:var(--muted);margin-top:1px;}
+  .wk-chart{display:flex;align-items:flex-end;gap:5px;height:96px;margin-top:6px;}
+  .wk-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;height:100%;justify-content:flex-end;}
+  .wk-bar{width:100%;max-width:30px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:4px 4px 2px 2px;overflow:hidden;background:transparent;}
+  .wk-bar .sub{background:rgba(232,137,90,.45);}
+  .wk-bar .main{background:#e8895a;}
+  .wk-col .n{font-size:9.5px;color:var(--muted);white-space:nowrap;}
+  .wk-col .d{font-size:10px;color:var(--muted);}
+  .wk-col.today .d{color:var(--text);font-weight:700;}
+  .wk-rows{display:flex;flex-direction:column;gap:6px;}
+  .wk-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;font-size:11.5px;color:var(--text);}
+  .wk-row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .wk-row .val{color:var(--muted);font-size:10.5px;white-space:nowrap;}
+  .wk-row .tr{grid-column:1 / -1;height:4px;border-radius:3px;background:var(--track);overflow:hidden;}
+  .wk-row .tr i{display:block;height:100%;background:#e8895a;border-radius:3px;}
+  .wk-team-form{display:flex;flex-wrap:wrap;gap:6px;}
+  .wk-team-form input{flex:1 1 140px;min-width:0;background:var(--track);color:var(--text);border:1px solid var(--iborder);border-radius:7px;padding:5px 8px;font-size:12px;font-family:inherit;}
+  .wk-team-form button{background:#e8895a;color:#fff;border:0;border-radius:7px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .wk-team-form button.ghost{background:transparent;color:var(--muted);border:1px solid var(--iborder);}
+  .wk-team{display:flex;flex-direction:column;gap:6px;}
+  .wk-trow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;font-size:12px;color:var(--text);}
+  .wk-trow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .wk-trow .pc{font-weight:700;}
+  .wk-trow .tr{grid-column:1 / -1;height:5px;border-radius:3px;background:var(--track);overflow:hidden;}
+  .wk-trow .tr i{display:block;height:100%;background:rgba(232,137,90,.55);border-radius:3px;}
+  .wk-trow.me .tr i{background:#e8895a;}
+  .wk-trow.me .nm{font-weight:700;}
+  .wk-trow.stale{opacity:.55;}
+  .wk-trow.other .nm,.wk-trow.other .pc{color:var(--muted);font-weight:500;}
+  .wk-trow.other .tr i{background:var(--muted);opacity:.5;}
+  .wk-note a{color:#e8895a;}
+  button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px var(--focus);} /* .ttl clips outside outlines */
+  body.tab-games .mascot{display:none;} /* the crab climbs down to deal */
+  /* Every game screen's CSS lives with that game: the casino chrome in games/casino.js and the
+     rest in games/<id>/meta.js, appended after this stylesheet by games/registry.js. */
+</style><style>
+  /* --- the casino: chrome every game shares (chips, notices, controls, chips of credit) --- */
+  .bj-chip{font-size:10.5px;font-weight:700;color:var(--text);padding:1px 6px;border-radius:6px;background:var(--track);white-space:nowrap;animation:bjPop .16s ease-out both;}
+  .bj-chip.win{background:rgba(79,174,116,.22);}
+  .bj-chip.bj{background:rgba(232,178,58,.28);}
+  .bj-chip.lose{background:rgba(229,72,77,.16);}
+  .bj-chip.still{animation:none;} /* a redraw of a result already shown */
+  @keyframes bjPop{from{opacity:0;transform:scale(.85);}to{opacity:1;transform:none;}}
+  .bj-note{margin-top:10px;font-size:11px;color:var(--muted);}
+  .bj-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;} /* read out, not shown */
+  /* the dealer: crab.png (the header crab), a still drawing standing on a shadow rather than glued
+     to the felt. max-width:none is required: the webview stylesheet caps every img at 100% */
+  .bj-crab{position:absolute;left:0;bottom:0;width:64px;height:52px;overflow:visible;pointer-events:none;}
+  .bj-crab img{position:absolute;z-index:1;left:6px;bottom:6px;width:52px;height:auto;max-width:none;image-rendering:pixelated;display:block;}
+  .bj-crab::after{content:'';position:absolute;left:12px;right:12px;bottom:4px;height:5px;
+    background:radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.38), rgba(0,0,0,0));}
+  .bj-ctl{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
+  .bj-ctl[hidden],.bj-net[hidden],.bj-note[hidden],.bj-btn[hidden]{display:none;}
+  .bj-stakes{display:flex;gap:2px;padding:2px;flex:none;background:var(--inner);border:1px solid var(--iborder);border-radius:9px;}
+  .bj-stakes button{height:28px;padding:0 9px;border:0;border-radius:7px;background:transparent;font-family:inherit;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-variant-numeric:tabular-nums;}
+  .bj-stakes button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
+  .bj-stakes button:hover:not(.on):not(:disabled){color:var(--text);}
+  .bj-stakes button:disabled{opacity:.35;cursor:not-allowed;}
+  .bj-btn{flex:1 1 64px;height:34px;border:0;border-radius:8px;background:var(--track);color:var(--text);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;}
+  .bj-btn:hover:not(:disabled){box-shadow:inset 0 0 0 1px var(--muted);}
+  .bj-btn.primary{background:#e8895a;color:#1d1d1f;} /* white on this orange is 2.6:1 */
+  .bj-btn.primary:hover:not(:disabled){box-shadow:none;filter:brightness(1.07);}
+  .bj-btn:disabled{opacity:.4;cursor:default;}
+  .bj-stakes button:focus-visible,.bj-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
+  .bj-btn.primary:focus-visible{outline-color:var(--text);}
+  @media (prefers-reduced-motion:reduce){.bj-chip{animation:none;}.gm-sec svg{transition:none;}}
+  /* --- the paytable, folded. Fourteen screens that each lay a table out are fourteen tables and no
+     screens, so every ladder, every ways[] and every pays[] lives behind this one toggle and the
+     one-line version lives in the heading's title= (docs/game-panels.md, section 5) --- */
+  /* THE THREE PROPERTIES, NOT THE SHORTHAND. font:700 10.5px inherit is dropped whole, because the
+     font shorthand takes no CSS-wide keyword in its family slot, and all fourteen screens were
+     therefore rendering this at the page default (13.33px, weight 400, Arial) and breaking the six
+     sizes section 2 allows. font:inherit on its own is legal and is left alone where it is used */
+  .bj-why{margin-top:10px;padding:0;border:0;background:transparent;color:var(--muted);
+    font-family:inherit;font-size:10.5px;font-weight:700;
+    cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+  .bj-why:hover{color:var(--text);}
+  .bj-why:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
+  .bj-pays{margin-top:6px;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .bj-pays[hidden],.bj-why[hidden]{display:none;}
+  /* --- what sits ON the felt, by family (docs/game-panels.md, section 3). The background changes
+     twice in fourteen screens; the family is told by the thing standing on the table instead.
+     A machine stands on a slate plate: the commonest sea symbol (kelp) is 3.25:1 on the felt and
+     5.39:1 on this, and a common symbol that sinks into the floor is a machine where the jackpot
+     symbol no longer looks like the jackpot. A board is DRAWN on the felt, in hairlines --- */
+  .gm-plate{padding:8px;border-radius:8px;background:#15181c;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.06);}
+  /* THE PLATE THAT IS THE FELT'S OWN WIDTH. Three of the four machines stand something on it that
+     is already as wide as the felt gives (152px at sidebar 250), so the shared 8px of side padding
+     would push them over the edge: three 48px reels plus their pay-line gutters, three 48px columns
+     plus two 4px gaps, and a 150px dial. Each of the three used to write its own figure here (4px,
+     0 and 1px) and the three were never the same number, which is what made this look like three
+     decisions. It is one: the SIDES GIVE WAY AND THE CONTENTS CENTRE THEMSELVES, and 4, 0 and 1 are
+     then what is left over either side of 144, 152 and 150. Top and bottom are untouched, because
+     nothing is tight there. The plinko board is 130px and keeps the plain plate */
+  .gm-plate.tight{padding-left:0;padding-right:0;}
+  .gm-rule{background:rgba(255,255,255,.1);}
+  /* --- the die faces (Sic Bo, Shut the Box, Hazard). One hidden sprite in the page, drawn through
+     CUC.die(). The body of a die follows the CELL's own color, so the colour is the game's: cream
+     for a die that was rolled, #f6836e for Hazard's warning die (games/dice-faces.js) --- */
+  .dc-sprite{display:none;}
+  .dc{display:block;}
+  /* --- the sea symbols (slots, scratch card). One hidden sprite in the page, 18 <use> --- */
+  .sy-sprite{display:none;}
+  .sy-cell{display:flex;width:48px;height:48px;border-radius:6px;background:#15181c;}
+  .sy{width:100%;height:100%;display:block;}
+  /* --- the market's chart well. The one screen with no table on it: it has no round, so there is
+     no hand to lay down, and a red candle on green felt is the only candle that reads as an event
+     (docs/game-panels.md, section 5-10) --- */
+  .mk-well{padding:8px;border-radius:10px;background:var(--inner);
+    box-shadow:inset 0 0 0 1px var(--iborder);}
+  /* --- games list: the third view. A game screen opens from a row --- */
+  .bj-games .ihead{margin-bottom:8px;}
+  .gm-it svg{width:16px;height:16px;} /* the pixel coin needs its 2px grid */
+  /* Four headings turn one scan of fourteen rows into four scans of four. Same recipe as
+     .sheet-sec, and now a BUTTON, because the heading is also what folds the block away.
+     The favourites alone do not shorten the list: measured, it is 680px now and 705 with a
+     Favourites block of four (docs/game-panels.md, 7-0). Four rows kept and the rest folded is
+     about 264, and that is the request the favourites could not answer on their own */
+  .gm-grp{margin-top:10px;}
+  .gm-grp[hidden]{display:none;}
+  /* the first block that SHOWS, which :first-of-type cannot say: the Favourites block is in the
+     page from the first paint and stays hidden until something is starred, and every heading is
+     the first of its type inside its own block anyway */
+  .gm-grp.gm-top{margin-top:2px;}
+  .gm-sec{display:flex;align-items:center;gap:4px;width:100%;margin:0 0 3px;padding:0 10px;
+    border:0;background:transparent;font-family:inherit;font-size:10px;text-transform:uppercase;
+    letter-spacing:.6px;color:var(--muted);font-weight:700;text-align:left;}
+  /* Favourites does not fold (folding what I put at the top says nothing), so its heading has no
+     chevron. The indent is the chevron's, so the five headings read as one column */
+  .gm-favs .gm-sec{padding-left:28px;}
+  .gm-fold{cursor:pointer;}
+  .gm-fold:hover{color:var(--text);}
+  .gm-fold:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;border-radius:6px;}
+  /* the same chevron, the same 14px, the same flip as .ws-fold (styles.js): up while the block is
+     open, down while it is shut. A second fold mark in one panel would be two vocabularies */
+  .gm-sec svg{width:14px;height:14px;flex:none;transition:transform .3s ease;}
+  .gm-grp.folded .gm-sec svg{transform:rotate(180deg);}
+  .gm-grp.folded .gm-rows{display:none;}
+  /* The row is a DIV with two buttons in it: a game cannot be opened and kept by the same button,
+     and a button cannot be nested in a button. The hover and the rounding stay on the wrapper so
+     the pair still reads as one row */
+  .gm-row{display:flex;align-items:center;border-radius:10px;padding-right:6px;}
+  .gm-row:hover{background:var(--track);}
+  /* gap 6, not 8. At sidebar 250 the row has 172px and the tightest one (Sword Forge with a +7 on
+     it) measures 10 + 24 + 6 + 78.8 + 6 + 12.5 + 4 + 20 + 6 = 167.3. At gap 8 it is over
+     (docs/game-panels.md, 7-3) */
+  .gm-open{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;
+    padding:8px 4px 8px 10px;border:0;border-radius:10px 0 0 10px;background:transparent;
+    font-family:inherit;text-align:left;cursor:pointer;color:var(--text);}
+  .gm-open:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
+  /* The star. Same 20x20 box as .ws-fold with a 16px glyph in it: the sidebar is a mouse surface,
+     so this does not owe the 44px touch target */
+  .gm-fav{flex:none;display:flex;width:20px;height:20px;padding:2px;border:0;border-radius:6px;
+    background:transparent;color:var(--muted);cursor:pointer;opacity:0;}
+  .gm-fav svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linejoin:round;display:block;}
+  /* while it is off it shows on hover and on focus only. opacity rather than visibility, because
+     visibility:hidden cannot be reached by the Tab key */
+  .gm-row:hover .gm-fav,.gm-row:focus-within .gm-fav{opacity:1;}
+  .gm-fav:focus-visible{outline:2px solid var(--focus);outline-offset:-1px;opacity:1;}
+  /* while it is on it always shows. The FILL is the state and the colour only helps */
+  .gm-row.fav .gm-fav{opacity:1;color:#e8895a;}
+  .gm-row.fav .gm-fav svg{fill:currentColor;}
+  /* 24px, down from 48. Fourteen rows at the old size ran to 896px and the list was mostly
+     scrolling; at 24 a row is 40px and the whole casino is about 640px.
+     24 rather than 32 or 36 because the art is drawn on a 24-unit grid (games/tiles.js), so only a
+     multiple of 24 keeps every edge on a whole pixel, and the painted four are 96px sources, which
+     this divides exactly by four.
+     The tile covers the glyph rather than replacing it: an alt="" image that fails to load draws
+     nothing and the glyph shows through */
+  .gm-ic{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:var(--track);overflow:hidden;}
+  .gm-row:hover .gm-ic{background:var(--card);}
+  .gm-ic svg{width:14px;height:14px;color:#e8895a;display:block;}
+  .gm-ic img{position:absolute;inset:0;width:24px;height:24px;max-width:none;display:block;image-rendering:pixelated;}
+  /* The ten drawn tiles (games/tiles.js) sit in the same square as the four painted ones.
+     Two classes deep on purpose: .gm-ic svg above is (0,1,1) and caps every glyph at 14px */
+  .gm-ic .gm-tile{position:absolute;inset:0;width:24px;height:24px;display:block;}
+  /* brightness only: a border fights the rounded corners baked into the art and a scale blurs the grid */
+  .gm-row:hover .gm-ic img,.gm-row:hover .gm-ic .gm-tile{filter:brightness(1.1);}
+  /* One line, not two. A 24px picture is shorter than a stacked name and sub-line, so a second line
+     would make the two rows that have one 7px taller than the other twelve. Side by side every row
+     is the same 40px and the sub-line still reads as the exception it is */
+  .gm-txt{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:6px;overflow:hidden;}
+  /* the safety net for the width above: a name that does not fit is cut with an ellipsis rather
+     than cut through the middle of a letter by the overflow */
+  .gm-nm{font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;
+    flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;}
+  .gm-sub{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  /* The right-hand figure, and only two rows get one: the market's open profit and the forge's
+     sword level. A number on all fourteen rows is a number on none of them, because the point of
+     the figure is that it MOVED while the panel was shut.
+     These colours are the room's, not the table's (docs/game-panels.md, section 4): the felt's
+     #7ee6a4 is 1.53:1 on a white background, so a felt colour may not be carried out here */
+  .gm-fig{flex:none;font-size:11px;font-weight:700;color:var(--muted);
+    font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .gm-fig:empty{display:none;}
+  .gm-fig.gm-up{color:#4fae74;}   /* 5.70:1 on --card dark */
+  .gm-fig.gm-dn{color:#f6836e;}   /* 6.26:1 on --card dark */
+  /* the same two roles (it went up / it went down) brought down for a white card. Not new roles */
+  body.vscode-light .gm-fig.gm-up{color:#1f7a49;}  /* 5.33:1 */
+  body.vscode-light .gm-fig.gm-dn{color:#b32a2e;}  /* 6.39:1 */
+  /* the lit star, brought down for a white card the same way. Measured: ember on light --inner
+     (#f6f6f7) is 2.38:1, under the 3:1 a control owes; #c25a34 is 4.05:1 there and 3.44:1 on the
+     hover track (#e4e4e7). Not a new colour, it is tiles.js's emberLo (the coin's rim) */
+  body.vscode-light .gm-row.fav .gm-fav{color:#c25a34;}
+  /* --- a game's heading: back arrow, title, and a corner for the game's own figure --- */
+  .ihead.bj-head .it{flex:1 1 auto;}
+  .bj-side{flex:none;font-size:10.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .bj-back{flex:none;margin-right:2px;padding:3px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;display:flex;line-height:0;}
+  .bj-back:hover{background:var(--track);color:var(--text);}
+  .bj-back:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .bj-back svg{width:14px;height:14px;transform:rotate(-90deg);}
+  /* --- the felt: the table surface itself. The heading, warnings and the buttons sit outside it,
+     in the room the table stands in. Woven look from 1px lines on a 2px period, the same grid the
+     pixel cards and coin use. No image --- */
+  .bj-felt{padding:12px 10px;border-radius:12px;color:var(--felt-ink);
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 2px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.05) 0 1px, transparent 1px 2px),
+      radial-gradient(120% 100% at 50% 0%, var(--felt) 0%, var(--felt-lo) 100%);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.07);}
+  /* chips: a green tint cannot be read on green, so the colour moves to the text on a dark plate */
+  .bj-felt .bj-chip{background:rgba(0,0,0,.42);color:var(--felt-dim);}
+  .bj-felt .bj-chip.win{color:#7ee6a4;}
+  .bj-felt .bj-chip.bj{color:#ffd166;}
+  .bj-felt .bj-chip.lose{color:#f6836e;}
+  /* --- the line under the felt: the pot or the verdict. High-Low, poker and the forge share it.
+     ONE LINE, AT MOST TWO PIECES (docs/game-panels.md, section 2), and the wrap is not a third:
+     the minefield and the tower put a figure and a chip on it, 160px of them, and the felt is 152px
+     at sidebar 250. Those two each wrote this rule into their own CSS; at the narrowest width the
+     two pieces have to fold, and at every other width there is nothing to fold --- */
+  .hl-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:22px;margin-top:8px;}
+  .hl-pot{display:flex;align-items:center;gap:4px;font-size:16px;font-weight:700;color:var(--felt-ink);font-variant-numeric:tabular-nums;}
+  .hl-pot.preview{opacity:.55;}
+  .hl-pot .cc-r{opacity:1;}
+</style><style>
+  /* --- The coin market. The one screen with no table on it: there is no round to lay down, so the
+     felt comes off and the chart sits in the well games/casino.js already owns (.mk-well) on the
+     panel's own surface (docs/game-panels.md, section 5-10).
+     Everything here is therefore the ROOM's, not the table's (section 4), and that decides the two
+     colours: the felt's #7ee6a4 is 1.53:1 on a white card, so the pair brought out for .gm-fig is
+     the pair used here, light theme and all. No third colour, and the one accent is still ember --- */
+  .mk{--mk-up:#4fae74;--mk-dn:#f6836e;}          /* 5.70:1 / 6.26:1 on --card dark */
+  body.vscode-light .mk{--mk-up:#1f7a49;--mk-dn:#b32a2e;}   /* 5.33:1 / 6.39:1 */
+  .mk .mk-u{color:var(--mk-up);}
+  .mk .mk-d{color:var(--mk-dn);}
+  /* --- depth one: the four coins, a row each. Two lines inside the 44px row, because a name, a
+     price, a change, a sparkline and a chip in ONE line is over 200px of fixed width at a sidebar
+     that can be dragged to a 172px panel (docs/game-panels.md, section 1).
+     The split is not only room: the top line is the MARKET (the price and the change, on one window
+     for every row) and the bottom one is the picture and what is mine --- */
+  /* the hidden attribute is a UA rule and loses to a display of our own, so every box here that
+     sets one says
+     what hidden means for it. A list that goes on showing under the coin screen is the whole screen
+     drawn twice */
+  .mk-list{display:flex;flex-direction:column;}
+  .mk-list[hidden],.mk-lhead[hidden],.mk .bj-stakes[hidden],.mk-crumb[hidden],.mk-ax[hidden]{display:none;}
+  /* the window's name, over the change column it is the base of. The list has no period control of
+     its own, so this one word is what says against what the four figures under it are measured */
+  .mk-lhead{display:flex;justify-content:flex-end;margin:0 6px 4px;
+    font-size:10.5px;font-weight:700;color:var(--muted);}
+  .mk-row{display:flex;flex-direction:column;justify-content:center;gap:2px;width:100%;height:44px;
+    padding:0 6px;border:0;border-radius:8px;background:transparent;font-family:inherit;text-align:left;cursor:pointer;}
+  .mk-row:hover{background:var(--track);}
+  .mk-row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
+  .mk-r1,.mk-r2{display:flex;align-items:center;gap:6px;width:100%;min-width:0;}
+  .mk-nm{flex:1 1 auto;min-width:0;font-size:12.5px;font-weight:700;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mk-px{flex:none;margin-left:auto;font-size:12px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .mk-spark{flex:none;width:40px;height:16px;line-height:0;}
+  .mk-fg{flex:none;margin-left:auto;line-height:1;}
+  /* --- depth two: one coin. The crumb is the only way back up, because the heading's arrow belongs
+     to the games list and a screen two deep needs its own --- */
+  .mk-crumb{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+  /* the three properties and not the shorthand, for the reason in games/casino.js's .bj-why */
+  .mk-back{flex:none;padding:2px 5px;border:0;border-radius:6px;background:transparent;color:var(--muted);
+    font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;}
+  .mk-back:hover{background:var(--track);color:var(--text);}
+  .mk-back:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  /* the code gives way first when the crumb runs out of room: the price and the move are the two
+     figures this line is for */
+  .mk-code{flex:1 1 auto;min-width:0;font-size:12.5px;font-weight:700;color:var(--text);letter-spacing:.3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mk-now{flex:none;font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
+  /* The change: on the row beside the price, and again at the far end of the period line. The
+     min-width is what stops the price shifting 7.5px sideways every time a figure goes from one
+     digit to two: ±X.X% measures 37.7px and ±XX.X% 45.2px */
+  .mk-chg{flex:none;min-width:46px;text-align:right;font-size:11px;font-weight:700;
+    color:var(--muted);font-variant-numeric:tabular-nums;}
+  /* --- the period, directly over the chart. Not in .bj-ctl: that row takes two buttons (section 1)
+     and already holds the stake chips and Buy, and below the chart this control would be the second
+     segmented row in 40px, the stake chips being the first. Above it the reading is "what · over
+     which window · so this shape".
+     The stake chips' own control at 11px and a tighter pad: at .bj-stakes' 12px/9px four of these
+     are 157.6px, and with a 45.2px change figure beside them the line a 250px sidebar leaves is
+     172px. Four of these are 120px. Five would be 149.5px, which is why there are four windows --- */
+  .mk-spanrow{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+  .mk-spanrow .mk-chg{margin-left:auto;}
+  /* flex:0 1 auto with min-width:0 so a three-digit change (±XXX.X% is 52.6px, and a 30-day window
+     has reached 64%) presses the chips in rather than being cut off */
+  .mk-span{display:flex;gap:2px;padding:2px;flex:0 1 auto;min-width:0;
+    background:var(--inner);border:1px solid var(--iborder);border-radius:9px;}
+  .mk-span button{height:28px;padding:0 5px;border:0;border-radius:7px;background:transparent;
+    font-family:inherit;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;
+    font-variant-numeric:tabular-nums;}
+  /* the chosen chip is a --card ground, the same way the stake chips below it say "this one": ember
+     stays the focus ring and the entry line, and nothing in this panel is picked by being ember */
+  .mk-span button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
+  .mk-span button:hover:not(.on){color:var(--text);}
+  .mk-span button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
+  /* The max block, and the one size on this screen that is not in the scale of six: the profit of an
+     open position at 26px, which docs/game-panels.md section 2 writes down as the one exception.
+     It is HIDDEN when nothing is held rather than showing a zero: a zero in the biggest type on the
+     screen reads as a position that is worth nothing */
+  .mk-plbox{margin-bottom:10px;}
+  .mk-plbox[hidden]{display:none;}
+  .mk-pl{display:block;font-size:26px;font-weight:800;line-height:1.1;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .mk-plsub{display:block;margin-top:2px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  /* --- the amount: any whole number of credits, typed in credits or in coins. A coin is bought in
+     fractions (0.7 of one is a stake of 0.7 times its price), so the box takes decimals in coins */
+  .mk-amt{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap;}
+  .mk-amt[hidden]{display:none;}
+  .mk-amt input{flex:1 1 90px;min-width:0;height:28px;box-sizing:border-box;padding:0 8px;border-radius:7px;border:1px solid var(--iborder);background:var(--inner);color:var(--text);font-family:inherit;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .mk-amt input:focus{outline:2px solid var(--focus);outline-offset:0;}
+  .mk-seg{display:flex;gap:2px;padding:2px;flex:none;background:var(--inner);border:1px solid var(--iborder);border-radius:9px;}
+  .mk-seg button{height:24px;padding:0 8px;border:0;border-radius:7px;background:transparent;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--muted);cursor:pointer;}
+  .mk-seg button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
+  .mk-seg button:hover:not(.on):not(:disabled){color:var(--text);}
+  .mk-seg button:disabled{opacity:.35;cursor:not-allowed;}
+  .mk-seg button:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .mk-conv{min-height:14px;margin-top:4px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .mk-conv.bad{color:var(--mk-dn);}
+  /* --- the chart: 24 to 36 candles, depending on the window, as absolutely placed <i>. There is no
+     chart library in this extension and there is not going to be one (CLAUDE.md: no dependencies,
+     no build step).
+     Every candle is placed in PER CENT of the well, so the same chart is 186px wide at the design
+     width and 156px at a sidebar dragged in to 250 with no resize hook to get wrong. (186 and not
+     182: this screen has no felt, so the panel's own padding is all that comes off the sidebar) --- */
+  .mk-chart{position:relative;height:110px;}
+  .mk-chart i{position:absolute;display:block;}
+  .mk-body{border-radius:1px;min-height:1px;}
+  .mk-wick{width:1px;transform:translateX(-50%);opacity:.65;}
+  .mk-rise{background:var(--mk-up);}
+  .mk-fall{background:var(--mk-dn);}
+  /* where this position was opened. Ember, because it is the one thing on the chart that is mine */
+  .mk-mark{left:0;right:0;height:1px;background:#e8895a;opacity:.8;}
+  .mk-ax{display:flex;justify-content:space-between;gap:8px;margin-top:6px;
+    font-size:10.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
+  /* the fee, under the button that charges it rather than over the whole screen: said once, on the
+     buy screen only (docs/game-panels.md, section 5-10) */
+  .mk-fee{margin-top:6px;}
+</style>
+<style>html,body{margin:0;padding:0}body{width:280px;}
+.bj-why{margin-top:12px;}</style></head><body class="vscode-dark">
+<div class="wrap"><div class="card"><div class="inner mk" id="panelMarket"><div class="ihead bj-head"><button type="button" class="bj-back" title="All coins"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button><div class="it"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20V8"/></svg> Coin Market</div><div class="bj-side"></div></div><div class="mk-crumb"><button type="button" class="mk-back">← Coins</button><span class="mk-code">CRAB</span><span class="mk-now">288</span></div><div class="mk-plbox"><b class="mk-pl mk-d">−5</b><span class="mk-plsub">3.48 CRAB · 1,000 in at 287 · held 15s</span></div><div class="mk-spanrow"><div class="mk-span"><button type="button">3H</button><button type="button" class="on">1D</button><button type="button">1W</button><button type="button">1M</button></div><span class="mk-chg mk-d">−4.7%</span></div><div class="mk-well"><div class="mk-chart"><i class="mk-body mk-fall" style="left:0.79%;width:2.58%;top:11.14%;height:3.55%"></i><i class="mk-wick mk-fall" style="left:2.08%;top:5.81%;height:14.21%"></i><i class="mk-body mk-rise" style="left:4.96%;width:2.58%;top:5.33%;height:9.36%"></i><i class="mk-wick mk-rise" style="left:6.25%;top:0%;height:20.02%"></i><i class="mk-body mk-fall" style="left:9.13%;width:2.58%;top:5.33%;height:6.87%"></i><i class="mk-wick mk-fall" style="left:10.42%;top:0%;height:17.54%"></i><i class="mk-body mk-fall" style="left:13.29%;width:2.58%;top:12.2%;height:15.64%"></i><i class="mk-wick mk-fall" style="left:14.58%;top:6.87%;height:26.31%"></i><i class="mk-body mk-rise" style="left:17.46%;width:2.58%;top:24.94%;height:2.9%"></i><i class="mk-wick mk-rise" style="left:18.75%;top:19.61%;height:13.57%"></i><i class="mk-body mk-rise" style="left:21.63%;width:2.58%;top:18.07%;height:6.87%"></i><i class="mk-wick mk-rise" style="left:22.92%;top:12.74%;height:17.53%"></i><i class="mk-body mk-fall" style="left:25.79%;width:2.58%;top:18.07%;height:12.68%"></i><i class="mk-wick mk-fall" style="left:27.08%;top:12.74%;height:23.34%"></i><i class="mk-body mk-fall" style="left:29.96%;width:2.58%;top:30.75%;height:11.61%"></i><i class="mk-wick mk-fall" style="left:31.25%;top:25.41%;height:22.28%"></i><i class="mk-body mk-rise" style="left:34.13%;width:2.58%;top:34.72%;height:7.64%"></i><i class="mk-wick mk-rise" style="left:35.42%;top:29.38%;height:18.31%"></i><i class="mk-body mk-rise" style="left:38.29%;width:2.58%;top:33.12%;height:1.6%"></i><i class="mk-wick mk-rise" style="left:39.58%;top:27.78%;height:12.27%"></i><i class="mk-body mk-fall" style="left:42.46%;width:2.58%;top:33.12%;height:16.11%"></i><i class="mk-wick mk-fall" style="left:43.75%;top:27.78%;height:26.78%"></i><i class="mk-body mk-fall" style="left:46.63%;width:2.58%;top:49.23%;height:5.51%"></i><i class="mk-wick mk-fall" style="left:47.92%;top:43.9%;height:16.17%"></i><i class="mk-body mk-rise" style="left:50.79%;width:2.58%;top:45.26%;height:9.48%"></i><i class="mk-wick mk-rise" style="left:52.08%;top:39.93%;height:20.14%"></i><i class="mk-body mk-fall" style="left:54.96%;width:2.58%;top:45.26%;height:4.98%"></i><i class="mk-wick mk-fall" style="left:56.25%;top:39.93%;height:15.64%"></i><i class="mk-body mk-fall" style="left:59.13%;width:2.58%;top:50.24%;height:16.23%"></i><i class="mk-wick mk-fall" style="left:60.42%;top:44.91%;height:26.89%"></i><i class="mk-body mk-rise" style="left:63.29%;width:2.58%;top:65.34%;height:1.13%"></i><i class="mk-wick mk-rise" style="left:64.58%;top:60.01%;height:11.79%"></i><i class="mk-body mk-rise" style="left:67.46%;width:2.58%;top:57.46%;height:7.88%"></i><i class="mk-wick mk-rise" style="left:68.75%;top:52.13%;height:18.55%"></i><i class="mk-body mk-fall" style="left:71.63%;width:2.58%;top:57.46%;height:11.2%"></i><i class="mk-wick mk-fall" style="left:72.92%;top:52.13%;height:21.86%"></i><i class="mk-body mk-fall" style="left:75.79%;width:2.58%;top:68.66%;height:13.03%"></i><i class="mk-wick mk-fall" style="left:77.08%;top:63.33%;height:23.7%"></i><i class="mk-body mk-rise" style="left:79.96%;width:2.58%;top:75.18%;height:6.51%"></i><i class="mk-wick mk-rise" style="left:81.25%;top:69.85%;height:17.18%"></i><i class="mk-body mk-rise" style="left:84.13%;width:2.58%;top:71.86%;height:3.32%"></i><i class="mk-wick mk-rise" style="left:85.42%;top:66.53%;height:13.98%"></i><i class="mk-body mk-fall" style="left:88.29%;width:2.58%;top:71.86%;height:15.4%"></i><i class="mk-wick mk-fall" style="left:89.58%;top:66.53%;height:26.06%"></i><i class="mk-body mk-fall" style="left:92.46%;width:2.58%;top:87.26%;height:7.41%"></i><i class="mk-wick mk-fall" style="left:93.75%;top:81.93%;height:18.07%"></i><i class="mk-body mk-rise" style="left:96.63%;width:2.58%;top:85.37%;height:9.3%"></i><i class="mk-wick mk-rise" style="left:97.92%;top:80.04%;height:19.96%"></i><i class="mk-mark" style="top:100%"></i></div><div class="mk-ax"><span>low 288</span><span>high 307</span></div></div><div class="mk-amt"><input type="text" value="100" aria-label="Amount"><div class="mk-seg"><button type="button" class="on">cr</button><button type="button">coins</button></div><div class="mk-seg"><button type="button">25%</button><button type="button">50%</button><button type="button">Max</button></div></div><div class="mk-conv">≈ 0.347 CRAB</div><div class="bj-ctl"><button type="button" class="bj-btn primary">Buy 100</button><button type="button" class="bj-btn">Sell 995</button></div><button type="button" class="bj-why">How it pays</button><div class="bj-pays" hidden></div></div></div></div></body></html>

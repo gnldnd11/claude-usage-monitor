@@ -162,7 +162,7 @@ function labelOf(halves) {
 }
 
 // A wheel is the whole game, so a typo in one is the whole game being wrong. Checked once, when the
-// module loads, the way forge.js checks its table.
+// module loads: a table a retune broke should fail at require time.
 //
 // The band is asserted in integers (100 * RETURN_HALVES against 96 and 97 times HALVES * UNITS)
 // because a comparison against 0.96 is the one place a float could decide whether the casino is

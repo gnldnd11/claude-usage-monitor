@@ -58,7 +58,11 @@ module.exports = {
     const rows = () => doc.querySelectorAll('#mkList .mk-row');
     const codes = () => rows().map((r) => r.getAttribute('data-code')).join(',');
     const figOf = (code) => { const c = doc.querySelector('#mkFig-' + code + ' .bj-chip'); return c ? c.textContent : 'none'; };
-    const chip = () => { const c = doc.querySelector('#mkLine .bj-chip'); return c ? c.className + ' ' + c.textContent : 'none'; };
+    // The verdict of a trade, which is on the line under the amount box. There is no .hl-line on this
+    // screen: that line belongs to the felt, and every other game has it INSIDE one, where an empty
+    // one cannot be seen. Here it was a visible 22px of nothing (30px with its margin) whenever a
+    // position was open, so what it carried moved to the line that was already there
+    const chip = () => { const c = doc.querySelector('#mkConv .bj-chip'); return c ? c.className + ' ' + c.textContent : 'none'; };
     const bodies = () => doc.querySelectorAll('#mkChart .mk-body');
     const wicks = () => doc.querySelectorAll('#mkChart .mk-wick');
     const marks = () => doc.querySelectorAll('#mkChart .mk-mark');
@@ -81,7 +85,7 @@ module.exports = {
       const mark = (k) => { if (m[k] == null) m[k] = h.now - t0; };
       for (let i = 0; i <= ms; i++) {
         if (!$('mkPlBox').hidden) mark('pl');
-        if (doc.querySelector('#mkLine .bj-chip')) mark('chip');
+        if (doc.querySelector('#mkConv .bj-chip')) mark('chip');
         if (!$('mkSell').hidden) mark('sell');
         if (live()) mark('said');
         const prim = $('mkSell').hidden ? $('mkDeal') : $('mkSell');
@@ -98,8 +102,8 @@ module.exports = {
     // the row builds the panel and asks the host, both at once: this is the state before the answer
     h.rowFor('market').click();
     ok('before the host answers, the market lists nothing and offers nothing',
-      rows().length === 0 && $('mkCtl').hidden && $('mkFee').hidden,
-      rows().length + ' rows | ctl hidden ' + $('mkCtl').hidden);
+      rows().length === 0 && $('mkCtl').hidden && $('mkAmtRow').hidden && $('mkWhy').hidden,
+      rows().length + ' rows | ctl hidden ' + $('mkCtl').hidden + ' | fold hidden ' + $('mkWhy').hidden);
     advance(20);
     ok('the list row opens the market and asks the host for the prices',
       doc.body.classList.contains('game-mk') && $('panelMarket').style.display === '' && ops() === 'open',
@@ -152,16 +156,29 @@ module.exports = {
       + ' over the last 24 hours, nothing held',
       $('mkRow-' + c0.code).getAttribute('aria-label'));
 
+    const listTitle = txt('mkTtl');
+    ok('on the list of coins the heading is the game’s own title', listTitle === 'Coin Market', listTitle);
     $('mkRow-' + c0.code).click();
     ok('a row opens that coin: the list goes, the chart comes',
-      $('mkList').hidden && !$('mkCoin').hidden && txt('mkCode') === c0.code, txt('mkCode'));
-    // The crumb is the way back up, the code and the price, and the change is NOT in it. That is a
-    // fix and not a rearrangement: at a sidebar of 250 the button, the price and a change came to
-    // 141px of a 172px line, leaving 31px for a code that needs 37, and CRAB was drawn as `K…`
-    ok('the crumb carries the host’s price, the whole code and the way back up, and no change',
-      txt('mkNow') === cred(c0.ticks) && txt('mkCode') === c0.code && !$('mkUp').hidden
-      && !doc.querySelector('.mk-crumb .mk-chg'),
-      txt('mkCode') + ' ' + txt('mkNow') + ' | crumb ' + doc.querySelector('.mk-crumb').innerHTML);
+      $('mkList').hidden && !$('mkCoin').hidden && txt('mkTtl') === c0.code, txt('mkTtl'));
+    // THE CRUMB IS GONE AND WITH IT THE SECOND BACK BUTTON. What it carried had a place in the
+    // heading already: the code is the TITLE, so the one arrow plainly closes this coin, and the
+    // price is the corner figure. A row of its own to say that cost 25px and an arrow that two
+    // screens' worth of reading had to tell apart
+    ok('the coin’s own depth is named by the heading: no crumb, no second way back up',
+      !doc.querySelector('#panelMarket .mk-crumb') && !$('mkUp')
+      && doc.querySelectorAll('#panelMarket .bj-back').length === 1,
+      doc.querySelectorAll('#panelMarket .bj-back').length + ' back buttons');
+    // the arrow is one button taking two different steps, so it has to say which one it is on
+    ok('and the arrow says what it closes at this depth',
+      $('mkBack').title === 'All coins (Esc)', $('mkBack').title);
+    ok('and the heading’s corner carries the host’s price for it',
+      txt('mkSide') === cred(c0.ticks) && $('mkSide').className === 'bj-side',
+      txt('mkSide') + ' | want ' + cred(c0.ticks) + ' | ' + $('mkSide').className);
+    // The felt's line is not on a screen with no felt (see `chip` above)
+    ok('and there is no .hl-line here at all, empty or otherwise',
+      !doc.querySelector('#panelMarket .hl-line'),
+      (doc.querySelector('#panelMarket .hl-line') || {}).outerHTML);
     // The change moved to the end of the period line, and that is what says what it is measured
     // against: `1D ····· +0.9%` is one reading, and nothing else on this screen names a base
     ok('the change sits at the far end of the period line instead, in the room’s own colours',
@@ -242,16 +259,23 @@ module.exports = {
       $('mkDeal').disabled && $('mkDeal').title === c0.why.buy && /clock/.test(c0.why.buy),
       $('mkDeal').title);
     const feePct = (market.FEE_DEN - market.FEE_NUM) * 100 / market.FEE_DEN;
-    ok('the fee is said once, under the button that charges it',
-      !$('mkFee').hidden && txt('mkFee') === 'Round trip ' + feePct + '%, taken when you sell.',
-      txt('mkFee'));
-    ok('the rest of the table is folded away behind one toggle',
-      $('mkPays').hidden && $('mkWhy').getAttribute('aria-expanded') === 'false');
+    ok('the rest of the table is folded away behind one toggle, and the toggle is BELOW the controls',
+      $('mkPays').hidden && !$('mkWhy').hidden && $('mkWhy').getAttribute('aria-expanded') === 'false'
+      && $('panelMarket').innerHTML.indexOf('mkCtl') < $('panelMarket').innerHTML.indexOf('mkWhy'),
+      'pays hidden ' + $('mkPays').hidden);
     $('mkWhy').click();
     ok('and the toggle opens the coin’s own facts, all of them off the reply',
       !$('mkPays').hidden && $('mkWhy').getAttribute('aria-expanded') === 'true'
       && $('mkPays').innerHTML.indexOf(c0.grade) >= 0
       && $('mkPays').innerHTML.indexOf(market.BAND_X + '×') >= 0,
+      $('mkPays').innerHTML);
+    // THE FEE IS INSIDE THAT FOLD, not a sentence under the button. It is the same fact at every
+    // depth and in every state, so on screen it was a permanent line of self-explanation: 19px at the
+    // design width and 32px at a sidebar of 250, where it takes two lines. The figure is still the
+    // host's (`feeBp`), which is why it is read off the engine here too
+    ok('the fee is said once, inside the fold, and the screen did not write the figure',
+      $('mkPays').innerHTML.indexOf('Round trip ' + feePct + '%, taken when you sell') >= 0
+      && !doc.querySelector('#panelMarket .mk-fee') && !$('mkFee'),
       $('mkPays').innerHTML);
     $('mkWhy').click();
 
@@ -300,7 +324,14 @@ module.exports = {
       spanFails.length === 0, spanFails.join(' | '));
     // the window is one set and both depths follow it: the list compares four coins, and a base that
     // differed from row to row would be four figures that cannot be compared
-    $('mkUp').click();
+    // The heading's arrow, which is the only one there is. It takes ONE step: from a coin it closes
+    // the coin, and only from the list does it leave the game (the panel's `up`, games/README.md
+    // section 4). The test for the second step is below, with the keys
+    $('mkBack').click();
+    ok('the heading’s arrow closes the coin and stays in the market',
+      !$('mkList').hidden && $('mkCoin').hidden && doc.body.classList.contains('game-mk')
+      && txt('mkTtl') === listTitle && $('mkBack').title === 'All games',
+      txt('mkTtl') + ' | ' + $('mkBack').title + ' | ' + h.bodyTabs());
     ok('and the list follows the same window, named over its change column',
       !$('mkList').hidden && !$('mkLHead').hidden && txt('mkLHead') === SPANS['1M'].head
       && market.CODES.every((c) => /%$/.test(txt('mkChg-' + c))),
@@ -334,7 +365,7 @@ module.exports = {
       // in coins, a fraction of one is a stake of that fraction of the price
       doc.querySelector('#mkUnit button[data-u="sh"]').click(); advance(2);
       typeAmt('0.5');
-      const want07 = Math.round(0.5 * Number(txt('mkNow').replace(/,/g, '')));
+      const want07 = Math.round(0.5 * Number(txt('mkSide').replace(/,/g, '')));
       ok('half a coin is a stake of half its price',
         Math.abs(Number($('mkDeal').getAttribute('data-bet')) - want07) <= 1 && /^= [\d,]+ credits$/.test(txt('mkConv')),
         $('mkDeal').getAttribute('data-bet') + ' | want ' + want07 + ' | ' + txt('mkConv'));
@@ -348,10 +379,13 @@ module.exports = {
       ok('more than the purse holds is refused on the screen before it is sent',
         $('mkDeal').disabled && txt('mkConv') === 'Not enough credits', txt('mkConv'));
       typeAmt('100');
-      ok('the stake typed is the stake the line under the well previews',
-        $('mkDeal').getAttribute('data-bet') === '100'
-        && doc.querySelector('#mkLine .hl-pot.preview b').textContent === '100',
-        $('mkDeal').getAttribute('data-bet'));
+      // The stake about to go in is said by the box and by the button, and nowhere else. The pot
+      // preview that used to sit under the well went with the .hl-line: a third copy of the number
+      // that is already typed into the box it is read out of
+      ok('the stake typed is the stake on the button, and the line says what it buys',
+        $('mkDeal').getAttribute('data-bet') === '100' && txt('mkDeal') === 'Buy 100'
+        && /^≈ [\d.]+ /.test(txt('mkConv')) && !doc.querySelector('#panelMarket .hl-pot'),
+        $('mkDeal').getAttribute('data-bet') + ' | ' + txt('mkDeal') + ' | ' + txt('mkConv'));
 
       // --- a buy
       const bal0 = ledgerBalance();
@@ -373,20 +407,32 @@ module.exports = {
       ok('the position lands at once and the verdict a beat after it',
         buyT.pl === 0 && buyT.sell === 0 && buyT.chip === TRADE && buyT.unlock === TRADE
         && buyT.said === TRADE, JSON.stringify(buyT));
-      // the reply is drawn at the very minute the trade settled at, so the price in the crumb IS the
+      // the reply is drawn at the very minute the trade settled at, so the price in the corner IS the
       // price the position was opened at: the chip and the line under the profit have to say it
       ok('the chip names what went in and the price it went in at',
-        chip() === 'bj-chip Bought 100 at ' + txt('mkNow'), chip() + ' | now ' + txt('mkNow'));
-      ok('the biggest block is now the profit, with its stake and its age under it',
-        !$('mkPlBox').hidden && txt('mkPlSub').indexOf(' · 100 in at ' + txt('mkNow')) > 0
-        && /held \d+s$/.test(txt('mkPlSub')), txt('mkPlSub'));
-      ok('one figure, three places: the block, the heading’s corner and the row all say it',
-        txt('mkPl') === txt('mkSide') && figOf(code) === txt('mkPl')
+        chip() === 'bj-chip Bought 100 at ' + txt('mkSide'), chip() + ' | now ' + txt('mkSide'));
+      // and the percentage is NOT in that line. 29px under it the period row carries the market's
+      // own change in the same colours and the same sign, so the two read as one figure and neither
+      // says which it is. What is left is what the big number cannot say
+      ok('the biggest block is now the profit, with its stake and its age under it and no percentage',
+        !$('mkPlBox').hidden && txt('mkPlSub').indexOf(' · 100 in at ' + txt('mkSide')) > 0
+        && /held \d+s$/.test(txt('mkPlSub')) && txt('mkPlSub').indexOf('%') < 0, txt('mkPlSub'));
+      // TWO places, not three. With one position open the corner's sum and the block are the same
+      // number 44px apart and the same colour, so at this depth the corner carries the price instead
+      // and the sum is read on the list of coins (below)
+      ok('one figure, two places: the block says it and the list row says it',
+        figOf(code) === txt('mkPl')
         && $('mkPl').className === 'mk-pl ' + (dirOf(txt('mkPl')) ? 'mk-' + dirOf(txt('mkPl')) : ''),
-        txt('mkPl') + ' | ' + txt('mkSide') + ' | ' + figOf(code) + ' | ' + $('mkPl').className);
+        txt('mkPl') + ' | ' + figOf(code) + ' | ' + $('mkPl').className);
+      ok('and the corner is this coin’s price, not the same profit a second time',
+        /^[\d,]+$/.test(txt('mkSide')) && txt('mkSide') !== txt('mkPl')
+        && $('mkSide').className === 'bj-side',
+        txt('mkSide') + ' | ' + txt('mkPl'));
       ok('the chart marks where this position was opened', marks().length === 1, marks().length + ' marks');
+      // `Add` and not `Buy more`: at a sidebar of 250 the two buttons are 83px each, which is 71px of
+      // text, and `Buy more 100` wanted two lines of a 34px button (docs/game-panels.md, section 1)
       ok('holding it, the screen offers the sale and more of the same coin',
-        offered() === 'mkDeal,mkSell' && /^Buy more /.test(txt('mkDeal')), offered() + ' | ' + txt('mkDeal'));
+        offered() === 'mkDeal,mkSell' && /^Add /.test(txt('mkDeal')), offered() + ' | ' + txt('mkDeal'));
       // The price on the button is what the purse will be paid, fee and all. Only its SHAPE is
       // asserted: the figure is the price of the minute the reply was drawn at, and a test that
       // compared it with what the sale fetches would be a test of whether the clock turned over
@@ -402,13 +448,24 @@ module.exports = {
 
       // --- the figure is the reason to come back, so the list has it with the panel shut
       const plTxt = txt('mkPl');
-      openList();
-      ok('the games list carries the open profit without the market being open',
-        rowFig() === figWant(plTxt), rowFig());
+      // the sum of every open position, which is what the corner carries at the LIST depth: one
+      // position open makes it the same figure as the block, and four would not
+      $('mkBack').click();
+      ok('back on the list of coins, the corner carries every open position together',
+        txt('mkSide') === plTxt && $('mkSide').className === 'bj-side mk-' + dirOf(plTxt),
+        txt('mkSide') + ' | ' + $('mkSide').className);
+      $('mkRow-' + code).click();     // and back into the coin, which is where this leg left off
+      // Shut by the TAB and not by the arrow, and the two are different on purpose. The arrow is a
+      // step the player took, so walking out of a coin leaves them standing on the list of coins;
+      // the tab puts the whole panel away, and the screen keeps the depth it was on for next time
+      $('tabUsage').click(); advance(5);
+      ok('the games list carries the open profit while the market is shut',
+        rowFig() === figWant(plTxt) && h.notShown('panelMarket'), rowFig());
+      $('hdCredits').click(); advance(5);
       h.rowFor('market').click(); advance(20);
       ok('coming back in lands on the coin that was open, with no verdict on it',
-        txt('mkCode') === code && chip() === 'none' && !$('mkPlBox').hidden,
-        txt('mkCode') + ' | ' + chip());
+        txt('mkTtl') === code && chip() === 'none' && !$('mkPlBox').hidden,
+        txt('mkTtl') + ' | ' + chip());
 
       // --- the sale. What it paid is read out of the purse, because that is the only figure a test
       // can know in advance: a price is not
@@ -428,8 +485,8 @@ module.exports = {
       ok('and the verdict waits the same beat the buy did', sellT.chip === TRADE, JSON.stringify(sellT));
       ok('the position is gone: no profit block, no mark, no figure, and the buy is back',
         $('mkPlBox').hidden && marks().length === 0 && figOf(code) === 'none'
-        && rowFig() === 'gm-fig|' && offered() === 'mkDeal' && !$('mkFee').hidden,
-        rowFig() + ' | ' + offered());
+        && rowFig() === 'gm-fig|' && offered() === 'mkDeal' && /^Buy /.test(txt('mkDeal')),
+        rowFig() + ' | ' + offered() + ' | ' + txt('mkDeal'));
       advance(600);   // past the header's own count-up, which is where the number is read from
       ok('the header balance landed on what the ledger says, not on what the chip says',
         hdrBal() === money(ledgerBalance()), hdrBal() + ' | ledger ' + money(ledgerBalance()));
@@ -457,7 +514,13 @@ module.exports = {
       n2 = sentMk.length;
       doc.dispatchKey('b'); doc.dispatchKey('s'); advance(20);
       ok('guard: on the list of coins no key trades', ops(n2) === '', ops(n2));
-      openList();
+      // THE ARROW'S SECOND STEP. One arrow, one step: from a coin it closed the coin (above), and
+      // from the list of coins it leaves the game the way every other screen's arrow does. That is
+      // the whole of why this screen needs no back button of its own (the panel's `up`)
+      $('mkBack').click();
+      ok('and from the list of coins the same arrow leaves the market altogether',
+        !doc.body.classList.contains('game-mk') && $('panelMarket').style.display === 'none',
+        h.bodyTabs() + ' | ' + $('panelMarket').style.display);
       n2 = sentMk.length;
       doc.dispatchKey('b'); doc.dispatchKey('s'); doc.pressKey('Enter', { target: doc.body }); advance(20);
       ok('guard: on the games list no market key trades', ops(n2) === '', ops(n2));
@@ -532,10 +595,20 @@ module.exports = {
       advance(20);
       ok('a broadcast is nobody’s trade: it is drawn as it stands, with no chip and nothing read out',
         chip() === 'none' && live() === said2, chip());
-      ok('and the corner, the row and the other coin’s row take the figure it brought',
-        txt('mkSide') === signed(cast.heldPl) && rowFig().indexOf('|' + signed(cast.heldPl)) > 0
+      // The games list row and the other coin's own row take it. The heading's corner does NOT,
+      // because a coin is open and at that depth the corner is this coin's price: the sum is on the
+      // list of coins, one step up, where it is not standing beside the same figure twice
+      ok('the games list and the other coin’s row take the figure it brought',
+        rowFig().indexOf('|' + signed(cast.heldPl)) > 0
         && figOf(other) === signed(cast.coins[1].position.pl) && figOf(code) === 'none',
-        txt('mkSide') + ' | ' + rowFig() + ' | ' + figOf(other));
+        rowFig() + ' | ' + figOf(other));
+      ok('and the open coin’s heading still carries its price, not another coin’s profit',
+        txt('mkSide') === cred(cast.coins[0].ticks) && $('mkSide').className === 'bj-side',
+        txt('mkSide') + ' | ' + cred(cast.coins[0].ticks));
+      $('mkBack').click();
+      ok('one step up, the corner is that sum',
+        txt('mkSide') === signed(cast.heldPl), txt('mkSide') + ' | ' + signed(cast.heldPl));
+      $('mkRow-' + code).click();
 
       // --- a redraw nobody asked for keeps the window the screen chose
       // The host sends these on its own (games/market/meta.js's onPush) when another window has

@@ -64,7 +64,8 @@ try {
   const mem = (init) => { const data = Object.assign({}, init); return { data, get: (k, d) => (k in data ? data[k] : d), update: (k, v) => { data[k] = v === undefined ? undefined : JSON.parse(JSON.stringify(v)); return Promise.resolve(); } }; };
   const gs = mem({
     agentXpV2: { agents: {}, seen: {}, backfilled: true },
-    creditLedgerV1: { days: { '2026-09-01': { input: START * 100000, output: 0, cache_creation: 0, cache_read: 0 } }, backfilled: true, sweptAt: Date.now() }
+    // input tokens weigh 1, so START credits is START times the credit unit (credits.js CREDIT_UNIT)
+    creditLedgerV1: { days: { '2026-09-01': { input: START * 10000, output: 0, cache_creation: 0, cache_read: 0 } }, backfilled: true, sweptAt: Date.now() }
   });
   const origLoad = Module._load;
   Module._load = function (req) { return req === 'vscode' ? vscodeStub : origLoad.apply(this, arguments); };
@@ -149,12 +150,20 @@ try {
   // Out of whichever game is open, back to the list. The register is what says which games there
   // are, so a game added to games/registry.js needs no line here: the body carries game-<key> while
   // a game is open and its back arrow is <key>Back
+  // A game may have a depth INSIDE itself (the market's coin screen), and the arrow is ONE STEP: it
+  // climbs that depth first and only leaves the game from the top of it (the panels' optional `up`,
+  // games/README.md section 4). So this presses until the game is actually left, bounded, because a
+  // screen that never leaves should fail the mode that asked rather than hang it
+  const BACK_STEPS = 4;
   const openList = () => {
     if (!inGames()) { $('hdCredits').click(); advance(5); }
     for (const g of registry.GAMES) {
       if (!doc.body.classList.contains('game-' + g.key)) continue;
       const back = $(g.key + 'Back');
-      if (back) { back.click(); advance(5); }
+      if (!back) continue;
+      for (let i = 0; i < BACK_STEPS && doc.body.classList.contains('game-' + g.key); i++) {
+        back.click(); advance(5);
+      }
     }
   };
   // The list row that opens a game, by id rather than by its place in the list: a game added above

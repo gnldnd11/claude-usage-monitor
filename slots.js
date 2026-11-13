@@ -134,7 +134,7 @@ function grossOf() {
 }
 
 // The table and the rings are the whole game, so a typo in either is the whole game being wrong.
-// Checked once, when the module loads, the way forge.js checks its ladder
+// Checked once, when the module loads: a table a retune broke should fail at require time
 (function checkTable() {
   if (PAYS.length < 2) throw new Error('slots: a paytable needs rows');
   if (OPS.length) throw new Error('slots: a spin takes no actions, so OPS must stay empty');
@@ -213,7 +213,7 @@ function winOf(syms) {
 
 // seed: any string (a fresh one per spin). id: the spin's public name, which must not be the seed
 // (null if not given). stops: explicit ring positions instead of the seeded roll, for tests and
-// replays, the way poker.js takes a stacked deck
+// replays, the way a card engine takes a stacked deck
 function newRound(opts) {
   const bet = opts.bet;
   if (!Number.isSafeInteger(bet) || bet < 1) throw new RangeError('bet must be a positive integer');

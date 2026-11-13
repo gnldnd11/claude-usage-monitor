@@ -7,11 +7,11 @@ module.exports = `
     --card:#232326;--inner:#191919;--track:#3a3a3d;--text:#ececec;--muted:#8b8b90;
     --border:#303034;--iborder:#2c2c30;--ringtrack:#333;--bubble:#fff;--bubblebd:rgba(0,0,0,.06);
     --felt:#17462f;--felt-lo:#0f3423;--felt-ink:#f2f6f3;--felt-dim:#9fb9a9;
-    /* the focus ring, as a token, because the casino writes one in eleven places. Ember measures
-       6.8:1 on the dark --inner and 2.38:1 on the light one, so the light theme lowers it (below)
-       instead of each of the nine deciding for itself */
-    --focus:#e8895a;
-    --forge:#2b2320;--forge-lo:#15100e;--forge-ink:#f4efe9;--forge-dim:#b7a79c;}
+    /* the focus ring, as a token, because the casino writes one in eleven places (six in the shared
+       chrome and five in the market's own CSS). Ember measures 6.8:1 on the dark --inner and 2.38:1
+       on the light one, so the light theme lowers it (below) instead of each place deciding for
+       itself */
+    --focus:#e8895a;}
   body.vscode-light{--card:#ffffff;--inner:#f6f6f7;--track:#e4e4e7;--text:#1d1d1f;--muted:#78787f;
     --border:#e7e7ea;--iborder:#ededf0;--ringtrack:#e2e2e6;--bubble:#ffffff;--bubblebd:rgba(0,0,0,.14);
     /* 4.05:1 on --inner (#f6f6f7) and 3.44:1 on --track, where ember was 2.38:1. Same role, not a
@@ -353,6 +353,20 @@ module.exports = `
   .walker.stuck .wk-name{color:#f5a623;}
   .cm-time{flex:none;font-size:9.5px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums;}
   @keyframes cmSweep{0%{left:-40%;}100%{left:100%;}}
+  /* "Waiting on a result": the amber of the "?" badge, bordered rather than filled so it reads as
+     a notice and not as an error. Sits between the room and the Crew heading. */
+  .wait-box{margin-top:11px;padding:9px 10px;border:1px solid rgba(245,166,35,.42);border-radius:10px;background:rgba(245,166,35,.07);}
+  .wb-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#f5a623;letter-spacing:.2px;}
+  .wb-head svg{width:13px;height:13px;flex:none;}
+  .wb-n{margin-left:auto;font-size:10px;font-weight:700;color:#f5a623;background:rgba(245,166,35,.16);border-radius:7px;padding:1px 6px;font-variant-numeric:tabular-nums;}
+  .wb-note{margin-top:5px;font-size:10px;line-height:1.5;color:var(--muted);}
+  .wb-row{display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid rgba(245,166,35,.22);}
+  .wb-mid{flex:1 1 auto;min-width:0;}
+  .wb-nm{display:flex;align-items:baseline;gap:6px;font-size:11.5px;font-weight:700;color:var(--text);}
+  .wb-el{font-size:9.5px;font-weight:600;color:#f5a623;font-variant-numeric:tabular-nums;}
+  .wb-desc{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+  .wb-clear{flex:none;padding:4px 9px;border:1px solid rgba(245,166,35,.5);border-radius:7px;background:transparent;color:#f5a623;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;}
+  .wb-clear:hover{background:rgba(245,166,35,.16);}
   /* --- credits: header second line. The coin fills bottom-up in 6 rows toward the next credit --- */
   .ttl .t2.cc{display:flex;align-items:center;gap:4px;margin-top:3px;font-size:12px;line-height:16px;}
   .cc-coin{width:16px;height:16px;flex:none;display:block;shape-rendering:crispEdges;}

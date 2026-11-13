@@ -123,26 +123,28 @@ test('malformed stored values are normalized at the boundary', () => {
   assert.deepEqual(credits.normalizeLedger('garbage').days, {});
 });
 
-test('weights: one credit each from 100k input, 20k output, 80k cache write, 1M cache read', () => {
+test('weights: one credit each from 10k input, 2k output, 8k cache write, 100k cache read', () => {
   const one = (t) => credits.creditSummary(credits.normalizeLedger({ days: { '2026-09-21': Object.assign({ input: 0, output: 0, cache_creation: 0, cache_read: 0 }, t) } }), '2026-09-21', false);
-  assert.equal(one({ input: 100000 }).balance, 1);
-  assert.equal(one({ output: 20000 }).balance, 1);
-  assert.equal(one({ cache_creation: 80000 }).balance, 1);
-  assert.equal(one({ cache_read: 1000000 }).balance, 1);
-  assert.equal(one({ cache_read: 999999 }).balance, 0); // exact: no float drift from the 0.1 weight
-  assert.equal(one({ input: 1, output: 1, cache_creation: 1, cache_read: 1 }).frac, 7.35 / 100000);
-  assert.equal(credits.CREDIT_UNIT, 100000);
+  assert.equal(one({ input: 10000 }).balance, 1);
+  assert.equal(one({ output: 2000 }).balance, 1);
+  assert.equal(one({ cache_creation: 8000 }).balance, 1);
+  assert.equal(one({ cache_read: 100000 }).balance, 1);
+  assert.equal(one({ cache_read: 99999 }).balance, 0); // exact: no float drift from the 0.1 weight
+  assert.equal(one({ input: 1, output: 1, cache_creation: 1, cache_read: 1 }).frac, 7.35 / 10000);
+  assert.equal(credits.CREDIT_UNIT, 10000);
 });
 
 test('summary: balance, today, frac (weighted)', () => {
+  // The day totals carry a remainder on purpose: with 10,000 weighted tokens to a credit, a total
+  // of 1,230,000 lands exactly on a credit boundary and leaves `frac` nothing to say
   const L = credits.mergeLedger(null, { days: {
     '2026-09-20': { input: 0, output: 0, cache_creation: 0, cache_read: 1300000 },  // 130,000 weighted
-    '2026-09-21': { input: 0, output: 200000, cache_creation: 0, cache_read: 1000000 } } }).ledger; // 1,100,000
+    '2026-09-21': { input: 0, output: 200000, cache_creation: 0, cache_read: 1030000 } } }).ledger; // 1,103,000
   const s = credits.creditSummary(L, '2026-09-21', false);
-  assert.equal(s.balance, 12);  // 1,230,000 / 100,000
-  assert.equal(s.today, 11);    // 12 - floor(130,000 / 100,000)
+  assert.equal(s.balance, 123);  // 1,233,000 / 10,000
+  assert.equal(s.today, 110);    // 123 - floor(130,000 / 10,000)
   assert.ok(Math.abs(s.frac - 0.3) < 1e-12);
-  assert.equal(s.perCredit, 100000);
+  assert.equal(s.perCredit, 10000);
 });
 
 // --- bank: per-replica grow-only counters ---------------------------------------------------
@@ -152,12 +154,12 @@ const RA = 'aaaaaaaaaaaaaaaa', RB = 'bbbbbbbbbbbbbbbb', RC = '0123456789abcdef',
 
 test('bank: balance adds every replica\'s won minus lost', () => {
   const L = credits.normalizeLedger({
-    days: { '2026-09-21': { input: 1000000, output: 0, cache_creation: 0, cache_read: 0 } }, // 10 credits
+    days: { '2026-09-21': { input: 1000000, output: 0, cache_creation: 0, cache_read: 0 } }, // 100 credits
     bank: { [RA]: W(30, 5, 4), [RB]: W(0, 12, 2) }
   });
   const s = credits.creditSummary(L, '2026-09-21', false);
-  assert.equal(s.balance, 10 + 30 - 5 - 12);
-  assert.equal(s.today, 10); // earning only
+  assert.equal(s.balance, 100 + 30 - 5 - 12);
+  assert.equal(s.today, 100); // earning only
 });
 
 test('bank: two windows merge as a G-counter, idempotent', () => {
@@ -200,7 +202,7 @@ test('bank: malformed entries are dropped or zeroed at the boundary', () => {
 // they are set is the heat test below
 const SW = (by, level, moves, tries, spent, best, earned, heat, broke) =>
   ({ by, level, moves, tries, spent, heat: heat || 0, best, broke: broke || 0, earned: earned || 0 });
-const PRICE9 = 6053; // what a +9 fetches (forge.js), spelled out so these tests read on their own
+const PRICE9 = 6053; // what a +9 fetched (forge.js, removed in 1.25.0): a literal, so these still run
 
 test('forge: the copy with more moves wins whole, and a stale one never pulls the sword back', () => {
   const early = SW(RA, 3, 5, 5, 850, 3);
@@ -396,7 +398,7 @@ test('market: the balance is what the wallet paid out minus what it took in', ()
 });
 
 test('market: the wallet is added on top of the tokens, the bank and the sword', () => {
-  // 100M input tokens is 1,000 credits (the weights at the top of credits.js)
+  // 100M input tokens is 10,000 credits (the weights at the top of credits.js)
   const led = {
     days: { '2026-09-20': { input: 100_000_000, output: 0, cache_creation: 0, cache_read: 0 } },
     bank: { [RA]: W(300, 120, 9) },
@@ -404,7 +406,7 @@ test('market: the wallet is added on top of the tokens, the bank and the sword',
     market: MK(RA, 2, 1, 500, 640, 640)
   };
   const sum = credits.creditSummary(credits.normalizeLedger(led), '2026-09-20', false);
-  assert.equal(sum.balance, 1000 + (300 - 120) + PRICE9 + 140, 'one of the four sources is not in the balance');
+  assert.equal(sum.balance, 10000 + (300 - 120) + PRICE9 + 140, 'one of the four sources is not in the balance');
   // and taking the wallet out moves the balance by exactly what the wallet is worth
   const without = credits.creditSummary(credits.normalizeLedger(Object.assign({}, led, { market: null })), '2026-09-20', false);
   assert.equal(sum.balance - without.balance, 140);

@@ -16,7 +16,8 @@
 //
 // Sample sizes are solved from the error bar wanted, not picked: a strategy's return is a mean of
 // ratios whose spread is about sigma * sqrt(days held), so the count needed for a given standard
-// error falls out of the coin and the horizon. test/poker.test.js is where that habit comes from.
+// error falls out of the coin and the horizon. The sampled card suites are where that habit comes
+// from (games/README.md, section 7).
 //
 // Strategies are measured over many markets rather than one long history (market.js's _test.lane
 // makes a coin's parameters into a fresh path). What a mean's error bar needs is not independence
@@ -682,7 +683,7 @@ test('a record from somewhere else is read at the boundary, never trusted', () =
   // anything that is not a count reads as none of it
   const z = M.load({ moves: 1.5, trades: 'x', staked: NaN, earned: -3, best: null, at: {} , by: 'not an id' });
   for (const k of M.REC_FIELDS) assert.equal(z[k], 0, k);
-  // clean() IS the boundary here (forge.js leans on credits.js's cleanForge for this), so a `by`
+  // clean() IS the boundary here (the sword leaned on credits.js's cleanForge instead), so a `by`
   // outside the shape has to be gone by the time a wallet holds it. Taken raw, it would be written
   // back out by save(), come back as '' on the next read, and kept() would answer false for every
   // move this window ever made

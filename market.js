@@ -1,9 +1,17 @@
 // The crab's coin market: four coins, bought with credits and sold for credits. Pure in the sense
 // the other games are pure (no vscode, no storage), with one exception named at the end of this note.
 //
-// What makes this game different from the other four: it is the only one whose numbers move while
+// What makes this game different from the others: it is the only one whose numbers move while
 // nobody is looking. That is the whole point of it, and it is also the only reason a panel that was
 // closed is worth opening again.
+//
+// THE FORGE IS GONE, AND THIS FILE STILL NAMES IT. forge.js was deleted on 2026-11-13 (1.25.0) when
+// the casino was cut to five games. Every reference to it below is history rather than a pointer to
+// a file: the forge was the first game whose state was the player's PROPERTY rather than a round,
+// and this file was written against it, so the sword is how the wallet's rules are explained and
+// where they differ is where the interesting decisions are. The parts of it that still exist are
+// credits.js's `forge` record (its merge, and the `earned` term in the balance) and the tests in
+// test/credits.test.js. Read "forge.js" below as "the sword's rules, which credits.js still keeps".
 //
 // --- 1. the price is a function of the clock, not a stored thing --------------------------------
 // priceAt(code, tMs) takes a time and gives back a price. Nothing is written down anywhere: the same
@@ -150,7 +158,7 @@ const OPS = ['buy', 'sell'];
 
 // --- the money path -----------------------------------------------------------------------------
 
-// Prices are integers in hundredths of a credit. A credit is already a coarse unit (100,000 weighted
+// Prices are integers in hundredths of a credit. A credit is already a coarse unit (10,000 weighted
 // tokens, credits.js), so this is fine enough to show a 0.01% move on the calmest coin
 const TICKS_PER_CREDIT = 100;
 

@@ -1,22 +1,22 @@
-// The list tiles for the ten games that have no painted art.
+// The list tiles for the games that have no painted art.
 //
-// WHY SVG AND NOT A PNG. The first four games were cut from a sheet the player drew
-// (game-blackjack.png and friends, 96x96, shown at 48). There is no sheet for the other ten and the
-// only sprites in the repository are agents and monsters, so these are drawn here instead. They are
-// strings, not files, because an inline SVG costs the webview no request and needs no
+// WHY SVG AND NOT A PNG. The games that had a tile painted for them were cut from a sheet the
+// player drew (game-blackjack.png and friends, 96x96, shown at 48). There is no sheet for the rest
+// and the only sprites in the repository are agents and monsters, so these are drawn here instead.
+// They are strings, not files, because an inline SVG costs the webview no request and needs no
 // `max-width:none` correction: the thing the stylesheet caps at 100% is `img`, and there is no img.
 //
-// THE PLAQUE IS NOT A FAMILY MARK. Every one of the four painted tiles sits on the same dark green
-// plaque, the forge included, whose own screen is brown. So the list is one shelf: the plaque is
-// constant and the OBJECT on it is what tells two games apart. A tile that changed colour by family
-// would turn the list into five coloured bands and lose the one thing a column of fourteen rows
-// needs, which is one scan. The plaque below is sampled off the painted four: a near-black rim, a
-// fall from about #0c4726 under the top edge to #022813 in the corners, and the same woven texture
-// the felt is made of in games/casino.js (1px lines on a 2px period, which is half a unit here).
+// THE PLAQUE IS NOT A FAMILY MARK. Every painted tile sits on the same dark green plaque. So the
+// list is one shelf: the plaque is constant and the OBJECT on it is what tells two games apart. A
+// tile that changed colour by family would turn the list into coloured bands and lose the one thing
+// a column of rows needs, which is one scan. The plaque below is sampled off the painted art: a
+// near-black rim, a fall from about #0c4726 under the top edge to #022813 in the corners, and the
+// same woven texture the felt is made of in games/casino.js (1px lines on a 2px period, which is
+// half a unit here).
 //
 // BRIGHT OBJECT ON A DARK PLAQUE. This is the rule the first draft of this file broke and the
 // screenshot caught: the painted tiles are white cards, red and blue chips and a steel blade, all
-// outlined in near-black. Ten flat grey props on dark green read as ten empty tiles at 48 pixels.
+// outlined in near-black. A flat grey prop on dark green reads as an empty tile at 48 pixels.
 // Every object here therefore carries a light mass (cream, steel or ember) and a dark outline.
 //
 // THE GRID IS 24 UNITS, RENDERED AT 48. Two device pixels per unit, the same cell the pixel cards
@@ -28,17 +28,17 @@
 // the painted art. The rim below is a square inset and the frame clips it, exactly as it clips the
 // painted tiles' own baked rim.
 //
-// THE PALETTE IS FIXED, NOT THEMED, for the same reason --felt and --forge have no light-theme
-// value in styles.js: a table is a table in both themes. Every colour already exists in the
-// extension (the ember of .bj-btn.primary, the coin's gold and copper, the card cream and card red,
-// the forge's steel, the felt's win green and lose red).
+// THE PALETTE IS FIXED, NOT THEMED, for the same reason --felt has no light-theme value in
+// styles.js: a table is a table in both themes. Every colour already exists in the extension (the
+// ember of .bj-btn.primary, the coin's gold and copper, the card cream and card red, the steel of
+// the machine cabinets, the felt's win green and lose red).
 'use strict';
 
 // --- the fixed palette. Nothing here is a UI token and nothing here means a state ---
 const C = {
   ink: '#0b1310',     // the outline every object carries, and the darkest hole
   slab: '#2a2f36',    // iron and shadowed stone
-  stone: '#7e828c',   // the forge tile's metal, in shadow
+  stone: '#7e828c',   // metal and shadowed stone: the cabinets, the tower, the wheel's rim
   steel: '#bbbdc7',   // and lit
   cream: '#fcecdc',   // the painted cards' face
   creamLo: '#cbb9a4',
@@ -50,8 +50,8 @@ const C = {
   lose: '#f6836e'     // .bj-chip.lose on the felt
 };
 
-// The plaque, and nothing else. Both ids have to be unique inside the page because ten of these end
-// up in one document, so they carry the game's key
+// The plaque, and nothing else. Both ids have to be unique inside the page because several of these
+// end up in one document, so they carry the game's key
 function plaque(key) {
   const g = 'cuc-tg-' + key, w = 'cuc-tw-' + key;
   return '<defs>'
@@ -158,42 +158,6 @@ const slots = tile('slots',
   + '<circle cx="19.7" cy="4.8" r="2.6" fill="' + C.ember + '" stroke="' + C.ink + '" stroke-width=".9"/>'
   + '<circle cx="19" cy="4.1" r="1" fill="#f6b093"/>');
 
-// --- Scratch card. The only pale mass in the set, which is what tells it from the dark boards at a
-// glance: a cream ticket, silver foil over it, and the coin halfway down a cleared lane
-const scratch = tile('scratch',
-  shadow(11.5, 20.8, 7)
-  + '<rect x="3" y="2.6" width="14.4" height="17.8" rx=".8" fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-  + '<path fill="' + C.creamLo + '" d="M15.8 2.6h1.6v17.8h-1.6z"/>'
-  + '<rect x="4.6" y="4" width="11.2" height="2" fill="' + C.ember + '"/>'
-  + '<rect x="4.6" y="7" width="11.2" height="11.2" fill="' + C.stone + '" stroke="' + C.ink + '" stroke-width=".7"/>'
-  + '<rect x="5" y="7.4" width="10.4" height="1.2" fill="' + C.steel + '"/>'
-  // the lane the coin has cleared, on the same slate the symbol cells use
-  + '<rect x="4.6" y="11.6" width="11.2" height="4" fill="#15181c"/>'
-  + '<circle cx="7.4" cy="13.6" r="1.4" fill="' + C.ember + '"/>'
-  + '<circle cx="11.4" cy="13.6" r="1.4" fill="' + C.ember + '"/>'
-  // the coin doing it, and the foil it threw off
-  + '<circle cx="17.4" cy="14.6" r="4" fill="' + C.emberLo + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-  + '<circle cx="17.4" cy="14.6" r="2.8" fill="' + C.gold + '"/>'
-  + '<circle cx="16.6" cy="13.8" r="1" fill="#f6d27a"/>'
-  + '<g fill="' + C.steel + '"><rect x="18.2" y="9.4" width="1.4" height="1.4"/>'
-  + '<rect x="20" y="11.4" width="1.1" height="1.1"/><rect x="19.4" y="19" width="1.1" height="1.1"/></g>');
-
-// --- Plinko. Twelve rows of pins in the game, three here: enough that the shape is a triangle of
-// dots, which nothing else in the set is. The edge bins pay and the middle does not, which is the
-// whole of this game, so the bins are drawn in those two colours
-const plinko = tile('plinko',
-  '<circle cx="12" cy="3.6" r="2.3" fill="' + C.ember + '" stroke="' + C.ink + '" stroke-width=".8"/>'
-  + '<circle cx="11.3" cy="2.9" r=".8" fill="#f6b093"/>'
-  + '<g fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".6">'
-  + '<circle cx="12" cy="8.4" r="1.25"/>'
-  + '<circle cx="8.3" cy="12.2" r="1.25"/><circle cx="15.7" cy="12.2" r="1.25"/>'
-  + '<circle cx="4.6" cy="16" r="1.25"/><circle cx="12" cy="16" r="1.25"/><circle cx="19.4" cy="16" r="1.25"/></g>'
-  + '<g stroke="' + C.ink + '" stroke-width=".8">'
-  + '<rect x="1.6" y="18.4" width="4.8" height="2.9" rx=".5" fill="' + C.ember + '"/>'
-  + '<rect x="6.8" y="18.4" width="4.8" height="2.9" rx=".5" fill="' + C.slab + '"/>'
-  + '<rect x="12" y="18.4" width="4.8" height="2.9" rx=".5" fill="' + C.slab + '"/>'
-  + '<rect x="17.2" y="18.4" width="4.8" height="2.9" rx=".5" fill="' + C.ember + '"/></g>');
-
 // --- Wheel. Twenty-eight slots in the game; eight here, because at 48 pixels a twenty-eighth of a
 // circle is a quarter of a pixel wide. One of them is the one worth having
 const wheel = (function () {
@@ -238,120 +202,6 @@ const keno = (function () {
     + '<circle cx="18.2" cy="17.4" r="1.7" fill="' + C.ember + '"/>');
 })();
 
-// --- Red Dog. Two cards apart, and the gap between them is the bet, so it is the thing the tile is
-// built around: the dashed card is where the third one lands and whether it fits is the game
-const reddog = tile('reddog',
-  shadow(12, 20.6, 8)
-  + '<rect x="1.6" y="5" width="7.4" height="11.8" rx=".9" fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-  + '<path fill="' + C.red + '" d="M5.3 7.9c1.9 1.5 2.8 2.7 2.8 3.9 0 1.1-.9 1.8-1.8 1.8-.4 0-.7-.1-1-.4-.3.3-.6.4-1 .4-.9 0-1.8-.7-1.8-1.8 0-1.2.9-2.4 2.8-3.9z"/>'
-  + '<rect x="15" y="5" width="7.4" height="11.8" rx=".9" fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-  + '<path fill="#1d1d1f" d="M18.7 7.7l2.8 3.6c.6.9 0 2-1 2-.4 0-.8-.2-1.1-.5l.4 1.7h-2.2l.4-1.7c-.3.3-.7.5-1.1.5-1 0-1.6-1.1-1-2z"/>'
-  // and the third card, face down between them, which is the bet. A dashed outline was drawn here
-  // first and read as a striped post; the card back says the same thing and says it as a card
-  + '<rect x="9.3" y="4.2" width="5.4" height="12.4" rx=".8" fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-  + '<rect x="10.1" y="5" width="3.8" height="10.8" fill="' + C.ember + '"/>'
-  + '<g stroke="' + C.emberLo + '" stroke-width=".9">'
-  + '<path d="M10.1 7.2l3.8 3.8M10.1 11l3.8-3.8M10.1 11.6l3.8 3.8M10.1 15.4l3.8-3.8"/></g>');
-
-// --- The four dice games. They share a family on the list (Dice · Sic Bo · Hazard · Shut the Box)
-// and the thing that has to work here is that the four are told apart at 24 PIXELS, which is what
-// `.gm-ic .gm-tile` renders at. At that size a die is a cream square and its pips are whatever is
-// left, so the four are separated by SILHOUETTE first and only then by what is on the faces:
-//
-//   Dice        a horizontal two-tone lane with a readout standing over it. No die at all: this
-//               game rolls 0.00 to 99.99 and shows a numeral, so a cube here would be a lie
-//   Sic Bo      three cream squares, clustered
-//   Hazard      one cream square and a tall tube filling up beside it
-//   Shut the Box  one wide low box of slats, half of them fallen, with a die resting on it
-//
-// Counting pips is not asked of anyone: at 24px a pip on a 9-unit die is one pixel across. Each
-// face below carries two or three OVERSIZED pips, the way the wheel tile carries eight slices
-// instead of twenty-eight.
-
-// Dice. The lane is the game: everything left of the marker wins and everything right of it loses,
-// and the plaque standing on the marker is where the roll is printed
-// A pale plaque with three dark windows in it was drawn here first, as the readout the roll is
-// printed on. At 48 it was the slots cabinet: a light box with three dark slots in it. So the
-// readout is gone and the lane is the whole tile, with one cream pointer standing where the line is
-const dice = tile('dice',
-  shadow(12, 21.6, 9.5)
-  // the lane, and the part of it that pays. One continuous two-tone bar, which nothing else in the
-  // set has: plinko's four cups are separate boxes with a field of pins over them
-  + '<rect x="1.6" y="10.6" width="20.8" height="7" rx="2.6" fill="' + C.slab + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-  + '<path fill="' + C.ember + '" d="M4.2 11.1h8.2v6H4.2a2.5 2.5 0 0 1 0-6z"/>'
-  + '<path fill="' + C.emberLo + '" d="M4.2 15.2h8.2v1.9H4.2a2.5 2.5 0 0 1-2.1-1.9z"/>'
-  // the scale, so the bar is read as a run from one end to the other and not as a progress bar
-  + '<g fill="' + C.steel + '" opacity=".5"><rect x="6.3" y="18.4" width=".9" height="2.2"/>'
-  + '<rect x="11.6" y="18.4" width=".9" height="2.2"/><rect x="16.9" y="18.4" width=".9" height="2.2"/></g>'
-  // the line itself: where the player put it, and which side of it the roll has to land on
-  + '<path fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".9" d="M12.4 10.2L8.3 3.2h8.2z"/>'
-  + '<path fill="' + C.creamLo + '" d="M12.4 10.2l2.1-3.6h2z"/>'
-  + '<rect x="11.7" y="10.4" width="1.4" height="7.4" fill="' + C.cream + '"/>');
-
-// Sic Bo. Three dice and nothing else: the bet is a word and the roll is three cubes, so the cubes
-// are the tile. Stacked two over one rather than laid in a row, because three in a row at 24px is a
-// dashed line and this has to read as a handful
-const sicbo = (function () {
-  const die = (x, y, s, spots) => {
-    const u = s / 24, r = 2.9 * u;
-    return '<rect x="' + x + '" y="' + y + '" width="' + s + '" height="' + s + '" rx="' + (3 * u)
-      + '" fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-      + '<path fill="' + C.creamLo + '" d="M' + (x + s - 1.4 * u * 24 * u) + ' ' + y + 'h0z"/>'
-      + '<g fill="' + C.ink + '">'
-      + spots.map((p) => '<circle cx="' + (x + p[0] * s).toFixed(2) + '" cy="' + (y + p[1] * s).toFixed(2)
-        + '" r="' + r.toFixed(2) + '"/>').join('') + '</g>';
-  };
-  const A = [[.3, .3], [.7, .7]];                       // two
-  const B = [[.3, .3], [.5, .5], [.7, .7]];             // three
-  const D = [[.5, .5]];                                 // one
-  return tile('sicbo',
-    shadow(12, 21.2, 9)
-    + die(7.2, 1.8, 9.4, B)
-    + die(1.8, 10.4, 9.4, A)
-    + die(12.8, 10.4, 9.4, D));
-})();
-
-// Hazard. One die, and a tube beside it that the pips pile up in until a 1 empties it. The tube is
-// what keeps this off Sic Bo's silhouette: one square and a tall column, not three squares
-const hazard = tile('hazard',
-  shadow(9, 21, 7)
-  // the tube, filled a little over half way
-  + '<rect x="16.4" y="2.4" width="5.8" height="18.6" rx="1.4" fill="' + C.ink + '" opacity=".45"/>'
-  + '<rect x="16.4" y="2.4" width="5.8" height="18.6" rx="1.4" fill="none" stroke="' + C.stone + '" stroke-width="1"/>'
-  // gold and not cream: at 24px a cream tube beside a cream die is two pale blobs, and so is Sic
-  // Bo's three. The pile is the only warm mass in the four, which is what separates the two rows
-  + '<g fill="' + C.gold + '"><circle cx="18.2" cy="19.2" r="1.3"/><circle cx="20.6" cy="19.2" r="1.3"/>'
-  + '<circle cx="18.2" cy="16.4" r="1.3"/><circle cx="20.6" cy="16.4" r="1.3"/>'
-  + '<circle cx="18.2" cy="13.6" r="1.3"/><circle cx="20.6" cy="13.6" r="1.3"/>'
-  + '<circle cx="19.4" cy="10.8" r="1.3"/></g>'
-  // the die, mid roll, showing a face that pays
-  + '<rect x="1.6" y="6" width="13.2" height="13.2" rx="2" fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width="1"/>'
-  + '<path fill="' + C.creamLo + '" d="M12.8 6h2v13.2h-2z"/>'
-  + '<g fill="' + C.ink + '"><circle cx="5" cy="9.4" r="1.5"/><circle cx="11.4" cy="9.4" r="1.5"/>'
-  + '<circle cx="8.2" cy="12.6" r="1.5"/>'
-  + '<circle cx="5" cy="15.8" r="1.5"/><circle cx="11.4" cy="15.8" r="1.5"/></g>');
-
-// Shut the Box. The box itself: nine slats, and the ones that are down are holes rather than tiles.
-// The die on the lid is the family mark and it is also what makes this tile asymmetric, which is
-// what tells it from a cabinet or a card at a glance
-const shutbox = tile('shutbox',
-  shadow(12, 21.4, 9)
-  + '<rect x="1.4" y="8.6" width="21.2" height="12.4" rx="1.4" fill="' + C.stone + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-  + '<rect x="1.4" y="8.6" width="21.2" height="1.8" fill="' + C.steel + '"/>'
-  // four up, three down. The holes are drawn first so a slat can overlap one
-  + '<g fill="' + C.ink + '" opacity=".75"><rect x="3" y="11.6" width="2.4" height="7.8" rx=".4"/>'
-  + '<rect x="9.2" y="11.6" width="2.4" height="7.8" rx=".4"/>'
-  + '<rect x="18.5" y="11.6" width="2.4" height="7.8" rx=".4"/></g>'
-  + '<g fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".8">'
-  + '<rect x="6.1" y="11.6" width="2.4" height="7.8" rx=".4"/>'
-  + '<rect x="12.3" y="11.6" width="2.4" height="7.8" rx=".4"/>'
-  + '<rect x="15.4" y="11.6" width="2.4" height="7.8" rx=".4"/></g>'
-  // the die, resting on the lid
-  + '<rect x="4.2" y="1.6" width="8.6" height="8.6" rx="1.4" fill="' + C.cream + '" stroke="' + C.ink + '" stroke-width=".9"/>'
-  + '<path fill="' + C.creamLo + '" d="M11.2 1.6h1.6v8.6h-1.6z"/>'
-  + '<g fill="' + C.ink + '"><circle cx="6.6" cy="4" r="1.2"/><circle cx="10.4" cy="7.8" r="1.2"/>'
-  + '<circle cx="8.5" cy="5.9" r="1.2"/></g>');
-
 // --- The market. Not a game, and the tile says so: no felt furniture, no card, no coin, just the
 // only chart in the casino. The two reds are there so the tile is not read as a win
 const market = tile('market',
@@ -364,10 +214,14 @@ const market = tile('market',
   + '<rect x="16.3" y="5.2" width="1.2" height="8.2"/><rect x="15.1" y="6.6" width="3.6" height="5.4" rx=".3"/>'
   + '<rect x="20.7" y="2.6" width="1.2" height="8.8"/><rect x="19.5" y="4" width="3.6" height="6.2" rx=".3"/></g>');
 
-// `mines`, `tower`, `crash` and `keno` are drawn but not used: those four games left the floor on
-// 2026-11-06 and no meta.js asks for their tile any more. They are kept because an export nobody
-// reads costs nothing and the drawings are the expensive part.
-module.exports = {
-  mines, tower, crash, slots, scratch, plinko, wheel, keno, reddog, market,
-  dice, sicbo, hazard, shutbox
-};
+// `slots`, `wheel` and `market` are the three a meta.js asks for. `mines`, `tower`, `crash` and
+// `keno` are drawn but not used: those four left the floor on 2026-11-06 and an export nobody reads
+// costs nothing, so they were kept.
+//
+// The nine games abolished on 2026-11-13 are NOT kept the same way, and the difference is why this
+// note says so rather than growing by five more names: those four were taken off the floor while
+// the list was being redesigned and could have come back, and a drawing kept for a game that may
+// return is worth its line. Nine games removed on purpose are not coming back, so the scratch
+// card, the plinko board, Red Dog and the four dice tiles went with them. Git has them if that
+// turns out to be wrong.
+module.exports = { mines, tower, crash, slots, wheel, keno, market };

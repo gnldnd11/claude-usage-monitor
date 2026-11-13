@@ -40,16 +40,19 @@ module.exports = {
       doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join() === registry.GAMES.map((g) => g.id).join()
       && doc.querySelectorAll('#panelGames .gm-nm').map((e) => e.textContent).join() === registry.GAMES.map((g) => g.name).join(),
       doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join());
-    // a second line only where it says something. Twelve rows reading "Min bet 10" is wallpaper,
-    // and the same line on two rows out of fourteen is "this one is expensive"
+    // a second line only where it says something. Every row reading "Min bet 10" is wallpaper, and
+    // the same line on two rows out of five is "this one is expensive"
     ok('the second line is drawn only for the games that have one',
       doc.querySelectorAll('#panelGames .gm-sub').map((e) => e.textContent).join()
         === registry.GAMES.filter((g) => g.sub).map((g) => g.sub).join(),
       doc.querySelectorAll('#panelGames .gm-sub').map((e) => e.textContent).join());
-    ok('the four games this build opened with are all still listed',
-      ['blackjack', 'hilo', 'poker', 'forge'].every((id) => !!registry.BY_ID[id]), registry.GAMES.map((g) => g.id).join());
-    // A row's picture is painted art (an <img>, four games) or a drawn tile (an inline <svg
-    // class="gm-tile">, the other ten), never both. Either way it sits OVER the glyph and the glyph
+    // the five the casino was cut down to on 2026-11-13. test/registry.test.js is where the same
+    // list is asserted against the register; this is the one that says they reach the PAGE
+    ok('the five games this build ships are all still listed',
+      ['blackjack', 'hilo', 'slots', 'wheel', 'market'].every((id) => !!registry.BY_ID[id]),
+      registry.GAMES.map((g) => g.id).join());
+    // A row's picture is painted art (an <img>) or a drawn tile (an inline <svg class="gm-tile">),
+    // never both. Either way it sits OVER the glyph and the glyph
     // stays: an alt="" image that fails to load draws nothing, so the glyph underneath is what shows
     ok('every row carries one picture, decorative, over a glyph that stays',
       doc.querySelectorAll('#panelGames .gm-ic img').map((e) => /[^/]+$/.exec(e.getAttribute('src'))[0]).join()
@@ -60,31 +63,37 @@ module.exports = {
       doc.querySelectorAll('#panelGames .gm-ic img').map((e) => /[^/]+$/.exec(e.getAttribute('src'))[0] + ' alt=' + JSON.stringify(e.getAttribute('alt'))).join(' '));
     // One heading where the group changes, and a group that comes back would print its heading
     // twice: see test/registry.test.js, which is where that mistake is named.
-    // Favourites is a fifth heading, in the page from the first paint and hidden with its block
+    // Favourites is one more heading, in the page from the first paint and hidden with its block
     // while nothing is starred (test/webview/games/_chrome.js, the favs mode, is where that lives)
     ok('one heading per family, in the order the register sorted them, under an empty Favourites',
       doc.querySelectorAll('#panelGames .gm-sec').map((e) => e.textContent).join()
         === ['Favourites'].concat(registry.GAMES.map((g) => g.group).filter((g, i, a) => g && g !== a[i - 1])).join()
       && $('gmFavs').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0,
       doc.querySelectorAll('#panelGames .gm-sec').map((e) => e.textContent).join());
-    // the figure slot is in the page from the first paint, because the two games that fill it
-    // (the market's profit, the forge's level) have to be able to fill it before they are opened:
-    // the host answers its own first data push with the stored sword, so the forge could put a
-    // level on its row before anyone has opened it (games/forge/meta.js, onPush).
+    // the figure slot is in the page from the first paint, because the game that fills it (the
+    // market's open profit) has to be able to fill it before it is opened: the host answers its own
+    // first data push with the stored wallet, so the market can put a figure on its row before
+    // anyone has opened it (games/market/meta.js, onPush).
     //
     // ON A FRESH INSTALL IT PUTS NOTHING THERE, and that is the rule rather than a gap in it. The
     // figure's whole job is to have MOVED while the panel was shut (docs/game-panels.md, section 7)
-    // and the stored sword here is the shop's own +0 that nobody has forged, so a `+0` on the row
-    // would be a number on the one row where nothing has happened. The reply is checked for as well
-    // as the empty slot: an empty row because the host never answered would be a different bug
-    // wearing this one's result. The other half of the rule (a sword that HAS been touched fills
-    // the row, +0 included) is the forge's own, in test/webview/games/forge.js's forge-row mode
-    ok('every row has its figure slot, and the untouched sword leaves the forge’s empty',
+    // and there is no position held here, so a figure on that row would be a number on a row where
+    // nothing has happened.
+    //
+    // THE MARKET SAYS NOTHING AT ALL HERE, and that is asserted rather than assumed. Its onPush
+    // returns early on the first push of a window that holds nothing (games/market/meta.js: an
+    // empty wallet read for the first time is not news, and answering would price four coins and
+    // post thirty-six candles to tell a row it is still empty). So the empty slot and the silence
+    // are ONE fact, not an empty slot that might be an unanswered host. The forge used to be the
+    // other half of this test, and it answered instead, which is why this read "after N replies"
+    // until 1.25.0. The other half of the rule (a position that IS held fills the row) is the
+    // market's own, in test/webview/games/market.js
+    ok('every row has its figure slot, and a wallet holding nothing says nothing into it',
       doc.querySelectorAll('#panelGames .gm-fig').length === registry.GAMES.length
-      && hostLog.filter((l) => l.type === 'fg').length > 0
+      && hostLog.filter((l) => l.type === 'mk').length === 0
       && doc.querySelectorAll('#panelGames .gm-fig').every((e) => e.textContent === ''),
       doc.querySelectorAll('#panelGames .gm-fig').map((e) => JSON.stringify(e.textContent)).join()
-        + ' after ' + hostLog.filter((l) => l.type === 'fg').length + ' forge replies');
+        + ' after ' + hostLog.filter((l) => l.type === 'mk').length + ' market replies');
     ok('the list takes the focus', active() === gameRow(), 'focus on ' + activeName());
     ok('no felt on the games list', !doc.querySelector('#panelGames .bj-felt') && !$('panelGames').classList.contains('bj-felt'), $('panelGames').className);
     const opens0 = sentOps.filter((o) => o === 'open').length;
@@ -227,7 +236,7 @@ module.exports = {
     useSeed((st) => st.phase === 'player' && bj.act(st, 'stand').net !== 0, 'hold-');
     $('bjDeal').click(); advance(2); advance(1200);
     const b0 = hdrBal();
-    const dataOf = (today, frac) => ({ agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: ledgerBalance(), today, frac, perCredit: 100000, counting: false } });
+    const dataOf = (today, frac) => ({ agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: ledgerBalance(), today, frac, perCredit: 10000, counting: false } });
     const rowsLit = () => doc.querySelectorAll('#hdCredits .cc-r.on').length;
     doc.dispatchKey('s'); advance(1); advance(2); // stand reaches the host; its reply and data push come back
     toWebview({ type: 'data', data: dataOf(777, 0.5) }); advance(5); // a push only this test sends: today 777, three coin rows

@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.27.0: Clearing a call that never answered
+
+- **A call stuck on "?" can be cleared off the Agents tab.** A new **Waiting on a result** block sits under the room, one row per call, with the agent, the task and how long it has waited. Press **Clear** and that row goes.
+- **It clears the row, not the agent.** This extension only reads transcripts and has no hooks, so there is no way from here to stop, cancel or interrupt anything, and the button does not pretend otherwise.
+- **The wording no longer guesses.** It read `No result yet`, followed by a dash and the word `stuck?`. All the transcript says is that no result has been written, which looks identical whether the agent is still working or its session ended without writing one. Both are now said, along with the fact that the row drops off by itself 4 hours after the call.
+- **One call, not one agent.** Rows are keyed by the invocation, so clearing one of three parallel calls of the same agent leaves the other two where they are.
+- **Only a waiting call offers the button.** A run that is going normally has no Clear anywhere, and the host refuses a key that is not waiting.
+- **If the result turns up later, the run comes back as done.** Clearing the row does not hide the fact that it was alive after all.
+- Cleared rows are shared between windows and expire with the 4-hour window, so the record cannot grow without bound.
+
+## 1.26.0: The market in one screenful
+
+- **The coin market is 89px shorter.** The same chart, the same figures, 460px instead of 550px at the width it is designed for, and 507px instead of 597px at the narrowest sidebar.
+- **One way back, and it is the arrow in the heading.** The `← Coins` button under it is gone. From a coin the arrow closes the coin, from the list of coins it leaves the market, and Esc does what it always did.
+- **The heading says where you are.** While a coin is open the title is its code and the corner is its price, so the arrow plainly closes that coin. The profit of everything you hold is on the list of coins, where it is not standing beside the same figure twice.
+- **How it pays moved below the buttons**, so nothing stands between the chart and the button you press about it, and the round trip's fee is inside that fold instead of always on screen.
+- **The line under your profit no longer repeats it as a percentage.** It was the same sign and the same colour as the market's own change 29px under it. It still says what went in, at what price, and for how long.
+- `Buy more` reads `Add`: at a narrow sidebar the longer label folded to two lines inside the button.
+
+## 1.25.0: Five games
+
+- **The casino is five games.** Blackjack, High-Low, Slots, Wheel and the Coin Market stay, in three families. Red Dog, Draw Poker, Plinko, Scratch Card, Roll Under, Sic Bo, Hazard, Shut the Box and Sword Forge are gone.
+- **Credits you earned at the forge are still yours.** What the shop paid you for swords you sold stays in your balance. The sword itself, and the screen it stood on, are gone; the money is not.
+- Nothing else about the casino moved: the same bets, the same pay tables and the same 96% to 97% on every game that has one.
+
+## 1.24.0: Ten times the credits
+
+- **A credit is now 10K weighted tokens, not 100K.** The same work earns ten times what it did, and every price in the casino stays where it was: the bets, the forge fees and the market's cut are unchanged.
+- **Your past earnings are re-priced with it.** The ledger keeps raw tokens per day and prices them on every read, so a balance earned before this version comes back ten times larger without anything to migrate.
+
 ## 1.23.0: Buy as much as you like
 
 - **The coin market takes any amount.** The 10 / 100 / 1K chips are gone from the market: type a stake, or press 25%, 50% or Max for that part of what you can spend.

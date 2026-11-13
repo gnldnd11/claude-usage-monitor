@@ -342,15 +342,59 @@
       var st = rows[i], nm = st.agent, sheet = agentSheet(nm);
       var spr = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, 30) + '"></div>' : '';
       var desc = st.desc || (st.state === 'done' ? 'Done' : 'Running…');
-      if (st.state === 'stuck') desc = 'No result yet — stuck? ' + (st.desc || '');
+      // "stuck?" claimed more than the data knows. All the transcript says is that no result line
+      // has been written, and a reload, a cancel or a closed window looks exactly like an agent
+      // that is still thinking. So the row states the fact and WaitingNote carries the rest
+      if (st.state === 'stuck') desc = 'No result written yet. ' + (st.desc || '');
       else if (st.state === 'done' && st.tokens) desc = (st.desc ? st.desc + ' · ' : '') + fmtTok(st.tokens) + ' tok';
-      html += '<div class="cm-row' + (st.state === 'done' ? ' done' : '') + (st.state === 'stuck' ? ' stuck' : '') + '">'
+      html += '<div class="cm-row' + (st.state === 'done' ? ' done' : '') + (st.state === 'stuck' ? ' stuck' : '') + '"'
+        + (st.state === 'stuck' ? ' title="' + esc(WAIT_NOTE) + '"' : '') + '>'
         + '<div class="cm-sprite">' + spr + '</div>'
         + '<div class="cm-mid"><div class="cm-top"><span class="cm-name">' + esc(displayName(nm)) + '</span><span class="cm-model">' + esc(agentModel(nm)) + '</span></div>'
         + '<div class="cm-desc">' + esc(desc) + '</div><div class="cm-bar"></div></div>'
         + '<div class="cm-time">' + elapsedStr(st.since) + '</div></div>';
     }
     mini.innerHTML = html;
+  }
+
+  // The one sentence the "?" badge cannot say. Why it is worded like this: the extension reads
+  // transcripts and nothing else, so "still working" and "the session died without writing a
+  // result" are the SAME record on disk: a call with no result line. Calling either one of them
+  // "stuck" would be a claim the data does not support, and the four hours are worth saying
+  // because they mean the row needs no action at all if the user would rather wait.
+  // One per row (the tooltip in the crew strip) and one for the block heading. Written out twice
+  // rather than pluralised by string surgery, so changing the wording changes the wording.
+  var WAIT_NOTE = 'No result has been written back for this call. It may still be working, or its session may have ended without ever writing one. Either way the row drops off by itself 4 hours after the call.';
+  var WAIT_NOTE_MANY = 'No result has been written back for these calls. Each one may still be working, or its session may have ended without ever writing one. Either way a row drops off by itself 4 hours after the call.';
+  // Rows the user can clear. Kept out of the Crew fold (see html.js) so folding cannot hide the
+  // only thing on this tab that asks anything of the user.
+  //
+  // The control CLEARS THE ROW and every word around it says so. This extension is read-only and
+  // has no hooks: stopping an agent from here is not possible, and a user who read "cancel", hit
+  // it, and believed the agent had stopped would be worse off than one who read nothing at all.
+  // Only 'stuck' rows are listed, so there is no path from here to a healthy run.
+  function renderWaiting(activity) {
+    var box = el('waitBox'); if (!box) return;
+    var rows = actInstances(activity).filter(function (s) { return s.state === 'stuck' && !isHidden(s.agent); });
+    if (!rows.length) { box.hidden = true; box.innerHTML = ''; return; }
+    rows.sort(function (a, b) { return a.since - b.since; }); // longest wait first
+    var html = '<div class="wb-head">' + WARN_MID_SVG + '<span>Waiting on a result</span>'
+      + '<span class="wb-n">' + rows.length + '</span></div>'
+      + '<div class="wb-note">' + esc(rows.length > 1 ? WAIT_NOTE_MANY : WAIT_NOTE) + '</div>';
+    for (var i = 0; i < rows.length; i++) {
+      var st = rows[i];
+      html += '<div class="wb-row">'
+        + '<div class="wb-mid"><div class="wb-nm">' + esc(displayName(st.agent))
+        + '<span class="wb-el">' + esc(fmtActive(Date.now() - st.since)) + '</span></div>'
+        + (st.desc ? '<div class="wb-desc">' + esc(st.desc) + '</div>' : '') + '</div>'
+        // data-key is the tool_use id: ONE invocation, so clearing one of three parallel calls of
+        // the same agent leaves the other two alone
+        + '<button class="wb-clear" data-key="' + esc(st.key) + '"'
+        + ' title="Clear this row from the list. It does not stop the agent: this extension cannot.">Clear</button>'
+        + '</div>';
+    }
+    box.innerHTML = html;
+    box.hidden = false;
   }
 
   // ===========================================================================
@@ -577,7 +621,7 @@
   function creditsTitle(c, bal, counting) {
     if (counting) return 'Counting past sessions…\n' + fmtInt(bal) + ' credits so far\nClick for games';
     return fmtInt(bal) + ' credits · +' + fmtInt(c.today || 0) + ' today\n'
-      + '1 credit per ' + fmtTok(c.perCredit || 1e5) + ' tokens, weighted by API price\n'
+      + '1 credit per ' + fmtTok(c.perCredit || 1e4) + ' tokens, weighted by API price\n'
       + 'Click for games';
   }
   function renderCredits(c) {
@@ -609,7 +653,7 @@
   // Everything a game's screen is built out of lives here, and nothing that belongs to one game.
   // The games themselves are games/<id>/panel.js, loaded after this file and registered with
   // window.CUC.game(). A panel's markup is built the first time that game is opened, so a register
-  // of fourteen games costs fourteen list rows and one panel.
+  // of five games costs five list rows and one panel.
   //
   // The rules a panel may not break (they are the ones reviews check):
   //   - the host judges and prices. A panel draws the state it is sent and never works a result out
@@ -679,12 +723,16 @@
   var RANK_WORD = { A: 'ace', J: 'jack', Q: 'queen', K: 'king' };
   function cardWord(c) { return c ? (RANK_WORD[c.r] || c.r) + ' of ' + (SUIT_WORD[c.s] || c.s) : 'no card'; }
 
-  // --- the ten sea symbols' names (the slots, the scratch card).
+  // --- the ten sea symbols' names (the slot machine).
   //
   // Same rule as cardWord above, for the same reason: the drawings are aria-hidden art
   // (games/symbols.js), so whatever shows a symbol has to carry its name. `n` is how many of them
   // are being named, and it is NOT an 's' rule: four of the ten do not take one, which is why the
-  // exceptions are a set here rather than a second table of ten strings
+  // exceptions are a set here rather than a second table of ten strings.
+  // This sits in the floor rather than in the slot machine because it was written twice, in two
+  // panels, before it was written once here. The second panel went on 2026-11-13 and this stayed:
+  // the names are the symbol sheet's, not any one game's, and moving it back would be a third copy
+  // waiting to happen the next time something is paid in these
   var SYM_WORD = {
     crab: 'crab', pearl: 'pearl', anchor: 'anchor', starfish: 'starfish', shell: 'shell',
     kelp: 'kelp', urchin: 'urchin', jellyfish: 'jellyfish', bottle: 'bottle', coral: 'coral'
@@ -694,59 +742,6 @@
     var one = SYM_WORD[sym];
     if (!one) return String(sym);
     return (n === 1 || SYM_NO_S[sym]) ? one : one + 's';
-  }
-
-  // --- the die faces (Sic Bo, Shut the Box, Hazard).
-  //
-  // html.js puts ONE hidden sprite of the seven drawings in the page (games/dice-faces.js), beside
-  // the sea symbols' and for the same reason, so a cell is a <use> and a new face is one href.
-  // Three screens draw dice, which is what puts this here rather than in any one of them: the three
-  // had a copy of the pip geometry each before this existed (games/README.md, section 4).
-  //
-  // THE BODY IS currentColor AND THE PIPS ARE NOT. The cell sets `color`, so the same seven
-  // drawings are cream on the felt (9.30:1) and #f6836e for Hazard's warning die (4.29:1); a pip
-  // that followed the body would vanish into it. That one exception is why dice-faces.js is built
-  // this way at all, so do not bake a colour in here.
-  //
-  // 48 is the size the drawings are made for, and 24 is the one other whole multiple of their
-  // 24-unit grid that is used (Hazard's warning die). FACE 0 IS THE UNROLLED DIE, which is what a
-  // bet screen stands up: a felt that looks the same before and after the deal is the mistake four
-  // games were taken off the floor for (docs/game-panels.md, 5-12 to 5-15).
-  //
-  // The art is aria-hidden, so whatever shows a die carries its number: cardFace's rule with
-  // cardWord, and the sea symbols' with symWord
-  function dieFace(n, px) {
-    var size = px > 0 ? px : 48;
-    var f = (n >= 1 && n <= 6) ? Math.floor(n) : 0;
-    return '<svg class="dc" viewBox="0 0 24 24" width="' + size + '" height="' + size + '"'
-      + ' aria-hidden="true"><use href="#dc-' + f + '"/></svg>';
-  }
-
-  // --- a multiplier, printed. The host's own figure (the payout over the bet) and never recomputed:
-  // these two only choose the form.
-  //
-  // `xMult` takes the ratio as it arrives (the plinko cup, the wheel's wedge). Two decimals, because
-  // an odd bet can leave a remainder with the house and the figure printed has to be the one the
-  // balance moved by.
-  // `xMult100` takes the same figure sent as HUNDREDTHS (the minefield's rung, the tower's floor):
-  // those engines read it back out of the payout they will really pay (mines.js's mult100Of), so
-  // this only moves the decimal point and no float touches it. The crash keeps its own copy of this
-  // shape on purpose: its dial runs to 1000x and it drops the decimals above 100x to stay inside the
-  // felt, which is a different rule rather than the same one with a number in it
-  function xMult(m) {
-    if (m == null) return '';
-    var r = Math.round(m * 100) / 100;
-    return '×' + (r === Math.floor(r) ? fmtInt(r) : String(r));
-  }
-  // No thousands separator here, and that is deliberate rather than an oversight: this one's
-  // readers are the ladder columns, and the tower's is 39px wide because that is what its largest
-  // rung (x57277, the hard tower's top floor) measures at 10.5px. Grouping it would push the widest
-  // row out of the column it was sized for. xMult's readers are chips on a line that can wrap, so
-  // it groups
-  function xMult100(m100) {
-    if (m100 == null) return '';
-    if (m100 >= 1000) return '×' + Math.floor(m100 / 100);
-    return '×' + Math.floor(m100 / 100) + '.' + ('0' + (m100 % 100)).slice(-2);
   }
 
   // --- the pot line, and the pixel coin on it
@@ -763,11 +758,11 @@
   // CUC.stakeUi(key) and the rest is here.
   //
   // `min` is THIS TABLE'S FLOOR, which is the engine's MIN_BET. The chips are 10/100/1000 for
-  // everyone, and a table that will not take 10 (the minefield and the tower, whose payouts are
-  // floored to whole credits: at a bet of ten the flooring alone costs the player more than the
-  // house's own 3%, so the return band breaks downwards. The figure is in mines.js's header) has to
-  // close that chip rather than leave it lit. Without it the first Deal of a new install goes out at
-  // 10 and the host refuses it: a live button, a dead round and a sentence underneath.
+  // everyone, and a table that will not take 10 has to close that chip rather than leave it lit.
+  // (Every table takes 10 today. The tables that did not were ones whose payouts are floored to
+  // whole credits: at a bet of ten the flooring alone cost the player more than the house's own 3%,
+  // so the return band broke downwards.) Without it the first Deal of a new install goes out at 10
+  // and the host refuses it: a live button, a dead round and a sentence underneath.
   // A panel is webview-side and cannot require the engine, so the figure is passed in; what used to
   // be a layer per panel over the top of these controls is now this one field
   function stakeUi(key, extra) {
@@ -847,13 +842,13 @@
 
   // --- the one figure a list row may carry, on the right of the row.
   //
-  // Only two games have one (the market's open profit, the forge's sword level) and the reason is
-  // that the figure's whole job is to have MOVED while the panel was shut. Fourteen figures would
-  // be fourteen numbers, and then the one that moved is invisible.
+  // One game has one (the market's open profit) and the reason is that the figure's whole job is to
+  // have MOVED while the panel was shut. A figure on every row would be a column of numbers, and
+  // then the one that moved is invisible.
   //
   // This writes into the row, not into the panel, so it works for a game whose screen has never
   // been built: the rows exist from the first paint. `dir` is 'up', 'down' or nothing, and nothing
-  // is the ordinary muted colour (the forge's level is not good or bad news, it is a level)
+  // is the ordinary muted colour: a figure that is neither good nor bad news takes no colour
   function rowFig(id, text, dir) {
     var e = el('fig-' + id); if (!e) return;
     e.textContent = text == null ? '' : String(text);
@@ -934,17 +929,24 @@
 
   // --- a game's heading: the back arrow, the title with its glyph, and a corner the game fills
   // with one figure of its own (best level, streak, whatever it has)
+  //
+  // The title sits in a span of its own (`<key>Ttl`) rather than being a bare text node, for the same
+  // reason the corner has an id: a game with a depth inside itself has to be able to say which depth
+  // is open, and the arrow then plainly closes the thing the heading names (see `up` below). The
+  // literal space that used to sit between the glyph and the title is gone with it: `.it` is a flex
+  // row with a 7px gap, and a space at the start of a flex item's first line is dropped anyway
   function frameHtml(id) {
     var row = GAME_ROWS[id] || {}, key = row.key || id;
     return '<div class="ihead bj-head">'
       + '<button type="button" class="bj-back" id="' + key + 'Back" title="All games">' + (ASSET_UI.chevron || '') + '</button>'
-      + '<div class="it" title="' + esc(row.hint || '') + '">' + (row.icon || '') + ' ' + esc(row.title || row.name || '') + '</div>'
+      + '<div class="it" title="' + esc(row.hint || '') + '">' + (row.icon || '')
+      + '<span class="bj-ttl" id="' + key + 'Ttl">' + esc(row.title || row.name || '') + '</span></div>'
       + '<div class="bj-side" id="' + key + 'Side"></div></div>';
   }
 
   // --- keyboard. Shortcuts belong to the OPEN game only: the list and every other game never
-  // react. One body class per game told four games apart; fourteen cannot be read that way, so the
-  // open game is asked for its own handler and nobody else is called
+  // react. One body class per game told four games apart, and that does not scale past a handful,
+  // so the open game is asked for its own handler and nobody else is called
   // e.repeat: a held key must not keep playing hands that carry stakes
   function pressPanel(e, panel, sel, deal, bet) {
     var b = sel && document.querySelector(panel + ' [data-op="' + sel + '"]');
@@ -986,11 +988,20 @@
     for (var id in PANELS) { var def = PANELS[id]; if (def.node && def.leave) def.leave(); }
     releaseHeldHeader();
   }
-  // one listener for every game's back arrow: the panels are all inside the stage
+  // One listener for every game's back arrow: the panels are all inside the stage.
+  //
+  // A game may have a depth INSIDE itself, and then the arrow has one level to climb before it leaves
+  // the game. `up()` is the optional contract for that (games/README.md, section 4): it returns true
+  // when it climbed one level of its own, and the arrow stops there. A game without it is a game with
+  // one depth, and nothing changes for it. This is why no screen needs a second back button of its
+  // own: two arrows on one heading was the market's, and one arrow that means one step is the rule
   var _stage = el('gameStage');
   if (_stage) _stage.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('.bj-back') : null;
-    if (b) openGame(null);
+    if (!b) return;
+    var def = PANELS[curGame()];
+    if (def && def.node && def.up && def.up()) return;   // the game climbed one level inside itself
+    openGame(null);
   });
 
   window.CUC = {
@@ -1010,9 +1021,9 @@
     coin: function () { return COIN_FULL; },
     pot: potHtml,
 
-    // --- cards, dice, sea symbols and multiples: what a drawing is CALLED, and how a figure is printed
+    // --- cards and sea symbols: what a drawing is CALLED, since the art itself is aria-hidden
     cardFace: cardFace, cardBack: function () { return CARD_BACK; }, cardWord: cardWord,
-    symWord: symWord, die: dieFace, xMult: xMult, xMult100: xMult100,
+    symWord: symWord,
     npc: npcStyle,
 
     // --- bets
@@ -1081,6 +1092,7 @@
     applyXpEffects(d);
     updateRoom(d.agentActivity);
     if ((vscode.getState() || {}).rosterCollapsed) renderCrewMini(d.agentActivity); // keep collapsed strip live
+    renderWaiting(d.agentActivity); // always: a fold must not hide a row the user may need to clear
     applyFavs(d.favGames); // the host owns the set, so every window hears about a star through here
     // compact usage HUD over the room (so session/weekly stay visible on the Agents tab)
     var _hs = el('wsHudS');
@@ -1435,6 +1447,15 @@
     }
     selectedAgent = name; card.classList.add('selected');
   });
+  // Clear one waiting row. The host decides whether the key is really waiting and owns the record,
+  // so the row does not disappear until the next push comes back, the same contract as the game stars.
+  var _wbEl = el('waitBox');
+  if (_wbEl) _wbEl.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('.wb-clear') : null;
+    if (!b) return;
+    vscode.postMessage({ type: 'dismissAgentRun', key: b.getAttribute('data-key') });
+  });
+
   // clicking anywhere else in the Agents tab (room, header, empty space) also deselects
   var _paEl = el('panelAgents');
   if (_paEl) _paEl.addEventListener('click', function (e) {

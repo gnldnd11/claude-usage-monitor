@@ -19,8 +19,12 @@ games/<id>/meta.js      node side: the list row, the host wiring, the game's CSS
 games/<id>/panel.js     webview side: the screen
 test/<id>.test.js       the engine's own tests, including the return band
 test/webview/games/<id>.js   the screen's own check (section 8)
-package.json            your suite added to `scripts.test`
 ```
+
+**There is no list to add your suite to either.** `test/run.js` reads `test/` and runs every
+`*.test.js` it finds, so a suite is a file and nothing else. The line in `package.json` that used to
+name each one is gone, and so is the failure mode it had: ten suites were outside that line at once
+and a pay table typo would have shipped.
 
 The engine stays at the **root**, not in `games/<id>/`. The suites address engines there and moving
 them doubles every diff for nothing. Everything else lives in your directory.
@@ -68,9 +72,8 @@ stake(round)                 // optional: what a live round has riding, if a mov
 A round is in exactly one phase, and there are **two shapes of game**, not one:
 
 ```
-a round the player plays     your live phase -> done      blackjack, high-low, poker, red dog,
-                                                          the wheel, the scratch card
-a round born settled         done                         the slots, the plinko drop
+a round the player plays     your live phase -> done      blackjack, high-low, the wheel
+a round born settled         done                         the slots
 ```
 
 The second shape is not a special case to be worked around. A spin of the slots has nothing to
@@ -78,7 +81,7 @@ decide after the press: the deal **is** the round, so `newRound` returns `phase:
 engine's `OPS` is empty. There is no bet phase in either shape; `idleView()` is what the screen
 shows before a round exists.
 
-For the first shape, the live phase's name is yours (`player`, `play`, `draw`, `scratch`, `spin`)
+For the first shape, the live phase's name is yours (`player`, `play`, `spin`)
 and `table.livePhase` tells the driver which it is. For the second, **leave `livePhase`
 out.** Naming `'done'` there would deal exactly one round per window and refuse every deal after it
 with "a round is already in progress", forever; the driver refuses that spec at load (`whyNotSpec`)
@@ -114,17 +117,17 @@ module.exports = {
   table: {
     key: 'mg', id: 'mygame', engine: engine, minBet: 10,
     livePhase: 'play',            // the phase that means "a round is in progress". LEFT OUT by a
-                                  // game born 'done' (the slots, the plinko drop): see section 2
+                                  // game born 'done' (the slots): see section 2
     noun: 'round',                // the refusals read "a <noun> is already in progress"
     start: (a, carry) => engine.newRound({ seed: a.seed, id: a.id, bet: a.bet }),
     stakeOf: (st) => st.bet,      // what a LIVE round holds back from the other games
     carryOf: (st) => engine.remaining(st), // optional: what the next round starts from (a shoe)
-    opArg: (m) => m.op,           // optional: what whyNot/act are handed (poker sends hold flags)
+    opArg: (m) => m.op,           // optional: what whyNot/act are handed (the wheel sends its risk)
     startArg: (m) => ({}),        // optional: what the DEAL chose. See "the deal's selection"
     badStart: (a) => null         // optional: why that selection is refused. See the same section
   },
 
-  // ...OR a game that settles on the press and has no round. See games/forge/meta.js
+  // ...OR a game that settles on the press and has no round. See games/market/meta.js
   // createHandler(deps) { return { key, handle(m), held(), onPush?(), setSeeds(fn) }; },
 
   css: `
@@ -135,14 +138,16 @@ module.exports = {
 ```
 
 **Prefer `table`.** `createHandler` is for a game whose settlement is genuinely not a round (the
-forge pays its fee the instant it is pressed and its sword is stored), and it then has to keep every
-rule in section 6 by hand.
+market pays for a coin the instant it is bought and the position is stored), and it then has to keep
+every rule in section 6 by hand.
 
 ### `order` and `group`: where it goes on the list
 
 `order` is a number, and the register sorts on it. **The existing games are spaced by ten**
-(blackjack 10, high-low 20, poker 30, the forge 40), so a game that belongs between two of them
-takes 15 and nothing is renumbered. A game with no `order` goes after every game that has one. Two
+(blackjack 10, high-low 30, the slots 50, the wheel 70, the market 140), so a game that belongs
+between two of them takes 20 or 60 and nothing is renumbered. The gaps are the nine games removed on
+2026-11-13, left open on purpose: a game put back where one was takes the number it had.
+A game with no `order` goes after every game that has one. Two
 games on the same number are ordered by their `id`, alphabetically, never by the directory: the file
 system's order differs between APFS, ext4 and a `.vsix` unpacked by another version, and a list that
 is in a different order in every window is a list nobody can learn.
@@ -183,9 +188,9 @@ prices are, what the bead is dropped through. That choice has to reach `newRound
 sends it on the `deal` message. Two hooks carry it, and the shape is `opArg`'s:
 
 ```js
-// plinko: the player picks a board before the bead exists (games/plinko/meta.js)
+// a game where the player picks a board before the round exists
 table: {
-  key: 'pl', id: 'plinko', engine: engine, minBet: engine.MIN_BET,
+  key: 'xx', id: 'mygame', engine: engine, minBet: engine.MIN_BET,
   noun: 'drop',
   // read off the deal message, and ONLY the fields you name. The driver writes `seed`, `id` and
   // `bet` over whatever this returns, so nothing off the wire can reach them
@@ -194,33 +199,34 @@ table: {
   // read. Call the engine's own check where it exports one; the sentence is shown to the player
   badStart: (a) => engine.badRisk(a.risk),
   start: (a) => engine.newRound({ seed: a.seed, id: a.id, bet: a.bet, risk: a.risk }),
-  // a drop settles on the press, so a round is never live. See the shapes above
+  // a board that settles on the press is never live. See the shapes above
   stakeOf: () => 0
 }
 ```
 
+**No game ships `startArg`/`badStart` today.** Every game that chose before the deal went on
+2026-11-13, and the pair is kept rather than deleted because the driver still runs it and
+`test/registry.test.js` still proves what it does: the selection reaches `start()`, nothing off the
+wire can overwrite `seed`, `id` or `bet`, and a refused selection is refused before the purse is read
+or a bank key is minted. The example above is therefore written against no file; read it next to the
+test.
+
 A choice that travels with a **move** rather than with the deal uses `opArg` instead, which is what
-poker's hold flags already do. Which of the two a game uses is the engine's decision and not a
-style choice: read where the engine takes the field.
+the wheel's risk does. Which of the two a game uses is the engine's decision and not a style choice:
+read where the engine takes the field.
 
 | game | what is chosen | how it travels | the check to call first |
 |---|---|---|---|
-| plinko | `risk`: mild, medium, spicy | `startArg` -> `newRound` | **`badRisk(risk)`** |
 | wheel | `risk`: mild, medium, wild | `opArg` with `spin` | `badRisk()`, inside its own `whyNot` |
-| scratch card | `cell`: 0 to 8, one a move | `opArg` with `scratch` | `badCell()`, inside its own `whyNot` |
-| poker | `hold`: five flags | `opArg` with `draw` | inside its own `whyNot` |
-| slots, red dog | nothing | - | - |
-
-The four dice games are not in this table yet: their engines are being written and no `meta.js`
-names them.
+| blackjack, high-low, slots | nothing | - | - |
 
 **A game whose move carries a field needs `opArg` spelled out**, and that is easy to miss: the
 default is `(m) => m.op`, which hands the engine the bare string and drops the field with it. The
 refusal that comes back then names something the message *did* carry, which reads like a bad message
 rather than a missing hook. The wheel is the live example and its own header says so: without
 `opArg: (m) => ({ op: m.op, risk: m.risk })` the engine is handed `'spin'` and answers "pick a
-wheel: mild, medium, wild" for a message that named one. The scratch card carries `cell` the same
-way. A game that chooses before the deal *and* on the move needs both hooks.
+wheel: mild, medium, wild" for a message that named one. A game that chooses before the deal *and*
+on the move needs both hooks.
 
 **A game that exports no check of its own leaves the engine to throw instead, and that path is
 handled rather than avoided.** `newRound` raises a `RangeError` whose message is already the
@@ -241,9 +247,9 @@ you something to call.
 ### A game that stores something: the ledger
 
 A round lives in memory and a reload voids it, which is why the card games need none of this. A
-game whose state is the player's **property** (the forge's sword, the market's coin positions) is
-stored in the credit ledger instead, several windows share one copy, and it keeps its own handler
-(`createHandler`) rather than running on the driver. The rules, in the order they bite:
+game whose state is the player's **property** (the market's coin positions) is stored in the credit
+ledger instead, several windows share one copy, and it keeps its own handler (`createHandler`)
+rather than running on the driver. The rules, in the order they bite:
 
 1. **The record's own rules live with the game, not in `credits.js`.** `market.js` exports
    `clean`, `newer`, `merge`, `same`, `save`, `load`, `kept` and `netOf`; `credits.js` calls them.
@@ -255,12 +261,13 @@ stored in the credit ledger instead, several windows share one copy, and it keep
 3. **Money that can be taken back goes IN the record.** The bank (`credits.js`'s grow-only counters
    per window) is right for a fee: a window that paid for an attempt paid for it, whichever copy the
    merge keeps. It is wrong for anything a dropped move has to undo. A sale banked per window pays
-   twice when two windows sell one thing, and it has: **one sword once minted 372,000 credits.**
-   The market puts *both* halves of a trade in the record (`staked` and `earned`) because a dropped
-   buy would otherwise charge a stake that can be the whole purse and hand back nothing.
+   twice when two windows sell one thing, and it has: the forge's sale was banked per window once
+   and **one sword minted 372,000 credits.** The market puts *both* halves of a trade in the record
+   (`staked` and `earned`) because a dropped buy would otherwise charge a stake that can be the whole
+   purse and hand back nothing.
 4. **Read the stored record before every message**, because another window may have moved it since
-   the last one this window answered. `extension.js` hands you the door: `deps.storedForge()`,
-   `deps.storedMarket()`. Take the stored copy when it is the later one (`newer`).
+   the last one this window answered. `extension.js` hands you the door: `deps.storedMarket()`, and
+   a door per stored game beside it. Take the stored copy when it is the later one (`newer`).
 5. **Write, read the merged record back, and only then let the move stand.** One forced
    `deps.record(net, { <key>: mine })` carries the state and the money together, and it returns the
    merged ledger. `kept(mine, landed)` says whether your record survived; it compares `(moves, by)`
@@ -268,13 +275,19 @@ stored in the credit ledger instead, several windows share one copy, and it keep
    the record's name. Comparing `earned` answers a different question, and comparing the whole
    record answers no when the merge merely raised a lifetime figure.
 6. **`held()` is 0.** A stake that has already left the balance is not riding on anything, so it
-   holds nothing back from the other games. The forge answers 0 in both directions and so does the
-   market: a coin bought is paid for the instant it is bought.
+   holds nothing back from the other games. The market answers 0 in both directions: a coin bought
+   is paid for the instant it is bought.
 7. **`onPush()`** redraws when another window moved the shared state. The push already runs on a
    timer, so it costs nothing, and it says nothing when nothing moved.
 
-`games/forge/meta.js` is the worked example. Its `settle()` is points 4, 5 and the reply-before-push
-rule in twenty lines.
+`games/market/meta.js` is the worked example, and the only one: the forge was the other and it went
+on 2026-11-13. Its `settle()` is points 4, 5 and the reply-before-push rule.
+
+**The forge's record is still in `credits.js` and that is not an oversight.** `cleanForge`,
+`forgeNewer`, `mergeForge` and the `forgeEarned` term in the balance all stayed, because `earned` is
+money the shop really paid for swords that were really made. Deleting a game does not entitle anyone
+to delete what it paid out. Read that block as a closed ledger: it merges and it is read, nothing
+writes to it, and `test/credits.test.js` is what keeps it honest for the records still out there.
 
 ---
 
@@ -305,13 +318,41 @@ rule in twenty lines.
     receive: function (m) { /* a reply or a broadcast of your message type */ },
     keys: function (e) { /* only called while YOUR game is the open one */ },
     credits: function () { /* optional: a credit minted while the bet screen is up */ },
-    resize: function () { /* optional: the panel's width changed */ }
+    resize: function () { /* optional: the panel's width changed */ },
+    up: function () { /* optional: the heading's arrow. See below */ return false; }
   });
 })();
 ```
 
+### `up`: a game with a depth inside itself
+
+**The heading's arrow is one step, and `up` is how a game says it has a step of its own.** It returns
+`true` when it climbed one level inside the game, and the arrow stops there; `false`, or no `up` at
+all, and the arrow leaves the game the way it always has. Four of the five games have one depth and
+are untouched by this.
+
+```js
+up: function () { if (!mk.coin) return false; mkOpenList(); return true; }
+```
+
+**Write it rather than a second back button on the screen.** The market had both for a while, an
+arrow in the heading and a `← Coins` crumb under it, and two arrows on one screen are two things the
+player has to tell apart before pressing either. It is also the same step the screen's own Escape
+takes, so there is one answer to "what does going back do here" instead of three.
+
+Two things to keep:
+
+- **the heading has to say which depth is open**, or the arrow is unlabelled: the title is
+  `<key>Ttl` and the corner `<key>Side` (`CUC.frame` builds both), and the market puts the coin's
+  code in the title while a coin is open
+- **`up` is a contract and not a name.** Nothing in `webview.js` knows which game has depths, the
+  same way nothing there knows a game's name (`CLAUDE.md`): the arrow asks whichever panel is open
+
+`test/webview/table.test.js`'s own `openList()` presses the arrow until the game is actually left, so
+a game that grows a depth needs no change there either.
+
 `markup()` is called once; `panelId` defaults to `panel-<id>`. **Do not put your markup in
-`html.js`.** Fourteen panels in the first paint is the thing this structure exists to prevent.
+`html.js`.** Every panel in the first paint is the thing this structure exists to prevent.
 
 ### What `window.CUC` gives you
 
@@ -324,7 +365,6 @@ rule in twenty lines.
 | `coin()`, `pot(v, preview)` | the pixel coin, and the pot line every game shares |
 | `cardFace(c, cell)`, `cardBack()`, `cardWord(c)` | the pixel cards and their names |
 | `symWord(sym, n)` | the ten sea symbols' names, singular or plural. `n` is not an `s` rule: four of them do not take one |
-| `xMult(m)`, `xMult100(m100)` | a multiple printed from the host's own figure: as a ratio, or as hundredths |
 | `npc(key, px)` | a still frame of an agent sprite, for whoever sits at your table |
 | `crab()` | the dealer image |
 | `stake(ui)`, `renderStakes(ui, locked)`, `wireStakes(ui, redraw)` | the bet controls |
@@ -340,15 +380,27 @@ rule in twenty lines.
 | `current()` | the open game's id |
 | `state()`, `setState(s)` | the webview's own memory, if your game has a choice to remember |
 
+The heading's own elements are built for you and addressed by key: `<key>Back` is the arrow,
+`<key>Ttl` the title and `<key>Side` the corner figure. A game with one depth touches only the
+corner; a game with two writes the title as well (see `up` above).
+
 This list is what the games actually use, no more. Something you need that is missing belongs in the
 floor (`webview.js`, the `window.CUC` block) rather than copied into two panels, and that is the one
 case where editing it is right. Adding it there is also how it reaches this table.
 
 **Two panels is the threshold, in both directions.** A thing one game uses stays in that game, or
 the floor becomes the games' lumber room; a thing two games use goes here, even when the second
-copy was only three lines. Half this table arrived the second way: the chips' `min`, `symWord`,
-`xMult`, `xMult100` and `why` were each written twice in two panels before they were written once
-here, and the copies had already started to differ by the time they were collected.
+copy was only three lines. Half this table arrived the second way: the chips' `min`, `symWord` and
+`why` were each written twice in two panels before they were written once here, and the copies had
+already started to differ by the time they were collected.
+
+**And the threshold cuts the other way when games leave.** Three entries went on 2026-11-13 with the
+nine games abolished that day: `die(n, px)` (the die faces, which only the dice family drew) and
+`xMult`/`xMult100` (a multiple printed from the host's own figure, whose last readers were the
+plinko cup and the dice paytables). Zero panels is below the threshold too, and a helper the floor
+keeps for nobody is the lumber room arriving from the other direction. Git has all three if a game
+that pays in multiples turns up again; `symWord` stayed because the symbol sheet it names is still
+in the page.
 
 The back arrow is wired for you. `aria-live`, `aria-label` and `title` are not decoration here: the
 cards are drawn as `aria-hidden` art, so whatever shows a card has to carry its name.
@@ -380,7 +432,7 @@ purse and the header take it as they would any other. What it does not carry is 
 table, so the panel:
 
 - **shows the `error`** in its warning bar, and moves nothing else
-- **keeps what is drawn.** Cards, chips, pot, marks, the sword: all of it stays. A screen wiped back
+- **keeps what is drawn.** Cards, chips, pot, reels, the open position: all of it stays. A screen wiped back
   to an empty table is the one reading the player cannot tell from "my round is gone"
 - **keeps the state it already had.** `st` is not set from `m.state`, because there is none to set
   it from, and every redraw after this one is then still drawn against the round the host holds
@@ -405,7 +457,7 @@ gets one plain sentence and the log keeps the original with its stack. **A fault
 never shown to the player**: `view()` throwing is a defect here, not something they did.
 
 **This rule is measured for every screen at once**, in `test/webview/games/_fault.js` (the
-`stateless` mode): it is the floor's rule, so a page per game would be fourteen pages proving one
+`stateless` mode): it is the floor's rule, so a page per game would be a page per game proving one
 thing. Your game is a row in that file's `GAMES` list and nothing else, and it is not optional:
 this is the rule whose absence cost a four-second freeze. Do not measure it a second time in your
 own mode file, because the second copy of a rule is where the two copies start to differ.
@@ -461,10 +513,13 @@ The outcome space is usually small enough to walk whole:
 | game | what is enumerated | how many |
 |---|---|---|
 | slots | every stop of three rings | 13,824 |
-| plinko | every walk of the bead | 4,096 |
 | wheel | every slice of every wheel, by width | exact fraction, no count needed |
-| scratch card | every tally of nine draws | 48,620, as an exact `BigInt` fraction |
-| red dog | every opening and third card, and all 2,048 ways to choose where to raise | 48,516 |
+
+Two engines that are gone are worth keeping on this list as shapes to copy, because the two above do
+not cover them: the scratch card enumerated every tally of nine draws (48,620, as an exact `BigInt`
+fraction) and Red Dog enumerated every opening and third card together with all 2,048 ways of
+choosing where to raise (48,516). A pay table whose outcome space is a multiset or a strategy space
+is still enumerable; read `git log` for either if you build one.
 
 What that buys: the return comes out as an exact rational rather than a figure with a `+-` on it, so
 the assertion is an equality and the test does not get slower as the claim gets tighter. Keep the
@@ -478,10 +533,11 @@ An enumeration believes something it cannot check: that the engine's own dealer 
 distribution the enumeration assumed. A shoe that is not shuffled, a wheel whose stops are not
 uniform in the slices' widths, a seed that correlates two rounds, all of these leave the enumerated
 table exactly as it is and change what the game pays. **That** is what a Monte Carlo is for here,
-and it is the only thing it is for. `test/reddog.test.js` keeps the model of it: beside the exact
-solve of 48,516 openings it plays 200,000 rounds from fixed seeds under three strategies and holds
-the measured return against the solved one, which is a check on the shuffle rather than on the
-table.
+and it is the only thing it is for. The model of it was `test/reddog.test.js`, which went with Red
+Dog: beside an exact solve of 48,516 openings it played 200,000 rounds from fixed seeds under three
+strategies and held the measured return against the solved one, which is a check on the shuffle
+rather than on the table. `test/slots.test.js` and `test/wheel.test.js` keep the same pairing on a
+smaller outcome space.
 
 Where sampling is the only option (`test/market.test.js`, whose price is a random walk with no
 finite outcome space), the shape is:
@@ -495,9 +551,10 @@ finite outcome space), the shape is:
   above, because there is no round to return a percentage of, and an assertion written as `rtp < 0.98`
   would have quietly gone from a check to a tautology when that fee moved
 - pick N as the smallest count that clears the band, and write the measured numbers in a comment so
-  the next reader does not have to re-run it. Poker needed 1,500,000 hands for 97.24% +-0.26%
-- make the count an env override (`PK_MC_HANDS`, `HL_MC_RUNS`, and `MK_MC` as a multiplier) so a
-  tighter reading is one flag away
+  the next reader does not have to re-run it. High-low needs 120,000 runs, and draw poker needed
+  1,500,000 hands for 97.24% +-0.26% before it went: a wide pay table costs sample size
+- make the count an env override (`HL_MC_RUNS`, and `MK_MC` as a multiplier) so a tighter reading is
+  one flag away
 - measure separate histories rather than slices of one. Trips cut from a single walk are not
   independent, and an error bar read off them as if they were is a fiction
 
@@ -506,9 +563,10 @@ finite outcome space), the shape is:
 Every move's refusal sentence, that a settled round cannot be settled twice, that the same seed
 deals the same round, and that `view()` carries no seed while the round is live.
 
-**Your suite has to be in `package.json`'s `scripts.test`.** A suite outside the gate catches
-nothing; ten of them were outside it at once and a pay table typo would have shipped. The webview
-suite (`test/webview/run.js`) stays **last**.
+**Your suite is a file in `test/` and nothing else.** `test/run.js` reads the directory, so there is
+no list to join and no dangling name left behind when a suite goes. That used to be a line in
+`package.json`'s `scripts.test`, and ten suites were missing from it at once: a pay table typo would
+have shipped. The webview suite (`test/webview/run.js`) stays **last**.
 
 ---
 
@@ -563,5 +621,5 @@ timers still to fire, and four that move under you: `h.now` (the fake clock), `h
 you ASSIGN to, `h.intercept = fn` (answer a message yourself) and `h.hostDelay = ms` (stretch the
 host's replies). The handle's own comment in `table.test.js` is the full list.
 
-Copy the nearest existing file rather than starting from this sketch. `games/forge.js` is the one to
+Copy the nearest existing file rather than starting from this sketch. `games/market.js` is the one to
 read if your game stores something; `games/blackjack.js` if it paces a deal.

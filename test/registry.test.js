@@ -55,7 +55,7 @@ function putGame(dir, metaSource, withPanel) {
   if (withPanel !== false) fs.writeFileSync(path.join(d, 'panel.js'), '// a panel that does nothing\n');
 }
 
-// three games that sort around the four real ones, and one that sorts by its id because it has no
+// three games that sort around the real ones, and one that sorts by its id because it has no
 // order of its own
 putGame('zzsecond', fakeMeta({ id: 'zzsecond', key: 'z2', dir: 'zzsecond', order: 15 }));
 putGame('aathird', fakeMeta({ id: 'aathird', key: 'a3', dir: 'aathird', order: 15 }));
@@ -90,12 +90,20 @@ const problemFor = (id) => sandbox.PROBLEMS.filter((p) => p.indexOf('games: ' + 
 // RULES the list obeys, so adding a directory adds no edit here
 test('the real register lists every game and has nothing to complain about', () => {
   assert.deepEqual(real.PROBLEMS, [], 'a game dropped out of the real register:\n  ' + real.PROBLEMS.join('\n  '));
-  // the four the casino opened with: a game may be added, none of these may quietly vanish
-  for (const id of ['blackjack', 'hilo', 'poker', 'forge']) {
+  // the five the casino was cut down to on 2026-11-13: a game may be added, none of these may
+  // quietly vanish. Nine games were removed that day on purpose, so this list is the decision
+  // rather than a historical accident, and a tenth going without anyone meaning it should fail here
+  for (const id of ['blackjack', 'hilo', 'slots', 'wheel', 'market']) {
     assert.ok(real.BY_ID[id], id + ' is no longer listed');
   }
+  assert.equal(real.GAMES.length, 5, 'the casino is five games: ' + real.GAMES.map((g) => g.id).join(','));
 });
 
+// The nine games removed on 2026-11-13 were NOT renumbered out of the sequence: the five left are
+// 10, 30, 50, 70 and 140, and the gaps are the rows that are gone. Renumbering them to 10..50 would
+// read tidier and buy nothing, and the gaps are worth more than the tidiness: a game put back where
+// one was takes the number it had, and the only thing this test is defending is that there is still
+// room between any two rows
 test('order is spaced by ten, so a game can be put between two of them', () => {
   for (const g of real.GAMES) {
     assert.notEqual(g.order, real.NO_ORDER, g.id + ' declares no order, so its row moves with the file system');
@@ -178,7 +186,7 @@ test('a tie on order is settled by the id, so the list is the same in every wind
   assert.ok(i15a >= 0 && i15z >= 0, 'both games with order 15 should be listed: ' + ids.join(','));
   assert.ok(i15a < i15z, 'the tie went to the directory order instead of the id: ' + ids.join(','));
   assert.ok(ids.indexOf('blackjack') < i15a, '15 should sit after blackjack (10)');
-  assert.ok(i15z < ids.indexOf('hilo'), '15 should sit before hilo (20)');
+  assert.ok(i15z < ids.indexOf('hilo'), '15 should sit before hilo (30)');
 });
 
 test('a game with no order of its own goes last', () => {
@@ -193,7 +201,7 @@ test('a game with no order of its own goes last', () => {
 test('a meta.js that throws costs its own game and nothing else', () => {
   assert.ok(ids.indexOf('throws') < 0, 'a broken game was listed');
   assert.match(problemFor('throws'), /threw on load: this meta is broken on purpose/);
-  assert.ok(ids.indexOf('blackjack') >= 0 && ids.indexOf('forge') >= 0, 'the real games went with it');
+  assert.ok(ids.indexOf('blackjack') >= 0 && ids.indexOf('market') >= 0, 'the real games went with it');
 });
 
 test('a meta missing a field the list needs is refused, by name', () => {

@@ -181,7 +181,7 @@ module.exports = {
         chips() + ' note ' + JSON.stringify($('hlNote').textContent) + ' purse ' + purse);
       ok('crossing from a mid-deal table into High-Low drops the table\u2019s pacing',
         (R || pacedBj > 0) && paced() === 0, pacedBj + ' -> ' + paced());
-      toWebview({ type: 'data', data: { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: purse, today: 111, frac: 0.5, perCredit: 100000, counting: false } } });
+      toWebview({ type: 'data', data: { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: purse, today: 111, frac: 0.5, perCredit: 10000, counting: false } } });
       advance(5);
       ok('crossing from a mid-deal table into High-Low releases the header hold',
         /\+111 today/.test($('hdCredits').title) && (R || pacedBj > 0), JSON.stringify($('hdCredits').title) + ' paced ' + pacedBj);
@@ -195,7 +195,7 @@ module.exports = {
       hlSeed(() => true, 'hl-leave-');
       doc.pressKey('Enter'); settle(); doc.pressKey('ArrowUp'); advance(2);
       $('hdCredits').click(); advance(5);
-      toWebview({ type: 'data', data: { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: 4321, today: 777, frac: 0.5, perCredit: 100000, counting: false } } });
+      toWebview({ type: 'data', data: { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: 4321, today: 777, frac: 0.5, perCredit: 10000, counting: false } } });
       advance(5);
       ok('leaving mid-run releases the header hold', /\+777 today/.test($('hdCredits').title) && hdrBal() === '4,321', JSON.stringify($('hdCredits').title) + ' ' + hdrBal());
 

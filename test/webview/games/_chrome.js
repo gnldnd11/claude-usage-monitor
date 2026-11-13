@@ -40,14 +40,14 @@ module.exports = {
     const box = $('hdCredits'), bal = $('ccBal'), coin = box.querySelector('.cc-coin');
     const base = { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] } };
     const push = (c, extra) => { toWebview({ type: 'data', data: Object.assign({}, base, { credits: c }, extra || {}) }); };
-    const C = (balance, frac, counting, today) => ({ balance, today: today || 0, frac: frac || 0, perCredit: 100000, counting: !!counting });
+    const C = (balance, frac, counting, today) => ({ balance, today: today || 0, frac: frac || 0, perCredit: 10000, counting: !!counting });
     const lit = () => doc.querySelectorAll('#hdCredits .cc-r.on').length;
     const clear = () => { bal.classList.remove('roll'); coin.classList.remove('flip'); advance(1000); };
     function paint(ms) { const out = []; for (let i = 0; i < ms; i += 16) { advance(16); out.push(bal.textContent); } return out.filter((v, i, a) => v !== a[i - 1]); }
     const num = (x) => Number(String(x).replace(/,/g, ''));
     push(C(0)); advance(600);
     ok('zero: "0", no rows', bal.textContent === '0' && lit() === 0, bal.textContent);
-    ok('title: weighted wording and the way in', box.title === '0 credits · +0 today\n1 credit per 100k tokens, weighted by API price\nClick for games', JSON.stringify(box.title));
+    ok('title: weighted wording and the way in', box.title === '0 credits · +0 today\n1 credit per 10k tokens, weighted by API price\nClick for games', JSON.stringify(box.title));
     clear(); push(C(12, 0.5, true)); advance(600);
     ok('counting: class, rows 3, title', box.classList.contains('counting') && lit() === 3 && box.title === 'Counting past sessions…\n12 credits so far\nClick for games', JSON.stringify(box.title));
     clear(); push(C(15370, 0.22)); const land = paint(600);
@@ -88,8 +88,12 @@ module.exports = {
     const star = (id) => h.favFor(id);
     const kept = () => Object.keys(gs.data.gameFavoritesV1 || {}).join();
     const groups = registry.GAMES.map((g) => g.group).filter((g, i, a) => g && g !== a[i - 1]);
-    const keep = registry.BY_ID.forge.group;              // the family the two kept games sit in
+    // The market is the only game in its family, so starring it is also what empties a family. The
+    // second star is therefore taken on a game whose family has someone left in it, and the two
+    // cases are checked one after the other rather than at once
+    const keep = registry.BY_ID.market.group;             // the family the market has to itself
     const home = h.rowBox('market').getAttribute('data-home');
+    const homeBj = h.rowBox('blackjack').getAttribute('data-home');
     const fig0 = $('fig-market');
     // ---------- nothing starred ----------
     ok('nothing starred: the block is not there at all (no empty box, no dotted slot)',
@@ -108,7 +112,7 @@ module.exports = {
       && (h.rawHtml.match(/class="gm-sec gm-fold" aria-expanded="true"/g) || []).length === groups.length,
       (h.rawHtml.match(/aria-pressed="false"/g) || []).length + ' stars, '
         + (h.rawHtml.match(/aria-expanded="true"/g) || []).length + ' headings');
-    ok('five headings in the page, the four families shown',
+    ok('one heading per family in the page, plus the hidden Favourites one',
       doc.querySelectorAll('#panelGames .gm-sec').length === groups.length + 1
       && heads().join() === groups.join(), heads().join());
     ok('the first family that SHOWS carries the top margin, not the hidden block',
@@ -129,23 +133,28 @@ module.exports = {
     ok('the star is on, is still the focus, and the row says so too',
       star('market').getAttribute('aria-pressed') === 'true' && active() === star('market')
       && h.rowBox('market').classList.contains('fav'), activeName());
-    // ---------- the second one empties a family ----------
-    mouseClick(star('forge')); advance(20);
-    ok('the block keeps the register’s order, not the order they were starred in',
-      rowsIn('gmFavRows').join() === 'forge,market', rowsIn('gmFavRows').join());
+    // the market is alone in its family, so that one star has also emptied a family
     ok('a family the favourites emptied draws no heading, and is hidden rather than removed',
       heads().join() === ['Favourites'].concat(groups.filter((g) => g !== keep)).join()
       && doc.querySelectorAll('#panelGames .gm-grp[hidden]').length === 1
       && rowsIn(home).length === 0 && listed().length === registry.GAMES.length,
       heads().join());
     ok('Favourites is now the first block that shows', $('gmFavs').classList.contains('gm-top'));
+    // ---------- the second one, out of a family that still has someone in it ----------
+    mouseClick(star('blackjack')); advance(20);
+    ok('the block keeps the register’s order, not the order they were starred in',
+      rowsIn('gmFavRows').join() === 'blackjack,market', rowsIn('gmFavRows').join());
+    ok('a family that still has a row keeps its heading',
+      heads().indexOf(registry.BY_ID.blackjack.group) >= 0
+      && rowsIn(homeBj).length > 0 && listed().length === registry.GAMES.length,
+      heads().join() + ' | ' + rowsIn(homeBj).join());
     // ---------- off again, from the keyboard ----------
     star('market').focus(); doc.pressKey('Enter'); advance(20);
     ok('Enter on the star unstars it and the row goes home, in its own order',
-      rowsIn('gmFavRows').join() === 'forge' && rowsIn(home).join() === 'market' && kept() === 'forge',
+      rowsIn('gmFavRows').join() === 'blackjack' && rowsIn(home).join() === 'market' && kept() === 'blackjack',
       rowsIn('gmFavRows').join() + ' | ' + rowsIn(home).join());
     ok('its family comes back with it', heads().join() === ['Favourites'].concat(groups).join(), heads().join());
-    star('forge').focus(); doc.pressKey('Enter'); advance(20);
+    star('blackjack').focus(); doc.pressKey('Enter'); advance(20);
     ok('the last one off takes the block away again',
       $('gmFavs').hidden && kept() === '' && listed().join() === registry.GAMES.map((g) => g.id).join(),
       listed().join());
@@ -162,7 +171,7 @@ module.exports = {
       && /\.gm-grp\.folded \.gm-sec svg\{transform:rotate\(180deg\);\}/.test(css));
     ok('the heading says what it controls', head0.getAttribute('aria-controls') === grp0.querySelector('.gm-rows').id);
     // a push arrives every ten seconds: it must not unfold what this window folded
-    const base = { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: 0, today: 0, frac: 0, perCredit: 100000 } };
+    const base = { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: 0, today: 0, frac: 0, perCredit: 10000 } };
     toWebview({ type: 'data', data: Object.assign({}, base, { favGames: {} }) }); advance(20);
     ok('a data push does not unfold anything', grp0.classList.contains('folded') && head0.getAttribute('aria-expanded') === 'false');
     head0.click(); advance(5);

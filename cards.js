@@ -35,9 +35,9 @@ function freshDeck() {
   return deck;
 }
 
-// An unshuffled shoe: DECKS full decks, in code order. Blackjack and high-low deal from six decks
-// and draw poker from one, and neither count is a parameter: a deck count that only one game could
-// pass is a difference waiting to appear
+// An unshuffled shoe: DECKS full decks, in code order. Blackjack and high-low both deal from six
+// decks, and the count is not a parameter: a deck count only one game could pass is a difference
+// waiting to appear
 function freshShoe() {
   const shoe = [];
   for (let d = 0; d < DECKS; d++) for (const code of freshDeck()) shoe.push(code);
@@ -61,9 +61,9 @@ function shuffledShoe(seed) {
 }
 
 // A seeded stream of uniform [0, 1) values, for a game that rolls odds instead of dealing cards
-// (the forge). It is here and not in that game because this is where the one seeded source lives:
-// a second copy of mulberry32 in the repo is how the two copies drift apart, which is the same
-// reason the deck moved out of blackjack.js.
+// (the slot machine, the wheel). It is here and not in those games because this is where the one
+// seeded source lives: a second copy of mulberry32 in the repo is how the two copies drift apart,
+// which is the same reason the deck moved out of blackjack.js.
 // One rule comes with it: a seed is either a shuffle's or a roll's, never both. A seed that names
 // a deck must not also be rolled against, or the roll is a window onto cards still face down.
 function rollsFrom(seed) {

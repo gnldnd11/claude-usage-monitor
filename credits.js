@@ -19,8 +19,12 @@ const WEIGHT_DEN = 20;
 const WEIGHT_NUM = { input: 20, output: 100, cache_creation: 25, cache_read: 2 };
 // every counted field needs a weight, or the sum silently turns into NaN
 for (const [k] of U.USAGE_FIELDS) if (!Number.isInteger(WEIGHT_NUM[k])) throw new Error('credits: no weight for ' + k);
-// 1 credit = CREDIT_UNIT weighted tokens
-const CREDIT_UNIT = 100_000;
+// 1 credit = CREDIT_UNIT weighted tokens. Raised tenfold in 1.24.0 (it was 100,000 weighted tokens
+// a credit): the same work now earns ten times the credits, while every price in the casino stays
+// where it was. Nothing migrates, because the ledger stores raw tokens per day and prices them
+// here on every read, so the past re-prices with this line and a balance earned under the old rate
+// comes back ten times larger on its own
+const CREDIT_UNIT = 10_000;
 
 const LEDGER_KEY = 'creditLedgerV1';
 
@@ -44,13 +48,25 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // that window raises: a grow-only counter per replica, merged field by field with max like days.
 // One key per activation that played at least one hand; keys are never removed (no path deletes them).
 // Replica ids are 16 hex characters (extension.js makes them): anything else, "__proto__" included, is dropped.
-// `forge` holds the sword (forge.js): the one thing in the casino that outlives a window, so it is
-// stored rather than kept in memory like a round. Its level goes up AND down, so neither a max nor
-// a grow-only counter can carry it, and there is one record rather than one per replica because the
-// player has one sword: a sword per window would be four swords.
+// `forge` HELD THE SWORD, AND THE FORGE IS GONE. The game was abolished on 2026-11-13 (version
+// 1.25.0) and forge.js, games/forge/ and the sword's own screen went with it. Every line of the
+// record below stayed, and so did its `earned` term in the balance, and that is the point of this
+// paragraph: `earned` is credits the shop really paid a player for swords they really made, and it
+// is part of their balance the same way a win at the tables is. Deleting the record would not
+// delete a game, it would take money off 569 installs. A player who never forged has `forge: null`
+// and reads none of this; a player who did keeps what they earned and simply has nowhere to spend
+// an attempt any more.
+// Nothing here reaches for forge.js, and nothing ever did: the storage rules are this file's own
+// (test/credits.test.js proves them), so the engine could go without touching them. Treat the whole
+// forge block as a closed ledger: it merges and it is read, and no new path writes to it.
+//
+// What the record was, for whoever reads the rules below: the one thing in the casino that outlived
+// a window, so it was stored rather than kept in memory like a round. Its level went up AND down,
+// so neither a max nor a grow-only counter could carry it, and there is one record rather than one
+// per replica because the player had one sword: a sword per window would be four swords.
 // It merges as a register instead: the copy with more `moves` wins WHOLE, `moves` being a count of
 // accepted moves that only ever grows, with `tries` and `best` maxed across both so a lifetime
-// figure never falls back. What a true collision costs (two windows forging in the same instant) is
+// figure never falls back. What a true collision cost (two windows forging in the same instant) is
 // the losing window's attempt: that level change is dropped.
 // The FEE for that dropped attempt is not given back, and should not be: it is in `bank`, where
 // every window has grow-only counters of its own, and the window really did pay to make the
@@ -113,8 +129,9 @@ function cleanBank(b) {
 // travel: anything else a future version puts in a record is dropped here rather than carried into
 // another window's sword, and the record is rebuilt rather than copied, so a "__proto__" in the
 // stored JSON cannot ride along.
-// What a level means is forge.js's business (it pulls one above its own ladder back to the top);
-// this is only the shape
+// What a level MEANT was forge.js's business (it pulled one above its own ladder back to the top).
+// That engine is gone, so nothing clamps a stored level any more and nothing needs to: this is only
+// the shape, and a level is only ever read back out as a number nobody spends
 function cleanForge(f) {
   if (!f || typeof f !== 'object') return null;
   const out = { by: REPLICA_RE.test(f.by) ? f.by : '' };
@@ -250,7 +267,10 @@ function forgeEarned(forge) {
 // folded into another:
 //   bankNet      the round games, as grow-only counters per window. A hand that settles is a hand
 //                that happened, so it never needs taking back
-//   forgeEarned  what the shop paid for swords sold, read out of the one surviving sword record
+//   forgeEarned  what the shop paid for swords sold, read out of the one surviving sword record.
+//                The forge itself went in 1.25.0 and this term did NOT: it is money already paid,
+//                so dropping it would quietly shrink the balance of everyone who ever sold a sword.
+//                It is frozen, not live: no path adds to `earned` any more (see the forge note above)
 //   market.netOf what the coin market paid minus what it took in, read out of the one surviving
 //                wallet. BOTH halves are in the record, so a dropped trade neither charges nor pays
 // The last two can go DOWN, once, when a collision drops a move: that is the move not having
@@ -470,7 +490,9 @@ module.exports = {
   CREDIT_UNIT, WEIGHT_NUM, WEIGHT_DEN, LEDGER_KEY, SWEEP_CHUNK_BYTES,
   normalizeLedger, mergeLedger, creditSummary, catchUpSince, createLedgerStore,
   createSweep, runSweep,
-  // the sword's storage rules. forgeNewer is also what the host asks before it trusts the sword in
-  // its own memory: another window may have moved it on since the last message
+  // The sword's storage rules. Nothing in the extension calls these now that the forge is gone
+  // (1.25.0): the only caller left is test/credits.test.js, which is what keeps the merge honest
+  // for the stored records that are still out there. They are exported rather than made private
+  // because a rule nobody can test is a rule that rots (games/README.md, section 3)
   cleanForge, forgeNewer, mergeForge, forgeEarned, FORGE_FIELDS, FORGE_MAX_FIELDS
 };

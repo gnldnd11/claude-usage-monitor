@@ -1,9 +1,9 @@
 // The driver every round-based game runs on: bet, play, settle once.
 //
-// Blackjack, High-Low and draw poker were three near-identical blocks in extension.js. What
-// actually differed between them was five things: the engine, the word for one round, the phase
-// that counts as live, what a live round has riding on it, and whether anything carries from one
-// round to the next. Those are the spec below; everything else is here, once.
+// Blackjack and High-Low were near-identical blocks in extension.js, and so was every card game
+// written beside them. What actually differed between them was five things: the engine, the word for
+// one round, the phase that counts as live, what a live round has riding on it, and whether anything
+// carries from one round to the next. Those are the spec below; everything else is here, once.
 //
 // The rules this driver exists to keep (they are the ones reviews check):
 //   - the host owns the round. The webview sends a bet, a selection and an action, nothing else
@@ -14,8 +14,8 @@
 //   - EVERY message gets exactly one reply, an engine that throws included. A message with no
 //     reply is a panel sitting out its four-second no-reply timeout, which reads as a hang
 //
-// A forge-shaped game (no bet, no round, settles on the press) does not belong here and keeps its
-// own handler; see games/forge/meta.js.
+// A game with no bet and no round, that settles on the press and stores what it settles, does not
+// belong here and keeps its own handler; see games/market/meta.js.
 'use strict';
 
 // spec:
@@ -23,18 +23,18 @@
 //   id         the game id, for log lines ('blackjack')
 //   engine     the engine module: newRound/act/whyNot/view/OPS (see games/README.md)
 //   minBet     the smallest bet the host will take
-//   livePhase  the phase in which a round is in progress ('player' | 'play' | 'draw'), or LEFT OUT
-//              by a game that is born 'done' and has no live phase at all (the slots, the plinko
-//              drop: OPS is empty and the deal IS the round)
+//   livePhase  the phase in which a round is in progress ('player' | 'play' | 'spin'), or LEFT OUT
+//              by a game that is born 'done' and has no live phase at all (the slots: OPS is empty
+//              and the deal IS the round)
 //   noun       what one round is called in the refusals ('round' | 'run' | 'hand')
 //   start      ({seed, id, bet, ...selection}, carry) -> a new round. `carry` is what the last left
 //   stakeOf    (round) -> what a LIVE round has riding on it (held back from the other games)
 //   carryOf    optional: (settled round) -> what the next round should start from (High-Low's shoe)
-//   opArg      optional: (message) -> what the engine's whyNot/act are handed (poker's hold flags,
-//              the wheel's risk, keno's picks: anything that travels WITH a move)
+//   opArg      optional: (message) -> what the engine's whyNot/act are handed (the wheel's risk:
+//              anything that travels WITH a move)
 //   startArg   optional: (message) -> the DEAL's own selection, as the fields `start` will read
-//              (the minefield's mine count, the tower's difficulty, the crash's target, the plinko
-//              risk: anything the player chooses before the round exists)
+//              (anything the player chooses before the round exists). No game uses it today; the
+//              driver keeps it because the hook is half of badStart's reason for existing
 //   badStart   optional: (selection) -> the sentence the player is shown, or null. Asked on the
 //              deal, before anything is staked, so a bad selection refuses like a bad bet
 //
@@ -70,8 +70,8 @@ function whyNotSpec(spec) {
   }
   // 'done' is the phase a SETTLED round is in. A spec that names it as the live phase deals exactly
   // one round per window and then refuses every deal after it with "a round is already in
-  // progress", forever, which looks like a hang rather than a misconfigured game. The slots and the
-  // plinko drop are born 'done' and genuinely have no live phase: they leave livePhase out
+  // progress", forever, which looks like a hang rather than a misconfigured game. The slot machine
+  // is born 'done' and genuinely has no live phase: it leaves livePhase out
   if (spec.livePhase === 'done') return 'table.livePhase cannot be "done": a game born done leaves it out';
   if (spec.livePhase != null && (typeof spec.livePhase !== 'string' || spec.livePhase === '')) {
     return 'table.livePhase must be a non-empty string, or left out';
@@ -164,8 +164,8 @@ function createTable(spec, deps) {
     const picked = spec.startArg ? guard('read the selection', () => spec.startArg(m)) : { ok: true, value: null };
     if (!picked.ok) return;
     // The host rules on the selection before the engine is asked to build a round from it. Where
-    // the engine exports a check of its own (plinko's badRisk, keno's badPicks) this is where it is
-    // called, so a bad selection is a refusal like any other instead of an exception path
+    // the engine exports a check of its own this is where it is called, so a bad selection is a
+    // refusal like any other instead of an exception path
     if (spec.badStart) {
       const why = guard('judge the selection', () => spec.badStart(picked.value));
       if (!why.ok) return;

@@ -367,7 +367,8 @@ function simulate(pick, calls, n, tag, bet) {
 }
 
 // 120,000 runs is what the assertions below need and costs about thirteen seconds. The handle is
-// here so a tighter or a quicker measurement is a flag away, the way poker's PK_MC_HANDS is:
+// here so a tighter or a quicker measurement is a flag away, the way every sampled suite's own
+// override is (games/README.md, section 7):
 //   HL_MC_RUNS=1000000 node test/highlow.test.js
 const MC_RUNS = Number(process.env.HL_MC_RUNS || 120000);
 const BIG = 1000000; // big enough that flooring a payout is noise, so this measures the edge alone

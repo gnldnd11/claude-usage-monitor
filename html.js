@@ -1,16 +1,11 @@
 const CSS = require('./styles');
 const games = require('./games/registry');
 const IC = require('./icons');
-// The ten sea symbols, once. The slot machine and the scratch card show eighteen squares between
-// them and the markup for one symbol is not small, so the drawings go into the page as one hidden
-// <symbol> sheet and each square is a <use>. A panel cannot require() this (it runs in the webview),
-// which is fine: the <use> markup is a string either side of the wall
+// The ten sea symbols, once. The slot machine shows nine squares and the markup for one symbol is
+// not small, so the drawings go into the page as one hidden <symbol> sheet and each square is a
+// <use>. A panel cannot require() this (it runs in the webview), which is fine: the <use> markup is
+// a string either side of the wall
 const symbols = require('./games/symbols');
-// The six die faces plus the unrolled one, once, for the same reason and in the same way: Sic Bo
-// shows three dice, Shut the Box two and Hazard two, the faces change every roll, and a cell is
-// swapped by rewriting one <use href> rather than by pasting a face. The panels reach these through
-// CUC.die() (webview.js), which is the <use> markup on the other side of the wall
-const diceFaces = require('./games/dice-faces');
 
 // Render the panel webview HTML. All per-webview values (CSP source, asset URIs, the serialized
 // asset catalog, and the script URIs) are injected via `vars` so this stays free of vscode
@@ -18,8 +13,8 @@ const diceFaces = require('./games/dice-faces');
 //
 // The games area is TWO things here and no more: the list, built from the register, and one empty
 // stage the open game's panel is built into. A game's own markup lives in games/<id>/panel.js and
-// is created the first time that game is opened, so fourteen games cost fourteen list rows, not
-// fourteen panels. Nothing in this file names a game.
+// is created the first time that game is opened, so five games cost five list rows, not five
+// panels. Nothing in this file names a game.
 function renderHtml(vars) {
   const {
     csp, scriptUri, logoUri, crabUri, sparkleUri,
@@ -34,13 +29,13 @@ function renderHtml(vars) {
   // gone, because it was the same constant on every row and the hover plus the pointer cursor
   // already said it; the star stands in the width it leaves (docs/game-panels.md, section 7-3).
   //
-  // The picture is painted art (`thumb`, four games) or a drawn tile (`tile`, the other ten), and
+  // The picture is painted art (`thumb`, two games) or a drawn tile (`tile`, the other three), and
   // the glyph stays under both: an alt="" image that fails to load draws nothing, and the glyph
   // showing through is better than a blank square.
-  // `sub` is a second line only where it says something. Twelve rows reading "Min bet 10" is not
-  // information, and the same line on two rows out of fourteen is "this one is expensive".
+  // `sub` is a second line only where it says something. Five rows reading "Min bet 10" is not
+  // information, and the same line on two rows out of five is "this one is expensive".
   // `.gm-fig` is left empty for the webview to fill (CUC.rowFig) and `:empty` hides it, so the
-  // twelve rows that have no figure also have no gap where one would be.
+  // rows that have no figure also have no gap where one would be.
   // `data-home` is the rows box this game belongs in. The webview MOVES the row into the
   // Favourites block and back, and it has to put it back without guessing from the heading text
   const gameRow = (g, home) => `        <div class="gm-row" data-game="${g.id}" data-home="${home}">
@@ -80,7 +75,7 @@ function renderHtml(vars) {
   };
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
-<style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}${diceFaces.sprite()}<div class="wrap"><div class="card">
+<style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}<div class="wrap"><div class="card">
   <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11.5px;font-weight:600;line-height:1.35">
     <span>Sign in for <b>live</b> session &amp; weekly %</span>
     <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11.5px;white-space:nowrap">Sign In</button>
@@ -171,6 +166,10 @@ function renderHtml(vars) {
       <div class="ws-hud-delta" id="wsHudDelta"></div>
       <div class="ws-stage" id="wsStage"></div>
     </div>
+    <!-- Calls sitting on "?" with nothing written back. Outside the Crew fold on purpose: it is
+         the one thing on this tab a user may need to act on, and the fold would hide it. Built by
+         webview.js (renderWaiting) and empty whenever nothing is waiting. -->
+    <div class="wait-box" id="waitBox" hidden></div>
     <div class="ihead crew-head" style="margin-top:13px">
       <div class="it">${IC.users} Crew</div>
       <div class="upd"><span id="agCount">0</span> agents</div>

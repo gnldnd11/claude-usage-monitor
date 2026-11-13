@@ -1,0 +1,374 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Wheel and slots: spin curves</title>
+<style>
+:root{color-scheme:dark;
+  --bg:#1d1d1f;--card:#232326;--inner:#1a1a1c;--iborder:#303033;--text:#e4e4e6;--muted:#9a9aa0;
+  --felt:#15301f;--felt-lo:#102517;--felt-ink:#dff0e4;--felt-dim:#8fb79c;--ember:#e8895a;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.55;}
+.pg{max-width:1120px;margin:0 auto;padding:28px 20px 72px}
+h1{font-size:23px;margin:0 0 4px;letter-spacing:-.2px}
+h2{font-size:16px;margin:40px 0 2px;padding-top:18px;border-top:1px solid var(--iborder)}
+.lede{color:var(--muted);margin:0 0 18px;max-width:62ch}
+.note{color:var(--muted);font-size:11.5px;margin:6px 0 0}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 18px}
+button{font-family:inherit;font-size:12px;font-weight:700;color:var(--text);background:var(--card);
+  border:1px solid var(--iborder);border-radius:8px;height:30px;padding:0 12px;cursor:pointer}
+button:hover{border-color:#4a4a4f}
+button.on{background:var(--ember);border-color:var(--ember);color:#15181c}
+button.go{background:var(--ember);border-color:var(--ember);color:#15181c;padding:0 18px}
+label.chk{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer;
+  background:var(--card);border:1px solid var(--iborder);border-radius:8px;height:30px;padding:0 12px}
+.row{display:flex;flex-wrap:wrap;gap:16px}
+.col{flex:1 1 300px;min-width:286px;background:var(--card);border:1px solid var(--iborder);border-radius:12px;padding:14px}
+.col h3{margin:0 0 2px;font-size:13px}
+.col .sub{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;margin:0 0 12px}
+.felt{background:var(--felt);border-radius:12px;padding:12px 10px;width:202px;margin:0 auto}
+.fw{color:var(--muted);font-size:10.5px;text-align:center;margin:6px 0 0}
+.plate{background:#15181c;border-radius:8px;padding:8px 0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06)}
+.dial{position:relative;width:150px;height:150px;margin:0 auto}
+.face{position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06)}
+.nums{position:absolute;inset:0;pointer-events:none}
+.nums i{position:absolute;left:50%;top:50%;width:40px;height:12px;margin:-6px 0 0 -20px;line-height:12px;
+  text-align:center;font-size:10.5px;font-weight:700;font-style:normal;font-variant-numeric:tabular-nums;
+  color:var(--felt-ink);text-shadow:0 1px 1px rgba(0,0,0,.55)}
+.nums i.dead{color:var(--felt-dim);font-weight:600}
+.nums i.on{color:#15181c;text-shadow:none}
+.hub{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;
+  background:#15181c;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.pin{position:absolute;left:50%;top:-1px;width:0;height:0;margin-left:-5px;
+  border-left:5px solid transparent;border-right:5px solid transparent;border-top:10px solid var(--ember)}
+.line{min-height:22px;margin-top:8px;display:flex;gap:6px;align-items:center;font-size:11px;color:var(--felt-dim)}
+.chip{font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;background:rgba(0,0,0,.42);color:var(--felt-dim)}
+.chip.win{color:#7ee6a4}.chip.lose{color:#f6836e}
+table{border-collapse:collapse;width:100%;font-size:11.5px;font-variant-numeric:tabular-nums;margin-top:10px}
+th,td{text-align:right;padding:3px 6px;border-bottom:1px solid var(--iborder)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:700}
+td.hi{color:var(--ember);font-weight:700}
+.plot{width:100%;height:auto;display:block;margin-top:12px;background:var(--inner);border-radius:10px}
+/* --- slots --- */
+.sl-plate{position:relative;margin:0 auto;width:152px;overflow:hidden;background:#15181c;border-radius:8px}
+.sl-reels{display:flex;justify-content:center;gap:0}
+.sl-reel{position:relative;flex:none;width:48px;overflow:hidden}
+.sl-reel+.sl-reel{box-shadow:inset 1px 0 0 rgba(0,0,0,.55)}
+.sl-strip{display:flex;flex-direction:column;gap:4px;will-change:transform}
+.sy-cell{position:relative;flex:none;display:flex;width:48px;height:48px;border-radius:6px;background:#15181c}
+.sy{width:100%;height:100%;display:block}
+.sy-cell.dim{opacity:.5}
+.sy-cell.hit{box-shadow:inset 0 0 0 2px var(--ember)}
+.caret{position:absolute;top:50%;width:0;height:0;margin-top:-5px;
+  border-top:5px solid transparent;border-bottom:5px solid transparent;z-index:2}
+.caret.l{left:0;border-left:4px solid var(--ember)}
+.caret.r{right:0;border-right:4px solid var(--ember)}
+.walled .sl-reel{border-radius:6px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.75),inset 0 7px 9px -5px rgba(0,0,0,.85),inset 0 -7px 9px -5px rgba(0,0,0,.85)}
+.walled .sl-reel+.sl-reel{margin-left:1px}
+.walled .sl-reels{gap:1px}
+</style>
+<div class="pg">
+<h1>휠과 슬롯: 멈추는 곡선</h1>
+<p class="lede">검수용 비교판입니다. 제품 코드가 아니고, 글꼴은 측정값을 보존하려고 VS Code 의 기본 스택을 씁니다.
+각 칸의 수치는 실제 엔진에서 뽑은 칸 각도·링 순서로 돌린 결과입니다.</p>
+
+<h2>1. 휠 — 지금 / 안 A / 안 B</h2>
+<p class="lede">세 개가 <b>같은 칸</b>에 섭니다. 다른 것은 곡선과 지속 시간뿐입니다.
+<b>「진행 중에 멈출 칸을 미리 칠한다」를 켜 보십시오.</b> 켠 것이 지금 제품의 동작입니다.</p>
+<div class="bar">
+  <span class="note" style="margin:0 8px 0 0">바퀴</span>
+  <button data-risk="mild">Mild</button><button data-risk="medium">Medium</button><button data-risk="wild" class="on">Wild</button>
+  <span style="flex:1 1 20px"></span>
+  <label class="chk"><input type="checkbox" id="leak"> 진행 중에 멈출 칸을 미리 칠한다 (지금 동작)</label>
+  <button class="go" id="spin">Spin all</button>
+</div>
+<div class="row" id="dials"></div>
+<svg class="plot" id="plot" viewBox="0 0 1080 300"></svg>
+<p class="note">세로축은 각속도(deg/s), 가로축은 ms. 위 점선 1,100 deg/s 는 라벨이 토막으로 끊기기 시작하는 속도,
+아래 점선 370 deg/s 는 가장 좁은 칸(24도) 하나가 65ms 이상에 지나가 라벨이 읽히기 시작하는 속도입니다.</p>
+
+<h2>2. 슬롯 — 지금 / 안</h2>
+<p class="lede">둘이 <b>같은 자리</b>에 섭니다. 왼쪽은 70ms 마다 5px 씩 떠는 지금 동작이고,
+오른쪽은 릴 하나가 하나의 전환으로 링을 굴러 내려오는 안입니다.
+<b>왼쪽은 당첨 링이 릴마다 제 정지 시각에 켜집니다.</b> 세 번째 릴이 아직 돌 때 답이 먼저 나옵니다.</p>
+<div class="bar">
+  <button class="go" id="sspin">Spin both</button>
+  <button id="sforce">두 칸이 같은 스핀</button>
+  <button id="sjack">세 칸이 같은 스핀</button>
+  <span class="note" id="sinfo"></span>
+</div>
+<div class="row" id="mach"></div>
+</div>
+<svg class="sy-sprite" aria-hidden="true" width="0" height="0"><symbol id="sy-crab" viewBox="0 0 24 24"><g stroke="#c25a34" stroke-width="1.5" stroke-linecap="round" fill="none"><path d="M6.4 14.6L3 16.4M6.2 16.6L3.4 19.2M7.4 18.2L6 21"/><path d="M17.6 14.6L21 16.4M17.8 16.6L20.6 19.2M16.6 18.2L18 21"/></g><g fill="#e8895a"><path d="M4.4 7.6a2.6 2.6 0 0 1 2.6 2.6v1.3H4.9l-1.6-1.6z"/><path d="M19.6 7.6a2.6 2.6 0 0 0-2.6 2.6v1.3h2.1l1.6-1.6z"/></g><g fill="#c25a34"><path d="M3.3 9.9l1.6 1.6H3.1l-.9-1z"/><path d="M20.7 9.9l-1.6 1.6h1.8l.9-1z"/></g><path fill="#e8895a" d="M12 8.2c4.2 0 6.9 2.6 6.9 5.7S16 19.4 12 19.4s-6.9-2.4-6.9-5.5S7.8 8.2 12 8.2z"/><path fill="#f2a780" d="M12 8.2c2.2 0 4 .7 5.2 1.8-1.3-.7-3.1-1.1-5.2-1.1s-3.9.4-5.2 1.1C8 8.9 9.8 8.2 12 8.2z"/><path fill="#c25a34" d="M5.3 15.2c1.2 2.4 3.6 4.2 6.7 4.2s5.5-1.8 6.7-4.2c-.9 3-3.4 4.9-6.7 4.9s-5.8-1.9-6.7-4.9z"/><g fill="#c25a34"><rect x="8.5" y="5.4" width="1.4" height="3.6" rx=".7"/><rect x="14.1" y="5.4" width="1.4" height="3.6" rx=".7"/></g><circle cx="9.2" cy="5" r="1.9" fill="#fcecdc"/><circle cx="14.8" cy="5" r="1.9" fill="#fcecdc"/><circle cx="9.4" cy="5.2" r=".9" fill="#1d1d1f"/><circle cx="15" cy="5.2" r=".9" fill="#1d1d1f"/><path fill="#c25a34" d="M9.8 14.4h4.4v1.3H9.8z" opacity=".75"/></symbol><symbol id="sy-pearl" viewBox="0 0 24 24"><ellipse cx="12" cy="20.1" rx="5.4" ry="1.5" fill="#000" opacity=".3"/><circle cx="12" cy="12.4" r="6.6" fill="#e3d6c8"/><path fill="#fcecdc" d="M12 5.8a6.6 6.6 0 0 1 5.9 3.6A6.6 6.6 0 0 0 7 16.9 6.6 6.6 0 0 1 12 5.8z"/><circle cx="9.6" cy="9.8" r="2.1" fill="#fff"/><path fill="#bbbdc7" d="M17.6 14.6a6.6 6.6 0 0 1-9.9 3.5 6.6 6.6 0 0 0 9.1-5z"/><g fill="#fff"><path d="M19.4 4.6l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z"/><path d="M4.6 15.4l.4 1.1 1.1.4-1.1.4-.4 1.1-.4-1.1-1.1-.4 1.1-.4z"/></g></symbol><symbol id="sy-anchor" viewBox="0 0 24 24"><g fill="#bbbdc7"><path d="M11 7.4h2v12.2h-2z"/><path d="M5.6 9.6h12.8v1.9H5.6z"/><path d="M12 2.6a3.1 3.1 0 0 1 0 6.2 3.1 3.1 0 0 1 0-6.2zm0 1.9a1.2 1.2 0 0 0 0 2.4 1.2 1.2 0 0 0 0-2.4z"/><path d="M4.1 12.4c0 4.2 3.5 7.6 7.9 7.6v-2.1c-3.2 0-5.8-2.5-5.8-5.5zM19.9 12.4c0 4.2-3.5 7.6-7.9 7.6v-2.1c3.2 0 5.8-2.5 5.8-5.5z"/><path d="M2.4 11.1h3.5l-1.8 3.3zM21.6 11.1h-3.5l1.8 3.3z"/></g><g fill="#7e828c"><path d="M12 7.4h1v12.2h-1z"/><path d="M12 9.6h6.4v1.9H12z"/><path d="M19.9 12.4c0 4.2-3.5 7.6-7.9 7.6v-1.1c3.6 0 6.7-2.8 6.9-6.5z"/></g></symbol><symbol id="sy-starfish" viewBox="0 0 24 24"><path fill="#e8b23a" d="M12.00 3.80L14.23 9.33L20.18 9.74L15.61 13.57L17.05 19.36L12.00 16.20L6.95 19.36L8.39 13.57L3.82 9.74L9.77 9.33z"/><path fill="#c08c22" d="M17.05 19.36L12.00 16.20L6.95 19.36L8.39 13.57L3.82 9.74L12 12.4z" opacity=".55"/><g fill="#f6d27a"><circle cx="12" cy="12.4" r="1.5"/><circle cx="12" cy="7.4" r=".7"/><circle cx="8.4" cy="14.3" r=".7"/><circle cx="15.6" cy="14.3" r=".7"/></g></symbol><symbol id="sy-shell" viewBox="0 0 24 24"><path fill="#cbb9a4" d="M2.02 17.88L1.33 15.44L3.57 14.25L3.86 11.74L6.38 11.49L7.60 9.27L10.03 9.99L12.00 8.40L13.97 9.99L16.40 9.27L17.62 11.49L20.14 11.74L20.43 14.25L22.67 15.44L21.98 17.88L12 20z"/><path fill="none" stroke="#9a8974" stroke-width="1.1" d="M12 20L2.02 17.88M12 20L3.57 14.25M12 20L6.38 11.49M12 20L10.03 9.99M12 20L13.97 9.99M12 20L17.62 11.49M12 20L20.43 14.25M12 20L21.98 17.88"/><path fill="#e0d2bf" d="M12 20L5 12.6a9.4 9.4 0 0 1 3.4-2.3z"/><path fill="#9a8974" d="M9.6 19.4h4.8v1.6a2.4 2.4 0 0 1-4.8 0z"/></symbol><symbol id="sy-kelp" viewBox="0 0 24 24"><path fill="none" stroke="#3f6e50" stroke-width="2" stroke-linecap="round" d="M9.4 21c-2-4.4-1.6-8 .6-11.4 1.2-1.8 1.6-3.4 1.2-5.2"/><path fill="none" stroke="#5f9a72" stroke-width="2" stroke-linecap="round" d="M14.6 21c1.8-4 1.2-7.4-.8-10.4-1-1.6-1.3-3-1-4.4"/><g fill="#3f6e50"><ellipse cx="7.6" cy="15.4" rx="2.2" ry="1.3" transform="rotate(-28 7.6 15.4)"/><ellipse cx="9.3" cy="9.9" rx="2" ry="1.2" transform="rotate(-50 9.3 9.9)"/></g><g fill="#5f9a72"><ellipse cx="16.6" cy="16" rx="2.2" ry="1.3" transform="rotate(26 16.6 16)"/><ellipse cx="15" cy="10.4" rx="2" ry="1.2" transform="rotate(48 15 10.4)"/></g></symbol><symbol id="sy-urchin" viewBox="0 0 24 24"><path fill="none" stroke="#63507d" stroke-width="1.5" stroke-linecap="round" d="M12.00 6.40L12.00 3.60M14.22 6.84L15.29 4.25M16.10 8.10L18.08 6.12M17.36 9.98L19.95 8.91M17.80 12.20L20.60 12.20M17.36 14.42L19.95 15.49M16.10 16.30L18.08 18.28M14.22 17.56L15.29 20.15M12.00 18.00L12.00 20.80M9.78 17.56L8.71 20.15M7.90 16.30L5.92 18.28M6.64 14.42L4.05 15.49M6.20 12.20L3.40 12.20M6.64 9.98L4.05 8.91M7.90 8.10L5.92 6.12M9.78 6.84L8.71 4.25"/><circle cx="12" cy="12.2" r="6.4" fill="#8e6fa8"/><path fill="#a98cc0" d="M12 5.8a6.4 6.4 0 0 1 5.2 2.7A6.4 6.4 0 0 0 7.2 16.4 6.4 6.4 0 0 1 12 5.8z"/><path fill="#63507d" d="M18.2 14.2a6.4 6.4 0 0 1-9.9 3.9 6.4 6.4 0 0 0 9.1-5.1z"/><g fill="#4c3c61"><circle cx="12" cy="12.2" r="1.3"/><circle cx="9.3" cy="10" r=".8"/><circle cx="14.6" cy="14" r=".8"/></g></symbol><symbol id="sy-jellyfish" viewBox="0 0 24 24"><path fill="none" stroke="#5ba6bd" stroke-width="1.4" stroke-linecap="round" d="M8.2 13.4c-.7 2 .5 2.6-.2 4.6M10.7 13.8c-.5 2.3.7 3 0 5.3M13.3 13.8c.5 2.3-.7 3 0 5.3M15.8 13.4c.7 2-.5 2.6.2 4.6"/><path fill="#8fd6e8" d="M12 3.6c4.4 0 7.2 3.2 7.2 6.9 0 1.3-.5 2.4-1.3 3.1H6.1c-.8-.7-1.3-1.8-1.3-3.1 0-3.7 2.8-6.9 7.2-6.9z"/><path fill="#bdeaf5" d="M12 3.6c2 0 3.7.7 4.9 1.8-1.3-.7-3-1.1-4.9-1.1s-3.6.4-4.9 1.1C8.3 4.3 10 3.6 12 3.6z"/><path fill="#5ba6bd" d="M5.4 12.2h13.2c-.2.5-.5 1-.9 1.4H6.3c-.4-.4-.7-.9-.9-1.4z"/><g fill="#2e6d80"><circle cx="9.9" cy="9.1" r="1"/><circle cx="14.1" cy="9.1" r="1"/></g></symbol><symbol id="sy-bottle" viewBox="0 0 24 24"><g transform="rotate(-24 12 12)"><path fill="#7fae8e" d="M9.6 7.4h4.8v2.4c0 .9.5 1.4 1.1 2 .7.7 1.1 1.5 1.1 2.6v5.2c0 1-.8 1.8-1.8 1.8H9.2c-1 0-1.8-.8-1.8-1.8v-5.2c0-1.1.4-1.9 1.1-2.6.6-.6 1.1-1.1 1.1-2z"/><path fill="#a3cbb1" d="M10.6 8.4v1.4c0 1.3-.6 2-1.3 2.7-.5.5-.8 1-.8 1.9v5.2h1.2v-5.2c0-.9.3-1.4.8-1.9.7-.7 1.3-1.4 1.3-2.7V8.4z"/><path fill="#4f7a62" d="M16.6 14.4v5.2c0 1-.8 1.8-1.8 1.8h-1.6c1 0 1.8-.8 1.8-1.8v-5.2c0-1.1-.4-1.9-1.1-2.6-.6-.6-1.1-1.1-1.1-2V8.4h1.6v1.4c0 .9.5 1.4 1.1 2 .7.7 1.1 1.5 1.1 2.6z"/><rect x="9.4" y="3.2" width="5.2" height="4.4" rx=".9" fill="#c99a62"/><rect x="9.4" y="3.2" width="5.2" height="1.2" rx=".6" fill="#e0b57f"/><rect x="9.9" y="13" width="4.2" height="6.2" rx="2.1" fill="#fcecdc"/><g fill="#b4595a"><rect x="10.8" y="14.4" width="2.4" height=".7"/><rect x="10.8" y="16" width="2.4" height=".7"/><rect x="10.8" y="17.6" width="1.6" height=".7"/></g></g></symbol><symbol id="sy-coral" viewBox="0 0 24 24"><path fill="none" stroke="#b4595a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M11.4 20.4V13M11.4 16.2L7.4 12.6M7.4 12.6V8.8"/><path fill="none" stroke="#e0867f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M11.4 13.8l4.3-3.8M15.7 10V5.6M11.4 13V9.6M11.4 9.6L14 7"/><g fill="#e0867f"><circle cx="15.7" cy="4.8" r="1.7"/><circle cx="14.6" cy="6.4" r="1.4"/></g><g fill="#b4595a"><circle cx="7.4" cy="8" r="1.7"/><circle cx="11.4" cy="9" r="1.4"/></g><path fill="#8c4446" d="M6.6 19.2h10v1.8c0 .6-.5 1-1 1h-8c-.6 0-1-.4-1-1z"/></symbol></svg>
+<script>
+var DATA = {"wheels":[{"risk":"mild","name":"Mild","segments":[{"from":0,"span":36,"mid":18,"units":3,"halves":1,"mult":0.5,"label":"÷2","dead":false,"chance":{"num":3,"den":30}},{"from":36,"span":24,"mid":48,"units":2,"halves":2,"mult":1,"label":"×1","dead":false,"chance":{"num":2,"den":30}},{"from":60,"span":24,"mid":72,"units":2,"halves":4,"mult":2,"label":"×2","dead":false,"chance":{"num":2,"den":30}},{"from":84,"span":24,"mid":96,"units":2,"halves":1,"mult":0.5,"label":"÷2","dead":false,"chance":{"num":2,"den":30}},{"from":108,"span":36,"mid":126,"units":3,"halves":2,"mult":1,"label":"×1","dead":false,"chance":{"num":3,"den":30}},{"from":144,"span":24,"mid":156,"units":2,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":2,"den":30}},{"from":168,"span":36,"mid":186,"units":3,"halves":1,"mult":0.5,"label":"÷2","dead":false,"chance":{"num":3,"den":30}},{"from":204,"span":24,"mid":216,"units":2,"halves":2,"mult":1,"label":"×1","dead":false,"chance":{"num":2,"den":30}},{"from":228,"span":24,"mid":240,"units":2,"halves":6,"mult":3,"label":"×3","dead":false,"chance":{"num":2,"den":30}},{"from":252,"span":24,"mid":264,"units":2,"halves":1,"mult":0.5,"label":"÷2","dead":false,"chance":{"num":2,"den":30}},{"from":276,"span":36,"mid":294,"units":3,"halves":2,"mult":1,"label":"×1","dead":false,"chance":{"num":3,"den":30}},{"from":312,"span":24,"mid":324,"units":2,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":2,"den":30}},{"from":336,"span":24,"mid":348,"units":2,"halves":4,"mult":2,"label":"×2","dead":false,"chance":{"num":2,"den":30}}],"legend":[{"halves":6,"mult":3,"label":"×3","slices":1,"chance":{"num":2,"den":30}},{"halves":4,"mult":2,"label":"×2","slices":2,"chance":{"num":4,"den":30}},{"halves":2,"mult":1,"label":"×1","slices":4,"chance":{"num":10,"den":30}},{"halves":1,"mult":0.5,"label":"÷2","slices":4,"chance":{"num":10,"den":30}},{"halves":0,"mult":0,"label":"×0","slices":2,"chance":{"num":4,"den":30}}],"top":3,"topLabel":"×3","dead":{"num":4,"den":30},"rtp":{"num":58,"den":60}},{"risk":"medium","name":"Medium","segments":[{"from":0,"span":36,"mid":18,"units":3,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":3,"den":30}},{"from":36,"span":24,"mid":48,"units":2,"halves":1,"mult":0.5,"label":"÷2","dead":false,"chance":{"num":2,"den":30}},{"from":60,"span":36,"mid":78,"units":3,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":3,"den":30}},{"from":96,"span":36,"mid":114,"units":3,"halves":4,"mult":2,"label":"×2","dead":false,"chance":{"num":3,"den":30}},{"from":132,"span":48,"mid":156,"units":4,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":4,"den":30}},{"from":180,"span":24,"mid":192,"units":2,"halves":12,"mult":6,"label":"×6","dead":false,"chance":{"num":2,"den":30}},{"from":204,"span":36,"mid":222,"units":3,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":3,"den":30}},{"from":240,"span":36,"mid":258,"units":3,"halves":2,"mult":1,"label":"×1","dead":false,"chance":{"num":3,"den":30}},{"from":276,"span":36,"mid":294,"units":3,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":3,"den":30}},{"from":312,"span":24,"mid":324,"units":2,"halves":1,"mult":0.5,"label":"÷2","dead":false,"chance":{"num":2,"den":30}},{"from":336,"span":24,"mid":348,"units":2,"halves":6,"mult":3,"label":"×3","dead":false,"chance":{"num":2,"den":30}}],"legend":[{"halves":12,"mult":6,"label":"×6","slices":1,"chance":{"num":2,"den":30}},{"halves":6,"mult":3,"label":"×3","slices":1,"chance":{"num":2,"den":30}},{"halves":4,"mult":2,"label":"×2","slices":1,"chance":{"num":3,"den":30}},{"halves":2,"mult":1,"label":"×1","slices":1,"chance":{"num":3,"den":30}},{"halves":1,"mult":0.5,"label":"÷2","slices":2,"chance":{"num":4,"den":30}},{"halves":0,"mult":0,"label":"×0","slices":5,"chance":{"num":16,"den":30}}],"top":6,"topLabel":"×6","dead":{"num":16,"den":30},"rtp":{"num":58,"den":60}},{"risk":"wild","name":"Wild","segments":[{"from":0,"span":60,"mid":30,"units":5,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":5,"den":30}},{"from":60,"span":24,"mid":72,"units":2,"halves":24,"mult":12,"label":"×12","dead":false,"chance":{"num":2,"den":30}},{"from":84,"span":48,"mid":108,"units":4,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":4,"den":30}},{"from":132,"span":24,"mid":144,"units":2,"halves":4,"mult":2,"label":"×2","dead":false,"chance":{"num":2,"den":30}},{"from":156,"span":36,"mid":174,"units":3,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":3,"den":30}},{"from":192,"span":48,"mid":216,"units":4,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":4,"den":30}},{"from":240,"span":24,"mid":252,"units":2,"halves":1,"mult":0.5,"label":"÷2","dead":false,"chance":{"num":2,"den":30}},{"from":264,"span":60,"mid":294,"units":5,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":5,"den":30}},{"from":324,"span":36,"mid":342,"units":3,"halves":0,"mult":0,"label":"×0","dead":true,"chance":{"num":3,"den":30}}],"legend":[{"halves":24,"mult":12,"label":"×12","slices":1,"chance":{"num":2,"den":30}},{"halves":4,"mult":2,"label":"×2","slices":1,"chance":{"num":2,"den":30}},{"halves":1,"mult":0.5,"label":"÷2","slices":1,"chance":{"num":2,"den":30}},{"halves":0,"mult":0,"label":"×0","slices":6,"chance":{"num":24,"den":30}}],"top":12,"topLabel":"×12","dead":{"num":24,"den":30},"rtp":{"num":58,"den":60}}],"strips":[["kelp","shell","kelp","starfish","kelp","anchor","shell","kelp","pearl","kelp","shell","starfish","kelp","anchor","shell","crab","kelp","shell","starfish","pearl","kelp","anchor","shell","starfish"],["shell","kelp","starfish","kelp","anchor","shell","kelp","pearl","kelp","starfish","shell","kelp","anchor","shell","kelp","starfish","pearl","kelp","crab","shell","kelp","anchor","starfish","shell"],["kelp","starfish","shell","kelp","pearl","kelp","anchor","shell","kelp","starfish","kelp","shell","crab","kelp","anchor","shell","starfish","kelp","pearl","shell","kelp","anchor","starfish","shell"]],"pays":[{"sym":"crab","weight":1,"three":1000,"pair":1},{"sym":"pearl","weight":2,"three":100,"pair":1},{"sym":"anchor","weight":3,"three":45,"pair":1},{"sym":"starfish","weight":4,"three":20,"pair":1},{"sym":"shell","weight":6,"three":10,"pair":1},{"sym":"kelp","weight":8,"three":6,"pair":0}]};
+var ESC = function(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')};
+
+/* ================= wheel ================= */
+var VAR = [
+  {key:'now', name:'지금', T:860,  bez:'cubic-bezier(.17,.67,.2,1)', turns:3, norm:false, fade:false,
+   note:'peak 5,892 deg/s (16.4 turn/s) at 26ms · 회전량 744~1,416도'},
+  {key:'a', name:'안 A (권고)', T:1800, bez:'cubic-bezier(.12,.01,.2,1)', turns:3, norm:true, fade:true,
+   note:'peak 1,801 deg/s (5.0 turn/s) at 191ms · 회전량 1,080~1,440도'},
+  {key:'b', name:'안 B (짧은 쪽)', T:1500, bez:'cubic-bezier(.1,.01,.28,1)', turns:3, norm:true, fade:true,
+   note:'peak 1,880 deg/s (5.2 turn/s) at 159ms · 회전량 1,080~1,440도'}
+];
+var risk='wild', st={};
+function wheelOf(){ for(var i=0;i<DATA.wheels.length;i++) if(DATA.wheels[i].risk===risk) return DATA.wheels[i]; }
+function colours(segs){
+  var live=[];
+  for(var i=0;i<segs.length;i++) if(segs[i].halves>0 && live.indexOf(segs[i].halves)<0) live.push(segs[i].halves);
+  live.sort(function(a,b){return a-b});
+  var span=Math.max(1,live.length-1);
+  return segs.map(function(s,i){
+    if(!s.halves) return 'rgba(255,255,255,'+(i%2?'.05':'.09')+')';
+    return 'rgba(232,137,90,'+(0.28+0.62*(live.indexOf(s.halves)/span)).toFixed(2)+')';
+  });
+}
+function faceCss(w,stop){
+  var c=colours(w.segments),p=[];
+  for(var i=0;i<w.segments.length;i++){var s=w.segments[i];p.push(c[i]+' '+s.from+'deg '+(s.from+s.span)+'deg')}
+  var base='conic-gradient(from 0deg,'+p.join(',')+')';
+  if(stop==null) return base;
+  var h=w.segments[stop],a=h.from,b=h.from+h.span;
+  return 'conic-gradient(from 0deg,rgba(0,0,0,0) 0deg '+a+'deg,#e8895a '+a+'deg '+b+'deg,rgba(0,0,0,0) '+b+'deg 360deg),'+base;
+}
+function numsHtml(w,stop){
+  var out='';
+  for(var i=0;i<w.segments.length;i++){var s=w.segments[i];
+    out+='<i class="'+(s.dead?'dead ':'')+(stop===i?'on':'')+'" style="transform:rotate('+s.mid+'deg) translateY(-56px)">'+ESC(s.label)+'</i>'}
+  return out;
+}
+function homeStop(w){var b=0;for(var i=1;i<w.segments.length;i++) if(w.segments[i].halves<w.segments[b].halves) b=i; return b}
+function buildDials(){
+  var w=wheelOf();
+  document.getElementById('dials').innerHTML = VAR.map(function(v){
+    return '<div class="col"><h3>'+v.name+'</h3><p class="sub">'+v.T+'ms · '+v.bez+' · '+v.turns+'바퀴<br>'+v.note+'</p>'
+      +'<div class="felt"><div class="plate"><div class="dial">'
+      +'<div class="face" id="f-'+v.key+'"><div class="nums" id="n-'+v.key+'"></div></div>'
+      +'<div class="hub"></div><i class="pin"></i></div></div>'
+      +'<div class="line" id="l-'+v.key+'"></div></div><p class="fw">펠트 바깥 202px = 사이드바 280</p></div>';
+  }).join('');
+  VAR.forEach(function(v){ st[v.key]={acc:0, mid:w.segments[homeStop(w)].mid}; paint(v,null,false) });
+}
+function paint(v,stop,turn){
+  var w=wheelOf(), f=document.getElementById('f-'+v.key), n=document.getElementById('n-'+v.key);
+  var leak=document.getElementById('leak').checked;
+  var at = stop==null?homeStop(w):stop;
+  f.style.background = faceCss(w, stop==null?null:(turn&&!leak?null:stop));
+  n.innerHTML = numsHtml(w, stop==null?null:(turn&&!leak?null:stop));
+  if(turn){
+    var prev=st[v.key].mid, next=w.segments[at].mid;
+    var travel = v.norm ? v.turns*360 + (((next-prev)%360)+360)%360
+                        : v.turns*360 + (next-prev);
+    st[v.key].acc += travel; st[v.key].mid = next;
+    f.style.transition='none'; f.style.transform='rotate('+(-(st[v.key].acc-travel))+'deg)';
+    void f.offsetWidth;
+    f.style.transition='transform '+v.T+'ms '+v.bez;
+    f.style.transform='rotate('+(-st[v.key].acc)+'deg)';
+    if(v.fade){ n.style.animation='none'; void n.offsetWidth; n.style.animation='whFade '+v.T+'ms linear'; }
+    document.getElementById('l-'+v.key).innerHTML='<span class="note">이번 회전량 '+Math.round(travel)+'도</span>';
+    setTimeout(function(){
+      f.style.background=faceCss(w,stop); n.innerHTML=numsHtml(w,stop);
+      var s=w.segments[stop];
+      document.getElementById('l-'+v.key).innerHTML=
+        '<span class="chip '+(s.dead?'lose':'win')+'">'+ESC(s.label)+'</span>'
+        +'<span class="note">이번 회전량 '+Math.round(travel)+'도 · '+v.T+'ms</span>';
+    }, v.T+100);
+  } else {
+    f.style.transition='none'; st[v.key].acc=w.segments[at].mid; st[v.key].mid=w.segments[at].mid;
+    f.style.transform='rotate('+(-w.segments[at].mid)+'deg)';
+    document.getElementById('l-'+v.key).innerHTML='<span class="note">돌기 전 · 가장 조용한 칸이 포인터 아래</span>';
+  }
+}
+var sfade=document.createElement('style');
+sfade.textContent='@keyframes whFade{0%{opacity:1}10%{opacity:0}30%{opacity:0}63%{opacity:1}100%{opacity:1}}';
+document.head.appendChild(sfade);
+document.getElementById('spin').addEventListener('click',function(){
+  var w=wheelOf(), stop=Math.floor(Math.random()*w.segments.length);
+  VAR.forEach(function(v){paint(v,stop,true)});
+});
+document.querySelectorAll('[data-risk]').forEach(function(b){
+  b.addEventListener('click',function(){
+    risk=b.getAttribute('data-risk');
+    document.querySelectorAll('[data-risk]').forEach(function(x){x.classList.toggle('on',x===b)});
+    buildDials(); plot();
+  });
+});
+document.getElementById('leak').addEventListener('change',function(){buildDials()});
+
+/* velocity plot */
+function bezf(x1,y1,x2,y2){
+  var bx=function(t){return 3*Math.pow(1-t,2)*t*x1+3*(1-t)*t*t*x2+t*t*t};
+  var dbx=function(t){return 3*Math.pow(1-t,2)*x1+6*(1-t)*t*(x2-x1)+3*t*t*(1-x2)};
+  var dby=function(t){return 3*Math.pow(1-t,2)*y1+6*(1-t)*t*(y2-y1)+3*t*t*(1-y2)};
+  return function(x){var lo=0,hi=1,m;for(var i=0;i<50;i++){m=(lo+hi)/2;if(bx(m)<x)lo=m;else hi=m}
+    m=(lo+hi)/2;var d=dbx(m);return d<1e-9?0:dby(m)/d};
+}
+var BEZN={now:[.17,.67,.2,1],a:[.12,.01,.2,1],b:[.1,.01,.28,1]};
+var COL={now:'#f6836e',a:'#e8895a',b:'#7ee6a4'};
+function plot(){
+  var W=1080,H=300,L=52,Rp=140,Tp=16,B=34, maxT=2000, maxV=2600;
+  var x=function(ms){return L+(W-L-Rp)*ms/maxT}, y=function(v){return Tp+(H-Tp-B)*(1-v/maxV)};
+  var s='<g font-family="-apple-system,sans-serif" font-size="10" fill="#9a9aa0">';
+  [0,500,1000,1500,2000].forEach(function(t){
+    s+='<line x1="'+x(t)+'" y1="'+Tp+'" x2="'+x(t)+'" y2="'+y(0)+'" stroke="#303033"/>'
+     +'<text x="'+x(t)+'" y="'+(H-14)+'" text-anchor="middle">'+t+'</text>';});
+  [1100,370].forEach(function(v){
+    s+='<line x1="'+L+'" y1="'+y(v)+'" x2="'+(W-Rp)+'" y2="'+y(v)+'" stroke="#55555c" stroke-dasharray="4 4"/>'
+     +'<text x="'+(W-Rp+6)+'" y="'+(y(v)+3)+'">'+v+' deg/s</text>';});
+  s+='<text x="'+L+'" y="'+(H-14)+'" text-anchor="middle">0</text>';
+  s+='<line x1="'+x(2000)+'" y1="'+Tp+'" x2="'+x(2000)+'" y2="'+y(0)+'" stroke="#e8895a" stroke-dasharray="3 3"/>'
+   +'<text x="'+(x(2000)+6)+'" y="'+(Tp+10)+'" fill="#e8895a">분류 3 상한 2,000ms</text>';
+  VAR.forEach(function(v){
+    var f=bezf.apply(null,BEZN[v.key]), R=v.turns*360+180, pts=[];
+    for(var i=0;i<=400;i++){var xx=i/400; pts.push(x(xx*v.T)+','+y(Math.min(maxV,(R/v.T*1000)*f(xx))))}
+    s+='<polyline fill="none" stroke="'+COL[v.key]+'" stroke-width="2" points="'+pts.join(' ')+'"/>';
+    var pkv=0; for(var j=0;j<=400;j++) pkv=Math.max(pkv,(R/v.T*1000)*f(j/400));
+    s+='<text x="'+(x(v.T)+4)+'" y="'+(y(0)-6-(v.key==='b'?14:0))+'" fill="'+COL[v.key]+'" font-weight="700">'+v.name+'</text>';
+    if(pkv>maxV) s+='<text x="'+x(60)+'" y="'+(Tp+12)+'" fill="'+COL[v.key]+'" font-weight="700">peak '+Math.round(pkv)+' deg/s — 축 밖으로 잘림</text>';
+  });
+  s+='</g>';
+  document.getElementById('plot').innerHTML=s;
+}
+
+/* ================= slots ================= */
+var PITCH=52, RING=24;
+var SVAR=[
+  {key:'now', name:'지금', note:'릴 420 / 620 / 840 · 칩 940 · 70ms 마다 5px 떨림 · 당첨 링이 릴마다 켜짐'},
+  {key:'new', name:'안', note:'릴 520 / 880 / 1,340 (두 칸이 같으면 1,640) · 칩 +120 · 링을 전환 하나로 굴림 · 당첨 링은 칩과 같이'}
+];
+function sy(k){return '<svg class="sy" viewBox="0 0 24 24" aria-hidden="true"><use href="#sy-'+k+'"/></svg>'}
+function cellH(k,cls){return '<span class="sy-cell '+(cls||'')+'">'+sy(k)+'</span>'}
+function at(r,i){var s=DATA.strips[r];return s[((i%RING)+RING)%RING]}
+function buildMach(){
+  document.getElementById('mach').innerHTML=SVAR.map(function(v){
+    var reels='';
+    for(var r=0;r<3;r++) reels+='<div class="sl-reel" id="r-'+v.key+'-'+r+'"><div class="sl-strip" id="s-'+v.key+'-'+r+'"></div></div>';
+    return '<div class="col"><h3>'+v.name+'</h3><p class="sub">'+v.note+'</p>'
+      +'<div class="felt"><div class="sl-plate'+(v.key==='new'?' walled':'')+'" id="p-'+v.key+'">'
+      +'<div class="sl-reels">'+reels+'</div><i class="caret l"></i><i class="caret r"></i></div>'
+      +'<div class="line" id="sl-'+v.key+'"></div></div><p class="fw">펠트 바깥 202px = 사이드바 280</p></div>';
+  }).join('');
+  SVAR.forEach(function(v){restSlots(v,[0,0,0],null)});
+}
+function winOf(syms){
+  var P={}; DATA.pays.forEach(function(p){P[p.sym]=p});
+  if(syms[0]===syms[1]&&syms[1]===syms[2]) return {kind:'three',sym:syms[0],mult:P[syms[0]].three,reels:[0,1,2]};
+  var pr=[[0,1],[0,2],[1,2]];
+  for(var i=0;i<3;i++){var p=pr[i]; if(syms[p[0]]!==syms[p[1]]) continue;
+    if(!P[syms[p[0]]].pair) return {kind:'none',reels:[]};
+    return {kind:'pair',sym:syms[p[0]],mult:1,reels:p}}
+  return {kind:'none',reels:[]};
+}
+function restSlots(v,stops,win){
+  var h = v.key==='new'?112:152;
+  document.getElementById('p-'+v.key).style.height=h+'px';
+  for(var r=0;r<3;r++){
+    var strip=document.getElementById('s-'+v.key+'-'+r);
+    var reel=document.getElementById('r-'+v.key+'-'+r); reel.style.height=h+'px';
+    var hit = win && win.reels.indexOf(r)>=0;
+    strip.style.transition='none';
+    strip.innerHTML = cellH(at(r,stops[r]-1),'dim')+cellH(at(r,stops[r]),hit?'hit':'')+cellH(at(r,stops[r]+1),'dim');
+    strip.style.transform='translateY('+(v.key==='new'?-(PITCH-(h-48)/2):0)+'px)';
+  }
+  document.getElementById('sl-'+v.key).innerHTML='<span class="note">돌기 전</span>';
+}
+var tm=[];
+function clearT(){tm.forEach(clearTimeout);tm=[]}
+function spinNow(stops,win){
+  var v=SVAR[0], T=[420,620,840], chip=940;
+  for(var r=0;r<3;r++)(function(r){
+    var strip=document.getElementById('s-'+v.key+'-'+r), n=Math.round(T[r]/70);
+    var hit = win && win.reels.indexOf(r)>=0;
+    var draw=function(p){strip.innerHTML=cellH(at(r,p-1),'dim')+cellH(at(r,p),'')+cellH(at(r,p+1),'dim')};
+    draw(stops[r]-n);
+    for(var k=1;k<n;k++)(function(k){
+      tm.push(setTimeout(function(){draw(stops[r]-(n-k));
+        strip.style.transition='none';strip.style.transform='translateY(-5px)';
+        void strip.offsetWidth; strip.style.transition='transform 70ms linear'; strip.style.transform='translateY(0)';
+      }, Math.round(T[r]*k/n)))})(k);
+    tm.push(setTimeout(function(){
+      strip.style.transition='none'; strip.style.transform='translateY(0)';
+      strip.innerHTML=cellH(at(r,stops[r]-1),'dim')+cellH(at(r,stops[r]),hit?'hit':'')+cellH(at(r,stops[r]+1),'dim');
+      document.getElementById('sl-'+v.key).innerHTML='<span class="note">릴 '+(r+1)+' 정지 '+T[r]+'ms'+(hit?' · 당첨 링 켜짐':'')+'</span>';
+    }, T[r]));
+  })(r);
+  tm.push(setTimeout(function(){
+    document.getElementById('sl-'+v.key).innerHTML = win&&win.kind!=='none'
+      ? '<span class="chip '+(win.kind==='three'?'win':'')+'">'+win.kind+' '+ESC(win.sym)+'</span><span class="note">칩 940ms</span>'
+      : '<span class="note">꽝 · 940ms</span>';
+  }, chip));
+}
+function spinNew(stops,win,prev){
+  var v=SVAR[1], h=112, off=-(PITCH-(h-48)/2);
+  var same = at(0,stops[0])===at(1,stops[1]);
+  var T=[520,880, same?1640:1340], chip=T[2]+120;
+  document.getElementById('sinfo').textContent = same
+    ? '두 칸이 같은 스핀이므로 세 번째 릴이 1,640ms (+300). 이미 화면에 있는 두 칸만 읽은 것이고 세 번째 칸은 읽지 않았습니다.'
+    : '두 칸이 다른 스핀이므로 세 번째 릴은 1,340ms.';
+  var CELLS=[14,24,same?45:36];
+  for(var r=0;r<3;r++)(function(r){
+    var strip=document.getElementById('s-'+v.key+'-'+r);
+    var travel = CELLS[r] + ((((stops[r]-prev[r]-CELLS[r])%RING)+RING)%RING);
+    var out='';
+    for(var i=travel;i>=-1;i--) out+=cellH(at(r,stops[r]-i), i===0?'':'dim');
+    strip.style.transition='none';
+    strip.innerHTML=out;
+    strip.style.transform='translateY('+(off - travel*PITCH)+'px)';
+    void strip.offsetWidth;
+    strip.style.transition='transform '+T[r]+'ms cubic-bezier(.12,.01,.2,1)';
+    strip.style.transform='translateY('+off+'px)';
+    tm.push(setTimeout(function(){
+      document.getElementById('sl-'+v.key).innerHTML='<span class="note">릴 '+(r+1)+' 정지 '+T[r]+'ms · '+travel+'칸 ('+(travel/RING).toFixed(1)+'링)</span>';
+    }, T[r]));
+  })(r);
+  tm.push(setTimeout(function(){
+    for(var r=0;r<3;r++){
+      var strip=document.getElementById('s-'+v.key+'-'+r);
+      var hit = win && win.reels.indexOf(r)>=0;
+      strip.style.transition='none';
+      strip.innerHTML=cellH(at(r,stops[r]-1),'dim')+cellH(at(r,stops[r]),hit?'hit':'')+cellH(at(r,stops[r]+1),'dim');
+      strip.style.transform='translateY('+off+'px)';
+    }
+    document.getElementById('sl-'+v.key).innerHTML = win&&win.kind!=='none'
+      ? '<span class="chip '+(win.kind==='three'?'win':'')+'">'+win.kind+' '+ESC(win.sym)+'</span><span class="note">칩 '+chip+'ms · 링은 여기서 켜진다</span>'
+      : '<span class="note">꽝 · '+chip+'ms</span>';
+  }, chip));
+}
+var prevStops=[0,0,0];
+function goSlots(stops){
+  clearT();
+  var syms=[at(0,stops[0]),at(1,stops[1]),at(2,stops[2])], win=winOf(syms);
+  spinNow(stops,win); spinNew(stops,win,prevStops); prevStops=stops;
+}
+function findStops(test){
+  for(var k=0;k<40000;k++){
+    var s=[Math.floor(Math.random()*RING),Math.floor(Math.random()*RING),Math.floor(Math.random()*RING)];
+    if(test([at(0,s[0]),at(1,s[1]),at(2,s[2])])) return s;
+  }
+  return [0,0,0];
+}
+document.getElementById('sspin').addEventListener('click',function(){
+  goSlots([Math.floor(Math.random()*RING),Math.floor(Math.random()*RING),Math.floor(Math.random()*RING)]);
+});
+document.getElementById('sforce').addEventListener('click',function(){
+  goSlots(findStops(function(s){return s[0]===s[1]&&s[1]!==s[2]}));
+});
+document.getElementById('sjack').addEventListener('click',function(){
+  goSlots(findStops(function(s){return s[0]===s[1]&&s[1]===s[2]}));
+});
+
+window.addEventListener('error',function(e){document.title='ERR '+e.message});
+buildDials(); plot(); buildMach();
+if(location.hash==='#auto'){
+  document.getElementById('spin').click();
+  document.getElementById('sspin').click();
+  document.getElementById('sforce').click();
+  document.getElementById('sjack').click();
+  document.getElementById('leak').checked=true;
+  document.getElementById('leak').dispatchEvent(new Event('change'));
+  document.querySelector('[data-risk="mild"]').click();
+  document.getElementById('spin').click();
+}
+</script>

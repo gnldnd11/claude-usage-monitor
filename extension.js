@@ -40,6 +40,14 @@ let agentNicknames = {}; // agentName -> user nickname (persisted, editable in t
 let agentRoles = {};     // agentName -> user role/title alias (persisted, editable)
 let agentAppearance = {}; // agentName -> chosen NPC sprite key (persisted, overrides auto-assignment)
 let agentHidden = {};     // agentName -> 1: display-only hide (roster + room + strip)
+// tool_use id -> that invocation's own start time (ms). Invocations the user has swept off the
+// Agents tab because they were sitting on "?" with nothing written back. Display only: there are
+// no hooks here, so nothing about this reaches the agent. See dismissAgentRun in the message
+// handler. globalState, because two windows look at the same room and a row cleared in one has to
+// be cleared in the other. Unlike a nickname this is a record WITH A LIFESPAN: the invocation it
+// hides leaves the list by itself AGENT_RUN_WINDOW_MS after the call, and the id is dropped at the
+// same moment (pruneAgentDismissed), so the set cannot grow without bound.
+let agentDismissed = {};
 // gameId -> 1: the games the player keeps at the top of the list. Global, not per workspace: which
 // games are mine is a fact about me, and a game is not part of a project the way a hidden agent is
 let gameFavorites = {};
@@ -405,8 +413,11 @@ function readTokens(wsPaths) {
 // This harness runs subagents in the background, so a tool_result can land ~2s
 // after the call while real work continues; MIN_ACTIVE keeps the "active" state
 // visible long enough to actually see.
-function computeAgentActivity(calls, results) {
+// `dismissed` is {tool_use_id: callTime} for invocations the user swept off the list. See
+// agentDismissed. It only ever subtracts the still-waiting ones, never a run with a real result.
+function computeAgentActivity(calls, results, dismissed) {
   const NOW = Date.now();
+  const swept = dismissed || {};
   // The panel is pushed every 10s, so a run visible for less than that can fall entirely
   // between two ticks and never be drawn. MIN_ACTIVE + DONE_MS = 30s guarantees any run,
   // however short, lands on at least two refreshes (measured: 32 runs finished under 12s).
@@ -448,11 +459,15 @@ function computeAgentActivity(calls, results) {
   for (const c of calls) {
     if (!c.inProj || !c.t) continue; // scope to this workspace
     const r = results[c.id];
+    const sweptHere = swept[c.id] != null;
     if (r) {
       const end = Math.max(r.t, c.t + MIN_ACTIVE);
-      if (NOW < end) instances.push({ key: c.id, agent: c.agent, state: 'active', since: c.t, desc: c.desc });
-      else if (NOW - end <= DONE_MS) instances.push({ key: c.id, agent: c.agent, state: 'done', since: end, desc: c.desc, tokens: r.tokens || 0, durMs: r.durMs || 0 });
-    } else if (NOW - c.t <= NO_RESULT_MS) {
+      // A swept run that DID finish comes back for the done flash. Hiding that too would hide the
+      // one thing the user needs to learn from sweeping it: that it was alive after all. Only the
+      // "active" half is withheld, because an id reaches this branch days late by definition.
+      if (NOW < end) { if (!sweptHere) instances.push({ key: c.id, agent: c.agent, state: 'active', since: c.t, desc: c.desc }); }
+      else if (NOW - end <= DONE_MS) instances.push({ key: c.id, agent: c.agent, state: 'done', since: end, desc: c.desc, tokens: r.tokens || 0, durMs: r.durMs || 0, swept: sweptHere || undefined });
+    } else if (NOW - c.t <= NO_RESULT_MS && !sweptHere) {
       // Still running. Instead of silently dropping long runs (the exact case where
       // visibility matters most), flag ones well past this agent's usual runtime.
       const med = (stats[c.agent] || {}).medMs || 0;
@@ -461,6 +476,21 @@ function computeAgentActivity(calls, results) {
     }
   }
   return { instances, stats };
+}
+
+// Drop swept ids whose invocation has aged out of the window anyway.
+// The value stored is the CALL's time, not the moment of the sweep, so the record dies on exactly
+// the tick the row it hides would have left the list on its own. After that the id hides nothing
+// and keeping it would make this a set that only ever grows (a nickname may live for ever, a
+// sweep may not). Returns true when something was dropped, so the caller can persist once.
+function pruneAgentDismissed(now) {
+  let dropped = false;
+  for (const id in agentDismissed) {
+    const t = agentDismissed[id];
+    if (!(t > 0) || now - t > AGENT_RUN_WINDOW_MS) { delete agentDismissed[id]; dropped = true; }
+  }
+  if (dropped && extContext) extContext.globalState.update('agentDismissedV1', agentDismissed);
+  return dropped;
 }
 
 // --- agent XP ----------------------------------------------------------------
@@ -601,8 +631,8 @@ function syncCredits(tokens) {
 //
 // Rounds live in memory only. Stakes move only when a round settles, so reloading VS Code mid-round
 // voids that round and loses nothing. In solo mode that loophole (reload away a bad hand) is
-// accepted on purpose. The forge is the exception and has to be: a sword is not a round but a
-// thing the player owns, so it is stored (see games/forge/meta.js).
+// accepted on purpose. The market is the exception and has to be: a coin position is not a round but
+// a thing the player owns, so it is stored (see games/market/meta.js).
 // Results go to the ledger's bank as this activation's own grow-only counters (credits.js). Every
 // game shares one set of counters: the balance is built from credits won and lost, which is the
 // same currency either way, and a key per game would have to be migrated into every window's
@@ -674,10 +704,11 @@ function gameReply(game, engine, round, reqN, error, withSeq) {
 
 // Records a settled round in the bank at once (not throttled: hands come at human speed).
 // `extra` is other ledger keys that belong to this same settlement, and it goes in the SAME write:
-// the forge's sword moves and its fee is paid by one move, and two writes could leave a window
-// crashing between them with the money gone and the sword not saved (or the other way round)
-// Returns the merged ledger the write settled on, which is how the forge finds out whether the move
-// it just made is the one every window will see
+// a market trade moves the wallet and pays its stake in one move, and two writes could leave a
+// window crashing between them with the money gone and the position not saved (or the other way
+// round).
+// Returns the merged ledger the write settled on, which is how a stored game finds out whether the
+// move it just made is the one every window will see
 function recordGameResult(net, extra) {
   if (net > 0) gameCount.won += net;
   else if (net < 0) gameCount.lost -= net;
@@ -700,12 +731,12 @@ function afterMove(settled, net, reply, tag) {
 }
 
 // Every game's host side, keyed by the message type it answers. A round-based game runs on the
-// shared driver; a game with its own settlement (the forge, the coin market) brings its own
-// handler. Adding a game adds no code here: it adds a directory under games/.
+// shared driver; a game with its own settlement (the coin market) brings its own handler. Adding a
+// game adds no code here: it adds a directory under games/.
 //
 // The one thing a game CAN need from this list is a door to its own stored record, because the
-// ledger's keys are this file's to hand out (storedForge, storedMarket). A game that stores nothing
-// needs none of them
+// ledger's keys are this file's to hand out (storedMarket). A game that stores nothing needs none of
+// them
 const gameHandlers = registry.createHandlers({
   reply: gameReply,
   afterMove: afterMove,
@@ -714,14 +745,13 @@ const gameHandlers = registry.createHandlers({
   ensureReplica: ensureReplica,
   replica: () => gameReplica,
   record: recordGameResult,
-  storedForge: () => (creditStore ? creditStore.read().forge : null),
   storedMarket: () => (creditStore ? creditStore.read().market : null),
   push: () => push(),
   log: logLine,
   live: () => !!(provider && provider.view)
 });
 
-// Shared state (the forge's sword) can move without any message of ours, so every data push gives
+// Shared state (a market position) can move without any message of ours, so every data push gives
 // each game a chance to say so. A game with nothing shared has no onPush and costs nothing here
 function gamesAfterPush() {
   for (const key in gameHandlers) {
@@ -1100,6 +1130,7 @@ function collect() {
     if (r) awardXp(c.agent, c.id, r.tokens || 0, r.durMs || 0);
   }
   saveXp();
+  pruneAgentDismissed(Date.now()); // before the activity pass, so an expired sweep stops hiding on the same tick
   // Context reflects THIS workspace's most recent turn; fall back to the global
   // latest only when no workspace transcript is found (e.g. no folder open).
   const cp = contextPct(tokens.lastProj || tokens.last);
@@ -1117,7 +1148,7 @@ function collect() {
     avg: (tokens.count > 0) ? (((tokens.today.input || 0) + (tokens.today.output || 0) + (tokens.today.cache_creation || 0) + (tokens.today.cache_read || 0)) / tokens.count) : 0,
     peak: tokens.peak,
     agents: readAgents().map((a) => ({ name: a.name, model: a.model, description: a.description })),
-    agentActivity: computeAgentActivity(tokens.agentCalls, tokens.agentResults),
+    agentActivity: computeAgentActivity(tokens.agentCalls, tokens.agentResults, agentDismissed),
     nicknames: agentNicknames,
     roles: agentRoles,
     appearance: agentAppearance,
@@ -1212,6 +1243,22 @@ class UsageViewProvider {
         // travel with it, but hiding is a statement about THIS project's roster. Kept global
         // it followed you into unrelated folders and emptied their Crew.
         if (extContext) extContext.workspaceState.update('agentHiddenV1', agentHidden);
+        push();
+      }
+      // Sweep ONE waiting invocation off the Agents tab. This clears a row and nothing else: the
+      // extension has no hooks, so it cannot and must not touch the agent itself.
+      //
+      // The host decides, the webview only asks. A key is taken only while that invocation is
+      // actually showing as 'stuck' in the data this window last pushed, which is what keeps a
+      // healthy run from being swept by a stale page or a stray click: the webview cannot name a
+      // row that is not waiting. The call's own time is read from that instance rather than taken
+      // from the message, so the record's lifespan is the host's number, not the page's.
+      else if (m.type === 'dismissAgentRun' && m.key) {
+        const inst = (((lastStatusData || {}).agentActivity || {}).instances || []).find((s) => s.key === m.key);
+        if (inst && inst.state === 'stuck' && inst.since > 0) {
+          agentDismissed[m.key] = inst.since;
+          if (extContext) extContext.globalState.update('agentDismissedV1', agentDismissed);
+        } else if (log) log.appendLine('[agents] not swept, it is not waiting on a result: ' + m.key);
         push();
       }
       // A star on a list row. globalState, so both windows show one set of favourites: the write is
@@ -1320,7 +1367,7 @@ function push() {
   data.cfg = { statusBar: _cfg.get('statusBar.show', 'session+weekly'), panelHidden: _cfg.get('panel.hidden', []), burnRate: _cfg.get('burnRate.enabled', true) };
   if (statusItem) renderStatusBar(data);
   if (provider) provider.post(data);
-  gamesAfterPush(); // the data push carries no game state, and the forge's sword is shared
+  gamesAfterPush(); // the data push carries no game state, and a market position is shared
 }
 
 function scheduleRefresh() {
@@ -1387,6 +1434,10 @@ function activate(context) {
   agentRoles = context.globalState.get('agentRolesV1', {}) || {}; // restore agent role/title aliases
   agentAppearance = context.globalState.get('agentAppearanceV1', {}) || {}; // restore appearance overrides
   gameFavorites = context.globalState.get('gameFavoritesV1', {}) || {};     // restore the starred games
+  // restore the swept invocations, then expire on the spot: after a night's reload every id in
+  // there is older than the window and would otherwise sit in storage until the next sweep
+  agentDismissed = context.globalState.get('agentDismissedV1', {}) || {};
+  pruneAgentDismissed(Date.now());
   // display-only hides are per workspace (see setHidden). One-time migration: the old global
   // set seeds whichever workspace is open first, so the folder you set it up in keeps its
   // hides and every other folder starts clean.
@@ -1566,12 +1617,13 @@ function deactivate() {
 module.exports = { activate, deactivate };
 if (process.env.CUC_TEST) module.exports._test = {
   readTokens, parseLinesInto, freshAcc, collect, computeAgentActivity, parseSubUsage, contextPct,
+  // the swept-run set and its expiry, so a test can age one out without waiting four hours
+  dismissedRuns: () => agentDismissed,
+  pruneAgentDismissed,
   // the names stay as they were: every seed hook now goes through the game's own handler
   setBjSeeds: (fn) => { gameHandlers.bj.setSeeds(fn); },
   setHlSeeds: (fn) => { gameHandlers.hl.setSeeds(fn); },
-  setPkSeeds: (fn) => { gameHandlers.pk.setSeeds(fn); },
-  setFgSeeds: (fn) => { gameHandlers.fg.setSeeds(fn); },
-  setSeeds: (key, fn) => { gameHandlers[key].setSeeds(fn); }, // for a game added after these four
+  setSeeds: (key, fn) => { gameHandlers[key].setSeeds(fn); }, // for every other game, by its key
   // the deck the next run will shuffle. A seed only names a run together with this, because the
   // shoe carries: tests that want a particular run have to search the seed against it
   hlDeck: () => { const shoe = gameHandlers.hl.carry(); return shoe ? shoe.slice() : null; }

@@ -62,7 +62,8 @@
 
   var mk = {
     st: null, coin: null, busy: false, op: null, n: 0, to: null, tick: null,
-    timers: CUC.timers(), chip: null, codes: null, locked: false, wantFocus: false,
+    timers: CUC.timers(), chip: null, conv: null, title: '', backTitle: '',
+    codes: null, locked: false, wantFocus: false,
     since: 0,   // ms of this panel's own beats since the drawn state landed
     asked: 0,   // the minute an ask has already gone out for, so one boundary is one ask
     span: MK_SPAN_DEF   // the window on screen. The host remembers it too, for the pushes nobody asked for
@@ -136,16 +137,26 @@
       + '</div>';
   }
 
+  // THERE IS ONE WAY BACK UP AND IT IS THE HEADING'S ARROW. The crumb this screen used to carry
+  // (`← Coins · CODE · price`) is gone: the market is the only game with a depth inside itself, so
+  // two arrows on one heading was an exception rather than a precedent, and the arrow now climbs one
+  // level here before it leaves the game (the `up` hook at the foot of this file). What the crumb
+  // held is in the heading instead: the code is the TITLE, so the arrow plainly closes this coin, and
+  // the price is the corner figure (mkHead).
+  //
+  // THERE IS NO .hl-line HERE EITHER. That line is the felt's, and every other screen has it inside
+  // one, where an empty one cannot be seen; on a screen with the felt taken off it was a visible 22px
+  // of nothing whenever a position was open, 30px with the margin over it, measured. What it carried
+  // has a home each: the verdict chip of a trade goes in the .mk-conv line under the amount box, and
+  // the stake about to go in is what the amount box itself says.
+  //
+  // `How it pays` is BELOW the control row, not above it, so nothing stands between the chart and the
+  // button that acts on it, and the fee sentence is inside that fold rather than always on screen
   function markup() {
     return CUC.frame('market')
       + '<div class="mk-lhead" id="mkLHead"></div>'
       + '<div class="mk-list" id="mkList"></div>'
       + '<div id="mkCoin" hidden>'
-      +   '<div class="mk-crumb">'
-      +     '<button type="button" class="mk-back" id="mkUp" title="All coins (Esc)">← Coins</button>'
-      +     '<span class="mk-code" id="mkCode"></span>'
-      +     '<span class="mk-now" id="mkNow"></span>'
-      +   '</div>'
       +   '<div class="mk-plbox" id="mkPlBox" hidden>'
       +     '<b class="mk-pl" id="mkPl"></b><span class="mk-plsub" id="mkPlSub"></span></div>'
       +   '<div class="mk-spanrow">' + spanHtml()
@@ -154,9 +165,6 @@
       +     '<div class="mk-chart" id="mkChart" role="img" aria-label=""></div>'
       +     '<div class="mk-ax" id="mkAx"></div>'
       +   '</div>'
-      +   '<div class="hl-line" id="mkLine"></div>'
-      +   '<button type="button" class="bj-why" id="mkWhy" aria-expanded="false">How it pays</button>'
-      +   '<div class="bj-pays" id="mkPays" hidden></div>'
       + '</div>'
       + '<div class="bj-sr" id="mkLive" aria-live="polite"></div>'
       + '<div class="bj-note" id="mkNote" hidden></div>'
@@ -174,7 +182,8 @@
       + '<div class="bj-ctl" id="mkCtl" hidden>'
       +   '<button type="button" class="bj-btn primary" id="mkDeal" title="Buy (B)">Buy</button>'
       +   '<button type="button" class="bj-btn" id="mkSell" title="Sell (S)">Sell</button></div>'
-      + '<div class="bj-note mk-fee" id="mkFee" hidden></div>';
+      + '<button type="button" class="bj-why" id="mkWhy" aria-expanded="false" hidden>How it pays</button>'
+      + '<div class="bj-pays" id="mkPays" hidden></div>';
   }
 
   // --- the list of coins -------------------------------------------------------------------------
@@ -309,14 +318,34 @@
     ax.innerHTML = '<span>low ' + esc(fmtInt(credOf(c, lo))) + '</span>'
       + '<span>high ' + esc(fmtInt(credOf(c, hi))) + '</span>';
   }
-  // The crumb: the way back up, the code and the price. The change is NOT here any more, and that
-  // is a fix as much as a rearrangement: at a sidebar of 250 the back button, the price and a
-  // change figure came to 141px of the 172px line, leaving the code 31px when CRAB needs 37, and it
-  // was being drawn as `K…` (docs/game-panels.md, section 5-10)
-  function mkHead(c) {
-    var code = el('mkCode'), now = el('mkNow');
-    if (code) code.textContent = c.code;
-    if (now) now.textContent = fmtInt(credOf(c, c.ticks));
+  // The heading, which is this screen's only chrome and therefore says which of the two depths is
+  // open. The title names it and the corner carries the one figure that outlives the panel at that
+  // depth (docs/game-panels.md, section 2):
+  //
+  //   the list of coins   `Coin Market`   every open position's profit, together
+  //   one coin            `CRAB`          that coin's price, which the crumb used to hold
+  //
+  // The sum is NOT repeated at the coin depth. With one position open it is the same number as the
+  // block under it, 44px away and the same colour, and two places saying one figure is one of them
+  // saying nothing. The price is what the crumb was for and it has nowhere else to be
+  function mkHead(st, c) {
+    var t = el('mkTtl');
+    if (t) t.textContent = c ? c.code : mk.title;
+    // and the arrow says which step it is about to take. The shared one says "All games", which is
+    // the truth at one of the two depths only
+    var b = el('mkBack');
+    if (b) b.title = c ? 'All coins (Esc)' : mk.backTitle;
+    var s = el('mkSide'); if (!s) return;
+    if (c) {
+      s.textContent = fmtInt(credOf(c, c.ticks));
+      s.className = 'bj-side';
+      s.title = c.name + ' · ' + pctSaid(c.chgBp) + ' over ' + spanNow().said;
+      return;
+    }
+    s.textContent = st.holding ? signed(st.heldPl) : '';
+    s.className = 'bj-side ' + (st.holding ? dirCls(st.heldPl) : '');
+    s.title = st.holding ? st.holding + ' open · ' + fmtInt(st.held) + ' in · '
+      + fmtInt(st.heldPayout) + ' if sold now' : '';
   }
   // The period row: which window is on screen, and the change that window is the base of, at the
   // other end of the same line. Nothing else says what the change is measured against, so the
@@ -363,46 +392,49 @@
     if (!p) { big.textContent = ''; sub.textContent = ''; return; }
     big.textContent = signed(p.pl);
     big.className = 'mk-pl ' + dirCls(p.pl);
+    // The profit is NOT also said as a percentage here. It was, and 29px under it the period line
+    // carries the market's own change in the same colours and the same sign, so the two read as one
+    // figure and neither says which it is (docs/game-panels.md, section 5-10 already held this for
+    // the list rows and missed it here). What is left is what the big number cannot say: what went
+    // in, at what price, and for how long
     sub.textContent = units(p.unitsMilli) + ' ' + c.code + ' · ' + fmtInt(p.amount) + ' in at '
       + (p.lots > 1 ? 'avg ' : '') + fmtInt(credOf(c, p.entryTicks))
       + (p.lots > 1 ? ' (' + p.lots + ' buys)' : '')
-      + ' · ' + pctSigned(p.plBp) + ' · held ' + age(p.heldMs + mk.since);
+      + ' · held ' + age(p.heldMs + mk.since);
   }
   // Behind the one toggle every screen folds its table into (docs/game-panels.md, section 5). What
-  // belongs here is what decides which coin to buy, and all of it is off the reply
+  // belongs here is what decides which coin to buy, and all of it is off the reply.
+  // The FEE is one of those lines rather than a sentence under the Buy button: it is the same fact at
+  // every depth and in every state, and a sentence that is always on screen is a screen explaining
+  // itself. The figure is still the host's (`feeBp`), never a string written here
   function mkPays(c) {
     var box = el('mkPays'), st = mk.st;
     if (!box || !st) return;
     box.innerHTML = esc(c.name) + ' · ' + esc(c.grade) + ' · moves about ' + pct(c.volBp) + ' a day<br>'
       + 'Now ' + pctSigned(c.baseBp) + ' of its ' + fmtInt(c.base) + ' base, inside a band '
       + st.bandX + '× either way<br>'
-      + 'Round trip ' + pct(st.feeBp) + ', taken on the sale · stake ' + fmtInt(st.minBuy)
+      + 'Round trip ' + pct(st.feeBp) + ', taken when you sell · stake ' + fmtInt(st.minBuy)
       + ' to ' + fmtInt(st.maxBuy) + '<br>'
       + 'Up to ' + st.maxLots + ' buys a coin, sold together · ' + fmtInt(st.trades) + ' round trips closed, best ' + fmtInt(st.best);
   }
 
-  // --- the line, the corner and the controls -----------------------------------------------------
+  // --- the line under the amount box, and the controls -------------------------------------------
 
-  // The one figure the heading's corner carries: what every open position is up or down, together.
-  // Empty when nothing is held, because then there is nothing being held (section 2)
-  function mkSide(st) {
-    var s = el('mkSide'); if (!s) return;
-    s.textContent = st.holding ? signed(st.heldPl) : '';
-    s.className = 'bj-side ' + (st.holding ? dirCls(st.heldPl) : '');
-    s.title = st.holding ? st.holding + ' open · ' + fmtInt(st.held) + ' in · '
-      + fmtInt(st.heldPayout) + ' if sold now' : '';
-  }
-  // Under the well: the stake about to go in, or the verdict of the trade that just landed. Never
-  // both, so this line is one piece at most
-  function mkLine() {
-    var line = el('mkLine'); if (!line) return;
+  // One line and one owner. It carries the verdict of the trade that just landed, or, when there is
+  // none, what the typed amount comes to in the other unit (or why it is refused). Never both: a
+  // verdict is about the trade that happened and the conversion is about the one being typed, so the
+  // newer fact is the one on screen. The figures are the host's either way (`last`, `ticks`)
+  function mkConvLine() {
+    var line = el('mkConv'); if (!line) return;
     if (mk.chip) {
+      line.className = 'mk-conv';
       line.innerHTML = '<span class="bj-chip' + (mk.chip.tint ? ' ' + mk.chip.tint : '') + '">'
         + esc(mk.chip.text) + '</span>';
       return;
     }
-    var c = coinOf(mk.st, mk.coin);
-    line.innerHTML = (c && !c.position) ? CUC.pot(0, true) : '';
+    var cv = mk.conv;
+    line.className = 'mk-conv' + (cv && cv.bad ? ' bad' : '');
+    line.textContent = cv ? cv.text : '';
   }
   // Thousandths of a coin, as a reader writes them: 0.7, 12.345, 3
   function units(milli) {
@@ -442,9 +474,10 @@
       ? { text: 'Bought ' + fmtInt(last.amount) + ' at ' + fmtInt(credOf(c, last.entryTicks)), tint: '' }
       : { text: 'Sold ' + signed(last.pl) + ' · paid ' + fmtInt(last.payout), tint: tint(last.pl) };
   }
-  // Buy and Sell never both: a coin is held or it is not, so the control row is one button and the
-  // third thing a market would need (which coin) is the list behind it rather than a button
-  // (docs/game-panels.md, sections 1 and 5-10)
+  // Two buttons at most, which is the control row's own limit (docs/game-panels.md, section 1), and
+  // the third thing a market would need (which coin) is the list behind it rather than a button.
+  // Both can be up at once: a coin already held can be bought again (1.23.0), so `Add` stands beside
+  // `Sell`. The spec held "one at a time" until this was measured; the code was the newer of the two
   function mkButtons() {
     var st = mk.st, c = coinOf(st, mk.coin);
     var buy = el('mkDeal'), sell = el('mkSell'), row = el('mkAmtRow'), ctl = el('mkCtl');
@@ -454,9 +487,19 @@
     if (row) row.hidden = !c;
     buy.hidden = !c;
     sell.hidden = !c || !hold;
-    if (!c) { CUC.note('mkNote', ''); CUC.note('mkFee', ''); var cv = el('mkConv'); if (cv) cv.textContent = ''; return; }
+    // the fold belongs to a coin, and below the control row it would otherwise stand under the list
+    // with the last coin's facts still in it
+    mkFold(!!c);
+    if (!c) { CUC.note('mkNote', ''); mk.conv = null; mkConvLine(); return; }
     mkBuyBtn(buy, sell, st, c);
     if (hold) mkSellBtn(sell, c);
+  }
+  // The paytable toggle, which exists only at the coin depth. Closing it on the way out rather than
+  // leaving it open keeps the button and the fold agreeing about each other
+  function mkFold(on) {
+    var why = el('mkWhy'), pays = el('mkPays');
+    if (why) why.hidden = !on;
+    if (!on && pays) { pays.hidden = true; if (why) why.setAttribute('aria-expanded', 'false'); }
   }
   // What the purse would be paid, which already has the fee in it (market.js's payoutOf). The price
   // rides on the button the way the forge's fee does, so the question the button asks is answered on
@@ -488,19 +531,20 @@
               : '';
     buy.disabled = !!mk.locked || !!why;
     buy.setAttribute('data-bet', why ? '0' : String(amt));
-    buy.textContent = (c.position ? 'Buy more ' : 'Buy ') + (amt ? fmtInt(amt) : '');
-    buy.title = why || 'Buy (B)';
-    var cv = el('mkConv');
-    if (cv) {
-      cv.textContent = why && amt ? why
-        : !amt ? ''
-          : mk.unit === 'sh' ? '= ' + fmtInt(amt) + ' credits'
-            : '≈ ' + units(Math.round(amt / perCoin(c) * 1000)) + ' ' + c.code;
-      cv.className = 'mk-conv' + (why && amt ? ' bad' : '');
-    }
-    var pv = document.querySelector('#mkLine .hl-pot.preview b'); if (pv) pv.textContent = fmtInt(amt);
+    // `Add` and not `Buy more`. At a sidebar dragged to 250 the two buttons are 83px each, which is
+    // 71px of text, and `Buy more 100` wanted two lines of a 34px button, which section 1 does not
+    // allow. Measured at 12px/700 in that 71px: `Add 100` is 44.8px and `Add 100,000` 70.1px, the
+    // same range `Buy 100,000` (69.0px) already has, so the second button adds no width case the
+    // first one did not have. The word that goes is the one the screen has already said: a position
+    // is open, and its size and its entry are in the line under the profit
+    buy.textContent = (c.position ? 'Add ' : 'Buy ') + (amt ? fmtInt(amt) : '');
+    buy.title = why || (c.position ? 'Buy more of this coin (B)' : 'Buy (B)');
+    mk.conv = { bad: !!(why && amt), text: why && amt ? why
+      : !amt ? ''
+        : mk.unit === 'sh' ? '= ' + fmtInt(amt) + ' credits'
+          : '≈ ' + units(Math.round(amt / perCoin(c) * 1000)) + ' ' + c.code };
+    mkConvLine();
     CUC.note('mkNote', known && max < st.minBuy && !c.position ? (CUC.balance() >= st.minBuy ? CUC.heldElsewhere + '.' : 'You need ' + fmtInt(st.minBuy) + ' credits to play.') : '');
-    CUC.note('mkFee', 'Round trip ' + pct(st.feeBp) + ', taken when you sell.');
   }
   function mkLock(locked) { mk.locked = !!locked; mkButtons(); mkSpanLock(); }
 
@@ -514,14 +558,13 @@
   }
   function mkPaint() {
     var st = mk.st; if (!st) return;
-    mkSide(st);
     mkRows(st);
     if (mk.coin && !coinOf(st, mk.coin)) mk.coin = null;   // a coin that is no longer on the list
     mkShow();
     var c = coinOf(st, mk.coin);
-    if (c) { mkHead(c); mkSpanRow(c); mkPl(c); mkChart(c); mkPays(c); }
-    mkLine();                 // before the buttons: renderStakes fills the preview this draws
-    mkButtons();
+    mkHead(st, c);            // the heading says which depth this is: see mkHead
+    if (c) { mkSpanRow(c); mkPl(c); mkChart(c); mkPays(c); }
+    mkButtons();              // which draws the conv line, the one owner of it
   }
   // Nothing is drawn and nothing is promised until the host answers the first open. The window's
   // name goes with the rows it heads: a heading over an empty list names a window nobody has been
@@ -531,7 +574,8 @@
     var head = el('mkLHead'); if (head) head.textContent = '';
     mkShow();
     var ctl = el('mkCtl'); if (ctl) ctl.hidden = true;
-    CUC.note('mkFee', '');
+    var row = el('mkAmtRow'); if (row) row.hidden = true;
+    mkFold(false);
   }
   // The cards of this game are drawn as bare divs, and the figure that matters is a colour and a
   // sign, so whatever a sighted player sees happen is said here once a trade
@@ -642,7 +686,7 @@
     mk.busy = false;
     try {
       CUC.settle(m);
-      mkLine();
+      mkConvLine();
       if (fresh) mkAnnounce(mk.st.last);
     } finally {
       mkLock(false);
@@ -671,8 +715,10 @@
     if (!mk.wantFocus && !lost) return;
     mk.wantFocus = false;
     var sell = el('mkSell'), buy = el('mkDeal');
+    // the heading's own arrow is the fallback now that the crumb's button is gone: it is the one
+    // control that is always there, and from it Tab reaches everything else
     var target = sell && !sell.hidden && !sell.disabled ? sell
-      : (buy && !buy.hidden && !buy.disabled ? buy : el('mkUp'));
+      : (buy && !buy.hidden && !buy.disabled ? buy : el('mkBack'));
     if (target && !target.hidden && !target.disabled) target.focus();
   }
 
@@ -682,6 +728,10 @@
     cls: 'mk',
     markup: markup,
     init: function () {
+      // the heading's own title, read once: it is what the title goes back to when the coin closes,
+      // and the register owns the string (meta.title), not this file
+      var t = el('mkTtl'); mk.title = t ? t.textContent : '';
+      var b = el('mkBack'); mk.backTitle = b ? b.title : '';
       mkBlank();
       var amt = el('mkAmt');
       amt.addEventListener('input', function () { mk.typed = this.value; mkButtons(); });
@@ -712,7 +762,6 @@
         if (!row) return;
         mkOpenCoin(row.getAttribute('data-code'));
       });
-      el('mkUp').addEventListener('click', function () { mkOpenList(); });
       el('mkSpan').addEventListener('click', function (e) {
         var b = e.target.closest ? e.target.closest('button[data-span]') : null;
         if (!b) return;
@@ -745,6 +794,10 @@
       mk.busy = false; mk.op = null;
     },
     receive: mkReceive,
+    // The heading's arrow, one step at a time (games/README.md, section 4). This game is two deep,
+    // so from a coin the arrow closes the coin and from the list it leaves the market. It is the same
+    // step Escape takes, which is why there is no second arrow on the screen any more
+    up: function () { if (!mk.coin) return false; mkOpenList(); return true; },
     // The row's figure, drawn whether this panel was ever built or not: the lists rows are in the
     // page from the first paint, and a figure you have to open the panel to see cannot be the reason
     // you open it. A reply with no state says nothing about positions, so it leaves the row alone

@@ -212,6 +212,13 @@ module.exports = {
      the pair used here, light theme and all. No third colour, and the one accent is still ember --- */
   .mk{--mk-up:#4fae74;--mk-dn:#f6836e;}          /* 5.70:1 / 6.26:1 on --card dark */
   body.vscode-light .mk{--mk-up:#1f7a49;--mk-dn:#b32a2e;}   /* 5.33:1 / 6.39:1 */
+  /* The heading's corner, which on this screen carries the open coin's PRICE and not only a figure
+     left over from last time (panel.js's mkHead). 10.5px muted is right for something kept in the
+     corner; the price is the number most often read on this screen, so it gets the 12px the crumb
+     gave it. 12px is one of the six sizes section 2 allows, so this is not a new size.
+     IT COMES BEFORE .mk-u / .mk-d ON PURPOSE: both are two-class selectors, so the later rule wins,
+     and at the list depth the corner carries a signed profit that has to keep its direction colour */
+  .mk .bj-side{font-size:12px;color:var(--text);}
   .mk .mk-u{color:var(--mk-up);}
   .mk .mk-d{color:var(--mk-dn);}
   /* --- depth one: the four coins, a row each. Two lines inside the 44px row, because a name, a
@@ -224,7 +231,7 @@ module.exports = {
      what hidden means for it. A list that goes on showing under the coin screen is the whole screen
      drawn twice */
   .mk-list{display:flex;flex-direction:column;}
-  .mk-list[hidden],.mk-lhead[hidden],.mk .bj-stakes[hidden],.mk-crumb[hidden],.mk-ax[hidden]{display:none;}
+  .mk-list[hidden],.mk-lhead[hidden],.mk .bj-stakes[hidden],.mk-ax[hidden]{display:none;}
   /* the window's name, over the change column it is the base of. The list has no period control of
      its own, so this one word is what says against what the four figures under it are measured */
   .mk-lhead{display:flex;justify-content:flex-end;margin:0 6px 4px;
@@ -239,19 +246,11 @@ module.exports = {
   .mk-px{flex:none;margin-left:auto;font-size:12px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
   .mk-spark{flex:none;width:40px;height:16px;line-height:0;}
   .mk-fg{flex:none;margin-left:auto;line-height:1;}
-  /* --- depth two: one coin. The crumb is the only way back up, because the heading's arrow belongs
-     to the games list and a screen two deep needs its own --- */
-  .mk-crumb{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
-  /* the three properties and not the shorthand, for the reason in games/casino.js's .bj-why */
-  .mk-back{flex:none;padding:2px 5px;border:0;border-radius:6px;background:transparent;color:var(--muted);
-    font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;}
-  .mk-back:hover{background:var(--track);color:var(--text);}
-  .mk-back:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
-  /* the code gives way first when the crumb runs out of room: the price and the move are the two
-     figures this line is for */
-  .mk-code{flex:1 1 auto;min-width:0;font-size:12.5px;font-weight:700;color:var(--text);letter-spacing:.3px;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .mk-now{flex:none;font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
+  /* --- depth two: one coin. THERE IS NO CRUMB. It held a second back button, the code and the
+     price, and the heading already has a place for all three: the arrow climbs one level inside this
+     game (webview.js's up hook), the code is the title and the price is the corner. Two arrows on one
+     heading was this screen's alone, so it was an exception rather than a precedent, and the crumb's
+     own row cost 25px to say what the heading was already shaped to say --- */
   /* The change: on the row beside the price, and again at the far end of the period line. The
      min-width is what stops the price shifting 7.5px sideways every time a figure goes from one
      digit to two: ±X.X% measures 37.7px and ±XX.X% 45.2px */
@@ -278,13 +277,16 @@ module.exports = {
   .mk-span button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
   .mk-span button:hover:not(.on){color:var(--text);}
   .mk-span button:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
-  /* The max block, and the one size on this screen that is not in the scale of six: the profit of an
-     open position at 26px, which docs/game-panels.md section 2 writes down as the one exception.
+  /* The max block: the profit of an open position, which is the figure that moved while nobody was
+     looking and therefore the reason to open this screen again (docs/game-panels.md, section 5-10).
+     22px, which is the hero size section 2 allows. It was 26px, a size nothing else in the casino
+     used, and the screen it was the biggest thing on is also the longest: the exception is gone and
+     the scale of six is whole again.
      It is HIDDEN when nothing is held rather than showing a zero: a zero in the biggest type on the
      screen reads as a position that is worth nothing */
   .mk-plbox{margin-bottom:10px;}
   .mk-plbox[hidden]{display:none;}
-  .mk-pl{display:block;font-size:26px;font-weight:800;line-height:1.1;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .mk-pl{display:block;font-size:22px;font-weight:800;line-height:1.1;color:var(--muted);font-variant-numeric:tabular-nums;}
   .mk-plsub{display:block;margin-top:2px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
   /* --- the amount: any whole number of credits, typed in credits or in coins. A coin is bought in
      fractions (0.7 of one is a stake of 0.7 times its price), so the box takes decimals in coins */
@@ -298,6 +300,10 @@ module.exports = {
   .mk-seg button:hover:not(.on):not(:disabled){color:var(--text);}
   .mk-seg button:disabled{opacity:.35;cursor:not-allowed;}
   .mk-seg button:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  /* The line under the box: what the typed amount comes to, or the verdict of the trade that just
+     landed (panel.js's mkConvLine). The chip is left INLINE here rather than made a flex item the way
+     .hl-line's is: as an inline box its 1px of vertical padding does not grow the line, so a trade
+     landing does not move the two buttons under it by a pixel */
   .mk-conv{min-height:14px;margin-top:4px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
   .mk-conv.bad{color:var(--mk-dn);}
   /* --- the chart: 24 to 36 candles, depending on the window, as absolutely placed <i>. There is no
@@ -316,8 +322,10 @@ module.exports = {
   .mk-mark{left:0;right:0;height:1px;background:#e8895a;opacity:.8;}
   .mk-ax{display:flex;justify-content:space-between;gap:8px;margin-top:6px;
     font-size:10.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
-  /* the fee, under the button that charges it rather than over the whole screen: said once, on the
-     buy screen only (docs/game-panels.md, section 5-10) */
-  .mk-fee{margin-top:6px;}
+  /* The fold sits BELOW the control row on this screen, which is the one place it differs from the
+     other four, and 12px clears the 34px buttons the way 10px clears a felt. Above them it stood
+     between the chart and the button that acts on it, and the fee sentence it now holds was a
+     permanent line of self-explanation (docs/game-panels.md, section 5-10) */
+  .mk .bj-why{margin-top:12px;}
 `
 };

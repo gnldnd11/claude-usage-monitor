@@ -97,7 +97,7 @@ function discover() {
     if (ent.isFile()) continue;   // registry.js, casino.js, tables.js, README.md and the shared art
     const meta = path.join(__dirname, ent.name, 'meta.js');
     // A directory with no meta.js is not a game and says nothing about itself: a leftover from a
-    // branch, a scratch copy, a game's own assets. Only a directory that CLAIMS to be a game can
+    // branch, a working copy, a game's own assets. Only a directory that CLAIMS to be a game can
     // fail to be one, which is what keeps the problem list down to real problems
     if (!fs.existsSync(meta)) continue;
     let g;
@@ -162,8 +162,7 @@ function panels() {
 }
 
 // One handler per game: a round-based game gets the shared driver, a game with its own rules
-// (the forge, the market) builds its own. The result is keyed by the wire type, which is what
-// dispatch reads.
+// (the market) builds its own. The result is keyed by the wire type, which is what dispatch reads.
 // A handler that cannot be built costs its game the ability to answer, and nothing else: the row is
 // already on the list by now, so the alternative to catching here is the whole extension failing to
 // load over one game. Null-prototype for the same reason BY_KEY is

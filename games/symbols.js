@@ -1,7 +1,7 @@
-// The ten sea symbols the slot machine and the scratch card are paid in.
+// The ten sea symbols the slot machine is paid in.
 //
-// RARITY IS DRAWN, NOT ONLY PRINTED. The paytables already sort these by weight (slots.js and
-// scratch.js, rarest first) and the point of a machine like this is that the rare symbol is the one
+// RARITY IS DRAWN, NOT ONLY PRINTED. The paytable already sorts these by weight (slots.js, rarest
+// first) and the point of a machine like this is that the rare symbol is the one
 // the eye finds. So the ladder below is a ladder of MASS and WARMTH, not just of hue: the crab is
 // the biggest and the warmest thing on the reel, the pearl is the brightest, and the kelp is small,
 // cool and quiet because it turns up once in three squares and a loud kelp would make every losing
@@ -14,6 +14,9 @@
 //   4     6       bottle, coral             bottle green / dusty rose, mid mass, low chroma
 //   5     7       shell, kelp               sand / sea green, smallest and dimmest
 //
+// The weights are the slot machine's. The scratch card was paid in these too, at its own weights,
+// until it left the floor on 2026-11-13; nothing in the drawings was its, so nothing came out.
+//
 // THE THREE RADIAL ONES ARE NOT THREE RADIAL ONES. Urchin, starfish and coral would all be a blob
 // with arms at this size, so only two of them are: the starfish is a five-armed star lying flat and
 // the urchin is a round body with short bristles, which is a disc and not a star. The coral is taken
@@ -23,18 +26,18 @@
 // GRID AND SIZE. 24 units, meant to be rendered at 48 device pixels, which is two pixels a unit:
 // the same cell as games/tiles.js, the pixel cards and the pixel coin. Render at 24, 48 or 72 and
 // the forms stay on whole pixels. Anything else (44, 60) puts every edge on a half pixel, which is
-// why the panel spec gives the reel window and the scratch square the same 48.
+// why the panel spec gives the reel window 48.
 //
 // ONE BACKGROUND. These are drawn for the dark slate cell the spec calls `.sy-cell` and they are
-// toned for it, so the reel window and a rubbed-off scratch square are the same surface. They carry
-// no outline of their own: a black outline would vanish on that slate, so each form is modelled in
-// two or three tones of its own colour instead, the way the painted tiles are.
+// toned for it. They carry no outline of their own: a black outline would vanish on that slate, so
+// each form is modelled in two or three tones of its own colour instead, the way the painted tiles
+// are.
 'use strict';
 
-// Every symbol's drawing is kept as well as its finished <svg>, because the two games that use
-// these need nine cells each: a scratch card is a 3x3 and a reel shows three rows on three reels.
-// Pasting the full markup eighteen times is eighteen copies of the crab's legs in the document, so
-// html.js publishes one hidden <defs> (`sprite()`) and a cell is a four-attribute <use> (`use()`).
+// Every symbol's drawing is kept as well as its finished <svg>, because the game that uses these
+// needs nine cells at once: a reel shows three rows on three reels. Pasting the full markup nine
+// times is nine copies of the crab's legs in the document, so html.js publishes one hidden <defs>
+// (`sprite()`) and a cell is a four-attribute <use> (`use()`).
 const BODY = {};
 const KEYS = Object.freeze(['crab', 'pearl', 'anchor', 'starfish', 'shell', 'kelp',
   'urchin', 'jellyfish', 'bottle', 'coral']);
@@ -178,7 +181,7 @@ const coral = sym('coral',
   + '<path fill="#8c4446" d="M6.6 19.2h10v1.8c0 .6-.5 1-1 1h-8c-.6 0-1-.4-1-1z"/>');
 
 // --- tier 5 -----------------------------------------------------------------------------------
-// Sand, low chroma: it pays nine times at four of a kind and should not look like it pays more.
+// Sand, low chroma: it is near the bottom of the ladder and should not look like it pays more.
 // The hinge is at the BOTTOM and the scalloped edge opens upward, which is the way round a scallop
 // actually is. Drawn dome-up first, it read as a sun hat on the check page
 const shell = (function () {
@@ -200,8 +203,8 @@ const shell = (function () {
     + '<path fill="#9a8974" d="M9.6 19.4h4.8v1.6a2.4 2.4 0 0 1-4.8 0z"/>');
 })();
 
-// The commonest square on the card, once in three. Thin, cool and close to the felt on purpose: it
-// is the background the rarer symbols have to stand out from
+// The commonest symbol on the reel. Thin, cool and close to the felt on purpose: it is the
+// background the rarer symbols have to stand out from
 const kelp = sym('kelp',
   '<path fill="none" stroke="#3f6e50" stroke-width="2" stroke-linecap="round"'
   + ' d="M9.4 21c-2-4.4-1.6-8 .6-11.4 1.2-1.8 1.6-3.4 1.2-5.2"/>'

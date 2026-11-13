@@ -35,13 +35,13 @@ const CSS = `
   .bj-stakes button:focus-visible,.bj-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .bj-btn.primary:focus-visible{outline-color:var(--text);}
   @media (prefers-reduced-motion:reduce){.bj-chip{animation:none;}.gm-sec svg{transition:none;}}
-  /* --- the paytable, folded. Fourteen screens that each lay a table out are fourteen tables and no
-     screens, so every ladder, every ways[] and every pays[] lives behind this one toggle and the
-     one-line version lives in the heading's title= (docs/game-panels.md, section 5) --- */
+  /* --- the paytable, folded. A screen that lays its table out is a table and not a screen, so
+     every ladder, every ways[] and every pays[] lives behind this one toggle and the one-line
+     version lives in the heading's title= (docs/game-panels.md, section 5) --- */
   /* THE THREE PROPERTIES, NOT THE SHORTHAND. font:700 10.5px inherit is dropped whole, because the
-     font shorthand takes no CSS-wide keyword in its family slot, and all fourteen screens were
-     therefore rendering this at the page default (13.33px, weight 400, Arial) and breaking the six
-     sizes section 2 allows. font:inherit on its own is legal and is left alone where it is used */
+     font shorthand takes no CSS-wide keyword in its family slot, and every screen was therefore
+     rendering this at the page default (13.33px, weight 400, Arial) and breaking the six sizes
+     section 2 allows. font:inherit on its own is legal and is left alone where it is used */
   .bj-why{margin-top:10px;padding:0;border:0;background:transparent;color:var(--muted);
     font-family:inherit;font-size:10.5px;font-weight:700;
     cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
@@ -49,29 +49,23 @@ const CSS = `
   .bj-why:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .bj-pays{margin-top:6px;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;}
   .bj-pays[hidden],.bj-why[hidden]{display:none;}
-  /* --- what sits ON the felt, by family (docs/game-panels.md, section 3). The background changes
-     twice in fourteen screens; the family is told by the thing standing on the table instead.
+  /* --- what sits ON the felt, by family (docs/game-panels.md, section 3). The background barely
+     changes across the screens; the family is told by the thing standing on the table instead.
      A machine stands on a slate plate: the commonest sea symbol (kelp) is 3.25:1 on the felt and
      5.39:1 on this, and a common symbol that sinks into the floor is a machine where the jackpot
      symbol no longer looks like the jackpot. A board is DRAWN on the felt, in hairlines --- */
   .gm-plate{padding:8px;border-radius:8px;background:#15181c;
     box-shadow:inset 0 0 0 1px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.06);}
-  /* THE PLATE THAT IS THE FELT'S OWN WIDTH. Three of the four machines stand something on it that
-     is already as wide as the felt gives (152px at sidebar 250), so the shared 8px of side padding
-     would push them over the edge: three 48px reels plus their pay-line gutters, three 48px columns
-     plus two 4px gaps, and a 150px dial. Each of the three used to write its own figure here (4px,
-     0 and 1px) and the three were never the same number, which is what made this look like three
-     decisions. It is one: the SIDES GIVE WAY AND THE CONTENTS CENTRE THEMSELVES, and 4, 0 and 1 are
-     then what is left over either side of 144, 152 and 150. Top and bottom are untouched, because
-     nothing is tight there. The plinko board is 130px and keeps the plain plate */
+  /* THE PLATE THAT IS THE FELT'S OWN WIDTH. Both remaining machines stand something on it that is
+     already as wide as the felt gives (152px at sidebar 250), so the shared 8px of side padding
+     would push them over the edge: three 48px reels plus their pay-line gutters, and a 150px dial.
+     Each used to write its own figure here (4px and 1px) and the numbers were never the same,
+     which is what made this look like two decisions. It is one: the SIDES GIVE WAY AND THE
+     CONTENTS CENTRE THEMSELVES, and 4 and 1 are then what is left over either side of 144 and 150.
+     Top and bottom are untouched, because nothing is tight there */
   .gm-plate.tight{padding-left:0;padding-right:0;}
   .gm-rule{background:rgba(255,255,255,.1);}
-  /* --- the die faces (Sic Bo, Shut the Box, Hazard). One hidden sprite in the page, drawn through
-     CUC.die(). The body of a die follows the CELL's own color, so the colour is the game's: cream
-     for a die that was rolled, #f6836e for Hazard's warning die (games/dice-faces.js) --- */
-  .dc-sprite{display:none;}
-  .dc{display:block;}
-  /* --- the sea symbols (slots, scratch card). One hidden sprite in the page, 18 <use> --- */
+  /* --- the sea symbols (the slot machine). One hidden sprite in the page, 9 <use> --- */
   .sy-sprite{display:none;}
   .sy-cell{display:flex;width:48px;height:48px;border-radius:6px;background:#15181c;}
   .sy{width:100%;height:100%;display:block;}
@@ -83,11 +77,10 @@ const CSS = `
   /* --- games list: the third view. A game screen opens from a row --- */
   .bj-games .ihead{margin-bottom:8px;}
   .gm-it svg{width:16px;height:16px;} /* the pixel coin needs its 2px grid */
-  /* Four headings turn one scan of fourteen rows into four scans of four. Same recipe as
-     .sheet-sec, and now a BUTTON, because the heading is also what folds the block away.
-     The favourites alone do not shorten the list: measured, it is 680px now and 705 with a
-     Favourites block of four (docs/game-panels.md, 7-0). Four rows kept and the rest folded is
-     about 264, and that is the request the favourites could not answer on their own */
+  /* The headings turn one scan of the whole list into one scan per family. Same recipe as
+     .sheet-sec, and a BUTTON, because the heading is also what folds the block away.
+     They earned their keep on a list of fourteen; on five they are what still says WHY the market
+     carries a figure on the right and the other four do not (docs/game-panels.md, 7-2) */
   .gm-grp{margin-top:10px;}
   .gm-grp[hidden]{display:none;}
   /* the first block that SHOWS, which :first-of-type cannot say: the Favourites block is in the
@@ -98,7 +91,7 @@ const CSS = `
     border:0;background:transparent;font-family:inherit;font-size:10px;text-transform:uppercase;
     letter-spacing:.6px;color:var(--muted);font-weight:700;text-align:left;}
   /* Favourites does not fold (folding what I put at the top says nothing), so its heading has no
-     chevron. The indent is the chevron's, so the five headings read as one column */
+     chevron. The indent is the chevron's, so every heading reads as one column */
   .gm-favs .gm-sec{padding-left:28px;}
   .gm-fold{cursor:pointer;}
   .gm-fold:hover{color:var(--text);}
@@ -113,9 +106,12 @@ const CSS = `
      the pair still reads as one row */
   .gm-row{display:flex;align-items:center;border-radius:10px;padding-right:6px;}
   .gm-row:hover{background:var(--track);}
-  /* gap 6, not 8. At sidebar 250 the row has 172px and the tightest one (Sword Forge with a +7 on
-     it) measures 10 + 24 + 6 + 78.8 + 6 + 12.5 + 4 + 20 + 6 = 167.3. At gap 8 it is over
-     (docs/game-panels.md, 7-3) */
+  /* gap 6, not 8. At sidebar 250 the row has 172px, and the tightest row is the one with a long
+     name AND a figure on it. That used to be Sword Forge with a +7: 10 + 24 + 6 + 78.8 + 6 + 12.5
+     + 4 + 20 + 6 = 167.3, and at gap 8 it is over (docs/game-panels.md, 7-3). The market is the
+     only row with a figure now, and Market is shorter than every name measured in 7-0, so 167.3
+     is an upper bound no surviving row reaches. The 6 stays: the measurement that set it is the
+     one still on record, and widening it back to 8 would be a guess against a figure */
   .gm-open{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;
     padding:8px 4px 8px 10px;border:0;border-radius:10px 0 0 10px;background:transparent;
     font-family:inherit;text-align:left;cursor:pointer;color:var(--text);}
@@ -134,9 +130,10 @@ const CSS = `
   .gm-row.fav .gm-fav{opacity:1;color:#e8895a;}
   .gm-row.fav .gm-fav svg{fill:currentColor;}
   /* 24px, down from 48. Fourteen rows at the old size ran to 896px and the list was mostly
-     scrolling; at 24 a row is 40px and the whole casino is about 640px.
+     scrolling; at 24 a row is 40px. The list is five rows now and fits either way, but the size is
+     not re-decided for that: the figure below is a grid rule and not a length budget.
      24 rather than 32 or 36 because the art is drawn on a 24-unit grid (games/tiles.js), so only a
-     multiple of 24 keeps every edge on a whole pixel, and the painted four are 96px sources, which
+     multiple of 24 keeps every edge on a whole pixel, and the painted art is a 96px source, which
      this divides exactly by four.
      The tile covers the glyph rather than replacing it: an alt="" image that fails to load draws
      nothing and the glyph shows through */
@@ -144,23 +141,23 @@ const CSS = `
   .gm-row:hover .gm-ic{background:var(--card);}
   .gm-ic svg{width:14px;height:14px;color:#e8895a;display:block;}
   .gm-ic img{position:absolute;inset:0;width:24px;height:24px;max-width:none;display:block;image-rendering:pixelated;}
-  /* The ten drawn tiles (games/tiles.js) sit in the same square as the four painted ones.
+  /* The drawn tiles (games/tiles.js) sit in the same square as the painted ones.
      Two classes deep on purpose: .gm-ic svg above is (0,1,1) and caps every glyph at 14px */
   .gm-ic .gm-tile{position:absolute;inset:0;width:24px;height:24px;display:block;}
   /* brightness only: a border fights the rounded corners baked into the art and a scale blurs the grid */
   .gm-row:hover .gm-ic img,.gm-row:hover .gm-ic .gm-tile{filter:brightness(1.1);}
   /* One line, not two. A 24px picture is shorter than a stacked name and sub-line, so a second line
-     would make the two rows that have one 7px taller than the other twelve. Side by side every row
-     is the same 40px and the sub-line still reads as the exception it is */
+     would make a row that has one 7px taller than the rest. Side by side every row is the same
+     40px and the sub-line still reads as the exception it is */
   .gm-txt{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:6px;overflow:hidden;}
   /* the safety net for the width above: a name that does not fit is cut with an ellipsis rather
      than cut through the middle of a letter by the overflow */
   .gm-nm{font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;
     flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;}
   .gm-sub{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
-  /* The right-hand figure, and only two rows get one: the market's open profit and the forge's
-     sword level. A number on all fourteen rows is a number on none of them, because the point of
-     the figure is that it MOVED while the panel was shut.
+  /* The right-hand figure, and only one row gets one: the market's open profit. A number on every
+     row is a number on none of them, because the point of the figure is that it MOVED while the
+     panel was shut. The forge's sword level was the other one until 2026-11-13.
      These colours are the room's, not the table's (docs/game-panels.md, section 4): the felt's
      #7ee6a4 is 1.53:1 on a white background, so a felt colour may not be carried out here */
   .gm-fig{flex:none;font-size:11px;font-weight:700;color:var(--muted);
@@ -177,6 +174,10 @@ const CSS = `
   body.vscode-light .gm-row.fav .gm-fav{color:#c25a34;}
   /* --- a game's heading: back arrow, title, and a corner for the game's own figure --- */
   .ihead.bj-head .it{flex:1 1 auto;}
+  /* the title, in a span of its own so a game with a depth inside itself can say which depth is open
+     (webview.js's frameHtml, and the up contract beside it). It gives way before the corner figure
+     does, with an ellipsis rather than the hard clip a bare text node got */
+  .bj-head .bj-ttl{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   .bj-side{flex:none;font-size:10.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
   .bj-back{flex:none;margin-right:2px;padding:3px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;display:flex;line-height:0;}
   .bj-back:hover{background:var(--track);color:var(--text);}
@@ -196,11 +197,12 @@ const CSS = `
   .bj-felt .bj-chip.win{color:#7ee6a4;}
   .bj-felt .bj-chip.bj{color:#ffd166;}
   .bj-felt .bj-chip.lose{color:#f6836e;}
-  /* --- the line under the felt: the pot or the verdict. High-Low, poker and the forge share it.
+  /* --- the line under the felt: the pot or the verdict. High-Low, the slots, the wheel and the
+     market all put their one line here.
      ONE LINE, AT MOST TWO PIECES (docs/game-panels.md, section 2), and the wrap is not a third:
-     the minefield and the tower put a figure and a chip on it, 160px of them, and the felt is 152px
-     at sidebar 250. Those two each wrote this rule into their own CSS; at the narrowest width the
-     two pieces have to fold, and at every other width there is nothing to fold --- */
+     a figure and a chip together have run to 160px of it and the felt is 152px at sidebar 250, so
+     at the narrowest width the two pieces have to fold, and at every other width there is nothing
+     to fold --- */
   .hl-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:22px;margin-top:8px;}
   .hl-pot{display:flex;align-items:center;gap:4px;font-size:16px;font-weight:700;color:var(--felt-ink);font-variant-numeric:tabular-nums;}
   .hl-pot.preview{opacity:.55;}
