@@ -23,17 +23,24 @@ process.env.CUC_TEST = '1'; // exposes _test.setBjSeeds / setHlSeeds / setSeeds,
 // --- fake vscode ------------------------------------------------------------------------
 const noop = () => ({ dispose() {} });
 let provider = null;
+let statusBar = null;   // the status bar item activate() makes, so a test can read its text
+// Settings, empty: every reader gets the declared default unless a test puts a key in here. A
+// setting that is only ever its default cannot tell "this mode prints the week" from "every mode
+// prints the week", which is what the no-window fallback is about
+const config = {};
 const logged = []; // the output channel, kept: a fault the player is not shown has to be findable here
 const vscode = {
   window: {
     createOutputChannel: () => ({ appendLine: (l) => logged.push(l), show() {}, dispose() {} }),
-    createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
+    // kept, because what it PRINTS is a test: an account with no five-hour window used to leave
+    // this saying "loading…" for ever (see the status-bar test at the end of this file)
+    createStatusBarItem: () => (statusBar = { show() {}, hide() {}, dispose() {} }),
     registerWebviewViewProvider: (id, p) => { provider = p; return noop(); },
     onDidChangeWindowState: noop,
     setStatusBarMessage() {}, showInformationMessage() {}, showWarningMessage() {}
   },
   commands: { executeCommand: () => Promise.resolve(), registerCommand: noop },
-  workspace: { onDidChangeConfiguration: noop, getConfiguration: () => ({ get: (k, d) => d, update: () => Promise.resolve() }), workspaceFolders: undefined },
+  workspace: { onDidChangeConfiguration: noop, getConfiguration: () => ({ get: (k, d) => (k in config ? config[k] : d), update: () => Promise.resolve() }), workspaceFolders: undefined },
   Uri: { joinPath: (base, ...p) => ({ fsPath: path.join(base.fsPath, ...p), toString() { return 'file://' + this.fsPath; } }) },
   StatusBarAlignment: { Left: 1 },
   ConfigurationTarget: { Global: 1 },
@@ -50,13 +57,21 @@ function memento(init) {
 }
 
 const LEDGER = 'creditLedgerV1';
+// three minutes ago: inside the seven days a stored stamp may claim, and past the five minutes the
+// panel calls stale, so the one number this pins is the stamp itself and not a rounding of it
+const RESTORED_AT = Date.now() - 3 * 60 * 1000;
 const START_CREDITS = 1000; // 10M input tokens = 1,000 credits (10,000 weighted tokens a credit)
 const gs = memento({
   agentXpV2: { agents: {}, seen: {}, backfilled: true },
   [LEDGER]: { days: { '2026-09-01': { input: 10000000, output: 0, cache_creation: 0, cache_read: 0 } }, backfilled: true, sweptAt: Date.now() },
   // what a PC upgrading from 1.28.0 holds: one answer, for no particular account
   teamShareV1: true,
-  teamAskedV1: 1760000000000
+  teamAskedV1: 1760000000000,
+  // A last-good usage reading, as a window that has run before leaves behind. It is here rather
+  // than in the test that reads it because the restore happens once, inside activate(), and the
+  // thing being checked is that the stamp survives that path: a new window draws these figures
+  // instantly and the panel's freshness row is the only thing that can say when they were read
+  usageCacheV1: { at: RESTORED_AT, value: { five_hour: { used_percentage: 42, resets_at: Math.floor(Date.now() / 1000) + 3600 }, seven_day: { used_percentage: 61, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 }, fable: null } }
 });
 
 const origLoad = Module._load;
@@ -931,6 +946,259 @@ test('the scope log is quiet while the verdict holds, and speaks again when it c
 
 // A test that throws mid-round leaves that round live, and every test after it then fails on
 // 'a round is already in progress'. Closing what is open keeps one fault from being reported as four
+// ---------------------------------------------------------------------------------------------
+// the account with no five-hour window (an authenticated Ultra, 2026-10-30)
+// ---------------------------------------------------------------------------------------------
+// The host was already right about the reading itself: it keeps only the limits an account has and
+// leaves the rest null. What it was not right about is what it then PRINTED.
+test('the status bar of an account with no 5h window says the week, not "loading…" for ever', () => {
+  const ULTRA = { fh: null, sd: { used_percentage: 61, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 } };
+  const PRO = { fh: { used_percentage: 42, resets_at: Math.floor(Date.now() / 1000) + 2 * 3600 }, sd: ULTRA.sd };
+  try {
+    config['statusBar.show'] = 'session';
+    ext._test.renderStatusBar(ULTRA);
+    assert.equal(statusBar.text, 'wk 61%', 'session-only on an account with no session: the week');
+    // and the account that HAS one is untouched by that fallback: session-only still means session
+    ext._test.renderStatusBar(PRO);
+    assert.equal(statusBar.text, '5h 42%');
+    config['statusBar.show'] = 'session+weekly';
+    ext._test.renderStatusBar(ULTRA);
+    assert.equal(statusBar.text, 'wk 61%', 'both modes: the one reading there is');
+    ext._test.renderStatusBar(PRO);
+    assert.equal(statusBar.text, '5h 42% · wk 61%');
+    // a call that came back with NEITHER limit is a failure and still says so: the fallback may
+    // not turn "we could not read it" into a confident blank
+    config['statusBar.show'] = 'session';
+    ext._test.renderStatusBar({ fh: null, sd: null });
+    assert.equal(statusBar.text, 'Claude usage: loading…');
+  } finally { delete config['statusBar.show']; }
+});
+
+test('a window that restores a reading pushes the age it was READ at, not the age of the push', () => {
+  // The whole path, not the rule: globalState held a stamped reading before activate() ran (see
+  // the memento at the top of this file), and what the panel is handed has to carry that stamp.
+  // It was read and dropped, so every new window drew restored figures with no reading time at
+  // all, which is the dash a reader saw where the age belonged.
+  withWorkspace('/elsewhere', null, () => { onMessage({ type: 'ready' }); });
+  const d = lastPush();
+  assert.equal(d.usageAt, RESTORED_AT, 'the stored stamp, to the millisecond');
+  assert.ok(d.refreshedAt > d.usageAt, 'and it is older than this push, which is the point of having both');
+  assert.equal(Math.round(d.sd.used_percentage), 61, 'the restored figures are what is being stamped');
+});
+
+test('a restored reading keeps its own age, and a stamp this window cannot place keeps none', () => {
+  // A new window draws the stored figures instantly, and the panel's freshness row is the only
+  // thing that can say they were read an hour ago. The restore path read the stamp and dropped it,
+  // so every new window drew a dash where the age belonged.
+  const NOW = Date.UTC(2026, 10, 19, 12, 0, 0);
+  const at = (t) => ext._test.restoredUsageAt({ at: t }, NOW);
+  assert.equal(at(NOW - 90 * 1000), NOW - 90 * 1000, 'a stamp from 90 seconds ago is the age');
+  assert.equal(at(NOW), NOW, 'and one from this instant is too');
+  // the two that really happen, and both would be read as "fresh for ever" if they were believed:
+  // globalState is synced between machines and survives a clock change
+  assert.equal(at(NOW + 60 * 1000), 0, 'a stamp from the future cannot be placed');
+  assert.equal(at(NOW - 8 * 86400 * 1000), 0, 'nor one older than the longest window the data describes');
+  assert.equal(at(NOW - 6.9 * 86400 * 1000), NOW - 6.9 * 86400 * 1000, 'just inside seven days is still a reading');
+  assert.equal(at(0), 0);
+  assert.equal(at(undefined), 0);
+  assert.equal(at('not a time'), 0);
+  assert.equal(ext._test.restoredUsageAt(null, NOW), 0, 'and nothing stored at all is no age');
+});
+
+test('the host pushes today\'s first message, which is the only span of activity it can read', () => {
+  // The panel's Active tile reads the five-hour window's elapsed part. An account with no window
+  // has no such number, and there is nothing to subtract it from, so the tile falls back to the
+  // transcripts: today's first message to today's last.
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const FIRST = startOfToday.getTime() + 5 * 60 * 1000;   // 00:05, earlier than any other lane here
+  const line = (id, t) => JSON.stringify({
+    type: 'assistant', requestId: id, timestamp: new Date(t).toISOString(), cwd: '/elsewhere',
+    message: { id, model: 'claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }
+  });
+  fs.writeFileSync(path.join(AGENTS_PROJ, 'span.jsonl'),
+    [line('req-first', FIRST), line('req-last', FIRST + 90 * 60 * 1000)].join('\n') + '\n');
+  withWorkspace('/elsewhere', null, () => { onMessage({ type: 'ready' }); });
+  const d = lastPush();
+  assert.equal(d.firstT, FIRST, 'the earliest of today, not the latest and not yesterday');
+  assert.ok(d.last && d.last.t >= d.firstT, 'and the span it is one end of is not negative');
+});
+
+// --- the shop: the one screen that spends -------------------------------------------------------
+// It is not a game, so it is not in the register and it is not on the budget list: what it rides is
+// gameReply (one balance read per reply, `free` measured against the live rounds) and
+// recordGameResult (one forced write carrying the purchase and the money together).
+const shop = require(path.join(ROOT, 'shop.js'));
+const shopRec = () => (gs.data[LEDGER].shop || null);
+const priceOf = (key) => shop.itemOf(key).price;
+// Raise the stored day so there is something to spend. A day's cell is merged with max, so the
+// store adopts this on its next read and the balance is this figure in credits
+function fundTo(credits0) {
+  gs.data[LEDGER].days['2026-09-01'].input = credits0 * 10000;
+  return credits0;
+}
+
+test('shop: open answers with the catalog, nothing owned and nothing held', () => {
+  const r = send({ type: 'shop', op: 'open', n: 11 });
+  assert.equal(r.n, 11, 'the reply echoes the request number');
+  assert.equal(r.error, undefined);
+  assert.deepEqual(r.state.owned, [], 'a fresh install owns nothing');
+  assert.equal(r.state.items.length, shop.ITEMS.length);
+  assert.deepEqual(r.state.items.map((i) => i.price), shop.ITEMS.map((s) => s.price), 'the screen is not pricing anything');
+  assert.equal(r.state.items[0].owned, false);
+  assert.equal(r.free, r.balance, 'nothing is riding, so the whole balance may be spent');
+  assert.equal(shopRec(), null, 'opening the shop wrote a record');
+});
+
+test('shop: credits riding on a live round cannot be spent, and a refusal writes nothing', () => {
+  // THE BUDGET IS NOT THE HEADER BALANCE. A stake does not leave the balance until its round
+  // settles, so the shop is measured against what the tables left, like every other screen
+  // (docs/shop-spec.md, section 3-4). A bet of everything but one credit is the cheapest way to
+  // say so through the real host.
+  // The ROUND HAS TO STILL BE LIVE for anything to be held, and a deal can settle on the spot (a
+  // natural, or the dealer's peek): three runs in twenty-five dealt one, and then the stake was
+  // back in the purse and the purchase went through. So the seed is chosen, the way every other
+  // test in this file that needs a particular hand chooses one
+  const seed = findSeed('shop-held-', (st) => st.phase === 'player');
+  ext._test.setBjSeeds(() => seed);
+  try {
+    const bal = send({ type: 'shop', op: 'open' }).balance;
+    const live = send({ type: 'bj', op: 'deal', bet: bal - 1 });
+    assert.equal(live.error, undefined, 'the test needs a live round to hold the stake');
+    assert.equal(live.state.phase, 'player', 'the round settled at once, so nothing is held');
+    const r = send({ type: 'shop', op: 'buy', key: 'float', n: 12 });
+    assert.equal(r.error, 'not enough credits', 'a stake in progress was spent twice');
+    assert.equal(r.balance, bal, 'the header balance alone would have allowed it');
+    assert.equal(r.free, 1, 'the stake is what is held back');
+    assert.equal(r.state.items[0].owned, false);
+    assert.equal(shopRec(), null, 'a refusal wrote a record');
+    // the other refusals, which do not need a purse at all. AN EMPTY SHELF SLOT HAS NO NAME to be
+    // bought under, and a name that is not in the catalog is where that is enforced
+    assert.equal(send({ type: 'shop', op: 'buy', key: 'soon' }).error, 'nothing is sold under that name');
+    assert.equal(send({ type: 'shop', op: 'buy', key: '' }).error, 'nothing is sold under that name');
+    assert.equal(send({ type: 'shop', op: 'buy', key: 'mascot:float' }).error, 'nothing is sold under that name');
+    assert.equal(send({ type: 'shop', op: 'buy' }).error, 'nothing is sold under that name');
+    assert.equal(send({ type: 'shop', op: 'melt', key: 'float' }).error, 'unknown action');
+    assert.equal(shopRec(), null, 'a refusal wrote a record');
+    let st = live.state;
+    while (st.phase === 'player') st = send({ type: 'bj', op: 'stand' }).state;  // give the stake back
+  } finally { ext._test.setBjSeeds(null); }
+});
+
+test('shop: a purchase is charged once, lands in the ledger, and the reply comes before the push', () => {
+  fundTo(5000);                                         // enough for the one thing on the shelf
+  const before = send({ type: 'shop', op: 'open' }).balance;
+  const bankBefore = { won: bankSum('won'), lost: bankSum('lost'), hands: bankSum('hands') };
+  const from = posted.length;
+  onMessage({ type: 'shop', op: 'buy', key: 'float', n: 13 });
+  const after = posted.slice(from);
+  const reply = after.filter((m) => m.type === 'shop');
+  assert.equal(reply.length, 1, 'one reply per message');
+  assert.equal(reply[0].error, undefined);
+  // THE REPLY FIRST, THE PUSH AFTER: the other way round and the header says the credits are gone
+  // before the screen has said what they bought
+  assert.ok(after.indexOf(reply[0]) < after.findIndex((m) => m.type === 'data'), 'the push arrived first');
+  // the money: exactly the price, in the record, once
+  const rec = shopRec();
+  assert.equal(rec.spent, priceOf('float'));
+  assert.equal(rec.moves, 1);
+  assert.deepEqual(Object.keys(rec.owned), [shop.slotOf('float')]);
+  assert.equal(reply[0].state.items[0].owned, true, 'the reply does not say it is theirs');
+  assert.equal(reply[0].balance, before - priceOf('float'), 'the balance moved by something other than the price');
+  assert.equal(lastHeaderBalance(), before - priceOf('float'), 'the header and the reply disagree');
+  // and NONE OF IT IS IN THE BANK. The bank is the grow-only counters a window keeps for hands it
+  // won and lost, and a purchase banked there is the bug that mints money: two windows buying one
+  // thing would each bank the price of it. What the bank sees is one more move and no money at all
+  assert.equal(bankSum('won'), bankBefore.won, 'a purchase was banked as winnings');
+  assert.equal(bankSum('lost'), bankBefore.lost, 'a purchase was banked as a loss');
+  assert.equal(bankSum('hands'), bankBefore.hands + 1, 'the write that carried it is one write');
+});
+
+test('shop: it cannot be bought twice, and the second press costs nothing', () => {
+  const before = shopRec().spent;
+  const r = send({ type: 'shop', op: 'buy', key: 'float', n: 14 });
+  assert.equal(r.error, 'you already have the Floating crab');
+  assert.equal(shopRec().spent, before, 'a second purchase was charged for');
+  assert.equal(shopRec().moves, 1, 'a refused purchase raised the clock');
+});
+
+test('shop: there is one op, and a move that spends nothing cannot be asked for', () => {
+  // `use` was a second op while the shop sold a seat that could be swapped. With one thing and no
+  // way back, owning it is using it, so the op is gone and a message naming it is an unknown
+  // action: a move that spent nothing would still raise `moves`, and two windows writing records
+  // called (moves, by) without either of them having paid is how a merge settles on a lie
+  const spent = shopRec().spent, moves = shopRec().moves;
+  assert.deepEqual(shop.OPS, ['buy']);
+  assert.equal(send({ type: 'shop', op: 'use', key: 'float', n: 15 }).error, 'unknown action');
+  assert.equal(send({ type: 'shop', op: 'sell', key: 'float' }).error, 'unknown action', 'a refund arrived');
+  assert.equal(shopRec().spent, spent, 'a refused move moved money');
+  assert.equal(shopRec().moves, moves, 'a refused move raised the clock');
+});
+
+test('shop: a full purse buys nothing that is not on the shelf', () => {
+  // the empty slots again, this time with the money to buy something: what refuses them is the
+  // catalog and not the budget
+  fundTo(200000);
+  const before = send({ type: 'shop', op: 'open' }).balance;
+  const spent = shopRec().spent, moves = shopRec().moves;
+  assert.ok(before > 100000, 'the test needs a purse this cannot be blamed on');
+  for (const key of ['soon', 'witch', 'coming_soon', '__proto__']) {
+    assert.equal(send({ type: 'shop', op: 'buy', key }).error, 'nothing is sold under that name', key);
+  }
+  assert.equal(shopRec().spent, spent, 'something not on the shelf was charged for');
+  assert.equal(shopRec().moves, moves);
+  assert.equal(send({ type: 'shop', op: 'open' }).balance, before, 'the balance moved');
+});
+
+test('shop: a purchase that loses the merge is neither taken nor paid for', () => {
+  // The handler on its own, because what is being checked is what it does when the ledger comes
+  // back holding ANOTHER window's record: it adopts that record, says so, and the purchase it just
+  // made is gone, money and item together. Through the real host this would need two windows.
+  // The foreign record below owns nothing at nine moves, which one shelf row cannot produce; it is
+  // the shape of a record from a build with more on sale, and it is here because what is being read
+  // is that NOTHING is lifted out of the loser (shop.js, merge)
+  const other = { by: 'ffffffffffffffff', owned: {}, moves: 9, spent: priceOf('float') * 9 };
+  const sent = [];
+  let stored = null;
+  const h = shop.createHandler({
+    reply: (key, viewer, rec, n, error) => sent.push({ key, n, error, state: viewer.view(rec, 1e9) }),
+    budget: () => 1e9,
+    replica: () => 'aaaaaaaaaaaaaaaa',
+    ensureReplica() {},
+    // the write lands on a store another window has already moved past, so the merge keeps theirs
+    record: (net, extra) => {
+      assert.equal(net, 0, 'the bank was handed part of a purchase');
+      stored = shop.merge(other, extra.shop);
+      return { shop: stored };
+    },
+    storedShop: () => stored,
+    push() {}, log() {}
+  });
+  h.handle({ type: 'shop', op: 'buy', key: 'float', n: 21 });
+  const last = sent[sent.length - 1];
+  assert.equal(last.error, 'another window spent these credits first');
+  assert.equal(stored.by, other.by, 'the two windows did not settle on one record');
+  assert.equal(stored.spent, other.spent, 'the dropped purchase was charged for');
+  assert.equal(shop.owns(stored, 'float'), false, 'the dropped purchase left its item behind');
+  // and what the screen is shown is the record that won, not the one it asked for
+  assert.equal(last.state.items[0].owned, false);
+  assert.deepEqual(last.state.owned, []);
+  // the next move this window makes is made on the record that won, so it is offered again
+  h.handle({ type: 'shop', op: 'buy', key: 'float', n: 22 });
+  // (this stub stores the handler's own argument, which is null for "nothing went wrong")
+  assert.equal(sent[sent.length - 1].error, null, 'the window could not buy on the record that won');
+  assert.equal(shop.owns(stored, 'float'), true);
+  assert.equal(stored.spent, other.spent + priceOf('float'), 'the second purchase was not charged for');
+});
+
+test('shop: what every push carries is the owned list, so the panel can draw the right crab', () => {
+  const d = lastPush();
+  assert.ok(d.shop, 'nothing about the shop on the push');
+  assert.deepEqual(d.shop.owned, shop.view(shopRec()).owned);
+  assert.deepEqual(d.shop.owned, [shop.slotOf('float')], 'the purchase above is not on the push');
+  assert.equal('spent' in d.shop, false, 'the push carries money it has no use for');
+  assert.equal('seat' in d.shop, false, 'the push carries a field nothing reads');
+});
+
 function closeRounds() {
   try {
     ext._test.setHlSeeds(null);

@@ -799,18 +799,25 @@
     var row = was && el('mkRow-' + was);     // back to the row that was opened, not to nowhere
     if (row) row.focus();
   }
+  // This screen repaints once a second, on its own beat, and this runs in mkPaint's finally. So the
+  // shared rule (CUC.refocus) matters more here than anywhere: the decision used to be made from
+  // `document.activeElement === document.body`, which reads the same whether the focus was lost in
+  // this panel's own repaint or was never in this webview at all. It was the second one that was
+  // reported: with a coin open, every tick pulled the keyboard out of the chat input, a character
+  // at a time, and the chat could not be typed into. CUC.refocus is where that is now decided once.
   function mkFocusAfter() {
     if (CUC.current() !== 'market' || !mk.coin) return;
-    var a = document.activeElement, panel = el('panelMarket');
-    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
-    if (!mk.wantFocus && !lost) return;
+    // the ask is cleared whether or not the focus moves. An ask refused because the editor's focus
+    // is elsewhere is refused for good: kept for later it would land on the next quiet repaint,
+    // which is the theft above with one second added to it
+    var want = mk.wantFocus;
     mk.wantFocus = false;
     var sell = el('mkSell'), buy = el('mkDeal');
     // the heading's own arrow is the fallback now that the crumb's button is gone: it is the one
     // control that is always there, and from it Tab reaches everything else
     var target = sell && !sell.hidden && !sell.disabled ? sell
       : (buy && !buy.hidden && !buy.disabled ? buy : el('mkBack'));
-    if (target && !target.hidden && !target.disabled) target.focus();
+    CUC.refocus(el('panelMarket'), target, want);
   }
 
   CUC.game('market', {

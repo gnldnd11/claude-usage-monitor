@@ -130,6 +130,22 @@ module.exports = {
     toWebview({ type: 'data', data: Object.assign({}, base, { agentActivity: { instances: [], stats: {} } }) }); advance(20);
     ok('a host that sends no scope leaves the room quiet', note().hidden, note().textContent);
 
+    // THE PANEL CHEVRON IS NOT THIS TAB'S CONTROL. It used to claim to collapse the roster here,
+    // and that branch could not be reached: the stylesheet hides the button on every tab but Usage
+    // (body:not(.tab-usage) .toggle), and it was wrong where it stood: it moved the stored flag
+    // and the roster without the Crew header's own chevron, so the two disagreed. Each section
+    // folds from its own header (docs/header-fold-spec.md, 3-5).
+    const collapsed = () => $('panelAgents').classList.contains('crew-collapsed');
+    const folded = () => $('crewFold').classList.contains('folded');
+    const was = collapsed();
+    ok('this mode starts with the crew folded, so there is something to leave alone', was && folded());
+    $('toggle').click(); advance(20);
+    ok('the panel chevron does not touch the roster on the Agents tab',
+      collapsed() === was && folded() === was, 'collapsed ' + collapsed() + ', chevron folded ' + folded());
+    $('crewFold').click(); advance(20);
+    ok('and the roster still folds from its own header',
+      collapsed() === !was && folded() === !was, 'collapsed ' + collapsed() + ', chevron folded ' + folded());
+
     ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e.message).join('; '));
   }
 };

@@ -2,7 +2,8 @@
 // (no dependencies). Supports tags, attributes, text, comments, void and self-closing elements, raw
 // style/script, selectors (tag #id .class [a] [a="v"] :not(...), descendant, comma), classList, hidden,
 // disabled, title, textContent, innerHTML, children, closest, contains, bubbling events, click(), and a
-// minimal focus model: activeElement, focus()/blur(), keys dispatched from the focused element with
+// minimal focus model: activeElement, focus()/blur(), hasFocus() (whether the document itself holds
+// the editor's focus, which a test moves with doc.winFocused), keys dispatched from the focused element with
 // Enter's default action pressing a focused button (as Chromium does).
 'use strict';
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
@@ -78,6 +79,17 @@ class Element {
   get content() { return this; } // <template>: good enough here
   appendChild(n) { if (n.parentNode) n.parentNode.removeChild(n); n.parentNode = this; this.childNodes.push(n); return n; }
   removeChild(n) { const i = this.childNodes.indexOf(n); if (i >= 0) this.childNodes.splice(i, 1); n.parentNode = null; return n; }
+  // a node PUT BACK where it was. The room HUD takes its session piece out of the page on an
+  // account that has no five-hour window and has to be able to return it in place, which append
+  // cannot do: appended, the separator would come out after the weekly figure
+  insertBefore(n, ref) {
+    if (!ref) return this.appendChild(n);
+    if (n.parentNode) n.parentNode.removeChild(n);
+    const i = this.childNodes.indexOf(ref);
+    n.parentNode = this;
+    this.childNodes.splice(i < 0 ? this.childNodes.length : i, 0, n);
+    return n;
+  }
   querySelector(sel) { return queryAll(this, sel, true)[0] || null; }
   querySelectorAll(sel) { return queryAll(this, sel, false); }
   closest(sel) { const groups = parseSelector(sel); for (let e = this; e && e.nodeType === 1; e = e.parentNode) if (groups.some((g) => matchChain(e, g))) return e; return null; }
@@ -230,6 +242,12 @@ function createDocument(html) {
   doc.addEventListener = (t, f) => { (doc._ls[t] = doc._ls[t] || []).push(f); };
   root.addEventListener = doc.addEventListener;
   doc.activeElement = doc.body;
+  // Whether THIS DOCUMENT holds the editor's focus, which is not the same question as which element
+  // inside it is the active one. A user typing in the chat input leaves this document without focus
+  // and its activeElement falls back to body, so a panel that reads only activeElement cannot tell
+  // that state from "my own repaint dropped the focus". Set doc.winFocused = false to be that state
+  doc.winFocused = true;
+  doc.hasFocus = () => doc.winFocused !== false;
   // A key press from the focused element (or opts.target), bubbling to document listeners. If nobody
   // prevents it, Enter and Space on a focused button press it, as the browser's default action does
   doc.pressKey = (key, opts) => {

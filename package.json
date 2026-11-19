@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "Claude Code usage in the status bar and sidebar: live session and weekly rate limits, context window, tokens and cost. Plus the subagents that are running, as pixel characters. Local, read-only.",
-  "version": "1.31.5",
+  "version": "1.32.0",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
@@ -115,7 +115,7 @@
           ],
           "enumDescriptions": [
             "Session (5h) and weekly (7d)",
-            "Session (5h) only",
+            "Session (5h) only. An account with no 5h limit shows weekly instead",
             "Weekly (7d) only",
             "Hide the status bar item"
           ],
@@ -135,10 +135,20 @@
               "tiles",
               "mascot",
               "credits"
+            ],
+            "enumDescriptions": [
+              "The 5 hour session, which is the ring",
+              "The 7 day weekly bar",
+              "The Fable bar",
+              "The context window bar",
+              "Kept so settings written before 1.32.0 stay valid: it is read as `session`",
+              "Active time, tokens and requests",
+              "The crab",
+              "The credit balance in the header"
             ]
           },
           "default": [],
-          "markdownDescription": "Panel dashboard elements to hide. Toggle these from the panel's settings gear."
+          "markdownDescription": "Panel dashboard elements to hide. Toggle these from the panel's settings gear. Since 1.32.0 the session is drawn as the ring and has no bar of its own, so `session` hides the ring; a list that still says `ring` is read as `session`."
         },
         "claudeUsage.team.share": {
           "type": "boolean",

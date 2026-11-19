@@ -519,6 +519,282 @@ test('market: the wallet and the sword travel in one write, and neither touches 
   assert.deepEqual(onlyWallet.ledger.forge, onlySword.ledger.forge);
 });
 
+// --- the shop: money that only ever leaves ------------------------------------------------------
+// A purchase is the player's property and so it is stored, which is the market's situation, and it
+// merges the same way (more `moves` wins whole, a tie to the larger writer id, nothing maxed). What
+// is stricter here is that there is no way back: the market has an `earned` because a position can
+// be sold, the shop has only `spent`, and the balance can therefore only fall.
+// What these tests are about is the LEDGER being wired to shop.js's own rules. The rules themselves
+// are shop.js's and are called rather than copied, the same as the market's above.
+const shopMod = require(path.join(ROOT, 'shop.js'));
+
+// a record: owned is given as the plain keys, since `mascot:` is the module's own prefix
+const SH = (by, moves, spent, keys) => ({
+  by, moves, spent,
+  owned: (keys || []).reduce((o, k) => Object.assign(o, { [shopMod.slotOf(k)]: 1 }), {})
+});
+const shopBalance = (led) => credits.creditSummary(credits.normalizeLedger(led), 'x', false).balance;
+const FLOAT = 1000;
+
+test('shop: one thing is sold, it is priced out of the table, and nothing is free', () => {
+  // one price and no second one without a reason written into shop.js: a price per item is a
+  // judgement per item. The catalog is one row today and the rule holds over however many there are
+  assert.deepEqual(shopMod.PRICES, [FLOAT]);
+  assert.ok(shopMod.ITEMS.length >= 1);
+  assert.ok(shopMod.ITEMS.every((s) => shopMod.PRICES.indexOf(s.price) >= 0), 'a price outside the table');
+  assert.ok(shopMod.ITEMS.every((s) => s.price > 0), 'a row the shop cannot sell');
+  assert.equal(shopMod.itemOf('float').price, FLOAT);
+  assert.equal(shopMod.slotOf('float'), 'mascot:float');
+  // a reader who has bought nothing owns nothing. There is no row that comes with the extension,
+  // because what a reader has before buying is the drawing that was always there and is not sold
+  const none = shopMod.fresh('');
+  assert.deepEqual(none.owned, {});
+  assert.equal(shopMod.owns(none, 'float'), false);
+  // and there is no field that could ever hand money back, or any second answer to "is it mine"
+  assert.equal('earned' in none, false, 'a shop with an earned is a shop with a refund');
+  assert.equal('seat' in none, false, 'a second answer to what `owned` already says');
+});
+
+test('shop: the balance is what the shop was paid, and it only ever subtracts', () => {
+  assert.equal(shopBalance({ shop: SH(RA, 1, FLOAT, ['float']) }), -FLOAT);
+  // and it reads straight off netOf, so the ledger and the shop cannot disagree
+  const rec = SH(RA, 1, FLOAT, ['float']);
+  assert.equal(shopMod.netOf(rec), -FLOAT);
+  assert.equal(shopBalance({ shop: rec }), shopMod.netOf(rec));
+  // a reader who has never bought anything has no record and no effect on the balance
+  assert.equal(credits.normalizeLedger({}).shop, null);
+  assert.equal(shopBalance({}), 0);
+  assert.equal(shopMod.netOf(null), 0);
+});
+
+test('shop: the record is added on top of the tokens, the bank, the sword and the wallet', () => {
+  const led = {
+    days: { '2026-09-20': { input: 100_000_000, output: 0, cache_creation: 0, cache_read: 0 } },
+    bank: { [RA]: W(300, 120, 9) },
+    forge: SW(RB, 0, 21, 21, 0, 9, PRICE9),
+    market: MK(RA, 2, 1, 500, 640, 640),
+    shop: SH(RA, 1, FLOAT, ['float'])
+  };
+  const sum = credits.creditSummary(credits.normalizeLedger(led), '2026-09-20', false);
+  assert.equal(sum.balance, 10000 + (300 - 120) + PRICE9 + 140 - FLOAT, 'one of the five sources is not in the balance');
+  const without = credits.creditSummary(credits.normalizeLedger(Object.assign({}, led, { shop: null })), '2026-09-20', false);
+  assert.equal(without.balance - sum.balance, FLOAT, 'taking the shop out gives back exactly what it took');
+});
+
+test('shop: two windows buying the same thing are charged for it once', () => {
+  // THE WHOLE MONEY MODEL. Both windows were holding the same record at move 0 and both pressed
+  // Buy, so both wrote move 1: one of the two is dropped, and the dropped one costs nothing.
+  const mine = SH(RA, 1, FLOAT, ['float']);
+  const theirs = SH(RB, 1, FLOAT, ['float']);
+  const ab = credits.mergeLedger(credits.mergeLedger(null, { shop: mine }).ledger, { shop: theirs }).ledger;
+  const ba = credits.mergeLedger(credits.mergeLedger(null, { shop: theirs }).ledger, { shop: mine }).ledger;
+  assert.deepEqual(ab.shop, ba.shop, 'the two windows would hold different records');
+  assert.equal(ab.shop.by, RB, 'the larger id takes the tie');
+  assert.equal(ab.shop.spent, FLOAT, 'one purchase, one price');
+  assert.equal(shopBalance(ab), -FLOAT);
+  // the losing window's own copy arriving again changes nothing: that is what stops a second charge
+  assert.equal(credits.mergeLedger(ab, { shop: mine }).changed, false);
+  assert.equal(credits.mergeLedger(ab, { shop: theirs }).changed, false);
+  assert.equal(shopBalance(credits.mergeLedger(ab, { shop: mine }).ledger), -FLOAT);
+  // and the bank each window keeps carries no part of a purchase, so it cannot add a second one
+  assert.equal(JSON.stringify(ab.bank), '{}');
+});
+
+test('shop: the later record wins WHOLE and `owned` is never unioned', () => {
+  // THE 372,000 BUG IN THIS SHOP'S SHAPE. A union would keep the loser's item while the `spent`
+  // that paid for it went with the record that lost, so the merge takes one record entire.
+  // The pair below cannot happen while one thing is on the shelf, because the only move there is
+  // raises `spent` by the one price: it is the rule for the day there are two, and it is read here
+  // on the function that will have to keep it (shop.merge, through the ledger).
+  const bought = SH(RA, 1, FLOAT, ['float']);
+  const other = SH(RB, 2, FLOAT * 2, []);
+  const ab = credits.mergeLedger(credits.mergeLedger(null, { shop: bought }).ledger, { shop: other }).ledger;
+  const ba = credits.mergeLedger(credits.mergeLedger(null, { shop: other }).ledger, { shop: bought }).ledger;
+  assert.deepEqual(ab.shop, ba.shop, 'the merge is not the same both ways round');
+  assert.deepEqual(Object.keys(ab.shop.owned), [], 'owned was unioned');
+  assert.equal(ab.shop.spent, FLOAT * 2, 'the winner did not bring its own money');
+  assert.equal(shopMod.owns(ab.shop, 'float'), false, 'a dropped purchase left its item behind');
+  // nothing is maxed, so the rule is the empty list and merging either way round agrees
+  assert.deepEqual(shopMod.MAX_FIELDS, []);
+  assert.deepEqual(shopMod.merge(bought, other), shopMod.merge(other, bought));
+});
+
+test('shop: a stale copy never gives a purchase back and never charges twice', () => {
+  const none = SH(RA, 0, 0, []);
+  const one = SH(RA, 1, FLOAT, ['float']);
+  const a = credits.mergeLedger(null, { shop: one });
+  assert.equal(a.changed, true);
+  assert.deepEqual(a.ledger.shop, one);
+  // the copy from BEFORE the purchase arriving late (another window's throttled write) changes
+  // nothing: not the item and not the money
+  const back = credits.mergeLedger(a.ledger, { shop: none });
+  assert.equal(back.changed, false);
+  assert.equal(shopMod.owns(back.ledger.shop, 'float'), true);
+  assert.equal(shopBalance(back.ledger), -FLOAT);
+  // and merging the same record twice is the same as once
+  assert.equal(credits.mergeLedger(a.ledger, { shop: one }).changed, false);
+  assert.equal(shopBalance(credits.mergeLedger(a.ledger, { shop: one }).ledger), -FLOAT);
+});
+
+test('shop: every accepted move spends, and nothing can be bought twice', () => {
+  // there is one op, and it is the one that costs money: a move that spent nothing would write a
+  // record two windows could both call (moves, by) without either of them having paid
+  assert.deepEqual(shopMod.OPS, ['buy']);
+  const none = shopMod.fresh(RA);
+  const rec = shopMod.act(none, { op: 'buy', key: 'float' });
+  assert.equal(rec.moves, 1);
+  assert.equal(rec.spent, FLOAT);
+  assert.equal(shopMod.owns(rec, 'float'), true);
+  assert.equal(shopMod.newer(rec, none), true);
+  assert.equal(shopMod.whyNot(rec, { op: 'buy', key: 'float' }, 1e9), 'you already have the Floating crab');
+  assert.equal(shopMod.act(rec, { op: 'buy', key: 'float' }), rec, 'a refused move returned a new record');
+});
+
+test('shop: nothing is bought by naming something that is not sold', () => {
+  // THE EMPTY SLOTS ON THE SHELF ARE NOT CATALOG ROWS, so there is no name for one to be bought
+  // under: this is the same rule that stops a hand-edited store holding a thousand items, read from
+  // the other side (shop.js, itemOf and clean)
+  const none = shopMod.fresh(RA);
+  for (const key of ['soon', 'witch', 'mascot:float', '', 'float ', '__proto__']) {
+    assert.equal(shopMod.whyNot(none, { op: 'buy', key }, 1e9), 'nothing is sold under that name', key);
+    assert.equal(shopMod.act(none, { op: 'buy', key }), none, key + ' was bought');
+  }
+  assert.equal(shopMod.whyNot(none, { op: 'buy', key: null }, 1e9), 'nothing is sold under that name');
+  assert.equal(shopMod.whyNot(none, { op: 'melt', key: 'float' }, 1e9), 'unknown action');
+  assert.equal(shopMod.whyNot(none, { op: 'use', key: 'float' }, 1e9), 'unknown action', 'an op this build has no rule for');
+  assert.equal(shopMod.whyNot(none, 'buy', 1e9), 'unknown action');
+  assert.equal(shopMod.whyNot(null, { op: 'buy', key: 'float' }, 1e9), 'there is nothing to spend');
+});
+
+test('shop: nothing dearer than the budget can be bought, and a broken budget refuses', () => {
+  const none = shopMod.fresh(RA);
+  assert.equal(shopMod.whyNot(none, { op: 'buy', key: 'float' }, FLOAT), null, 'the exact price is enough');
+  assert.equal(shopMod.whyNot(none, { op: 'buy', key: 'float' }, FLOAT - 1), 'not enough credits');
+  assert.equal(shopMod.whyNot(none, { op: 'buy', key: 'float' }, NaN), 'not enough credits', 'a broken ledger bought it');
+  assert.equal(shopMod.whyNot(none, { op: 'buy', key: 'float' }, -1), 'not enough credits');
+  // and the price is this module's: a message naming its own costs nothing
+  const bought = shopMod.act(none, { op: 'buy', key: 'float', price: 1 });
+  assert.equal(bought.spent, FLOAT, 'a price off the wire was believed');
+  // THE PRICE IS SENT AND THE VERDICT IS NOT. The screen is told what a row costs and whether it is
+  // owned, and it compares that price with what it may spend the way the stake chips do. A verdict
+  // per row would be a second answer to that question, able to disagree with the first one between
+  // two replies, and the host is asked again on the message anyway
+  const v = shopMod.view(none);
+  const row = v.items[0];
+  assert.deepEqual(Object.keys(row).sort(), ['key', 'name', 'owned', 'price', 'slot']);
+  assert.equal(row.price, FLOAT);
+  assert.equal(row.owned, false);
+  assert.equal(shopMod.view(bought).items[0].owned, true);
+  assert.deepEqual(v.items.map((i) => i.price), shopMod.ITEMS.map((s) => s.price));
+  // and the view cannot be asked to price anything: it takes no budget at all
+  assert.equal(shopMod.view.length, 1, 'the view was handed a purse');
+});
+
+test('shop: a stored record is rebuilt at the boundary, never carried over as it stands', () => {
+  const n = credits.normalizeLedger({
+    shop: {
+      by: 'not an id', moves: 2.5, spent: -5, seat: 'mummy', junk: 1,
+      owned: { 'mascot:float': 1, 'mascot:nobody': 1, 'seat:witch': 1, nonsense: 1, 'mascot:float:extra': 1 }
+    }
+  });
+  assert.equal(n.shop.by, '', 'a writer id outside the shape would win every merge tie');
+  assert.equal(n.shop.moves, 0);
+  assert.equal(n.shop.spent, 0);
+  assert.deepEqual(Object.keys(n.shop.owned), [shopMod.slotOf('float')], 'a key the catalog has no row for');
+  assert.equal('junk' in n.shop, false, 'a field a later version added is not carried into this one');
+  assert.equal('seat' in n.shop, false, 'a field an earlier version wrote is not carried either');
+  assert.equal(credits.normalizeLedger({ shop: 'nope' }).shop, null);
+  assert.equal(credits.normalizeLedger({ shop: 7 }).shop, null);
+  // a figure past the ceiling reads as nothing, or it would win every merge forever
+  assert.equal(credits.normalizeLedger({ shop: SH(RA, 1e15, FLOAT, ['float']) }).shop.moves, 0);
+  assert.equal(credits.normalizeLedger({ shop: SH(RA, 1, 1e16, ['float']) }).shop.spent, 0);
+  // the record is built, not copied, so a "__proto__" in the stored JSON cannot ride along
+  const poisoned = credits.normalizeLedger(JSON.parse('{"shop":{"__proto__":{"spent":99999},"moves":1,"spent":1000,"owned":{"mascot:float":1},"by":"' + RA + '"}}'));
+  assert.equal(poisoned.shop.spent, FLOAT);
+  assert.equal(Object.getPrototypeOf(poisoned.shop), Object.prototype);
+  assert.equal(shopBalance({ shop: poisoned.shop }), -FLOAT);
+  // an owned key is a yes and never a count: two of something nobody can buy twice is one of it
+  const twice = credits.normalizeLedger({ shop: Object.assign(SH(RA, 1, FLOAT, ['float']), { owned: { 'mascot:float': 7 } }) });
+  assert.deepEqual(twice.shop.owned, { 'mascot:float': 1 });
+});
+
+test('shop: what was bought stays bought when it leaves the price list', () => {
+  // The forge's rule, from the other side: an item taken out of the shop moves to RETIRED rather
+  // than being deleted, so clean() still believes it and the record that paid for it keeps it.
+  // RETIRED is empty today, which is why this stands the rule up out of the two lists instead
+  const known = shopMod.ITEMS.concat(shopMod.RETIRED).map((s) => s.key);
+  assert.deepEqual(shopMod.RETIRED, [], 'nothing has been retired yet');
+  // what the rule actually promises: every key the catalog knows survives a round trip, and the
+  // money is kept whatever happens to the lists, because `spent` is one number and not a sum of rows
+  for (const key of known) {
+    const rec = SH(RA, 1, shopMod.itemOf(key).price, [key]);
+    const back = credits.normalizeLedger({ shop: rec }).shop;
+    assert.equal(shopMod.owns(back, key), true, key + ' did not survive the boundary');
+    assert.equal(shopBalance({ shop: back }), -shopMod.itemOf(key).price);
+  }
+});
+
+test('shop: the shop, the wallet and the sword travel in one write and never touch each other', () => {
+  const led = credits.mergeLedger(null, {
+    forge: SW(RA, 3, 5, 5, 850, 3),
+    market: MK(RA, 2, 1, 500, 640, 640),
+    shop: SH(RA, 1, FLOAT, ['float'])
+  });
+  assert.equal(led.changed, true);
+  assert.equal(led.ledger.forge.level, 3);
+  assert.equal(led.ledger.market.earned, 640);
+  assert.equal(led.ledger.shop.spent, FLOAT);
+  // a write that moves only the shop leaves the other two exactly as they were
+  const onlyShop = credits.mergeLedger(led.ledger, { shop: SH(RB, 2, FLOAT, ['float']) });
+  assert.equal(onlyShop.changed, true);
+  assert.deepEqual(onlyShop.ledger.market, led.ledger.market);
+  assert.deepEqual(onlyShop.ledger.forge, led.ledger.forge);
+  // and the other way round
+  const onlyWallet = credits.mergeLedger(onlyShop.ledger, { market: MK(RA, 3, 1, 1000, 640, 640, HOLD(500)) });
+  assert.deepEqual(onlyWallet.ledger.shop, onlyShop.ledger.shop);
+});
+
+test('shop: two windows buying at once converge, and the loser is told', () => {
+  // The whole path, through the real store: write, read back, and the window whose record lost
+  // keeps neither the purchase nor the charge
+  const shared = sharedStorage();
+  const va = shared.view();
+  const vb = shared.view();
+  let clock = 0;
+  const A = credits.createLedgerStore(va, { minIntervalMs: 60000, now: () => clock });
+  const B = credits.createLedgerStore(vb, { minIntervalMs: 60000, now: () => clock });
+  // both windows press Buy off the same record. One forced write each, the money and the item
+  // together, the way the host sends it
+  A.record({ shop: SH(RA, 1, FLOAT, ['float']) }, true);
+  B.record({ shop: SH(RB, 1, FLOAT, ['float']) }, true);
+  shared.deliver();            // each view now holds the other's copy only
+  clock = 1000;
+  // A writes again and nothing happens, which is the point: its own record LOST the merge, so
+  // there is nothing left for it to put back. The window whose record won is the one that heals
+  // both views
+  const wrote = va.updates;
+  A.record(null, true);
+  assert.equal(va.updates, wrote, 'the losing window wrote its dropped purchase back');
+  B.record(null, true);
+  shared.deliver();
+  for (const v of [va, vb]) {
+    const s = credits.normalizeLedger(v.value).shop;
+    assert.equal(s.by, RB, 'the two windows did not settle on one record');
+    assert.equal(s.spent, FLOAT, 'the purchase was charged for twice');
+    assert.equal(s.moves, 1);
+    assert.equal(credits.creditSummary(credits.normalizeLedger(v.value), 'x', false).balance, -FLOAT);
+  }
+  // and the window that lost finds out: its next read adopts the record that won. It is holding
+  // what it paid for all the same, because both windows bought the one thing there is
+  clock = 1500;
+  const aSees = A.record(null);
+  assert.equal(aSees.shop.by, RB);
+  assert.equal(shopMod.owns(aSees.shop, 'float'), true);
+  assert.equal(aSees.shop.spent, FLOAT);
+  // ...and neither of them can buy it again
+  assert.equal(shopMod.whyNot(aSees.shop, { op: 'buy', key: 'float' }, 1e9), 'you already have the Floating crab');
+});
+
 // --- de-duplication -------------------------------------------------------------------
 function permutations(a) {
   if (a.length <= 1) return [a];

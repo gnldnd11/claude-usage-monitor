@@ -25,7 +25,10 @@
 //   node tools/shoot-panels.mjs --theme both         light and dark, dark suffixed -dark
 //   node tools/shoot-panels.mjs --keep               leave the built pages in tools/.shoot/
 //
-// Flags: --only --theme (light|dark|both) --width --dpr --bg --out --keep --list
+//   node tools/shoot-panels.mjs --help               every flag, and what --only is for
+//
+// Flags: --only --theme (light|dark|both) --width --dpr --bg --out --keep --list --probe --click
+//        --no-session --stale --pct --warn --purse --help
 
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
@@ -165,6 +168,47 @@ function playMarket({ purse, ticker, amount, agoMs }) {
   };
 }
 
+// The shop is not a game either: no round, no driver, no register entry (docs/shop-spec.md,
+// section 4-5), so it has a driver of its own here, the way the market does. Like the market's, the
+// record is seeded through the STORAGE boundary rather than bought on the spot, so that both states
+// of the screen are reachable: `owned: []` is the one with something to buy and a button, and
+// `owned: ['float']` is the one with neither.
+function playShop({ purse, owned }) {
+  const shop = require(path.join(ROOT, 'shop.js'));
+  const by = 'a1b2c3d4e5f60718';
+  // cleaned by the module's own boundary, so this is a record save() could have produced
+  let store = shop.clean({
+    by,
+    owned: (owned || []).reduce((o, k) => Object.assign(o, { [shop.slotOf(k)]: 1 }), {}),
+    moves: (owned || []).length,
+    spent: (owned || []).reduce((n, k) => n + shop.itemOf(k).price, 0)
+  });
+  const sent = [];
+  const balance = () => purse + shop.netOf(store);
+  const h = shop.createHandler({
+    reply(key, viewer, rec, reqN, error) {
+      const bal = balance();
+      const msg = { type: key, balance: bal, free: bal };
+      if (reqN != null) msg.n = reqN;
+      if (error) msg.error = error;
+      msg.state = viewer.view(rec, bal);
+      sent.push(msg);
+    },
+    budget: () => balance(),
+    replica: () => by,
+    storedShop: () => store,
+    record: (_net, extra) => { store = shop.merge(store, extra.shop); return { shop: store }; },
+    ensureReplica() {}, push() {}, log() {}
+  });
+  h.handle({ type: 'shop', op: 'open', n: 1 });
+  const v = sent[sent.length - 1].state;
+  return {
+    sent,
+    owned: v.owned,
+    note: v.owned.length + ' bought, purse ' + balance() + ', spent ' + v.spent
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // the shots
 //
@@ -241,8 +285,115 @@ const SHOTS = {
     file: 'weekly-details',
     tab: 'usage',
     weekly: true
+  },
+  // --- MEASURING SHOTS ---------------------------------------------------------------------
+  // These two exist to be probed, not published: a picture of the dashboard with invented
+  // readings in it has no business on a listing, so `measure` keeps them out of the default run
+  // and only --only reaches them. What they are FOR is the question a stylesheet cannot answer:
+  // how tall the mascot's box comes out, how many type sizes the tab really renders, and whether
+  // a heading fits at a 170px sidebar (docs/game-panels.md, section 9: count it in the browser).
+  //
+  //   node tools/shoot-panels.mjs --only usage --probe 'fonts:#panelUsage' --theme dark
+  //   node tools/shoot-panels.mjs --only usage --pct 95 --probe '#mascot,.mascot-wrap'
+  //   node tools/shoot-panels.mjs --only agents --width 170 --probe '.ws-head .it,.crew-head .it'
+  // The names begin with `measure-` and the output goes to tools/.measure, not media/: the first
+  // draft of this called itself `usage-panel`, which is the name of the dashboard screenshot the
+  // README serves off raw.githubusercontent, so one run of it would have replaced the listing's
+  // own picture with one full of invented numbers and the next subtree push would have shipped it.
+  //   node tools/shoot-panels.mjs --only usage --no-session --probe '.card,.meters,.rtext'
+  usage: {
+    file: 'measure-usage', tab: 'usage', measure: true,
+    usage: { pct: 42, weekly: 61 }
+  },
+  agents: {
+    file: 'measure-agents', tab: 'agents', measure: true,
+    usage: { pct: 42, weekly: 61 }
+  },
+  // The two screens the coin button leads to. Both are measuring shots for the same reason the two
+  // above are: what is read off them is geometry (how tall the crossroads comes out, how many
+  // columns the shelf makes at a 250px sidebar), and the readings behind them are invented.
+  // `door` is which side of the crossroads the stored view is on, and without it there is no way
+  // into either screen: the crossroads is what `tab: 'games'` alone now shows.
+  cross: {
+    file: 'measure-cross', tab: 'games', measure: true,
+    usage: { pct: 42, weekly: 61 }
+  },
+  shop: {
+    file: 'measure-shop', tab: 'games', door: 'shop', measure: true,
+    // NOTHING BOUGHT, which is the state every reader sees first: the price is on the meta row and
+    // the button is on the screen
+    shop: { owned: [] }
+  },
+  // ...and the same screen with nothing left to buy, which is the OTHER state and not a smaller
+  // version of this one: the control row goes and a line of its own arrives in its place, so which
+  // of the two is taller is a question only a measurement answers
+  'shop-own': {
+    file: 'measure-shop-own', tab: 'games', door: 'shop', measure: true,
+    shop: { owned: ['float'] }
   }
 };
+
+// One `data` message, the shape push() sends. Every number in it is made up, which is why the two
+// shots that use it are measuring shots: what is being read off them is geometry, and geometry does
+// not care whose tokens they are. The readings are chosen to put the panel in its ordinary state
+// (nothing at a threshold, no warning bar), and --pct moves the session to reach the other three
+// mascot states.
+// `session: false` is the account the panel could not be measured in before: an authenticated Ultra
+// has no five-hour limit, so the host pushes five_hour: null for ever and half of the Usage tab is
+// drawn from a reading that is not there. This harness always filled it, so that half had no way of
+// being seen at all (docs/header-fold-spec.md, 7-2).
+// `stale: true` is the other state that cannot otherwise be reached here: the usage endpoint has
+// not answered in a while (a 429, an expired token, a sign-out), which is the only condition that
+// puts the freshness row on the screen. Without it the row is never measurable, since every
+// reading this file invents is stamped "now".
+function usageData({ pct, weekly, warn, session, stale, quiet, bought, shop }) {
+  const now = Date.now(), sec = Math.floor(now / 1000);
+  const agents = [
+    { name: 'code-reviewer', model: 'opus', description: 'Reviews a change.' },
+    { name: 'test-runner', model: 'sonnet', description: 'Runs the suite.' },
+    { name: 'designer', model: 'opus', description: 'Draws the screen.' },
+    { name: 'librarian', model: 'haiku', description: 'Finds things.' },
+    { name: 'Explore', model: 'inherit', description: 'Built in.', builtin: true },
+    { name: 'Plan', model: 'inherit', description: 'Built in.', builtin: true },
+    { name: 'general-purpose', model: 'inherit', description: 'Built in.', builtin: true }
+  ];
+  const xp = {};
+  agents.forEach((a, i) => { xp[a.name] = { xp: 40 + i * 25, level: 1 + (i % 3), runs: 3 + i, tokens: 120000 * (i + 1), ms: 90000 * (i + 1) }; });
+  return {
+    fh: session === false ? null : { used_percentage: pct, resets_at: sec + 2 * 3600 + 55 * 60 },
+    sd: { used_percentage: weekly, resets_at: sec + 3 * 86400 },
+    // today's first message, which is what the Active tile falls back to without a window. Four
+    // hours and twelve minutes before the last one, so the tile has a span to print
+    firstT: now - (4 * 3600 + 12 * 60) * 1000,
+    // THE SECOND MASCOT AXIS reads this stamp and nothing else: 90 seconds ago is inside the
+    // threshold, so the ordinary capture is the busy column (webview.js, QUIET_MS). --quiet pushes
+    // it ten minutes back, which is the only way the float drawing can be measured at all
+    last: { t: now - (quiet ? 10 * 60 : 90) * 1000, input: 42000, output: 1200, cache_creation: 0, cache_read: 310000 },
+    fable: { used_percentage: 12, resets_at: sec + 3 * 86400 },
+    ctx: { used_percentage: 38, window: 200000 },
+    usageLoading: false, signedIn: true,
+    today: { input: 812000, output: 54000, cache_creation: 120000, cache_read: 9900000 },
+    // 18 minutes with --stale, which is past the five the panel calls old (webview.js,
+    // STALE_AFTER_MS), and a fresh answer otherwise
+    count: 143, refreshedAt: now, usageAt: stale ? now - 18 * 60 * 1000 : now, avg: 74000,
+    // --warn puts the burn-rate bubble on screen (webview.js wants a peak 2.5x the average over at
+    // least four requests). It is off by default because the ordinary panel has no warning on it,
+    // and it is reachable because the bubble hangs over the mascot and the mascot's box changed
+    peak: warn ? { total: 420000, t: now - 120000, prompt: 'a long paste' } : null,
+    agents, xp,
+    agentActivity: {
+      instances: [{ key: 'toolu_a', agent: 'test-runner', state: 'active', since: now - 42000, desc: 'Run the suite.' }],
+      stats: {}, scope: { all: false, calls: 6, matched: 6, verdict: 'matched' }
+    },
+    nicknames: {}, roles: {}, appearance: {}, hidden: {}, favGames: [],
+    // WHAT THE SHOP HAS SOLD. A push carries this whether the shop has ever been opened or not
+    // (extension.js), and the mascot's quiet drawing is chosen by it, so --quiet ALONE measures the
+    // small crab: the floating one is bought, and --bought is the only way to reach it here
+    shop: shop || { owned: bought ? ['mascot:float'] : [] },
+    credits: { balance: 1240, today: 86, frac: 3, perCredit: 10000, counting: false },
+    cfg: { statusBar: 'session+weekly', panelHidden: [], burnRate: true }
+  };
+}
 
 // ---------------------------------------------------------------------------------------------
 // the weekly report: the real builder, over transcripts this file writes
@@ -366,7 +517,7 @@ function playUntil(id, shot, balance) {
   return out;
 }
 
-function renderPage({ messages, tab, game, theme, width, bg, openWeekly, click, probe, tall }) {
+function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, click, probe, tall }) {
   const html = require(path.join(ROOT, 'html.js'));
   const registry = require(path.join(ROOT, 'games/registry.js'));
   const IC = require(path.join(ROOT, 'icons.js'));
@@ -378,19 +529,29 @@ function renderPage({ messages, tab, game, theme, width, bg, openWeekly, click, 
   // catalog. An empty one is not an empty chair, it is a missing piece of the product: the first
   // run of this harness shot a blackjack table with nobody at it. Built by the shipped builder,
   // off the shipped sprite sheet, exactly as extension.js does it.
-  // `rooms` stays empty: it feeds the Agents tab, which nothing here shoots.
+  // One room, because the Agents tab's header measures itself against the name of the room that is
+  // on: with none the picker falls back to the word "Room" and reads 11px narrower than it is in
+  // use. The default room and its real name, taken no further: the picker's grid is a sheet and
+  // nothing here opens it.
   const npcs = buildNpcCatalog((n) => spriteData[n] || n, path.join(ROOT, 'sprite-bbox.json'));
   const assetsJson = JSON.stringify({
-    rooms: {}, npcs, ui: { crab: 'crab.png', games: gameList }
+    rooms: { cave: { name: 'Blocky Cave', dark: 'room-minecraft.png', light: 'room-minecraft-light.png', thumb: 'thumb-cave.png', entry: [0.08, 0.72], desk: [0.3, 0.64] } },
+    npcs, ui: { crab: 'crab.png', chevron: IC.chevron, tag: IC.tag, games: gameList }
   }).replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
   let page = html.renderHtml({
     csp: '*',
-    scriptUri: 'webview.js', logoUri: 'logo.png', crabUri: 'crab.png', sparkleUri: 'sparkle.png',
+    scriptUri: 'webview.js', crabUri: 'crab.png',
     mascotIdleUri: 'mascot-idle.png', mascotWorkingUri: 'mascot-working.png',
     mascotDespairUri: 'mascot-despair.png', mascotStunnedUri: 'mascot-stunned.png',
+    // the activity axis's two drawings and the crossroads' two doors: the page names them all, so
+    // leaving one out here measures a box with a broken image in it
+    mascotCodingUri: 'mascot-coding.png', mascotFloatUri: 'mascot-float.png',
+    heroGamesUri: 'hero-games.png', heroShopUri: 'hero-shop.png',
     roomMinecraftUri: 'room-minecraft.png',
     assetsJson, gameList, gameScripts: registry.panels()
   });
+  // the asset catalog the page carries is built above, and the shop's heading glyph travels in it
+  // the way the back arrow's does
 
   // The CSP meta is written for a vscode-webview:// origin and refuses file:// scripts. Dropping it
   // changes nothing a reader sees; it is the one line of the shipped page this harness removes.
@@ -419,7 +580,26 @@ function renderPage({ messages, tab, game, theme, width, bg, openWeekly, click, 
     var orig = Date.prototype[k];
     Date.prototype[k] = function (loc, opt) { return orig.call(this, loc && loc.length ? loc : 'en-US', opt); };
   });
-  var STATE = ${JSON.stringify({ tab, game: game || null, lastTab: 'usage' })};
+  // THE SIDEBAR'S WIDTH, as the page asks for it.
+  // #shot-vp below is ${width}px wide, but body is as wide as the window, and this platform will
+  // not make a Chrome window narrower than about 500px. webview.js picks its responsive layout off
+  // document.body.clientWidth, so without this a 170px capture renders the 500px layout inside a
+  // 170px box: every heading squeezed, and body.narrow (which is what decides what gets dropped at
+  // that width) never set. Rather than set those classes here, which would be this file guessing at
+  // the product's rule, the ONE number the rule reads is answered with the width being pretended.
+  // Only body is affected; every other element still measures itself.
+  var VPW = ${width};
+  (function () {
+    var native = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth');
+    Object.defineProperty(Element.prototype, 'clientWidth', {
+      configurable: true,
+      get: function () { return this === document.body ? VPW : native.get.call(this); }
+    });
+  })();
+  // The door is which side of the crossroads this view is on, and it is part of the stored view:
+  // without it there is no way to shoot either screen behind the coin button, because the tab
+  // 'games' on its own is now the crossroads itself (docs/shop-spec.md, section 4-4)
+  var STATE = ${JSON.stringify({ tab, game: game || null, door: door || null, lastTab: 'usage' })};
   window.acquireVsCodeApi = function () {
     return {
       getState: function () { return STATE; },
@@ -444,14 +624,48 @@ function renderPage({ messages, tab, game, theme, width, bg, openWeekly, click, 
     });
     return rows.length;
   }
+  // Every type size one root RENDERS, and what asks for it. A stylesheet cannot be counted by
+  // hand: a rule may be overridden, may never match anything, or may sit in a subtree that is
+  // not on screen, and none of those is a size the reader sees.
+  function fontsUnder(sel) {
+    var root = document.querySelector(sel);
+    if (!root) return null;
+    var seen = {};
+    [root].concat([].slice.call(root.querySelectorAll('*'))).forEach(function (e) {
+      if (!e.getClientRects().length) return;      // hidden, or inside something hidden
+      var own = [].slice.call(e.childNodes).some(function (n) { return n.nodeType === 3 && n.data.trim(); });
+      if (!own) return;                            // a wrapper's size is not on screen
+      var k = getComputedStyle(e).fontSize;
+      var cls = e.getAttribute && e.getAttribute('class');
+      var who = e.id ? '#' + e.id : (cls ? '.' + String(cls).split(/\\s+/)[0] : e.localName);
+      if (!seen[k]) seen[k] = [];
+      if (seen[k].indexOf(who) < 0) seen[k].push(who);
+    });
+    return seen;
+  }
   function probe() {
+    // SETTLED GEOMETRY, not a frame of an animation. The panel's fold runs 450ms of transition and
+    // this harness runs under Chrome's virtual clock, where a transition sometimes advances with
+    // the clock and sometimes makes no progress at all: measured over four runs of the same
+    // command at a 700ms delay, one came back with the ring column still at its full 88x180 and
+    // the card 141px taller than its folded height, while the properties that are NOT animated
+    // (the meter margins) were already final. Waiting longer does not fix that, because the frames
+    // the transition needs may never be produced.
+    // So the measurement pins the page's own no-animation class first (styles.js, .notrans, which
+    // the product uses for its first paint): transition:none resolves every property to its target
+    // at once, which is the value a reader ends up looking at and the only value worth printing.
+    try { document.body.classList.add('notrans'); void document.body.offsetWidth; } catch (e) {}
     var out = {};
     PROBE.forEach(function (sel) {
+      if (sel.indexOf('fonts:') === 0) { out[sel] = fontsUnder(sel.slice(6)); return; }
       var e = document.querySelector(sel);
       if (!e) { out[sel] = null; return; }
       var r = e.getBoundingClientRect(), cs = getComputedStyle(e);
       out[sel] = {
         w: +r.width.toFixed(2), h: +r.height.toFixed(2),
+        // page coordinates too: a question like "does this bubble point at that head" is about
+        // where two boxes are relative to each other, which a width and a height cannot answer
+        x: +r.left.toFixed(2), y: +r.top.toFixed(2),
         lines: e.children.length ? lines(e) : 1,
         font: cs.fontSize + '/' + cs.fontWeight, color: cs.color,
         clipped: e.scrollWidth > e.clientWidth + 1,
@@ -487,7 +701,10 @@ function renderPage({ messages, tab, game, theme, width, bg, openWeekly, click, 
         var h = Math.ceil((m ? m.getBoundingClientRect().bottom + 20 : w.getBoundingClientRect().height) + 2);
         document.title = 'CUCH:' + h;
         document.documentElement.setAttribute('data-shot-height', String(h));
-      }, 400);
+        // 700, not 400. A --click lands at 180ms (the 60 below plus the 120 above) and the panel's
+        // own transitions run 450, so nothing is still until 630. At 400 this measured a box
+        // mid-flight: the same fold came out 427 one run and 318 the next
+      }, 700);
     }, 60);
   });
 })();
@@ -542,20 +759,47 @@ function shoot(pagePath, outPath, { width, dpr, profile, probe }) {
 // ---------------------------------------------------------------------------------------------
 // run
 // ---------------------------------------------------------------------------------------------
+// A flag that takes no value has to be LISTED here, or it swallows the next argument as its value
+// and whatever that was is lost. Every switch belongs in the first line.
+const BOOLS = ['keep', 'list', 'warn', 'no-session', 'stale', 'quiet', 'bought', 'help'];
 function flags(argv) {
   const f = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) continue;
     const k = a.slice(2);
-    if (k === 'keep' || k === 'list') f[k] = true;
+    if (BOOLS.indexOf(k) >= 0) f[k] = true;
     else f[k] = argv[++i];
   }
   return f;
 }
 
+// WHY AN UNKNOWN FLAG STOPS THE RUN. `--help` was not a flag, so it was read as a stray argument,
+// the run fell through to its default (every listing shot, into media/) and overwrote the six
+// PNGs the marketplace README serves off raw.githubusercontent. A subtree push would have shipped
+// them. The default run is the destructive one, so it may not be what a typo lands on.
+const KNOWN = BOOLS.concat(['only', 'theme', 'width', 'dpr', 'bg', 'out', 'purse', 'probe', 'pct', 'click']);
+const USAGE = [
+  'node tools/shoot-panels.mjs [--only <shot,shot>] [--theme light|dark|both] [--probe <sel,sel>]',
+  '',
+  '  --only <ids>     just these shots (--list names them). WITHOUT it every listing shot is',
+  '                   reshot into media/, which is what the marketplace README serves',
+  '  --probe <sels>   measure instead of shooting: no file is written at all. "fonts:<sel>"',
+  '                   answers with the type sizes rendered under one root',
+  '  --no-session     push five_hour: null, the account with no five-hour limit',
+  '  --stale          push a usage reading 18 minutes old, which shows the freshness row',
+  '  --quiet          push the last reply as ten minutes old, which is the mascot\'s quiet drawing',
+  '  --bought         the floating crab has been bought, which is what --quiet then draws',
+  '  --click <sel>    press something once the replies have been drawn, then measure',
+  '  --out <dir>      write the PNGs somewhere other than media/',
+  '  --width --dpr --bg --pct --purse --warn --theme --keep --list'
+].join('\n');
+
 async function main() {
   const f = flags(process.argv.slice(2));
+  if (f.help) { console.log(USAGE); return; }
+  const unknown = Object.keys(f).filter((k) => KNOWN.indexOf(k) < 0);
+  if (unknown.length) { console.error('unknown flag: --' + unknown.join(' --') + '\n\n' + USAGE); process.exit(2); }
   if (f.list) { console.log(Object.keys(SHOTS).join('\n')); return; }
   if (!CHROME) throw new Error('no Chrome, Chromium or Edge found; this harness shoots with the browser already on the machine');
 
@@ -563,12 +807,16 @@ async function main() {
   const dpr = Number(f.dpr || HOUSE.dpr);
 
   const themes = (f.theme || HOUSE.theme) === 'both' ? ['light', 'dark'] : [f.theme || HOUSE.theme];
-  const outDir = f.out ? path.resolve(ROOT, f.out) : path.join(ROOT, 'media');
+  // the measuring shots are reached by name only: see SHOTS
+  const only = f.only ? String(f.only).split(',').map((s) => s.trim()) : Object.keys(SHOTS).filter((k) => !SHOTS[k].measure);
+  // media/ is the listing's folder, so only the shots the listing uses default into it. A measuring
+  // shot writes beside the harness instead: nothing it draws should be able to reach a reader
+  const measuring = only.some((id) => SHOTS[id] && SHOTS[id].measure);
+  const outDir = f.out ? path.resolve(ROOT, f.out) : (measuring ? path.join(HERE, '.measure') : path.join(ROOT, 'media'));
   const work = path.join(HERE, '.shoot');
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-chrome-'));
   const purse = Number(f.purse || HOUSE.purse);
   const probeSel = f.probe ? String(f.probe).split(',').map((x) => x.trim()) : null;
-  const only = f.only ? String(f.only).split(',').map((s) => s.trim()) : Object.keys(SHOTS);
 
   fs.mkdirSync(work, { recursive: true });
   fs.mkdirSync(outDir, { recursive: true });
@@ -591,10 +839,24 @@ async function main() {
       const r = await buildWeekly();
       messages = [{ type: 'weekly', data: r }];
       note = r.days.length + ' days, ' + r.team.rows.length + ' PCs, account ' + r.plan.pct + '%';
+    } else if (shot.usage) {
+      const want = Object.assign({ warn: !!f.warn, session: !f['no-session'], stale: !!f.stale, quiet: !!f.quiet, bought: !!f.bought }, shot.usage, f.pct != null ? { pct: Number(f.pct) } : null);
+      messages = [{ type: 'data', data: usageData(want) }];
+      note = (want.session === false ? 'no 5h limit on this account' : 'session ' + want.pct + '%')
+        + ', weekly ' + want.weekly + '%' + (want.warn ? ', burn-rate warning' : '')
+        + (want.stale ? ', usage 18m old' : '') + (want.quiet ? ', last reply 10m ago' : '')
+        + (want.bought ? ', the floating crab bought' : '')
+        + ' (invented readings)';
     } else if (shot.market) {
       const m = playMarket(Object.assign({ purse }, shot.market));
       messages = m.sent;
       note = m.note;
+    } else if (shot.shop) {
+      const s = playShop(Object.assign({ purse }, shot.shop));
+      // the data push first (what the shop has sold, and the readings the header needs), then the
+      // shop's own reply: the screen asks for itself on entry, and this is that answer
+      messages = [{ type: 'data', data: usageData({ pct: 42, weekly: 61, session: true, quiet: !!f.quiet, shop: { owned: s.owned } }) }].concat(s.sent);
+      note = s.note;
     } else {
       const played = playUntil(shot.dir || shot.game, shot, purse);
       messages = played.sent;
@@ -604,9 +866,12 @@ async function main() {
     }
     for (const theme of themes) {
       const page = renderPage({
-        messages, tab: shot.tab, game: shot.game, theme, width,
+        messages, tab: shot.tab, game: shot.game, door: shot.door, theme, width,
         bg: f.bg || HOUSE.bg[theme],
-        openWeekly: !!shot.weekly, click: shot.click, probe: probeSel, tall: !!shot.weekly
+        // --click reaches a state that only a press can reach, and a measuring shot needs it for
+        // the same reason a game shot does: "how much does the fold actually fold" is a question
+        // about the page AFTER the chevron, and no stylesheet rule answers it
+        openWeekly: !!shot.weekly, click: f.click || shot.click, probe: probeSel, tall: !!shot.weekly
       });
       const pagePath = path.join(work, shot.file + '-' + theme + '.html');
       fs.writeFileSync(pagePath, page);
@@ -614,10 +879,18 @@ async function main() {
       const outPath = path.join(outDir, name);
       const r = shoot(pagePath, outPath, { width, dpr, profile, probe: probeSel });
       if (probeSel) {
-        console.log('\n-- ' + id + ' / ' + theme + ' / sidebar ' + width);
+        console.log('\n-- ' + id + ' / ' + theme + ' / sidebar ' + width + (note ? ' / ' + note : ''));
         for (const [sel, v] of Object.entries(r.probe)) {
-          console.log('   ' + sel.padEnd(14) + (v ? (v.w + ' x ' + v.h).padEnd(18) + v.lines + ' line(s)  '
-            + v.font.padEnd(10) + (v.clipped ? 'CLIPPED  ' : '') + v.text : 'not in the page'));
+          // a fonts: probe answers with a size -> who-asked-for-it map, not one box
+          if (sel.startsWith('fonts:')) {
+            if (!v) { console.log('   ' + sel + '  not in the page'); continue; }
+            const sizes = Object.keys(v).sort((a, b) => parseFloat(b) - parseFloat(a));
+            console.log('   ' + sel + '  ' + sizes.length + ' size(s) rendered');
+            for (const s of sizes) console.log('      ' + s.padEnd(9) + v[s].join(' '));
+            continue;
+          }
+          console.log('   ' + sel.padEnd(18) + (v ? (v.w + ' x ' + v.h).padEnd(16) + ('at ' + v.x + ',' + v.y).padEnd(18)
+            + v.lines + ' line(s)  ' + v.font.padEnd(10) + (v.clipped ? 'CLIPPED  ' : '') + v.text : 'not in the page'));
         }
         continue;
       }

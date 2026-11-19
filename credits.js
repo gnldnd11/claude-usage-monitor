@@ -9,6 +9,10 @@ const U = require('./usage');
 // owns the sword's, and they are required in rather than copied: a record whose merge is written
 // twice is a record with two answers. market.js requires nothing at all, so this cannot be a cycle
 const market = require('./market');
+// ...and the shop owns its own the same way, for a stricter reason: a purchase can empty the whole
+// purse, so both halves of it (what was bought and what it cost) have to be adopted and dropped
+// together. shop.js requires nothing at all either, so this cannot be a cycle
+const shop = require('./shop');
 
 // Credits are weighted like API list prices: input 1, output 5, cache write 1.25, cache read 0.1.
 // Every current model prices output at 5x input; a cache write is 1.25x at the 5-minute TTL (the
@@ -41,7 +45,8 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Shape: { days: { 'YYYY-MM-DD': {input, output, cache_creation, cache_read} }, backfilled, sweptAt,
 //          bank: { [replicaId]: { won, lost, hands } },
 //          forge: { by, level, moves, tries, spent, heat, best, broke, earned },
-//          market: { by, pos: { CODE: {amount, entryTicks, at} }, moves, trades, staked, earned, best, at } }
+//          market: { by, pos: { CODE: {amount, entryTicks, at} }, moves, trades, staked, earned, best, at },
+//          shop: { by, owned: { 'mascot:float': 1 }, moves, spent } }
 // Raw tokens per day are stored, not credits, so a changed rate or weighting also re-prices the past.
 // `days` is not per Claude account, and cannot be: a day's cell is the largest figure any reader has
 // seen for that day, which is what lets several windows count the same day without crediting it
@@ -199,7 +204,8 @@ function normalizeLedger(raw) {
   const sweptAt = (typeof src.sweptAt === 'number' && isFinite(src.sweptAt)) ? src.sweptAt : 0;
   return Object.assign({}, src, {
     days, backfilled: src.backfilled === true, sweptAt,
-    bank: cleanBank(src.bank), forge: cleanForge(src.forge), market: market.clean(src.market)
+    bank: cleanBank(src.bank), forge: cleanForge(src.forge), market: market.clean(src.market),
+    shop: shop.clean(src.shop)
   });
 }
 
@@ -243,6 +249,12 @@ function mergeLedger(stored, patch) {
     const next = market.merge(out.market, pMarket);
     if (!market.same(next, out.market)) { out.market = next; changed = true; }
   }
+  // and the same three lines again for what the shop sold, with shop.js's own rules doing the work
+  const pShop = shop.clean(patch && patch.shop);
+  if (pShop) {
+    const next = shop.merge(out.shop, pShop);
+    if (!shop.same(next, out.shop)) { out.shop = next; changed = true; }
+  }
   if (patch && patch.backfilled === true && !out.backfilled) { out.backfilled = true; changed = true; }
   if (patch && typeof patch.sweptAt === 'number' && patch.sweptAt > out.sweptAt) { out.sweptAt = patch.sweptAt; changed = true; }
   return { ledger: out, changed };
@@ -283,7 +295,10 @@ function forgeEarned(forge) {
 //                It is frozen, not live: no path adds to `earned` any more (see the forge note above)
 //   market.netOf what the coin market paid minus what it took in, read out of the one surviving
 //                wallet. BOTH halves are in the record, so a dropped trade neither charges nor pays
-// The last two can go DOWN, once, when a collision drops a move: that is the move not having
+//   shop.netOf   what the shop has been paid, as a negative: the one source here that can only
+//                subtract. Both halves are in that record too (what was bought and what it cost),
+//                so a purchase the merge drops neither charges nor hands anything over
+// The last three can go DOWN, once, when a collision drops a move: that is the move not having
 // happened, and the sword or the position is back in the player's hands to prove it. Writing either
 // of them into the bank's counters instead is the bug that mints money, and it has been written
 // once already: a sale banked per window paid 372,000 credits for one sword
@@ -294,7 +309,8 @@ function creditSummary(ledger, todayKey, counting) {
   const todayW = ledger.days[todayKey] ? weightedScaled(ledger.days[todayKey]) : 0;
   const earned = Math.floor(total / unit);
   return {
-    balance: earned + bankNet(ledger.bank || {}) + forgeEarned(ledger.forge) + market.netOf(ledger.market),
+    balance: earned + bankNet(ledger.bank || {}) + forgeEarned(ledger.forge)
+      + market.netOf(ledger.market) + shop.netOf(ledger.shop),
     today: earned - Math.floor((total - todayW) / unit),
     frac: (total % unit) / unit,
     perCredit: CREDIT_UNIT,

@@ -1,0 +1,512 @@
+// The Usage tab: the mascot's four states and what is left of the session.
+//
+// Not a game, so the file is named for what it is, beside _agents.js and _chrome.js for the reason
+// those give: the harness reads one directory and a mode is one page, one script, one process.
+//
+// WHAT IS PINNED HERE, and why each one cost something to get wrong:
+//   1. the picture changes only when the reading actually MOVES. The four steps used to be hard
+//      lines against the raw percentage the host pushes, so a window sitting on the line flipped
+//      the drawing on every push. The deadband is three points wide coming down.
+//   2. the first push is a drawing, not a transition: no beat on first paint.
+//   3. a transition is a beat, and the beat ends. A class left on would keep the sprite pressed.
+//   4. the session has ONE showing. The bar and the ring were the same number, the bar is gone,
+//      and the time left in the window, which only the bar carried, is under the ring.
+//   5. the settings key that hides the session hides the ring, and the one that hides the mascot
+//      hides its BOX (the box has a height of its own now, so hiding the picture alone would
+//      leave a hole where the crab was).
+//   6. THE SECOND AXIS. The step says which row of MASCOT_ART, and whether anything has been
+//      answered in the last three minutes says which column, so the same step is two drawings.
+//      The threshold is a clock and not a reading, so it has no deadband to walk (webview.js) and
+//      what is walked here instead is the edge itself, in both directions, on two steps.
+//   7. AND WHAT THE SHOP SOLD, on one step only. The quiet side of the idle step is the floating
+//      crab for a reader who has bought it and the small one for everyone else, so a purchase
+//      arriving on a push changes the picture with no reading having moved. Every other step reads
+//      the same bought or not, and no busy side is for sale.
+//
+// THE SECOND MODE, `usage-nosession`, is the account that has no five-hour window at all: an
+// authenticated Ultra, where the host pushes five_hour: null for ever (2026-10-30). Half of this
+// tab was drawn from that missing reading, so the ring was an empty donut with a bar through it,
+// the Active tile said "—", and the crab could reach only two of its four states, for ever. What
+// that mode pins is in its own section below.
+'use strict';
+
+const HOUR = 3600;
+const DAY = 86400;
+
+module.exports = {
+  id: 'usage',
+  modes: ['usage-mascot', 'usage-nosession'],
+
+  run: function (h, MODE) {
+    if (MODE === 'usage-nosession') return noSession(h);
+    return withWindow(h);
+  }
+};
+
+// ---------------------------------------------------------------------------------------------
+// the account WITH a five-hour window (Pro, Max): nothing about this may move
+// ---------------------------------------------------------------------------------------------
+function withWindow(h) {
+    const { ok, advance, doc, $, toWebview } = h;
+    const base = {
+      agents: [], xp: {}, today: {}, count: 0, cfg: { panelHidden: [] },
+      credits: { balance: 0, today: 0, frac: 0, perCredit: 10000, counting: false }
+    };
+    const resets = () => Math.floor(Date.now() / 1000) + 3 * HOUR + 50 * 60;
+    // one push of the host's own message. `wk` left out means the weekly reading has not landed,
+    // `quietFor` is how long ago the last assistant message was (left out: just now, which is the
+    // busy column of MASCOT_ART), and `bought` is whether the shop has sold this reader the
+    // floating crab, which every push carries (shop.js, push)
+    const push = (sess, wk, hidden, quietFor, bought) => {
+      toWebview({
+        type: 'data',
+        data: Object.assign({}, base, {
+          cfg: { panelHidden: hidden || [] },
+          fh: { used_percentage: sess, resets_at: resets() },
+          sd: wk == null ? null : { used_percentage: wk, resets_at: resets() },
+          last: quietFor === null ? null : { t: Date.now() - (quietFor || 0) },
+          shop: { owned: bought ? ['mascot:float'] : [] }
+        })
+      });
+      advance(20);
+    };
+    const mascot = () => $('mascot');
+    // which of the SIX drawings is on screen, by the data-* the page carries them in
+    const DRAWINGS = ['idle', 'working', 'despair', 'stunned', 'coding', 'float'];
+    const shown = () => {
+      const m = mascot(), src = m.getAttribute('src');
+      return DRAWINGS.filter((s) => m.getAttribute('data-' + s) === src)[0] || src;
+    };
+    const beating = () => mascot().classList.contains('beat');
+
+    // 1 + 2. A walk up and down across all three lines. Each step says what should be on screen
+    // and whether the page was allowed to beat; the pairs just inside and just outside an edge are
+    // the whole point, so they are written as the readings a real window produces, not as the
+    // thresholds in the code.
+    // Every reading here lands while the account is BUSY (the push helper stamps the last message
+    // as having just arrived), so the idle step draws `coding`: these are the same twelve steps
+    // this mode has always walked, read down the busy column of MASCOT_ART.
+    const walk = [
+      { pct: 75, want: 'despair', beat: false, why: 'the first push is the first drawing' },
+      { pct: 67.5, want: 'despair', beat: false, why: 'half a point inside the lower edge' },
+      { pct: 66.9, want: 'working', beat: true, why: 'past it, so the picture changes' },
+      { pct: 49.9, want: 'working', beat: false, why: 'the 50 line does not take it back' },
+      { pct: 46.9, want: 'coding', beat: true, why: 'three points below it does' },
+      { pct: 49.9, want: 'coding', beat: false, why: 'and coming back up needs the 50 line' },
+      { pct: 50.1, want: 'working', beat: true },
+      { pct: 89.9, want: 'despair', beat: true },
+      { pct: 90.1, want: 'stunned', beat: true },
+      { pct: 87.5, want: 'stunned', beat: false, why: 'the stun holds inside its own edge' },
+      { pct: 86.9, want: 'despair', beat: true },
+      { pct: 4, want: 'coding', beat: true, why: 'the window reset: one jump, one beat' }
+    ];
+    let drawn = [], beats = 0;
+    for (const step of walk) {
+      push(step.pct);
+      drawn.push(shown());
+      const beat = beating();
+      if (beat) beats++;
+      ok('at ' + step.pct + '% the crab is ' + step.want + (step.why ? ' (' + step.why + ')' : ''),
+        shown() === step.want, 'drew ' + shown());
+      // the box says which drawing is in it, because the drawing's top edge moves with its ratio
+      // and the burn-rate bubble is placed against that edge (styles.js, .mascot-wrap[data-state])
+      const box = $('pm_mascot');
+      ok('  and the box says which drawing it holds', !!box && box.getAttribute('data-state') === step.want,
+        box && box.getAttribute('data-state'));
+      ok('  and it ' + (step.beat ? 'beats' : 'does not beat') + ' there', beat === step.beat);
+      advance(400); // let the beat finish before the next push arms another one
+    }
+    ok('a walk over every edge changed the drawing exactly as often as the state changed',
+      drawn.join(' ') === walk.map((s) => s.want).join(' '), drawn.join(' '));
+    const changes = walk.filter((s, i) => i > 0 && s.want !== walk[i - 1].want).length;
+    ok('and beat once per change, never on the first drawing', beats === changes, 'beats ' + beats + ' of ' + changes + ' changes');
+
+    // 3. the beat ends on its own, and it is the only thing the script does to the picture: a
+    //    crossfade or a filter on pixel art smears it, so neither may be written here
+    push(95);              // push() itself advances 20ms past the message
+    ok('a change presses the sprite', beating());
+    advance(135);          // 155ms in
+    ok('and it is still pressed just before 160ms', beating());
+    advance(10);           // 165ms in
+    ok('and let back up at 160ms', !beating(), mascot().getAttribute('class'));
+    ok('nothing fades or filters the crab', !mascot().style.opacity && !mascot().style.filter);
+    ok('a stunned crab can be poked', mascot().title === 'poke' && mascot().style.cursor === 'pointer');
+
+    // the weekly reading stuns on its own, whatever the session says, and it must not teach the
+    // session that it ever stood on the top step: a window at 88% stunned by a spent week would
+    // then come back to 88% and read the top step's LOWER edge (87) as if it had crossed 90
+    push(4, 100);
+    ok('a spent week stuns a fresh session', shown() === 'stunned', shown());
+    push(4, 40);
+    ok('and lets go when the week turns over', shown() === 'coding', shown());
+    push(88, 40);
+    ok('a session at 88% on its own is despair', shown() === 'despair', shown());
+    push(88, 100);
+    ok('the week spending out stuns it', shown() === 'stunned', shown());
+    push(88, 40);
+    ok('and the week turning over hands it back to the session, which never reached 90',
+      shown() === 'despair', shown());
+
+    // 6. THE SECOND AXIS: the step picks the row, the clock picks the column.
+    //
+    // The threshold is 180s and it is counted rather than chosen (webview.js, QUIET_MS), so what is
+    // walked here is the edge in both directions on the two steps that HAVE two columns, and then
+    // that the other two steps have one. Each reading is pushed with an age for the last message:
+    // the step cannot tell the difference and the drawing must.
+    // AND THE THIRD THING, on one step only: the quiet side of idle is the drawing the shop sells,
+    // so it is the floating crab for a reader who has bought it and the small one for everyone
+    // else. No other step has anything to sell and the busy side is free on every step.
+    const AXIS = [
+      { pct: 4, quiet: 0, want: 'coding', why: 'a reply just landed' },
+      { pct: 4, quiet: 179000, want: 'coding', why: 'a second inside the threshold is still typing' },
+      { pct: 4, quiet: 181000, want: 'idle', why: 'and a second past it is not' },
+      { pct: 4, quiet: null, want: 'idle', why: 'a day with no reply at all is quiet' },
+      { pct: 4, quiet: 0, want: 'coding', why: 'and typing again is an event, not a wait' },
+      { pct: 4, quiet: 181000, bought: true, want: 'float', why: 'the same quiet step, bought' },
+      { pct: 4, quiet: null, bought: true, want: 'float', why: 'and with no reply at all, bought' },
+      { pct: 4, quiet: 0, bought: true, want: 'coding', why: 'the busy side is not for sale' },
+      { pct: 55, quiet: 0, want: 'working', why: 'the working step, busy' },
+      { pct: 55, quiet: 600000, want: 'idle', why: 'the working step, quiet: the old drawing' },
+      { pct: 55, quiet: 600000, bought: true, want: 'idle', why: 'which the purchase does not reach' },
+      { pct: 75, quiet: 0, want: 'despair', why: 'despair reads the same either way:' },
+      { pct: 75, quiet: 600000, want: 'despair', why: 'the limit is the news, not the keyboard' },
+      { pct: 75, quiet: 600000, bought: true, want: 'despair', why: 'bought or not' },
+      { pct: 95, quiet: 0, want: 'stunned' },
+      { pct: 95, quiet: 600000, want: 'stunned', why: 'a blocked limit stops the replies anyway' },
+      { pct: 95, quiet: 600000, bought: true, want: 'stunned', why: 'and that is not something to buy out of' }
+    ];
+    let axisDrawn = [];
+    for (const step of AXIS) {
+      push(step.pct, 40, null, step.quiet, step.bought);
+      axisDrawn.push(shown());
+      ok('at ' + step.pct + '% with the last reply ' + (step.quiet === null ? 'never' : (step.quiet / 1000) + 's ago')
+        + (step.bought ? ', bought,' : ',') + ' the crab is ' + step.want + (step.why ? ' (' + step.why + ')' : ''),
+        shown() === step.want, 'drew ' + shown());
+      advance(400);
+    }
+    ok('all six drawings are reachable from the three together',
+      new Set(axisDrawn.concat(drawn)).size === 6, [...new Set(axisDrawn.concat(drawn))].join(' '));
+    // THE PURCHASE ALONE MOVES THE PICTURE. Nothing about the readings changes here: the same
+    // percentage, the same stamp, one more thing owned, and the crab is a different drawing. This
+    // is how a purchase made in ANOTHER window arrives, since what carries it is the push
+    push(4, 40, null, 600000); advance(400);
+    ok('quiet and unbought is the small crab', shown() === 'idle', shown());
+    push(4, 40, null, 600000, true);
+    ok('and the purchase on its own turns it into the floating one, with the same beat as any change',
+      shown() === 'float' && beating(), shown() + (beating() ? ' (beat)' : ' (no beat)'));
+    advance(400);
+    // the step is NOT what moved across the edge: the same reading, two drawings
+    push(4, 40, null, 0, true); advance(400);
+    const bodyBefore = doc.body.getAttribute('class');
+    push(4, 40, null, 600000, true);
+    ok('crossing the threshold changes the drawing and nothing about the state',
+      shown() === 'float' && beating() && doc.body.getAttribute('class') === bodyBefore,
+      shown() + ' / ' + doc.body.getAttribute('class'));
+    advance(400);
+    // and the box follows the drawing, not the step: the bubble's tail is placed against the
+    // drawing's top edge and coding, float and idle are three different edges (styles.js)
+    push(4, 40, null, 0, true); advance(400);
+    ok('the box says coding while the step is still idle', $('pm_mascot').getAttribute('data-state') === 'coding',
+      $('pm_mascot').getAttribute('data-state'));
+    push(4, 40, null, 600000, true); advance(400);
+    ok('and says float on the other side of the same step', $('pm_mascot').getAttribute('data-state') === 'float',
+      $('pm_mascot').getAttribute('data-state'));
+    push(4, 40, null, 600000); advance(400);
+    ok('and says idle there for a reader who has not bought it', $('pm_mascot').getAttribute('data-state') === 'idle',
+      $('pm_mascot').getAttribute('data-state'));
+
+    // 4. the session's one showing
+    ok('the Session bar is gone', !$('pm_session') && !$('s_pct') && !$('s_fill'));
+    ok('three bars are left: weekly, fable, context',
+      doc.querySelectorAll('#panelUsage .mbar').length === 3, String(doc.querySelectorAll('#panelUsage .mbar').length));
+    ok('the ring is still the percentage', !!$('ringPct') && !!$('ringArc'));
+    const sub = $('s_sub');
+    ok('the time left in the window survived the bar', /left$/.test(sub.textContent) && /\d/.test(sub.textContent), sub.textContent);
+    ok('and it reads under the ring, not somewhere else', !!$('pm_ring') && $('pm_ring').contains(sub));
+
+    // 5. the two settings keys
+    const shownBox = (id) => { const e = $(id); return !!e && e.style.display !== 'none'; };
+    push(4, 40, ['session']);
+    ok('hiding the session hides the ring and its countdown', !!$('pm_ring') && !shownBox('pm_ring'));
+    ok('and leaves the crab alone', shownBox('pm_mascot'));
+    push(4, 40, ['mascot']);
+    ok('hiding the mascot hides the whole box, not just the picture',
+      !!$('pm_mascot') && !shownBox('pm_mascot'), $('pm_mascot') && ($('pm_mascot').getAttribute('style') || ''));
+    ok('and brings the ring back', shownBox('pm_ring'));
+    // a list written before the two controls became one still says `ring`, and it meant this
+    push(4, 40, ['ring']);
+    ok('a setting that still says "ring" hides the ring', !shownBox('pm_ring'));
+    const sessionBox = () => doc.querySelector('.pmk[data-k="session"]');
+    ok('and the one switch that is left shows it as off', !!sessionBox() && !sessionBox().checked);
+
+    // 6. AND IT IS NOT THE OTHER ACCOUNT. Everything the no-session state changes is reached
+    //    through one class, so an account that HAS a window must never carry it, and the three
+    //    pieces of wording that state rewrites have to read the way they always did
+    push(42, 61);
+    ok('a window means no no-session class on the body', !doc.body.classList.contains('no-session'), doc.body.getAttribute('class'));
+    ok('the ring says "used", because the session is what it is drawing',
+      doc.querySelector('.rtext').textContent === 'used', doc.querySelector('.rtext').textContent);
+    ok('the tile is still "Active time"', $('st_time_lab').textContent === 'Active time', $('st_time_lab').textContent);
+    ok('and it reads the window, not today', /^\dh \d\dm$/.test($('st_time').textContent), $('st_time').textContent);
+    ok('the room HUD keeps its session piece and the dot before the week',
+      !!$('wsHudS') && !!doc.querySelector('.ws-hud-sep') && /^5h 42%$/.test($('wsHudS').textContent),
+      doc.querySelector('.ws-hud').textContent);
+    // DETAILS IS WHERE IT HAS ALWAYS BEEN on this account: inside the Weekly bar's label. The ring
+    // here is the SESSION, so a weekly control under it would point at the wrong number
+    ok('Details is in the Weekly bar, and nothing has moved it',
+      !!$('wkMore') && $('pm_weekly').contains($('wkMore')) && !$('pm_ring').contains($('wkMore'))
+      && !$('wkMore').classList.contains('on-ring'),
+      ($('wkMore').parentNode.getAttribute('class') || '') + ' ' + ($('wkMore').getAttribute('class') || ''));
+    // a reading that has not landed yet is NOT "this account has none": one is waited for and the
+    // other never comes, and they used to be the same em dash.
+    // The count-up from the push above has to be let finish first: it owns #ringPct for 500ms and
+    // would write the old figure over whatever these two pushes put there
+    advance(600);
+    toWebview({ type: 'data', data: Object.assign({}, base, { fh: null, sd: null, usageLoading: true }) });
+    advance(20);
+    ok('while the first call is still out, nothing is decided', !doc.body.classList.contains('no-session')
+      && $('ringPct').textContent === '…', $('ringPct').textContent);
+    toWebview({ type: 'data', data: Object.assign({}, base, { fh: null, sd: null, usageLoading: false }) });
+    advance(20);
+    ok('a call that came back with neither limit is a failure, not an account shape',
+      !doc.body.classList.contains('no-session') && $('ringPct').textContent === '—', $('ringPct').textContent);
+
+    // 7. THE FRESHNESS ROW. The only thing on this tab that is not live: the usage endpoint goes
+    //    quiet on a 429, an expired token or a sign-out, and it does it without saying so. Three
+    //    states and no fourth, which is what the dash was.
+    const MIN = 60000;
+    const head = () => $('uhead');
+    const upd = () => $('upd').textContent;
+    const freshness = (extra) => {
+      toWebview({
+        type: 'data',
+        data: Object.assign({}, base, {
+          fh: { used_percentage: 42, resets_at: resets() },
+          sd: { used_percentage: 61, resets_at: resets() }
+        }, extra)
+      });
+      advance(20);
+    };
+    ok('the tab does not say its own name back at the reader',
+      !doc.querySelector('#panelUsage .it') && doc.querySelector('#panelUsage').textContent.indexOf('Usage summary') < 0);
+    ok('and the class the other tabs head their sections with is untouched',
+      !!doc.querySelector('#panelAgents .ihead .it') && !!$('uhead') && $('uhead').classList.contains('ihead'));
+    freshness({ usageAt: Date.now() - 30000, usageLoading: false });
+    ok('a reading from 30s ago says nothing at all', !head().classList.contains('stale')
+      && !head().classList.contains('loading') && upd() === '', JSON.stringify(upd()));
+    freshness({ usageAt: 0, usageLoading: true });
+    ok('the first call still being out is a state of its own, with the live dot',
+      head().classList.contains('loading') && !head().classList.contains('stale') && /Checking/.test(upd()), upd());
+    freshness({ usageAt: Date.now() - 12 * MIN, usageLoading: false });
+    ok('a reading twelve minutes old says how old it is', head().classList.contains('stale')
+      && !head().classList.contains('loading') && /12m ago/.test(upd()), upd());
+    // THE OLD DEFECT: a push happens every ten seconds whatever the endpoint is doing, and the
+    // field used to be written from the age of that PUSH (refreshedAt), so it read "now" almost
+    // always, including on a reading that had not moved in an hour. A push carrying a brand-new
+    // refreshedAt and the same old reading may not make the row young again.
+    // (The 1s tick itself cannot be driven here: the harness stubs setInterval. What pins the
+    // single writer is the source-shape check in test/panel-css.test.js.)
+    freshness({ usageAt: Date.now() - 12 * MIN, usageLoading: false, refreshedAt: Date.now() });
+    ok('and a redraw does not make an old reading young: the panel refreshing is not an answer',
+      head().classList.contains('stale') && /\d+m ago/.test(upd()), upd());
+    // no stamp and not loading is the restored-reading case (extension.js, restoredUsageAt): an
+    // age this window cannot state may not pass as a recent one
+    freshness({ usageAt: 0, usageLoading: false });
+    ok('a reading whose age cannot be stated is stale, not fresh',
+      head().classList.contains('stale') && /not read yet/.test(upd()), upd());
+    ok('nothing in this row ever draws a bare dash', upd().indexOf('—') < 0 && upd().indexOf('–') < 0, upd());
+    freshness({ usageAt: Date.now(), usageLoading: false });
+    ok('and an answer arriving takes the row away again',
+      !head().classList.contains('stale') && !head().classList.contains('loading') && upd() === '', JSON.stringify(upd()));
+
+    ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e.message).join('; '));
+}
+
+// ---------------------------------------------------------------------------------------------
+// the account with NO five-hour window (authenticated Ultra): the week is the only limit
+// ---------------------------------------------------------------------------------------------
+// WHAT IS PINNED HERE:
+//   1. the state is told apart from "still loading" and from "the call failed", and it is carried
+//      by ONE class. Six places used to decide it for themselves and five of them were wrong.
+//   2. the ring draws the limit that actually binds the account, and SAYS which one it is.
+//   3. the Active tile answers a question it can answer (today's span) and renames itself.
+//   4. the crab can reach all four of its states, the point of the whole block. The weekly figure
+//      goes in as a PACE, not raw, and the steps and the deadband are not touched: the same
+//      percentage is a different picture early and late in the week, which is what a reader of a
+//      weekly limit needs to know.
+//   5. the room HUD drops the piece it cannot fill, and the separator with it.
+function noSession(h) {
+    const { ok, advance, doc, $, toWebview } = h;
+    const nowS = () => Math.floor(Date.now() / 1000);
+    const base = {
+      agents: [], xp: {}, today: {}, count: 0, cfg: { panelHidden: [] },
+      credits: { balance: 0, today: 0, frac: 0, perCredit: 10000, counting: false }
+    };
+    // THE HOST'S OWN SHAPE for this account: five_hour null, seven_day present (extension.js keeps
+    // only the limits the account has). `left` is how much of the week is still to run, in days
+    const push = (wk, left, extra) => {
+      toWebview({
+        type: 'data',
+        data: Object.assign({}, base, {
+          fh: null,
+          sd: { used_percentage: wk, resets_at: nowS() + Math.round(left * DAY) },
+          firstT: Date.now() - (4 * 3600 + 12 * 60) * 1000,
+          last: { t: Date.now() - 60000 }
+        }, extra || {})
+      });
+      advance(20);
+    };
+    const mascot = () => $('mascot');
+    const shown = () => {
+      const m = mascot(), src = m.getAttribute('src');
+      return ['idle', 'working', 'despair', 'stunned', 'coding', 'float']
+        .filter((s) => m.getAttribute('data-' + s) === src)[0] || src;
+    };
+    const beating = () => mascot().classList.contains('beat');
+
+    // 1. the state, and the one class every rule for it hangs off
+    push(18, 4.4);
+    ok('an account with a week and no window is in the no-session state',
+      doc.body.classList.contains('no-session'), doc.body.getAttribute('class'));
+    ok('the weekly bar is still in the page, so the meters column still holds three',
+      doc.querySelectorAll('#panelUsage .mbar').length === 3 && !!$('pm_weekly'),
+      String(doc.querySelectorAll('#panelUsage .mbar').length));
+    // It was hidden here for one release, on the reading that the ring now draws the same figure.
+    // Fable (7d) stayed a bar, so what the reader got was a list of weekly limits with the main
+    // one missing, and the owner reported the panel as broken twice. Nothing may hide it again.
+    ok('and nothing hides it: no rule, no inline style',
+      !/body\.no-session [^{]*#pm_weekly[^{]*\{[^}]*display\s*:\s*none/.test(doc.querySelector('style').textContent)
+      && !/display:\s*none/.test($('pm_weekly').getAttribute('style') || ''),
+      $('pm_weekly').getAttribute('style') || '(no inline style)');
+    ok('and the row is centred, the same shape an account with a window gets',
+      !/body\.no-session \.body\{align-items:flex-start;\}/.test(doc.querySelector('style').textContent));
+
+    // 2. the ring draws the week, and says so
+    ok('the ring is the weekly figure, not an empty donut', $('ringPct').textContent === '18', $('ringPct').textContent);
+    ok('and it says which limit that is', doc.querySelector('.rtext').textContent === '7d used',
+      doc.querySelector('.rtext').textContent);
+    ok('the arc is drawn to the same circumference the session used (18% of 207.3)',
+      Math.abs(parseFloat($('ringArc').style.strokeDashoffset) - 207.3 * 0.82) < 0.1,
+      $('ringArc').style.strokeDashoffset);
+    ok('the line under it counts the week down, not a window it does not have',
+      /^4d\d+h left$/.test($('s_sub').textContent), $('s_sub').textContent);
+
+    // 2b. AND THE WAY INTO THE WEEKLY SHEET STAYS WHERE IT HAS ALWAYS BEEN.
+    //
+    // #wkMore is the only entrance to it and it lives inside the weekly bar. While that bar was
+    // hidden the script moved the button under the ring to keep the sheet reachable; with the bar
+    // back there is one seat again, which is what a reader can learn once.
+    ok('Details is on the screen, in the bar it names',
+      !!$('wkMore') && $('pm_weekly').contains($('wkMore')) && !$('pm_ring').contains($('wkMore')),
+      $('wkMore') ? ($('wkMore').parentNode.id || $('wkMore').parentNode.getAttribute('class')) : 'gone');
+    ok('and it is the same button, with its listener and its name, not a second one drawn there',
+      doc.querySelectorAll('.wk-more').length === 1
+      && $('wkMore').title === 'This PC\'s use this week', doc.querySelectorAll('.wk-more').length + ' of them');
+    // it opens the sheet, which is the whole point of it being reachable
+    $('wkMore').click(); advance(20);
+    ok('pressing it asks the host for the week and opens the sheet',
+      !$('weeklyModal').hidden && h.sent('weeklyOpen').length === 1,
+      ($('weeklyModal').hidden ? 'shut' : 'open') + ', ' + h.sent('weeklyOpen').length + ' ask(s)');
+    $('wkClose').click(); advance(400);
+    // the ring is a separate switch, and turning it off has nothing to do with this button now
+    push(18, 4.4, { cfg: { panelHidden: ['session'] } });
+    ok('turning the ring off leaves Details where it was',
+      $('pm_weekly').contains($('wkMore')),
+      $('wkMore').parentNode.getAttribute('class') || $('wkMore').parentNode.id);
+    push(18, 4.4);
+
+    // 3. the Active tile
+    ok('the tile reads today\'s span, first message to last', $('st_time').textContent === '4h 11m', $('st_time').textContent);
+    ok('and the label says that is what it is', $('st_time_lab').textContent === 'Active today', $('st_time_lab').textContent);
+    ok('a day with nothing in it does not invent a span', (() => {
+      push(18, 4.4, { firstT: 0, last: null });
+      return $('st_time').textContent === '–';
+    })(), $('st_time').textContent);
+
+    // 4. THE CRAB, all four states.
+    //
+    // The expectations are written as the PACE a reader is on, not as the numbers in the code: a
+    // pace of 1.0 spends the week exactly evenly and is the working line, 1.4 is despair and 1.8 is
+    // stunned. With 4.4 days left of seven, an even spender would be at 37.14%, so each row below
+    // is that times its pace. Nothing here knows what x50 is.
+    const expected = (1 - 4.4 / 7) * 100;              // 37.1428…
+    const at = (pace) => Math.round(expected * pace * 100) / 100;
+    // This account is being used while it is read (the push above stamps the last message a minute
+    // ago), so the busy column of MASCOT_ART is what these eight read down: the idle step is
+    // `coding`. The pace is still what moves, which is the whole point of the walk.
+    const walk = [
+      { wk: at(0.97), want: 'coding', why: 'just under an even pace' },
+      { wk: at(1.0), want: 'working', why: 'spending the week exactly evenly' },
+      { wk: at(1.4), want: 'despair', why: 'on course to run out two days early' },
+      { wk: at(1.8), want: 'stunned' },
+      { wk: at(1.37), want: 'despair', why: 'the stun does not hold below its own edge' },
+      { wk: at(1.35), want: 'despair', why: 'and despair holds inside its deadband' },
+      { wk: at(1.31), want: 'working', why: 'three points below it does let go' },
+      { wk: at(0.5), want: 'coding' }
+    ];
+    let drawn = [];
+    for (const step of walk) {
+      push(step.wk, 4.4);
+      drawn.push(shown());
+      ok('at ' + step.wk + '% of the week with 4.4 days left the crab is ' + step.want
+        + (step.why ? ' (' + step.why + ')' : ''), shown() === step.want, 'drew ' + shown());
+      advance(400);
+    }
+    ok('all four steps are reachable on an account with no session window',
+      new Set(drawn).size === 4, drawn.join(' '));
+    // and the activity axis works on this account too, off the same field: the step is a pace and
+    // the column is a clock, so the two cannot be reading each other
+    push(at(0.5), 4.4, { last: null }); advance(400);
+    ok('a quiet week on a quiet day is the small crab, unbought', shown() === 'idle', shown());
+    push(at(0.5), 4.4, { last: null, shop: { owned: ['mascot:float'] } }); advance(400);
+    ok('and the floating one once the shop has sold it, on this account too', shown() === 'float', shown());
+    push(at(0.5), 4.4); advance(400);
+    ok('and a reply landing brings the laptop back', shown() === 'coding', shown());
+    // the same reading is a different picture depending on where in the week it is read, which is
+    // the whole reason the raw percentage may not go in
+    push(at(1.4), 4.4); advance(400);
+    ok('52% four days from the reset is despair', shown() === 'despair', shown());
+    push(at(1.4), 2.0); advance(400);
+    ok('and the same 52% two days from it is the idle step, because that pace lands inside the week',
+      shown() === 'coding', shown());
+    // the first hours of a week: an even spender is at nearly 0%, so a pace has almost nothing to
+    // divide by. Without the floor in mascotStrain this is a division blow-up and a stunned crab
+    push(2, 7.0); advance(400);
+    ok('2% in the first hour of the week is the idle step, not a crab stunned by arithmetic',
+      shown() === 'coding', shown());
+    // the weekly path that was already there, unchanged: a spent week stuns whatever the pace says
+    push(100, 0.1);
+    ok('a spent week still stuns', shown() === 'stunned', shown());
+    // the reset: the figure drops to almost nothing and the window is nearly seven days wide again.
+    // 5% in that first hour would still be working, because 5 is the floor the pace divides by and
+    // a twentieth of a week spent in its first hour IS fast; 2% is the quiet morning after
+    push(2, 6.9); advance(400);
+    ok('and lets go when the week turns over', shown() === 'coding', shown());
+    // the first push is a drawing and not a transition, on THIS account too, where the flag used
+    // to hang off the session reading and so was never set
+    push(at(1.8), 4.4);
+    ok('a change of state still beats', beating(), mascot().getAttribute('class') || '');
+    advance(400);
+
+    // 5. the room HUD
+    ok('the HUD drops the session piece it cannot fill', !$('wsHudS'));
+    ok('and the dot that separated it from the week', !doc.querySelector('.ws-hud-sep'));
+    ok('the week is still there, on its own', !!$('wsHudW') && /^7d \d+%$/.test($('wsHudW').textContent),
+      doc.querySelector('.ws-hud').textContent);
+    // and it comes BACK: the nodes are kept rather than dropped, because a push carrying a window
+    // has to be able to put them where they were. Appending would leave the dot after the week
+    toWebview({
+      type: 'data',
+      data: Object.assign({}, base, {
+        fh: { used_percentage: 42, resets_at: nowS() + 2 * HOUR },
+        sd: { used_percentage: 61, resets_at: nowS() + 3 * DAY }
+      })
+    });
+    advance(20);
+    ok('a push that does carry a window puts both back, in order',
+      doc.querySelector('.ws-hud').textContent === '5h 42%·7d 61%', doc.querySelector('.ws-hud').textContent);
+    ok('and the no-session class is gone with them', !doc.body.classList.contains('no-session'),
+      doc.body.getAttribute('class'));
+
+    ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e.message).join('; '));
+}

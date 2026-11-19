@@ -6,15 +6,33 @@
 // same thing the games are: one page, one script, one process.
 'use strict';
 
+// Every selector in the served stylesheet that hides `sel` outright. A rule that merely MENTIONS
+// the name is not one of them (.mascot-wrap is a different element and a fixed box of its own), so
+// the match is anchored to the end of a compound.
+function RULES_HIDING(css, sel) {
+  const out = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  const tail = new RegExp('\\' + sel + '(?![\\w-])\\s*$');
+  let m;
+  while ((m = re.exec(css))) {
+    if (!/display\s*:\s*none/.test(m[2])) continue;
+    for (const g of m[1].split(',')) if (tail.test(g.trim())) { out.push(m[1].trim()); break; }
+  }
+  return out;
+}
+
 module.exports = {
   id: 'chrome',
-  modes: ['badtab', 'compact', 'favs', 'header', 'header-reduce', 'nohero', 'resume-bj', 'resume-list'],
+  modes: ['badtab', 'compact', 'favs', 'header', 'header-reduce', 'nohero', 'resp', 'resume-bj', 'resume-list'],
   // what the webview had stored when the page was loaded: a reload resuming where it was
+  // `door` is which side of the crossroads a stored view was on (docs/shop-spec.md, section 4-4).
+  // `resume-bj` deliberately leaves it out: a view stored before the crossroads existed knows a
+  // game and no door, and it has to come back to that game rather than to the crossroads
   state: {
     compact: { tab: 'usage', compact: true },
     badtab: { tab: 'bogus' },
-    favs: { tab: 'games', lastTab: 'usage' },
-    'resume-list': { tab: 'games', lastTab: 'usage' },
+    favs: { tab: 'games', door: 'games', lastTab: 'usage' },
+    'resume-list': { tab: 'games', door: 'games', lastTab: 'usage' },
     'resume-bj': { tab: 'games', game: 'blackjack', lastTab: 'agents' }
   },
   // an asset catalog without the player sprite: the seat stays empty and nothing else breaks
@@ -161,7 +179,9 @@ module.exports = {
       $('gmRows').hidden && !$('gmFavRows').hidden
       && rowsIn('gmFavRows').join() === registry.GAMES.map((g) => g.id).join(),
       rowsIn('gmFavRows').join());
-    $('hdCredits').click(); advance(5); $('hdCredits').click(); advance(5);
+    // out of the area and back in through the Games door: the list is one step inside the
+    // crossroads now, so this is what "coming back to the list" costs
+    $('hdCredits').click(); advance(5); openList();
     ok('and the focus still lands on a row that can be seen', active() === h.rowFor('blackjack'), activeName());
     // a push arrives every ten seconds: it must not undo what the host was told
     const base = { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: 0, today: 0, frac: 0, perCredit: 10000 } };
@@ -195,7 +215,25 @@ module.exports = {
     $('tabAgents').click(); advance(5); ok('agents: tab-agents only', bodyTabs() === 'tab-agents compact', bodyTabs());
     $('tabUsage').click(); advance(5); ok('usage again', bodyTabs() === 'tab-usage compact', bodyTabs());
     const css = doc.querySelector('style').textContent;
-    ok('no body:not(.tab-agents) selector left; six body.tab-usage.compact rules', !css.includes('body:not(.tab-agents)') && (css.match(/body\.tab-usage\.compact/g) || []).length === 6);
+    // ONE, where there used to be six. Five went in 1.32.0 and four of them were hiding something
+    // a reader did not ask to compress: the crab (and the second drawing that stood in for it),
+    // the whole .ttl, and the credits line inside it, which is the only way into the games, so one
+    // press of this chevron shut that door (docs/header-fold-spec.md, 2-4). The fifth was the
+    // section header, which now holds nothing but the notice that the readings have gone old, and
+    // a folded panel is drawing those same readings: folding may not be a way to lose the notice.
+    // What is left is the stat tiles, which are readings and are what compact is for.
+    ok('no body:not(.tab-agents) selector left; one body.tab-usage.compact rule',
+      !css.includes('body:not(.tab-agents)') && (css.match(/body\.tab-usage\.compact/g) || []).length === 1,
+      (css.match(/body\.tab-usage\.compact [^{]+/g) || []).join(' | '));
+    // the crab and the way into the games both survive the fold. The crab is the product's mark and
+    // the credits button is the only door to five games
+    ok('folded, the crab is still there and the credits are still clickable',
+      !!doc.querySelector('.head .mascot img') && $('hdCredits').style.display !== 'none'
+      && !/\.mascot\{display:none/.test(css.replace(/\s/g, '')), bodyTabs());
+    ok('and no rule hides the crab on any tab or in compact',
+      !RULES_HIDING(css, '.mascot').length, RULES_HIDING(css, '.mascot').join(' | '));
+    ok('the second header crab is gone from the page and the stylesheet',
+      !doc.querySelector('.sparkle-hd') && !/sparkle-hd\{/.test(css));
     } else if (MODE === 'nohero') {
     // no player sprite in the catalog: the seat is empty and everything else still works
     openTable();
@@ -205,6 +243,72 @@ module.exports = {
     $('bjDeal').click(); advance(2); advance(1200);
     ok('no player sprite: a hand still deals and shows', allCards().length === 4 && lineText(0) && !$('bjPlay').hidden, 'cards ' + allCards().length);
     ok('no player sprite: still no hero after the deal', doc.querySelectorAll('#bjHands .bj-hero').length === 0);
+    } else if (MODE === 'resp') {
+    // THE PANEL'S LAYOUT MAY NOT BE DECIDED BY THE PANEL'S OWN HEIGHT.
+    //
+    // Two classes come off the width: `narrow` (232) drops the stat tiles, `wrapcols` (340) puts
+    // the ring and the crab under the bars instead of beside them, which takes the card from 409
+    // to 575. The width this was read off was the viewport WITHOUT the scrollbar, and whether
+    // there is a scrollbar is decided by how tall the panel is, so the panel's own height came
+    // back round as its layout: on a real sidebar sitting near 340 the context bar filling up
+    // made a scrollbar appear, the reading dropped by the gutter, and the crab fell 166px under
+    // the bars and came back when the figure settled.
+    //
+    // So this mode drives the loop rather than taking one reading: the width is held still and
+    // the GUTTER is moved, which is what the panel's height does, and nothing may move.
+    const ro = roCbs.find((r) => r.targets.includes(doc.body));
+    ok('the page watches the body, which is what runs this at all', !!ro);
+    const settle = () => { ro.cb(); advance(200); };          // the observer is debounced 160ms
+    const has = (c) => doc.body.classList.contains(c);
+    const cls = () => ['narrow', 'wrapcols'].filter(has).join(' ') || '(neither)';
+    const at = (w) => { h.innerWidth = w; settle(); };
+
+    // 1. the verdict at each width, with nothing scrolling: the same two thresholds as before
+    at(400); ok('a 400px panel is neither narrow nor wrapped', cls() === '(neither)', cls());
+    at(339); ok('under 340 the ring and the crab go under the bars', cls() === 'wrapcols', cls());
+    at(231); ok('and under 232 the stat tiles go with them', has('narrow') && has('wrapcols'), cls());
+    at(400); ok('and a wide panel gets both back', cls() === '(neither)', cls());
+
+    // 2. the defect itself: the sidebar does not move here at all
+    at(345);
+    ok('a 345px sidebar is not wrapped', !has('wrapcols'), cls());
+    let flips = 0;
+    for (let i = 0; i < 8; i++) {
+      h.scrollGutter = i % 2 ? 0 : 15;      // the panel grew tall enough to scroll, then did not
+      const was = has('wrapcols');
+      settle();
+      if (has('wrapcols') !== was) flips++;
+    }
+    ok('and the panel filling up and emptying out eight times cannot move its layout',
+      flips === 0 && !has('wrapcols'), flips + ' flip(s), ' + cls());
+
+    // 3. ...and the same measurement over and over does not walk anywhere either
+    h.scrollGutter = 15;
+    at(339);
+    const settled = cls();
+    for (let i = 0; i < 6; i++) settle();
+    ok('six passes at one width land where the first one did', cls() === settled, settled + ' -> ' + cls());
+
+    // 4. HYSTERESIS. The width that turns a class on is not the width that turns it off, and the
+    //    gap is the gutter this window was actually measured to have (15 above) rather than a
+    //    number written down: that is the widest the reading could ever have jumped by on its own
+    at(400);
+    let on = null, off = null;
+    for (let w = 345; w >= 330 && on == null; w--) { at(w); if (has('wrapcols')) on = w; }
+    for (let w = on; w <= 365 && off == null; w++) { at(w); if (!has('wrapcols')) off = w; }
+    ok('wrapping starts one pixel under the threshold', on === 339, 'on at ' + on);
+    ok('and stops a measured gutter above it, not at the same number',
+      off === 340 + 15 && off > on, 'off at ' + off + ', on at ' + on);
+    // the other threshold keeps the same pair, since one edge is a defect wherever it is
+    at(400);
+    let nOn = null, nOff = null;
+    for (let w = 240; w >= 225 && nOn == null; w--) { at(w); if (has('narrow')) nOn = w; }
+    for (let w = nOn; w <= 260 && nOff == null; w++) { at(w); if (!has('narrow')) nOff = w; }
+    ok('the stat tiles go at 231 and come back at 247, the same gutter apart',
+      nOn === 231 && nOff === 232 + 15, 'on at ' + nOn + ', off at ' + nOff);
+    at(400);
+    ok('and a wide panel ends up with neither, whatever was walked over', cls() === '(neither)', cls());
+    ok('no handler threw', errors.length === 0, errors.map((e) => e && e.message).join(' | '));
     } else if (MODE === 'badtab') {
     ok('an unknown stored tab falls back to Usage', bodyTabs() === 'tab-usage' && $('panelUsage').style.display === '' && $('panelGames').style.display === 'none' && notShown('panelTable'), bodyTabs());
     } else {

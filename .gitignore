@@ -1,6 +1,10 @@
 node_modules/
 *.vsix
 .DS_Store
+# measuring output (tools/shoot-panels.mjs --only ... ): pictures full of invented readings, kept
+# out of the repository so one of them can never reach the listing the way media/ does
+tools/.measure/
+tools/.shoot/
 # character sprites: embedded as base64 in sprite-data.js, raw png kept local only (not redistributed)
 npc-*.png
 hum-*.png

@@ -219,18 +219,23 @@
   // Keyboard focus follows the table: in on entry, to the first action when a hand starts, back to
   // Deal when the bet controls return, and back in whenever it was left on something hidden or
   // disabled. Otherwise it stays where the player put it. Left on the header credits button, Enter
-  // would press that button again and leave the table
+  // would press that button again and leave the table.
+  //
+  // Whether the focus may be taken at all is NOT this panel's decision: CUC.refocus makes it, once,
+  // for every screen. It is the difference between "my own repaint dropped the focus" and "the
+  // focus is in the editor and this document does not hold it", which `activeElement === body`
+  // cannot tell apart. Read its comment in webview.js before changing anything here.
   function bjFocusAfter() {
     if (CUC.current() !== 'blackjack') return;
     var phase = bj.st ? bj.st.phase : 'bet', play = phase === 'player';
     var swapped = bj.focusPhase != null && play !== (bj.focusPhase === 'player');
     bj.focusPhase = phase;
-    var a = document.activeElement, table = el('panelTable');
-    var lost = !a || a === document.body || a.hidden || a.disabled || !(table && table.contains(a));
-    if (!bj.wantFocus && !swapped && !lost) return;
+    // the ask is cleared whether or not the focus moves: an ask refused because the editor's focus
+    // is elsewhere is refused for good, not saved up for the next repaint
+    var want = bj.wantFocus || swapped;
     bj.wantFocus = false;
     var target = play ? document.querySelector('#bjPlay [data-op]:not([hidden]):not([disabled])') : el('bjDeal');
-    if (target && !target.disabled) target.focus();
+    CUC.refocus(el('panelTable'), target, want);
   }
 
   // --- controls

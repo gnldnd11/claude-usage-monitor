@@ -16,9 +16,14 @@ const symbols = require('./games/symbols');
 // is created the first time that game is opened, so five games cost five list rows, not five
 // panels. Nothing in this file names a game.
 function renderHtml(vars) {
+  // No logo and no second crab: the header is a row of controls now (see .head below), so the two
+  // pictures it used to carry have no element to go in. logo.png and sparkle.png stay in the
+  // package: the drawings are being redone and the header may want one of them again
   const {
-    csp, scriptUri, logoUri, crabUri, sparkleUri,
+    csp, scriptUri, crabUri,
     mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
+    mascotCodingUri, mascotFloatUri,
+    heroGamesUri, heroShopUri,
     roomMinecraftUri, assetsJson, gameList, gameScripts
   } = vars;
   // A row: the picture, the name, the figure's empty slot, and the star.
@@ -60,24 +65,30 @@ function renderHtml(vars) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
 <style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}<div class="wrap"><div class="card">
-  <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11.5px;font-weight:600;line-height:1.35">
+  <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11px;font-weight:600;line-height:1.35">
     <span>Sign in for <b>live</b> session &amp; weekly %</span>
-    <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11.5px;white-space:nowrap">Sign In</button>
+    <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11px;white-space:nowrap">Sign In</button>
   </div>
+  <!-- THE HEADER IS A ROW OF CONTROLS, not a nameplate.
+       It used to open with a logo and "Claude Usage" at 16px/700, the largest text on the screen,
+       directly under the VS Code view header that already says Claude Usage: the same words twice,
+       and the panel's copy was the first thing to be cut off at a 250px sidebar. What is left here
+       is the three things that are not the product's name: the crab, the way into the games, and
+       the fold. The product's name is the activity-bar icon's job and the view header's.
+       The crab leads, and that is also the fix for its jumping: it used to sit on the right, where
+       a chevron appears on one tab and not on another, so switching tabs moved it 30px. On the
+       left nothing that comes and goes can push it (docs/header-fold-spec.md, 2-2 and 3-3). -->
   <div class="head">
     <div class="brand">
-      <img class="logo" src="${logoUri}" alt=""/>
-      <div class="ttl">
-        <div class="t1">Claude Usage</div>
-        <button type="button" class="t2 cc" id="hdCredits" aria-pressed="false" title="Credits">${IC.coin}<span class="cc-bal" id="ccBal">–</span><span class="cc-unit">credits</span></button>
-      </div>
-    </div>
-    <div class="hactions">
       <div class="mascot">
         <img src="${crabUri}" alt="claude"/>
         <div class="bubble" id="bubble">${IC.heart}</div>
       </div>
-      <img class="sparkle-hd" src="${sparkleUri}" alt=""/>
+      <div class="ttl">
+        <button type="button" class="t2 cc" id="hdCredits" aria-pressed="false" title="Credits">${IC.coin}<span class="cc-bal" id="ccBal">–</span><span class="cc-unit">credits</span></button>
+      </div>
+    </div>
+    <div class="hactions">
       <button class="toggle" id="toggle" title="Compact / expand">${IC.chevron}</button>
     </div>
   </div>
@@ -87,17 +98,23 @@ function renderHtml(vars) {
   </div>
   <div class="inner" id="panelUsage">
     <div class="warnbar" id="warnbar" hidden></div>
-    <div class="ihead">
-      <div class="it">${IC.bars} Usage summary</div>
-      <div class="upd">Updated <span id="upd">now</span> <span class="d"></span></div>
+    <!-- EMPTY MOST OF THE TIME, and it takes no space while it is (styles.js, #uhead).
+         The section title that used to be here said "Usage summary" directly under the tab called
+         Usage: the name of the thing you are already looking at, with no judgement in it. What is
+         left is the freshness line, and it has nothing to report while the usage endpoint is
+         answering: it appears for the two states worth a row, the first call still out and an
+         answer that has gone old. It said "Updated now" the rest of the time, which was not even
+         true (webview.js, renderFreshness). The .ihead class stays, because the Agents tab's two
+         headers and the casino's are the same class and are not part of this. -->
+    <div class="ihead" id="uhead">
+      <div class="upd"><span class="d"></span><span id="upd"></span></div>
     </div>
     <div class="body">
+      <!-- THREE bars, not four. The session had one here AND the ring beside it, both fed by
+           d.fh.used_percentage, so the biggest block on the screen was a second drawing of the bar
+           above it. The ring is the session's one showing now; what the bar still owned, the time
+           left in the window, moved under the ring (#s_sub). -->
       <div class="meters">
-        <div class="meter" id="pm_session">
-          <div class="mtop"><span class="mlabel">Session <span class="munit">(5h)</span></span><span class="mgrp"><span class="delta" id="s_delta"></span><span class="mval" id="s_pct">–</span></span></div>
-          <div class="mbar"><div class="mfill" id="s_fill"></div></div>
-          <div class="msub" id="s_sub"></div>
-        </div>
         <div class="meter" id="pm_weekly">
           <div class="mtop"><span class="mlabel">Weekly <span class="munit">(7d)</span> <button type="button" class="wk-more" id="wkMore" title="This PC's use this week">Details</button></span><span class="mgrp"><span class="delta" id="w_delta"></span><span class="mval" id="w_pct">–</span></span></div>
           <div class="mbar"><div class="mfill" id="w_fill"></div></div>
@@ -115,25 +132,46 @@ function renderHtml(vars) {
         </div>
       </div>
       <div class="ringbox">
-        <div class="ringwrap" id="pm_ring">
-          <svg width="88" height="88" viewBox="0 0 88 88">
-            <circle class="rtrack" cx="44" cy="44" r="33" fill="none" stroke-width="6"/>
-            <circle id="ringArc" cx="44" cy="44" r="33" fill="none" stroke="#e8895a" stroke-width="6"
-              stroke-linecap="round" stroke-dasharray="207.3" stroke-dashoffset="207.3"/>
-          </svg>
-          <div class="rcenter">
-            <div class="rpct"><span id="ringPct">–</span><span>%</span></div>
-            <div class="rtext">used</div>
+        <!-- #pm_ring is the ring AND the window's time left, because they are one reading: the
+             settings checkbox that hides the session has to take both or it leaves a bare
+             countdown with nothing to count against -->
+        <div class="ringside" id="pm_ring">
+          <div class="ringwrap">
+            <svg width="88" height="88" viewBox="0 0 88 88">
+              <circle class="rtrack" cx="44" cy="44" r="33" fill="none" stroke-width="6"/>
+              <circle id="ringArc" cx="44" cy="44" r="33" fill="none" stroke="#e8895a" stroke-width="6"
+                stroke-linecap="round" stroke-dasharray="207.3" stroke-dashoffset="207.3"/>
+            </svg>
+            <div class="rcenter">
+              <div class="rpct"><span id="ringPct">–</span><span>%</span></div>
+              <div class="rtext">used</div>
+            </div>
           </div>
+          <div class="rleft" id="s_sub"></div>
         </div>
-        <div class="mascot-wrap">
+        <!-- The box is a FIXED height and the picture is bottom-aligned inside it. The six APNGs
+             are 160x90, 320x268, 480x570, 160x90, 353x223 and 345x320, so a width with height:auto
+             rendered them 49.5, 73.7, 104.5, 49.5, 55.6 and 81.6 tall: every state change shoved
+             the stat tiles below down or up, and a session reset (90%+ to single digits) did it in
+             one 55px jump.
+             SIX DRAWINGS, TWO AXES AND ONE PURCHASE. The limit's step picks the row (idle,
+             working, despair, stunned) and whether anything has been answered lately picks the
+             column, so the idle step is coding while replies are landing; the quiet side of it is
+             float for a reader who has bought it in the shop and idle for everyone else
+             (webview.js, MASCOT_ART). All six are named here so the script only ever swaps the
+             source for one of them. -->
+        <div class="mascot-wrap" id="pm_mascot">
           <div class="mwarn" id="mwarn" hidden>${IC.warn}</div>
-          <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" alt=""/>
+          <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" data-coding="${mascotCodingUri}" data-float="${mascotFloatUri}" alt=""/>
         </div>
       </div>
     </div>
     <div class="stats" id="pm_tiles">
-      <div class="stat"><div class="stop">${IC.clock}</div><div class="srow"><span class="sval" id="st_time">–</span></div><div class="slabel">Active time</div></div>
+      <!-- The label has an id because the tile answers one of two questions: the five-hour
+           window's elapsed part where there is a window, and today's first-to-last span where
+           there is not. A tile that changed its number without changing its name would be the
+           panel quietly relabelling itself (webview.js, activeToday) -->
+      <div class="stat"><div class="stop">${IC.clock}</div><div class="srow"><span class="sval" id="st_time">–</span></div><div class="slabel" id="st_time_lab">Active time</div></div>
       <div class="stat" id="st_tok_tile"><div class="stop">${IC.bolt}</div><div class="srow"><span class="sval" id="st_tok">–</span><span class="sdelta" id="tok_delta"></span></div><div class="slabel">Tokens</div></div>
       <div class="stat"><div class="stop">${IC.doc}</div><div class="srow"><span class="sval" id="st_req">–</span><span class="sdelta" id="req_delta"></span></div><div class="slabel">Requests</div></div>
     </div>
@@ -167,8 +205,41 @@ function renderHtml(vars) {
     <div class="pool" id="pool"></div>
     <div class="crew-mini" id="crewMini"></div>
   </div>
+  <!-- THE CROSSROADS: the coin button opens two doors, and this screen answers one question.
+       Which way. So there is nothing on it but the two doors and their names: no heading (the way
+       in is the button directly above it), no arrow (there is no step back from here that the coin
+       does not already take) and NO NUMBERS AT ALL, because the balance is in that same button.
+       The pictures are the point and the words under them are the caption: the shop's awning and
+       the dealer's felt say which door is which before either label is read.
+       Neither picture is given image-rendering:pixelated, and that is measured rather than chosen:
+       417 of hero-shop's 645 column boundaries are a single pixel apart, so nearest-neighbour at
+       0.205x drops four out of five of them and the black outline goes with them
+       (docs/shop-spec.md, section 2-4). -->
+  <div class="inner cr" id="panelCross" style="display:none">
+    <div class="cr-pair">
+      <button type="button" class="cr-door" id="crDoorGames">
+        <span class="cr-art"><img src="${heroGamesUri}" alt=""/></span>
+        <span class="cr-cap">Games</span>
+      </button>
+      <button type="button" class="cr-door" id="crDoorShop">
+        <span class="cr-art"><img src="${heroShopUri}" alt=""/></span>
+        <span class="cr-cap">Shop</span>
+      </button>
+    </div>
+  </div>
+  <!-- The shop's own screen is drawn by webview.js (renderShop), because what is on it is DATA:
+       what is on sale, what it costs and whether it has been bought. The shell is here for the same
+       reason every other panel's is, and nothing else: a panel in the first paint is markup for a
+       screen most readers never open. -->
+  <div class="inner shop" id="panelShop" style="display:none"></div>
   <div class="inner bj-games" id="panelGames" style="display:none">
-    <div class="ihead"><div class="it gm-it">${IC.coin} Games</div></div>
+    <!-- The list is one step inside the crossroads now, so its heading carries the arrow back to
+         it. One arrow, one step: the same contract every game's heading keeps. -->
+    <div class="ihead bj-head">
+      <button type="button" class="bj-back" id="gmBack" title="Games and shop">${IC.chevron}</button>
+      <div class="it gm-it">${IC.coin} Games</div>
+      <div class="bj-side"></div>
+    </div>
     <div class="gm-rows" id="gmFavRows" hidden></div>
     <div class="gm-rows" id="gmRows">
 ${gameRows(gameList)}
@@ -189,11 +260,14 @@ ${gameRows(gameList)}
         </select>
       </div>
       <div class="sheet-sec">Show in panel</div>
+      <!-- The "session" key is the ring: the session's bar is gone and the ring is what is left of
+           it, so the two checkboxes that used to mean "the bar" and "the ring" are one thing now.
+           The one kept is the one named after the data (the "ring" key is dropped), because what a
+           reader turns off here is a reading and not a shape. -->
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="session" checked> Session (5h)</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="weekly" checked> Weekly (7d)</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="fable" checked> Fable (7d)</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="context" checked> Context</label>
-      <label class="sheet-check"><input type="checkbox" class="pmk" data-k="ring" checked> Usage ring</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="tiles" checked> Stat tiles</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="mascot" checked> Mascot</label>
       <label class="sheet-check"><input type="checkbox" class="pmk" data-k="credits" checked> Credits</label>

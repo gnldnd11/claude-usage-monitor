@@ -99,6 +99,10 @@ try {
   // may say what the webview had stored when it loaded (a reload resuming where it was)
   const html = CASE.html ? CASE.html(webviewApi.html, MODE) : webviewApi.html;
   const doc = createDocument(html);
+  // ...and it may say the editor's focus was somewhere ELSE when the page loaded (a window opening
+  // on a stored tab while the user is typing in the chat input). This has to be set before the
+  // scripts run, because what the stored view does on DOMContentLoaded is the thing being measured
+  if (CASE.focused && CASE.focused[MODE] === false) doc.winFocused = false;
   let winMessage = null;
   let vsState = (CASE.state && CASE.state[MODE]) || {};
   const roCbs = [];
@@ -120,6 +124,13 @@ try {
     setInterval: () => 0, clearInterval() {},
     matchMedia: (qs) => ({ matches: /(^|-)reduce$/.test(MODE) && /reduced-motion/.test(qs) }), // reduce, header-reduce, hilo-reduce
     ResizeObserver: function (cb) { const rec = { cb, targets: [] }; roCbs.push(rec); this.observe = (t) => rec.targets.push(t); },
+    // THE VIEWPORT, which is what the two responsive thresholds read. `innerWidth` is the whole of
+    // it and clientWidth is what is left after the scrollbar's gutter, and the difference between
+    // the two is the input that used to come back round from the panel's own HEIGHT: a panel tall
+    // enough to scroll measured itself narrower (webview.js, respWidth). A mode moves either one
+    // with h.innerWidth and h.scrollGutter; 400 with no gutter is a panel wider than both
+    // thresholds, which is the layout every other mode has always been measured in
+    innerWidth: 400,
     addEventListener: (t, f) => { if (t === 'message') winMessage = f; },
     console
   };
@@ -154,7 +165,12 @@ try {
   // climbs that depth first and only leaves the game from the top of it (the panels' optional `up`,
   // games/README.md section 4). So this presses until the game is actually left, bounded, because a
   // screen that never leaves should fail the mode that asked rather than hang it
+  // THE COIN NOW OPENS THE CROSSROADS and the list is one step inside it, behind the Games door
+  // (docs/shop-spec.md, section 2), so getting to the list is: into the area, out of whatever is
+  // open, then through that door. Written here once rather than in every mode file, which is the
+  // same reason every other piece of navigation is in this handle
   const BACK_STEPS = 4;
+  const showing = (id) => { const e = $(id); return !!e && e.style.display !== 'none'; };
   const openList = () => {
     if (!inGames()) { $('hdCredits').click(); advance(5); }
     for (const g of registry.GAMES) {
@@ -165,6 +181,16 @@ try {
         back.click(); advance(5);
       }
     }
+    // the shop is beside the list rather than inside it, so its arrow climbs to the crossroads
+    if (showing('panelShop')) { $('shBack').click(); advance(5); }
+    if (showing('panelCross')) { $('crDoorGames').click(); advance(5); }
+  };
+  // ...and the other door. Through the list, because that is the one path that unwinds a game's own
+  // depths first: from there it is one press up to the crossroads and one across
+  const openShop = () => {
+    if (!showing('panelShop')) openList();
+    if (showing('panelGames')) { $('gmBack').click(); advance(5); }
+    if (showing('panelCross')) { $('crDoorShop').click(); advance(20); }
   };
   // The list row that opens a game, by id rather than by its place in the list: a game added above
   // another one must not move anybody else's test
@@ -224,8 +250,9 @@ try {
   // --- the handle a mode file is given -----------------------------------------------------
   // Everything above, named. Three of these are PROPERTIES rather than functions because a mode
   // assigns to them (`h.intercept = fn` answers a message itself, `h.hostDelay = 5000` stretches the
-  // host's replies) and two are getters over values that move under them (`h.now` is the fake
-  // clock, `h.idleSrc` is latched the first time a table is built).
+  // host's replies, `h.hasFocus = false` puts the editor's focus outside this webview) and two are
+  // getters over values that move under them (`h.now` is the fake clock, `h.idleSrc` is latched the
+  // first time a table is built).
   // Nothing in here is per-game. A new game asks for its own messages with h.sent('<key>') and
   // opens its own screen with h.openGame('<id>')
   const h = {
@@ -236,7 +263,8 @@ try {
     rawHtml: html,
     ok, advance, later,
     pending: (ms) => q.filter((t) => t.at > now + (ms || 0)).length,  // pacing timers still to fire
-    doc, $, notShown, bodyTabs, inGames, atTable, gameRow, rowFor, favFor, rowBox, openGame, openList, openTable,
+    doc, $, notShown, showing, bodyTabs, inGames, atTable, gameRow, rowFor, favFor, rowBox,
+    openGame, openList, openShop, openTable,
     reopenTable, dealerCards, allCards, isBack, lineText, hdrBal, latchIdle, active, activeName,
     mouseClick, ledgerBalance, useSeed, standOut, watch, noStaleTimer,
     sent: sentOf, sentOps, sentHl, hostLog, errors, roCbs,
@@ -244,9 +272,31 @@ try {
     hostSend: (m) => hostOnMessage(m),
     ext, bj, credits, registry, gs, config
   };
+  // the viewport the responsive thresholds read, as two numbers a mode can move independently: the
+  // sidebar's width, and the gutter a scrollbar is taking out of it right now
+  let _innerW = sandbox.innerWidth, _gutter = 0;
+  const _applyViewport = () => { sandbox.innerWidth = _innerW; };
+  for (const el of [doc.documentElement, doc.body]) {
+    if (el) Object.defineProperty(el, 'clientWidth', { get: () => _innerW - _gutter, configurable: true });
+  }
+  Object.defineProperty(h, 'innerWidth', { get: () => _innerW, set: (v) => { _innerW = v; _applyViewport(); } });
+  Object.defineProperty(h, 'scrollGutter', { get: () => _gutter, set: (v) => { _gutter = v; } });
   Object.defineProperty(h, 'now', { get: () => now });
   Object.defineProperty(h, 'idleSrc', { get: () => idleSrc });
   Object.defineProperty(h, 'intercept', { get: () => intercept, set: (v) => { intercept = v; } });
+  // THE EDITOR'S FOCUS IS NOT THIS WEBVIEW'S. `h.hasFocus = false` is the user typing somewhere else
+  // in the editor: this document stops holding the focus and, as Chromium does when the focus leaves
+  // a frame, the element inside it that had it is no longer the active one. Both halves move
+  // together on purpose, because a panel reading only activeElement cannot tell this state from a
+  // focus its own repaint dropped, and that confusion is what let the market's once-a-second repaint
+  // take the keyboard out of the chat input (webview.js, refocusIn)
+  Object.defineProperty(h, 'hasFocus', {
+    get: () => doc.hasFocus(),
+    set: (v) => {
+      doc.winFocused = !!v;
+      if (!v && doc.activeElement && doc.activeElement.blur) doc.activeElement.blur();
+    }
+  });
   Object.defineProperty(h, 'hostDelay', { get: () => hostDelay, set: (v) => { hostDelay = v; } });
 
   CASE.run(h, MODE);

@@ -11,6 +11,8 @@
 //   modes   the mode names it answers to. Unique across every file; a clash throws here
 //   start   optional: credits the ledger starts that mode with, by mode name. 1,000 if left out
 //   state   optional: the webview's STORED state for that mode, by mode name (a reload resuming)
+//   focused optional: false says the editor's focus was NOT in this webview when the page loaded,
+//           by mode name (a window opening on a stored tab while the user types somewhere else)
 //   html    optional: (html, mode) -> html, to break the page before it is parsed
 //   run     (h, mode) -> void. `h` is the harness handle table.test.js builds; see its header
 //

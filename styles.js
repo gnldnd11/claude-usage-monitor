@@ -25,25 +25,66 @@ module.exports = `
   .wrap{padding:10px;}
   .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;}
   .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:13px;}
-  .brand{display:flex;align-items:center;gap:10px;min-width:0;}
-  .logo{width:28px;height:28px;flex:none;}
+  .brand{display:flex;align-items:center;gap:8px;min-width:0;}
   .ttl{min-width:0;flex:1 1 auto;overflow:hidden;}
-  .ttl .t1{font-size:16px;font-weight:700;line-height:1.1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .ttl .t2{color:var(--muted);font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .mascot{position:relative;flex:none;}
-  .mascot img{width:44px;height:auto;image-rendering:pixelated;display:block;}
+  .ttl .t2{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* A FIXED BOX, 44 x 34, and the drawing is fitted into it bottom-first, the same rule the big
+     mascot follows (.mascot-wrap below), so the two crabs stand on their floors the same way.
+     It is a box and not a width because the header's height is this element's now that the title
+     is gone: crab.png is 261x195 (ratio 1.3385) and a width of 44 with height:auto comes out
+     32.86 tall, so a redrawn crab that is a little squarer would make the whole panel taller and
+     take the speech bubble with it (.bubble is placed against this box). 34 is the button height
+     docs/game-panels.md section 2 already uses, and it is above 32.86, so today's drawing is not
+     cropped by it. */
+  .mascot{position:relative;flex:none;height:34px;display:flex;align-items:flex-end;}
+  .mascot img{width:44px;height:100%;object-fit:contain;object-position:bottom;image-rendering:pixelated;display:block;}
   .bubble{position:absolute;top:-10px;right:-13px;background:var(--bubble);border:1px solid var(--bubblebd);
     border-radius:8px;padding:3px 4px;line-height:0;box-shadow:0 2px 5px rgba(0,0,0,.2);}
   .bubble svg{width:12px;height:12px;display:block;}
-  .warnbar{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;margin-bottom:11px;border-radius:9px;background:rgba(229,72,77,.13);border:1px solid rgba(229,72,77,.55);color:var(--text);font-size:11.5px;line-height:1.35;}
+  .warnbar{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;margin-bottom:11px;border-radius:9px;background:rgba(229,72,77,.13);border:1px solid rgba(229,72,77,.55);color:var(--text);font-size:11px;line-height:1.35;}
   .warnbar[hidden]{display:none;}
   .warnbar svg{width:15px;height:15px;flex:none;}
   .warnbar .wbmsg{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
   .warnbar .wbq{display:block;margin-top:4px;color:var(--muted);font-style:italic;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .warnbar .wbx{flex:none;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:1px 5px;border-radius:5px;align-self:flex-start;}
   .warnbar .wbx:hover{background:rgba(255,255,255,.12);color:var(--text);}
-  .mascot-wrap{position:relative;display:inline-flex;}
+  /* FIXED HEIGHT, and the drawing is bottom-aligned inside it (see .sparkle below).
+     74px is the WORKING state's own height at 88px wide (320x268). The four APNGs have four
+     different ratios, so at height:auto they rendered 49.5, 73.7, 104.5 and 49.5 and every state
+     change shoved the stat tiles below. 74 is the designer's number and it is a choice, not the
+     maximum: idle and stunned (160x90) are drawn 88x49.5 inside it with the slack above, working
+     fills it, and DESPAIR (480x570) is the one state the box makes smaller, fitted to 62.3x74 from
+     the 104.5 it used to take. It is still the tallest-looking of the four. What is pinned is the
+     floor all four stand on. */
+  .mascot-wrap{position:relative;display:inline-flex;align-items:flex-end;height:74px;margin-top:2px;}
+  /* The bubble has a tail and the tail points down at the crab's head, so it is placed against the
+     DRAWING and not against the box. The box is a fixed 74px and the drawing is fitted into it
+     bottom-first, so where its top edge sits depends on the picture: working (320x268) and despair
+     (480x570) fill the box to within half a pixel, while idle and stunned (160x90) come out 49.5px
+     tall and start 24.5px down. With one offset for all four the warning hung 24.5px above an idle
+     crab with its tail on nothing. test/panel-css.test.js recomputes both numbers from the four
+     PNGs' own headers, so a new drawing with a new ratio fails there rather than on screen. */
   .mwarn{position:absolute;top:-15px;left:50%;transform:translateX(-50%);background:#fff;border-radius:10px;padding:3px 5px 4px;box-shadow:0 3px 9px rgba(0,0,0,.25);cursor:pointer;z-index:6;}
+  /* SIX DRAWINGS, SIX OFFSETS, and every one of them is read out of the file rather than chosen.
+     The bubble has a tail pointing down at the crab's head, so it is placed against the top of the
+     INK: contain fits each canvas into the 88x74 box and sits it on the bottom edge, and then the
+     drawing starts wherever its own transparent padding ends. Those are two different things and
+     treating them as one is a bug this file has had twice. The first time, one offset for four
+     drawings left the bubble 24.5px above an idle crab with its tail on nothing. The second time,
+     the offsets were computed from the CANVAS, which is why padding two of the canvases out to
+     shrink the crab inside them (2026-11-19) moved the drawings down and left the bubbles where
+     they were, pointing at empty space: coding's ink starts 40.63px down an unchanged 88x55.67
+     canvas.
+     -15 is the bubble's own lift, so each rule is (where the ink starts) - 15. The base value is
+     what the box uses before any state has been drawn.
+     test/panel-css.test.js recomputes all six by DECODING THE FRAMES (test/apng.js) and fails if a
+     rule and a drawing disagree by a pixel, so the next redraw breaks a test and not a screen. */
+  .mascot-wrap[data-state="idle"] .mwarn{top:20.5px;}
+  .mascot-wrap[data-state="working"] .mwarn{top:-13.1px;}
+  .mascot-wrap[data-state="despair"] .mwarn{top:-9.3px;}
+  .mascot-wrap[data-state="stunned"] .mwarn{top:12.8px;}
+  .mascot-wrap[data-state="coding"] .mwarn{top:25.6px;}
+  .mascot-wrap[data-state="float"] .mwarn{top:7.2px;}
   .mwarn.calm{animation:none;cursor:default;}
   .mwarn.mid{animation:pulse 1.9s ease-in-out infinite;}
   .mwarn.high{animation:pulse 1.2s ease-in-out infinite;}
@@ -53,6 +94,16 @@ module.exports = `
   .mwarn::after{content:'';position:absolute;bottom:-6px;left:50%;margin-left:-6px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #fff;}
   .inner{position:relative;background:var(--inner);border:1px solid var(--iborder);border-radius:13px;padding:13px;}
   .ihead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;padding-right:5px;}
+  /* The Usage tab's own header row, which is EMPTY unless there is something to say about how old
+     the usage endpoint's answer is. Not there at all by default: an empty flex row would still
+     hold its 12px of margin and leave a gap nothing explains.
+     The pulsing dot belongs to ONE of the two states it does appear in. It means "live", which is
+     true while the first call is still out and the opposite of true when the row is there to say
+     the reading has gone old. */
+  #uhead{display:none;}
+  #uhead.loading,#uhead.stale{display:flex;}
+  #uhead .d{display:none;}
+  #uhead.loading .d{display:block;}
   .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);white-space:nowrap;min-width:0;overflow:hidden;flex:0 1 auto;}
   .ihead .it svg{width:15px;height:15px;color:#e8895a;}
   .upd{color:var(--muted);font-size:10.5px;display:flex;align-items:center;gap:5px;white-space:nowrap;flex:none;}
@@ -62,34 +113,47 @@ module.exports = `
   .meter{margin-bottom:10px;}
   .meter:last-child{margin-bottom:0;}
   .mtop{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
-  .mlabel{color:var(--muted);font-size:11.5px;}
-  .mval{font-weight:700;font-size:13px;color:var(--text);}
+  .mlabel{color:var(--muted);font-size:11px;}
+  .mval{font-weight:700;font-size:12px;color:var(--text);}
   .mbar{position:relative;height:7px;border-radius:4px;background:var(--track);overflow:hidden;}
   .mfill{position:absolute;left:0;top:0;height:100%;border-radius:4px;
     background:linear-gradient(90deg,#e8895a,#f0a882);transition:width .5s ease;width:0;}
-  .msub{color:var(--muted);font-size:10px;margin-top:3px;text-align:right;opacity:.85;}
+  .msub{color:var(--muted);font-size:10.5px;margin-top:3px;text-align:right;opacity:.85;}
   .ringbox{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;}
+  .ringside{display:flex;flex-direction:column;align-items:center;}
   .ringwrap{position:relative;width:88px;height:88px;}
   .ringwrap svg{transform:rotate(-90deg);}
   .rtrack{stroke:var(--ringtrack);}
   .rcenter{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
   .rpct{font-size:22px;font-weight:800;color:#e8895a;line-height:1;}
   .rpct span:last-child{font-size:12px;}
-  .rtext{font-size:9.5px;color:var(--muted);margin-top:2px;}
-  .sparkle{width:88px;height:auto;margin-top:2px;image-rendering:pixelated;}
+  .rtext{font-size:10.5px;color:var(--muted);margin-top:2px;}
+  /* the session window's time left. It was the one thing the removed Session bar still owned */
+  .rleft{font-size:10.5px;color:var(--muted);margin-top:4px;white-space:nowrap;}
+  /* the mascot FILLS its fixed box and is fitted inside it, so the four states are one height and
+     one floor. object-fit:contain keeps every pixel of the drawing (no crop) and
+     object-position:bottom puts the crab's feet on the box's bottom edge. */
+  .sparkle{width:88px;height:100%;object-fit:contain;object-position:bottom;image-rendering:pixelated;display:block;}
+  /* the state change: one cut, one beat. The whole sprite is pressed 2 whole pixels down and let
+     back up over 160ms in exactly two frames (steps(2,jump-none) renders 2px then 0px and nothing
+     between), so it reads as a thump rather than a slide. transform ONLY: a crossfade, a filter or
+     a blur on pixel art smears it, which is why opacity and filter are not in here. */
+  @keyframes mascotBeat{from{transform:translateY(2px);}to{transform:translateY(0);}}
+  .sparkle.beat{animation:mascotBeat .16s steps(2,jump-none);}
+  @media (prefers-reduced-motion:reduce){.sparkle.beat{animation:none;}}
   .stats{display:flex;gap:1px;margin-top:13px;background:var(--iborder);border-radius:11px;overflow:hidden;}
   .stat{flex:1;background:var(--inner);padding:10px 8px;min-width:0;position:relative;}
   .stat .stop{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
   .stat svg{width:14px;height:14px;color:#e8895a;flex:none;}
-  .stat .sval{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .stat .slabel{color:var(--muted);font-size:10px;white-space:nowrap;}
+  .stat .sval{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .stat .slabel{color:var(--muted);font-size:10.5px;white-space:nowrap;}
   /* narrow panel: hide the stat tiles so values never truncate */
   body.narrow .stats{display:none;}
   .mgrp{display:flex;align-items:baseline;gap:6px;}
   .srow{display:flex;align-items:baseline;gap:5px;}
   .delta,.sdelta{color:#e8895a;font-weight:700;opacity:0;}
   .delta{font-size:11px;}
-  .sdelta{font-size:10px;position:absolute;top:7px;right:8px;}
+  .sdelta{font-size:10.5px;position:absolute;top:7px;right:8px;}
   .delta.show,.sdelta.show{animation:flash 1.9s ease forwards;}
   #ringArc{transition:stroke-dashoffset .6s ease, stroke .3s ease;}
   .roll{display:inline-block;animation:roll .45s ease;}
@@ -114,34 +178,58 @@ module.exports = `
   .sheet-sec{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:15px 0 7px;font-weight:700;}
   .sheet-check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text);cursor:pointer;padding:4px 0;}
   .sheet-check input{accent-color:#e8895a;cursor:pointer;width:14px;height:14px;flex:none;}
-  .sparkle-hd{width:0;opacity:0;flex:none;object-fit:contain;transition:width .4s cubic-bezier(.34,1.56,.64,1),opacity .35s ease;}
-  /* the small crab stands in for the mascot while compact hides it. Both rules are scoped to
-     the Usage tab (body.tab-usage) together, or the two crabs show up side by side elsewhere */
-  body.tab-usage.compact .sparkle-hd{width:32px;opacity:1;}
-  .card,.inner{transition:padding .4s cubic-bezier(.4,0,.2,1);}
+  /* .sparkle-hd is gone: it was a SECOND crab, a different drawing (sparkle.png), swapped in while
+     compact hid the first one. Three crabs in one product is two too many, and a zero-width flex
+     item still ate a gap on each side, which is where the 6px that nobody could account for
+     between the crab and the chevron came from. Compact no longer hides the crab either. */
+  .card,.inner{transition:padding .4s cubic-bezier(.4,0,.2,1),border-width .4s cubic-bezier(.4,0,.2,1);}
   .body{transition:gap .4s cubic-bezier(.4,0,.2,1);}
   .ttl .t2,.ihead,.stats{overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s ease,margin .4s cubic-bezier(.4,0,.2,1);}
-  .ringbox{max-width:150px;overflow:visible;transition:max-width .45s cubic-bezier(.4,0,.2,1),opacity .35s ease;}
+  /* max-height, not just max-width: the collapsed box kept its full 180px of HEIGHT and only lost
+     its width, so 27px of empty, unexplained band sat under the three bars in compact mode (the
+     bars are 153 and the row was 180). 220 is above the box's real 180 so the open panel is
+     unaffected, and it is a length rather than none because a transition needs two of them. */
+  .ringbox{max-width:150px;max-height:220px;overflow:visible;transition:max-width .45s cubic-bezier(.4,0,.2,1),max-height .45s cubic-bezier(.4,0,.2,1),opacity .35s ease;}
   .ttl .t2{max-height:20px;}
   .ihead{max-height:34px;}
   .stats{max-height:90px;}
   /* compact mode is a Usage-tab concept (bars only). The Agents tab and the blackjack table
      have nothing to compress, so the hiding below applies on body.tab-usage only; otherwise
-     switching views while compact leaves the title and section headers missing. */
-  body.tab-usage.compact .mascot{display:none;}
-  body.tab-usage.compact .ttl .t2{max-height:0;opacity:0;}
-  body.tab-usage.compact .ihead{max-height:0;opacity:0;margin-bottom:0;}
+     switching views while compact leaves the section headers missing.
+     WHAT COMPACT NO LONGER HIDES: the crab, and the credits. The crab is the product's mark and
+     hiding it swapped in a second drawing (see .sparkle-hd above); the credits button is the ONLY
+     way into the games, and one press of the chevron used to shut that door (header-fold-spec, 2-4).
+     Neither is a reading, so neither is what a reader asked to compress. */
   body.tab-usage.compact .stats{max-height:0;opacity:0;margin-top:0;}
-  body.tab-usage.compact .ttl{display:none;}
-  .compact .ringbox{max-width:0;opacity:0;overflow:hidden;}
+  /* The rule that hid .ihead in compact is gone with the title it was hiding. What is left in that
+     row is the notice that the readings have gone old, and a folded panel is drawing those same
+     readings, so folding may not be a way to make the notice go away. */
+  /* FOLDED, the panel was half frame: 153px of bars inside 165px of card padding, headers, tabs,
+     borders and that invisible box. The content is untouched and the frame is what goes:
+     a border around a single block makes no hierarchy (design-craft, section 2), and 10px is
+     already one of the panel's spacings (docs/game-panels.md, section 2). 440.59 -> 263. */
+  .compact .ringbox{max-width:0;max-height:0;opacity:0;overflow:hidden;}
   .compact .body{gap:0;}
-  .compact .card{padding:12px;}
-  .compact .inner{padding:11px;}
+  .compact .card{padding:10px;}
+  .compact .inner{padding:0;background:transparent;border-width:0;}
   .compact .head{margin-bottom:10px;}
   .compact .meter{margin-bottom:9px;}
   @keyframes flash{0%{opacity:0;transform:translateY(5px);}12%{opacity:1;transform:translateY(0);}70%{opacity:1;}100%{opacity:0;transform:translateY(-3px);}}
   @keyframes roll{0%{opacity:.25;transform:translateY(6px);}100%{opacity:1;transform:translateY(0);}}
   @keyframes pulse{0%,100%{opacity:.4;}50%{opacity:1;}}
+  /* THIS ACCOUNT HAS NO FIVE-HOUR WINDOW (webview.js, noSessionWindow writes this class and
+     nothing else does). An authenticated Ultra is held by the week alone, so the ring draws the
+     week and these two rules are the rest of that state.
+     The weekly bar STAYS. It was hidden here for one release on the "a figure is not drawn twice"
+     rule (docs/game-panels.md, section 2), and that was the wrong reading of the rule. Fable (7d)
+     is still a bar, so hiding its sibling leaves a list of weekly limits with the main one missing,
+     and the ring is not where the eye goes looking for it: the owner reported the panel as broken
+     twice. A number repeated between a ring and its own bar costs a glance; a limit that is simply
+     absent costs trust in every other figure on the page. Section 2 is about two drawings of one
+     figure competing to BE the reading, which is the session bar the ring replaced in 1.31.x, not
+     about a gauge and the row that names it. */
+  /* no .body rule here any more: it top-aligned a two-bar column against the ring, and with the
+     weekly bar back the column is three bars again, the same shape state 1 centres. */
   body.wrapcols .body{flex-wrap:wrap;}
   body.wrapcols .ringbox{margin:6px auto 0;}
   @media (max-width:270px){.stat .slabel{display:none;}.stat .sval{font-size:11px;text-overflow:clip;}.stat .sdelta{display:none;}.stat{padding:8px 6px;}.munit{display:none;}}
@@ -152,11 +240,16 @@ module.exports = `
   .tab:hover:not(.active){color:var(--text);}
   .inner.agents{padding:11px 11px 14px;}
   .ws-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;min-width:0;}
-  .ws-head .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);min-width:0;overflow:hidden;flex:1 1 auto;}
+  /* flex:1 0 auto, not 1 1 auto: it still takes the slack at a comfortable width, and it is the
+     one thing in this row that may NOT be squeezed. At a 232px sidebar the row is 158px and the
+     three children want 173, and with both able to shrink the loser was the section's name
+     ("Room" came out 16.3px wide and cut) while the room PICKER kept its full 87.7px. The picker
+     is what gives way now: it has an ellipsis of its own and the name it loses is also the picture
+     directly below it. */
+  .ws-head .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);min-width:0;overflow:hidden;flex:1 0 auto;}
   .ws-head .it svg{width:15px;height:15px;color:#e8895a;flex:none;}
   .ws-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  body.narrow .ws-title{display:none;}
-  .ws-map{display:flex;align-items:center;gap:3px;flex:none;max-width:60%;color:var(--text);background:var(--inner);border:1px solid var(--iborder);border-radius:8px;padding:3px 5px 3px 8px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;line-height:1.2;}
+  .ws-map{display:flex;align-items:center;gap:3px;flex:0 1 auto;min-width:0;max-width:60%;color:var(--text);background:var(--inner);border:1px solid var(--iborder);border-radius:8px;padding:3px 5px 3px 8px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;line-height:1.2;}
   .ws-map:hover{border-color:var(--track);}
   .ws-map span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .ws-map svg{width:13px;height:13px;flex:none;color:var(--muted);transform:rotate(180deg);}
@@ -187,8 +280,11 @@ module.exports = `
      button as Room, so drop it or the two chevrons sit on different columns */
   .ihead.crew-head{padding-right:0;}
   /* space-between with three children stranded "N agents" in the middle — let the
-     title eat the slack so the count sits next to the chevron it belongs with */
-  .ihead.crew-head .it{flex:1 1 auto;}
+     title eat the slack so the count sits next to the chevron it belongs with.
+     1 0 auto, the same as the room header above: it takes the slack and it is not the thing that
+     gets squeezed when the row runs out. "Crew" is short enough that nothing is squeezing it today,
+     but the rule the two headers follow has to be one rule or only one of them stays fixed. */
+  .ihead.crew-head .it{flex:1 0 auto;}
   .ws-run{display:inline-flex;align-items:center;gap:3px;margin-left:2px;font-size:9px;font-weight:800;color:#e5484d;flex:none;}
   .ws-run::before{content:'';width:6px;height:6px;border-radius:50%;background:#e5484d;box-shadow:0 0 4px #e5484d;animation:pulse 1.4s ease-in-out infinite;}
   #panelAgents:not(.room-collapsed) .ws-run{display:none;} /* redundant while the room itself is visible */
@@ -196,12 +292,25 @@ module.exports = `
   .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
   .ws-stage{position:absolute;inset:0;overflow:hidden;}
   .ws-hud{position:absolute;top:6px;left:7px;z-index:8;display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;letter-spacing:.2px;color:#fff;background:rgba(0,0,0,.68);padding:2px 8px;border-radius:8px;pointer-events:none;box-shadow:0 1px 5px rgba(0,0,0,.5);white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.6);}
-  /* narrow: the room is tiny, so the HUD scales down instead of covering it,
-     the header icon goes away, and the map dropdown gets the full row */
+  /* narrow: the room is tiny, so the HUD scales down instead of covering it.
+     WHAT GOES, AND WHAT STAYS. The header row is 96px wide at a 170px sidebar and three things
+     wanted it, so something had to be dropped: it used to be the SECTION'S NAME (the whole .it
+     group was hidden, so the word "Room" vanished and the row read as an unlabelled dropdown).
+     The name is what tells a reader which block this is, so what goes instead is the glyph and
+     then the picker's own label (below). Same rule on the Crew header, which truncated its own
+     title to "Cr..." while keeping "7 agents": the roster right below it is already the count. */
   body.narrow .ws-hud{font-size:8px;padding:1px 6px;gap:4px;top:4px;left:5px;}
   body.narrow .ws-hud-delta{font-size:9.5px;top:19px;left:6px;}
-  body.narrow .ws-head .it{display:none;}
-  body.narrow .ws-map{flex:1 1 auto;max-width:none;justify-content:space-between;}
+  body.narrow .ws-head .it svg,body.narrow .crew-head .it svg{display:none;}
+  body.narrow .ws-head .it,body.narrow .crew-head .it{gap:0;}
+  body.narrow .crew-head .upd{display:none;}
+  /* and the picker becomes a glyph, the same shape as the fold button beside it. "Room" needs 34px
+     of the 96 this row has, the fold takes 20 and the gaps 12, which leaves 30: a picker with 20px
+     of room name in it is two letters and an ellipsis. The name it was showing is on its tooltip
+     (webview.js, syncMapName) and the room itself is the picture directly below. */
+  body.narrow .ws-map span{display:none;}
+  body.narrow .ws-map{max-width:none;padding:3px 4px;}
+  body.narrow .ws-map svg{margin:0 auto;}
   .ws-hud-sep{opacity:.45;font-weight:400;}
   .ws-hud-delta{position:absolute;top:26px;left:9px;z-index:8;font-size:11px;font-weight:800;color:#e8895a;letter-spacing:.2px;opacity:0;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.7);}
   .ws-hud-delta.show{animation:flash 1.9s ease forwards;}
@@ -237,18 +346,26 @@ module.exports = `
   @keyframes wkDot{0%,60%,100%{opacity:.25;transform:translateY(0);}30%{opacity:1;transform:translateY(-1.5px);}}
   .walker.stuck .wk-dots{display:none;} /* a wedged agent isn't typing */
   .walker.stuck .wk-sprite{animation:none;}
-  .cr-sprite{image-rendering:pixelated;cursor:pointer;}
+  /* display:block because this is a <span> inside the card's button (a <div> is not phrasing
+     content and a button's content model is), and cropStyle gives it a width and a height */
+  .cr-sprite{display:block;image-rendering:pixelated;cursor:pointer;}
   .pool{display:flex;flex-wrap:wrap;justify-content:center;row-gap:8px;padding:8px 2px 2px;overflow:hidden;max-height:600px;opacity:1;transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .24s ease;}
   .crew-mini{overflow:hidden;max-height:0;opacity:0;transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .24s ease;}
   .crew-collapsed .pool{max-height:0;opacity:0;padding-top:0;padding-bottom:0;}
   .crew-collapsed .crew-mini{max-height:420px;opacity:1;}
-  .cr-card{position:relative;flex:0 0 25%;display:flex;flex-direction:column;align-items:center;min-width:0;padding:5px 1px 8px;border-radius:10px;cursor:pointer;transition:opacity .3s ease,box-shadow .18s ease,background .18s ease;}
+  /* the wrapper holds the ring, the gear and the two badges; the button inside it is the card a
+     reader presses. The padding and the column stack went with the button, so the hover and the
+     selected ring still cover the whole tile */
+  .cr-card{position:relative;flex:0 0 25%;min-width:0;border-radius:10px;transition:opacity .3s ease,box-shadow .18s ease,background .18s ease;}
+  .cr-pick{display:flex;flex-direction:column;align-items:center;width:100%;min-width:0;padding:5px 1px 8px;background:transparent;border:0;border-radius:10px;color:inherit;font-family:inherit;font-size:inherit;cursor:pointer;}
+  .cr-pick:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
   .cr-card:hover:not(.selected){background:rgba(127,127,127,.09);}
   .cr-card:hover .cr-sprite{filter:brightness(1.1);}
   .cr-card.selected{background:rgba(232,137,90,.13);box-shadow:0 0 0 1.5px #e8895a;}
   .cr-gear{position:absolute;top:2px;left:3px;display:none;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:rgba(232,137,90,.92);color:#fff;cursor:pointer;line-height:0;box-shadow:0 1px 4px rgba(0,0,0,.3);z-index:5;}
   .cr-card.selected .cr-gear{display:inline-flex;}
   .cr-gear:hover{background:#e8895a;}
+  .cr-gear:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
   .cr-gear svg{width:12px;height:12px;}
   /* agent settings modal */
   .sheet-row input[type=text]{background:var(--track);color:var(--text);border:1px solid var(--iborder);border-radius:7px;padding:5px 8px;font-size:12px;font-family:inherit;width:130px;}
@@ -283,10 +400,10 @@ module.exports = `
   /* when any agent is active, dim the resting ones so the caller stands out */
   .pool.has-active .cr-card:not(.active):not(.done):not(.stuck){opacity:.42;}
   /* today's real per-agent cost (runs · tokens · median), parsed from the transcript */
-  .cr-body{display:flex;align-items:flex-end;justify-content:center;height:calc(52px * var(--cr-scale, 1));overflow:hidden;line-height:0;}
+  .cr-body{display:flex;align-items:flex-end;justify-content:center;width:100%;height:calc(52px * var(--cr-scale, 1));overflow:hidden;line-height:0;}
   .cr-body .cr-sprite{transform:scale(var(--cr-scale, 1));transform-origin:bottom center;}
-  .cr-name{font-size:clamp(8px, calc(10.5px * var(--cr-scale, 1)), 10.5px);font-weight:600;color:var(--text);margin-top:3px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .cr-role{font-size:clamp(7.5px, calc(9.5px * var(--cr-scale, 1)), 9.5px);font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cr-name{display:block;font-size:clamp(8px, calc(10.5px * var(--cr-scale, 1)), 10.5px);font-weight:600;color:var(--text);margin-top:3px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cr-role{display:block;font-size:clamp(7.5px, calc(9.5px * var(--cr-scale, 1)), 9.5px);font-weight:600;color:#e8895a;margin-top:2px;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   /* XP: level badge, "+N XP" float on completion, gold flash on level-up */
   .cr-lv{position:absolute;top:2px;right:3px;font-size:clamp(7px, calc(8.5px * var(--cr-scale, 1)), 8.5px);font-weight:800;color:var(--muted);background:var(--inner);border:1px solid var(--iborder);border-radius:6px;padding:1px 4px;line-height:1.2;pointer-events:none;z-index:4;font-variant-numeric:tabular-nums;}
   /* rises straight up over the head. The status badge shares that seat, so it waits
@@ -335,13 +452,17 @@ module.exports = `
   .pf-stats b{font-size:11px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
   .pf-stats span{font-size:7.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
   /* hidden agents: restore row + dimmed mini cards */
-  .hid-row{flex:1 1 100%;display:flex;align-items:center;gap:6px;margin-top:8px;padding:5px 8px;border-radius:8px;font-size:10.5px;font-weight:700;color:var(--muted);cursor:pointer;user-select:none;}
+  /* both of these are buttons: the restore path out of "every agent is hidden" cannot be the one
+     part of the roster a keyboard never reaches */
+  .hid-row{flex:1 1 100%;display:flex;align-items:center;gap:6px;margin-top:8px;padding:5px 8px;border:0;border-radius:8px;background:transparent;font-family:inherit;font-size:10.5px;font-weight:700;color:var(--muted);cursor:pointer;user-select:none;text-align:left;}
   .hid-row:hover{background:var(--inner);}
+  .hid-row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
   .hid-chev{display:inline-block;transition:transform .18s ease;font-size:12px;line-height:1;}
   .hid-chev.open{transform:rotate(90deg);}
   .hid-pool{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:5px;padding:2px 4px 4px;}
-  .hid-card{display:flex;align-items:center;gap:6px;padding:3px 8px 3px 5px;border-radius:8px;background:var(--inner);border:1px solid var(--iborder);cursor:pointer;opacity:.62;transition:opacity .15s ease;}
+  .hid-card{display:flex;align-items:center;gap:6px;padding:3px 8px 3px 5px;border-radius:8px;background:var(--inner);border:1px solid var(--iborder);font-family:inherit;font-size:inherit;cursor:pointer;opacity:.62;transition:opacity .15s ease;}
   .hid-card:hover{opacity:1;}
+  .hid-card:focus-visible{outline:2px solid var(--focus);outline-offset:1px;opacity:1;}
   .hid-name{font-size:10px;font-weight:600;color:var(--text);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .hid-restore{font-size:9px;font-weight:700;color:#e8895a;text-transform:uppercase;letter-spacing:.4px;}
   .am-hide{margin-top:10px;width:100%;padding:6px 0;border:1px solid var(--iborder);border-radius:8px;background:transparent;color:var(--muted);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;}
@@ -384,8 +505,66 @@ module.exports = `
   .wb-desc{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
   .wb-clear{flex:none;padding:4px 9px;border:1px solid rgba(245,166,35,.5);border-radius:7px;background:transparent;color:#f5a623;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;}
   .wb-clear:hover{background:rgba(245,166,35,.16);}
+  /* --- the crossroads: two doors, one row ------------------------------------------------------
+     The two drawings stand on the same floor (align-items:flex-end) and split the width in half,
+     so neither door is the bigger offer. The picture is the thing being pressed and the word under
+     it is only its name, which is why the art takes the whole column and the caption is one of the
+     six type sizes at the bottom.
+     WIDTH IS THE COLUMN'S AND HEIGHT IS THE PICTURE'S, with max-height as a ceiling: at a 351px
+     sidebar that puts the pair at 273 x 136.88 and the card at 287.88, the shortest screen in this
+     panel, and at 420 the pictures stop growing rather than eating the extra width
+     (docs/shop-spec.md, section 2-2). A redrawn hero of any ratio therefore cannot make this row
+     taller than 120px of art.
+     NOT PIXELATED, measured: both heroes carry 1px outlines and dithering, and nearest-neighbour
+     at 0.205x drops most of them (section 2-4). The mascot and the tiles keep theirs. --- */
+  .cr-pair{display:flex;align-items:flex-end;gap:8px;}
+  .cr-door{flex:1 1 0;min-width:0;display:block;padding:0 0 8px;border:0;border-radius:12px;
+    background:transparent;cursor:pointer;font-family:inherit;text-align:center;}
+  .cr-door:hover{background:var(--track);}
+  .cr-door:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
+  .cr-art{display:block;}
+  .cr-art img{width:100%;max-height:120px;height:auto;object-fit:contain;object-position:bottom;display:block;}
+  .cr-cap{display:block;margin-top:6px;font-size:12.5px;font-weight:700;color:var(--text);}
+  /* --- the shop. The casino's chrome is games/casino.js and every game's own CSS lives with that
+     game, but the shop is not a game (docs/shop-spec.md, section 4-5), so its screen is here,
+     beside the Agents tab's, and it borrows the chrome's heading, note, warning bar and button.
+     It adds no colour and no type size: 12.5 for the name, 11 for the price, 10.5 for a cell's
+     word, which is three of the six (docs/game-panels.md, section 2). --- */
+  /* WHAT IS BEING BOUGHT, DRAWN IN THE BOX IT WILL BE DRAWN IN: 88 x 74, fitted with contain and
+     stood on the bottom edge, which is the mascot's own box to the pixel (.sparkle above). A
+     preview with any other geometry is a promise the panel then breaks, and this one cannot drift
+     because the rules are the same three. The plate behind it is --track, the surface this
+     stylesheet already uses to lift a block off a card: no new colour, and no felt, because what
+     is bought here is not at a table. */
+  .sh-try{display:flex;align-items:flex-end;justify-content:center;height:90px;
+    padding:8px 14px;box-sizing:border-box;border-radius:12px;background:var(--track);}
+  .sh-try img{width:88px;height:74px;object-fit:contain;object-position:bottom;
+    image-rendering:pixelated;display:block;}
+  .sh-meta{display:flex;align-items:baseline;gap:8px;margin-top:10px;padding:0 2px;}
+  .sh-nm{font-size:12.5px;font-weight:700;color:var(--text);}
+  .sh-price{margin-left:auto;display:inline-flex;align-items:center;gap:4px;
+    font-size:11px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
+  /* THREE SLOTS AND ONE ROW, at every width. auto-fill makes as many tracks as fit, which leaves a
+     ragged tail on a shelf holding one thing and a different tail at every sidebar width; three
+     with 64 as a ceiling is one row at 250, 351 and 420, square where there is room for it and
+     shrinking rather than overflowing where there is not. */
+  .sh-grid{display:grid;grid-template-columns:repeat(3,minmax(0,64px));gap:4px;margin-top:10px;}
+  .sh-cell{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;
+    height:64px;padding:0 0 4px;border-radius:9px;background:var(--inner);
+    box-shadow:inset 0 0 0 1px var(--iborder);}
+  .sh-pic{width:100%;height:36px;object-fit:contain;object-position:bottom;
+    image-rendering:pixelated;display:block;}
+  /* AN EMPTY SLOT: the frame, and the word in the middle of it. No picture and no price, because
+     what goes there has not been decided, and nothing pressable, because a slot that cannot be
+     pressed should not be counted through by a reader on a keyboard */
+  .sh-cell.soon{justify-content:center;}
+  /* a cell says what it is in WORDS as well as in weight: own, or what it costs */
+  .sh-tag{font-size:10.5px;line-height:12px;font-weight:700;color:var(--muted);
+    font-variant-numeric:tabular-nums;}
+  .sh-cell.owned .sh-tag{color:var(--text);}
   /* --- credits: header second line. The coin fills bottom-up in 6 rows toward the next credit --- */
-  .ttl .t2.cc{display:flex;align-items:center;gap:4px;margin-top:3px;font-size:12px;line-height:16px;}
+  /* no margin on top: it used to sit under a 16px title and it is the only line in .ttl now */
+  .ttl .t2.cc{display:flex;align-items:center;gap:4px;font-size:12px;line-height:16px;}
   .cc-coin{width:16px;height:16px;flex:none;display:block;shape-rendering:crispEdges;}
   .cc-r{opacity:.3;transition:opacity .25s ease;}
   .cc-r.on{opacity:1;}
@@ -406,7 +585,7 @@ module.exports = `
   button.cc:hover,button.cc[aria-pressed="true"]{background:var(--track);}
   /* the same token as the casino's rings: this button is the door into it, and ember measures
      2.57:1 on the light --card (#ffffff) the ring is drawn inside */
-  .wk-more{margin-left:6px;background:var(--track);border:0;color:var(--muted);font-size:10px;font-weight:600;padding:1px 7px;border-radius:6px;cursor:pointer;font-family:inherit;vertical-align:1px;}
+  .wk-more{margin-left:6px;background:var(--track);border:0;color:var(--muted);font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:6px;cursor:pointer;font-family:inherit;vertical-align:1px;}
   .wk-more:hover{color:var(--text);}
   .wk-card{max-width:420px;}
   .wk-empty{color:var(--muted);font-size:12px;padding:18px 0;text-align:center;}
@@ -486,7 +665,11 @@ module.exports = `
   .wk-trow.stale{opacity:.55;}
   .wk-note a{color:#e8895a;}
   button.cc:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px var(--focus);} /* .ttl clips outside outlines */
-  body.tab-games .mascot{display:none;} /* the crab climbs down to deal */
+  /* The header crab used to be hidden in the games area, on the grounds that "the crab climbs down
+     to deal". The one that deals is the dealer on the felt, a 16x22 drawing at card scale, and the
+     two were never on screen together in a way a reader could confuse. A mark that disappears on
+     two of three tabs is not a mark, so it stays on all of them (header-fold-spec, 3-4). The
+     dealer crab is untouched. */
   /* Every game screen's CSS lives with that game: the casino chrome in games/casino.js and the
      rest in games/<id>/meta.js, appended after this stylesheet by games/registry.js. */
 `;

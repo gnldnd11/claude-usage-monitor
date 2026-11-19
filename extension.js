@@ -13,6 +13,7 @@ const weekly = require('./weekly'); // this PC's 7 days + its share of the accou
 const team = require('./team');     // opt-in: the same account's PCs side by side
 const IC = require('./icons');
 const registry = require('./games/registry');
+const shop = require('./shop');     // the one screen in the casino that spends rather than stakes
 const tables = require('./games/tables'); // refusal(): one engine throw, one sentence (gameReply)
 const claudedir = require('./claudedir'); // where Claude Code's configuration directory is
 
@@ -291,6 +292,7 @@ function freshAcc() {
     // accumulator is rebuilt when the day rolls, so only today's keys are ever held
     seen: new Map(),
     lastMsg: null,      // latest usage-bearing message in this file
+    firstT: 0,          // earliest of TODAY's usage-bearing messages in this file
     maxCtx: 0,          // this session's peak context — window tier is a session property
     lastUserText: '',   // latest real user prompt in this session file
     calls: [],          // {agent, id, t, today, desc}: Agent/Task invocations back to AGENT_RUN_WINDOW_MS before midnight
@@ -359,6 +361,9 @@ function parseLinesInto(s, chunk, startOfToday, callsSince) {
     if (t >= startOfToday && addUsageOnce(s.today, s.seen, usageKey(o), usageVec(u))) s.count += 1;
     const ctxUsed = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
     if (ctxUsed > s.maxCtx) s.maxCtx = ctxUsed;
+    // today's first, which with lastMsg's t is the only span of real activity this extension can
+    // read. The whole accumulator is rebuilt when the day rolls, so only today's messages reach it
+    if (t >= startOfToday && (!s.firstT || t < s.firstT)) s.firstT = t;
     if (!s.lastMsg || t > s.lastMsg.t) {
       s.lastMsg = {
         t,
@@ -438,6 +443,7 @@ function readTokens(wsPaths) {
   const today = { input: 0, output: 0, cache_creation: 0, cache_read: 0 };
   let last = null;      // globally latest message (today), any session
   let lastProj = null;  // latest message from this workspace's transcripts — drives Context %
+  let firstT = 0;       // earliest message of today, any session: with last.t it is today's span
   let count = 0;
   const agentCalls = [];
   const agentResults = {};
@@ -458,6 +464,7 @@ function readTokens(wsPaths) {
       if (!last || msg.t > last.t) last = msg;
       if (inProj && (!lastProj || msg.t > lastProj.t)) lastProj = msg;
     }
+    if (s.firstT && (!firstT || s.firstT < firstT)) firstT = s.firstT;
     // dir is the dash-encoded project folder this transcript sits in. Nothing on screen reads it;
     // it is what logScope compares against the encoded workspace when the room comes up empty.
     const dir = path.relative(claudePaths.projects, f.p).split(path.sep)[0];
@@ -473,7 +480,7 @@ function readTokens(wsPaths) {
   // dayStart: which day `today` sums. If the caller read the clock again, a tick straddling
   // midnight would file yesterday's total under today (the ledger is a max merge, so a wrong
   // entry can never be taken back)
-  return { today, dayStart: startOfToday, last, lastProj, count, peak, agentCalls, agentResults };
+  return { today, dayStart: startOfToday, last, lastProj, firstT, count, peak, agentCalls, agentResults };
 }
 
 // Derive each agent's live state from its invocations (M2 MVP, hook-free — read
@@ -856,6 +863,31 @@ const gameHandlers = registry.createHandlers({
   live: () => !!(provider && provider.view)
 });
 
+// --- the shop ---------------------------------------------------------------------------------
+// NOT A GAME, so it is not in the register: no round, no stake, no return band, and a register
+// entry for it would mean webview.js learning the name of something that is not a game
+// (docs/shop-spec.md, section 4-5). It answers its own message type instead, and everything it
+// knows is shop.js's: the catalog, the prices, the refusals and the record's merge.
+//
+// IT RIDES THE SAME THREE PIECES OF PLUMBING EVERY GAME DOES, which is the point of handing it
+// gameReply: one balance read per reply, `free` measured against what the live rounds are holding,
+// and the reply going out before the data push. What it does NOT ride is heldBy(): the shop is not
+// in gameHandlers, so it holds nothing back from the tables, which is right because the credits
+// leave the balance the instant something is bought. The other direction matters and is kept: a
+// purchase is budgeted against balance MINUS what the live rounds hold, so a bet in progress
+// cannot be spent twice (budgetFor('shop')).
+const storedShop = () => (creditStore ? creditStore.read().shop : null);
+const shopHandler = shop.createHandler({
+  reply: gameReply,
+  budget: budgetFor,
+  replica: () => gameReplica,
+  ensureReplica: ensureReplica,
+  record: recordGameResult,
+  storedShop: storedShop,
+  push: () => push(),
+  log: logLine
+});
+
 // Shared state (a market position) can move without any message of ours, so every data push gives
 // each game a chance to say so. A game with nothing shared has no onPush and costs nothing here
 function gamesAfterPush() {
@@ -972,6 +1004,31 @@ function isoToEpoch(s) { const t = Date.parse(s); return isNaN(t) ? null : Math.
 function resetsToEpoch(v) {
   if (typeof v === 'number') return v > 1e12 ? Math.floor(v / 1000) : v; // ms vs s
   return isoToEpoch(v);
+}
+
+// WHEN A RESTORED READING WAS TAKEN, or 0 for "cannot say".
+//
+// The stored entry carries its own stamp, and that stamp is the age of the reading a new window
+// draws: a window opened an hour after the last answer is looking at an hour-old number, and the
+// panel's freshness line is the only thing on screen that can say so. The restore path read
+// `saved.at` and threw it away, so every new window drew its restored figures with no reading time
+// at all, which is the dash a reader saw where the age belonged.
+//
+// The stamp is not believed blindly, for two reasons that both really happen:
+//   FUTURE. globalState is synced between machines and survives a clock change, so a stamp ahead
+//   of this clock is possible, and it would make the reading look fresh for as long as the skew
+//   lasts. That is the exact failure this line exists to prevent, so it is the one case that may
+//   not be waved through.
+//   TOO OLD. Seven days is the longest window the data describes (the weekly limit), so a reading
+//   older than that is certainly about a window that has since reset. It is still the last good
+//   value and still worth drawing, but its age is no longer a useful number.
+// In both cases the answer is 0, which the panel reads as "no reading yet" and therefore as stale.
+// Saying nothing is the honest answer; saying "now" is the bug.
+const USAGE_STAMP_MAX_AGE_MS = 7 * 86400 * 1000;
+function restoredUsageAt(saved, now) {
+  const at = Number(saved && saved.at) || 0;
+  if (at <= 0 || at > now || now - at >= USAGE_STAMP_MAX_AGE_MS) return 0;
+  return at;
 }
 
 // Persist the last-good usage so a reload shows it instantly instead of "loading".
@@ -1270,6 +1327,9 @@ function collect() {
     usageLoading: !usageLoaded,
     today: tokens.today,
     last: tokens.last,
+    // today's first message. The panel's Active tile reads the five-hour window's elapsed part,
+    // which an account with no window has none of; this and last.t are what it falls back to
+    firstT: tokens.firstT || 0,
     count: tokens.count,
     refreshedAt: Date.now(),
     usageAt: (usageCache ? lastUsageAt : 0),
@@ -1283,7 +1343,11 @@ function collect() {
     hidden: agentHidden,
     favGames: gameFavorites,
     xp: xpSummary(),
-    credits: syncCredits(tokens)
+    credits: syncCredits(tokens),
+    // WHAT THE SHOP HAS SOLD THIS READER, on every push. The panel has to be able to draw the right
+    // crab without the shop ever having been opened, and a purchase made in another window has to
+    // reach this one: both of those are this field (shop.js, push)
+    shop: shopHandler.pushed()
   };
 }
 
@@ -1292,7 +1356,12 @@ function renderStatusBar(data) {
   const mode = vscode.workspace.getConfiguration('claudeUsage').get('statusBar.show', 'session+weekly');
   if (mode === 'off') { statusItem.hide(); return; }
   const showSession = mode === 'session' || mode === 'session+weekly';
-  const showWeekly = mode === 'weekly' || mode === 'session+weekly';
+  // THIS ACCOUNT HAS NO FIVE-HOUR WINDOW (an authenticated Ultra). `session` mode then had nothing
+  // to print, and an empty segment list below reads "Claude usage: loading…" for ever. A status bar
+  // claiming to be fetching something when there is nothing to fetch. The render falls through to
+  // the week; the setting itself is not rewritten, because the account is what changed, not the wish
+  const noWindow = data.fh == null && data.sd != null;
+  const showWeekly = mode === 'weekly' || mode === 'session+weekly' || (noWindow && mode === 'session');
   const segs = [];
   const tip = [];
   let worst = 0;
@@ -1345,6 +1414,8 @@ class UsageViewProvider {
       }
       // every game answers on its own message type, straight from the register
       else if (gameHandlers[m.type]) gameHandlers[m.type].handle(m);
+      // ...and the shop answers on its own, because it is not a game (see the shop block above)
+      else if (m.type === 'shop') shopHandler.handle(m);
       else if (m.type === 'login') vscode.commands.executeCommand('claudeUsage.login');
       else if (m.type === 'setConfig' && m.key) {
         vscode.workspace.getConfiguration('claudeUsage').update(m.key, m.value, vscode.ConfigurationTarget.Global)
@@ -1444,12 +1515,17 @@ class UsageViewProvider {
   html(webview) {
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'webview.js'));
     const crabUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'crab.png'));
-    const logoUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'logo.png'));
-    const sparkleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'sparkle.png'));
     const mascotIdleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-idle.png'));
     const mascotStunnedUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-stunned.png'));
     const mascotDespairUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-despair.png'));
     const mascotWorkingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-working.png'));
+    // the activity axis: which drawing the step picks depends on whether anything is being answered
+    // right now (webview.js, MASCOT_ART)
+    const mascotCodingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-coding.png'));
+    const mascotFloatUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-float.png'));
+    // the two doors of the crossroads the credits button opens (html.js, #panelCross)
+    const heroGamesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'hero-games.png'));
+    const heroShopUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'hero-shop.png'));
     const roomMinecraftUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft.png'));
     const spriteUri = (n) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, n)).toString();
     // The register draws the list and every panel heading. The tiles are 96px art drawn at 48, so
@@ -1488,12 +1564,15 @@ class UsageViewProvider {
     // chevron draws every game's back arrow (webview.js frameHtml). It was never sent, so the arrow
     // was a button with nothing in it: 6px of padding, clickable by accident and findable by nobody,
     // on all five games at once. Esc and the games tab hid how long that had been true
-    const assetsJson = JSON.stringify({ rooms, npcs, ui: { crab: spriteUri('crab.png'), chevron: IC.chevron, games: gameList } })
+    // `tag` is the shop's own heading glyph, and it travels the same way the chevron does: the shop
+    // screen is drawn by the webview, so the one piece of markup it cannot build is an icon
+    const assetsJson = JSON.stringify({ rooms, npcs, ui: { crab: spriteUri('crab.png'), chevron: IC.chevron, tag: IC.tag, games: gameList } })
       .replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
     return renderHtml({
       csp: webview.cspSource,
-      scriptUri, logoUri, crabUri, sparkleUri,
+      scriptUri, crabUri,
       mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
+      mascotCodingUri, mascotFloatUri, heroGamesUri, heroShopUri,
       roomMinecraftUri, assetsJson, gameList, gameScripts
     });
   }
@@ -1752,7 +1831,11 @@ function activate(context) {
     if (saved && saved.value && (saved.value.five_hour || saved.value.seven_day)) {
       usageCache = saved.value;
       usageLoaded = true;
-      log.appendLine('[' + new Date().toLocaleTimeString() + '] restored last-good usage: session=' + (saved.value.five_hour ? Math.round(saved.value.five_hour.used_percentage) + '%' : '–') + ' weekly=' + (saved.value.seven_day ? Math.round(saved.value.seven_day.used_percentage) + '%' : '–'));
+      // the age comes back with the value, or stays unknown: see restoredUsageAt
+      lastUsageAt = restoredUsageAt(saved, Date.now());
+      log.appendLine('[' + new Date().toLocaleTimeString() + '] restored last-good usage: session=' + (saved.value.five_hour ? Math.round(saved.value.five_hour.used_percentage) + '%' : '–') + ' weekly=' + (saved.value.seven_day ? Math.round(saved.value.seven_day.used_percentage) + '%' : '–')
+        + (lastUsageAt ? ', read ' + Math.round((Date.now() - lastUsageAt) / 1000) + 's ago' : ', read at an unknown time'));
+      if (saved.at && !lastUsageAt) logLine('[usage] the restored reading is stamped ' + new Date(Number(saved.at)).toISOString() + ', which this window cannot place (a clock change, or another machine): the panel will treat it as stale until a fresh answer arrives');
     }
   } catch (e) { /* ignore */ }
 
@@ -1886,6 +1969,12 @@ function deactivate() {
 module.exports = { activate, deactivate };
 if (process.env.CUC_TEST) module.exports._test = {
   readTokens, parseLinesInto, freshAcc, collect, computeAgentActivity, parseSubUsage, contextPct,
+  // the status bar, given a reading rather than the machine's own: what it prints for an account
+  // with no five-hour window is not derivable from the panel's code
+  renderStatusBar,
+  // how old a restored reading is allowed to claim to be. A pure function so the two stamps that
+  // cannot be placed (one from the future, one from last month) are testable without a window
+  restoredUsageAt,
   // the resolved configuration directory, so a test can see that the settings really reach the readers
   claudePaths: () => claudePaths,
   // sharing consent, which is per Claude account: a test can answer for one and ask about another

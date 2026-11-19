@@ -33,7 +33,12 @@ module.exports = {
     ok('initial: tab-usage on body', bodyTabs() === 'tab-usage', bodyTabs());
     ok('header shows the balance', hdrBal() === '1,000', hdrBal());
     mouseClick($('hdCredits')); advance(20);
-    ok('credits click opens the games list, not a game', $('panelGames').style.display === '' && notShown('panelTable') && $('panelUsage').style.display === 'none' && bodyTabs() === 'tab-games' && $('hdCredits').getAttribute('aria-pressed') === 'true', bodyTabs());
+    // THE COIN OPENS THE CROSSROADS, not a game and not the list: two doors, and the list is one
+    // step inside the Games one. What the crossroads itself is made of is checked in _shop.js;
+    // what matters here is that the way in still lands somewhere that is not a table
+    ok('credits click opens the crossroads, not a game', $('panelCross').style.display === '' && notShown('panelTable') && $('panelGames').style.display === 'none' && $('panelUsage').style.display === 'none' && bodyTabs() === 'tab-games' && $('hdCredits').getAttribute('aria-pressed') === 'true', bodyTabs());
+    mouseClick($('crDoorGames')); advance(20);
+    ok('and the Games door opens the list', $('panelGames').style.display === '' && notShown('panelTable') && $('panelCross').style.display === 'none', bodyTabs());
     // the register is the expectation: every game it lists has a row, in that order, carrying that
     // game's own name and line. A game added to games/registry.js is checked here by being there
     ok('the list has every registered game, in order, with its name',

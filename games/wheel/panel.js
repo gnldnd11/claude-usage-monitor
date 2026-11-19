@@ -286,17 +286,20 @@
     whPays(st);
     if (!live) CUC.renderStakes(SU, locked);
   }
+  // Whether the focus may be taken at all is CUC.refocus's decision and not this panel's: it is the
+  // one place that knows "my own repaint dropped the focus" from "the focus is in the editor and
+  // this document does not hold it". Read its comment in webview.js before changing anything here
   function whFocusAfter() {
     if (CUC.current() !== 'wheel') return;
     var live = wh.st && wh.st.phase === 'spin';
     var swapped = wh.phase != null && live !== (wh.phase === 'spin');
     wh.phase = wh.st ? wh.st.phase : 'bet';
-    var a = document.activeElement, panel = el('panel-wheel');
-    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
-    if (!wh.wantFocus && !swapped && !lost) return;
+    // cleared whether or not the focus moves: an ask refused because the editor's focus is
+    // elsewhere is refused for good, not saved up for the next repaint
+    var want = wh.wantFocus || swapped;
     wh.wantFocus = false;
     var target = live ? document.querySelector('#whPlay [data-op="spin"]') : el('whDeal');
-    if (target && !target.disabled) target.focus();
+    CUC.refocus(el('panel-wheel'), target, want);
   }
 
   function whSend(op, extra) {

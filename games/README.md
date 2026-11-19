@@ -283,6 +283,15 @@ rather than running on the driver. The rules, in the order they bite:
 `games/market/meta.js` is the worked example, and the only one: the forge was the other and it went
 on 2026-11-13. Its `settle()` is points 4, 5 and the reply-before-push rule.
 
+**There is a third record in that ledger and it is not a game's.** `shop.js` keeps what the shop
+sold (`owned`, `seat`, `spent`), and it is wired into `credits.js` through the same three lines and
+owns the same seven rules. It is worth reading next to the market's, because it is the strictest
+case of point 3: the money a purchase costs can be the whole purse and nothing can be sold back, so
+BOTH halves of it (the seat and the price) are in one record, nothing is maxed across a merge, and
+the winning record is adopted whole rather than having its `owned` unioned with the loser's. The
+shop itself is not a game and has no entry here, which is the point: `games/registry.js` is a
+register of games.
+
 **The forge's record is still in `credits.js` and that is not an oversight.** `cleanForge`,
 `forgeNewer`, `mergeForge` and the `forgeEarned` term in the balance all stayed, because `earned` is
 money the shop really paid for swords that were really made. Deleting a game does not entitle anyone
@@ -319,6 +328,7 @@ writes to it, and `test/credits.test.js` is what keeps it honest for the records
     keys: function (e) { /* only called while YOUR game is the open one */ },
     credits: function () { /* optional: a credit minted while the bet screen is up */ },
     resize: function () { /* optional: the panel's width changed */ },
+    seat: function () { /* optional: who sits at the player's side changed. See below */ },
     up: function () { /* optional: the heading's arrow. See below */ return false; }
   });
 })();
@@ -366,6 +376,7 @@ a game that grows a depth needs no change there either.
 | `cardFace(c, cell)`, `cardBack()`, `cardWord(c)` | the pixel cards and their names |
 | `symWord(sym, n)` | the ten sea symbols' names, singular or plural. `n` is not an `s` rule: four of them do not take one |
 | `npc(key, px)` | a still frame of an agent sprite, for whoever sits at your table |
+| `seat()` | WHO sits at the player's side: the sprite key the shop sold, or the free one. It is answered for every screen whether the shop has ever been opened or not (the host sends it with every push), and a key whose sprite this build no longer ships falls back to the free seat rather than drawing nothing. A table that draws a player takes `seat()` and not a key of its own, and adds the optional `seat` hook so a purchase made in ANOTHER window reaches it: blackjack's is a redraw of the felt and nothing else |
 | `crab()` | the dealer image |
 | `stake(ui)`, `renderStakes(ui, locked)`, `wireStakes(ui, redraw)` | the bet controls |
 | `setHeld(key, m)`, `heldElsewhere`, `balance()` | the purse: see section 6 |
@@ -377,6 +388,7 @@ a game that grows a depth needs no change there either.
 | `timers()` | one bag of pacing timers: `at(ms, fn)` and `clear()` |
 | `reduceMotion()` | true: draw the final state at once, no pacing |
 | `press(e, panelSel, op, dealId, betId)` | the shared key press (an action, or Enter deals) |
+| `refocus(root, target, want)` | **the only way a panel moves the focus.** It hands the keyboard back when your own repaint dropped it inside `root`, and it does nothing at all while `document.hasFocus()` is false, because then the focus is in the editor and not in this webview. `want` is your own ask (you entered, or the controls under the focus were swapped out) and it does **not** override that: `activeElement === document.body` reads the same for "my repaint lost it" and "it was never here", and the second one was reported as not being able to type in the chat input |
 | `current()` | the open game's id |
 | `state()`, `setState(s)` | the webview's own memory, if your game has a choice to remember |
 
@@ -596,9 +608,11 @@ register (`test/webview/modes.js`) reads that directory, `run.js` runs every mod
 `table.test.js` dispatches to the file that claims the name. Neither of those two files has a list in
 it, which is the point: they used to, and every new game had to queue there.
 
-There is **one** shared page, and it is a rule rather than a game: `games/_fault.js` holds the
-state-less reply contract for every screen at once (section 5). Add your row there as well as
-writing your own file.
+There are **two** shared pages, and each is a rule rather than a game: `games/_fault.js` holds the
+state-less reply contract for every screen at once (section 5), and `games/_focus.js` holds the
+keyboard rule (`CUC.refocus`, in the table above). Add your row to both as well as writing your own
+file. Neither rule is measured a second time in your own mode file, because the second copy of a
+rule is where the two copies start to differ.
 
 ```js
 'use strict';
@@ -607,6 +621,7 @@ module.exports = {
   modes: ['mygame', 'mygame-reduce', 'mygame-poor'],   // unique across every file; a clash throws
   start: { 'mygame-poor': 5 },      // credits the ledger starts with, by mode. 1,000 if left out
   // state: { 'mygame': {...} },    // optional: what the webview had STORED when the page loaded
+  // focused: { 'mygame': false },  // optional: the editor's focus was NOT in this webview at load
   // html: (html, mode) => html,    // optional: break the page before it is parsed
   run: function (h, MODE) {
     const { ok, advance, doc, $, openList, bodyTabs, ext, EXT, path } = h;
@@ -625,7 +640,9 @@ A mode ending `-reduce` is served `prefers-reduced-motion`, so that is the name 
 `config`, `hostSend`, `toWebview`), `h.sent(key)` for your own messages, `h.pending(ms)` for pacing
 timers still to fire, and four that move under you: `h.now` (the fake clock), `h.idleSrc`, and the two
 you ASSIGN to, `h.intercept = fn` (answer a message yourself) and `h.hostDelay = ms` (stretch the
-host's replies). The handle's own comment in `table.test.js` is the full list.
+host's replies). `h.hasFocus = false` is a third one you assign to: it puts the editor's focus
+outside this webview, which is the state the keyboard rule above is about. The handle's own comment
+in `table.test.js` is the full list.
 
 Copy the nearest existing file rather than starting from this sketch. `games/market.js` is the one to
 read if your game stores something; `games/blackjack.js` if it paces a deal.

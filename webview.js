@@ -24,12 +24,40 @@
     var c = col(p), c2 = p >= 90 ? '#f6836e' : p >= 70 ? '#f6c46e' : '#f0a882';
     return 'linear-gradient(90deg,' + c + ',' + c2 + ')';
   }
+  function hm(sec) {
+    if (!(sec > 0)) sec = 0;
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    return h + 'h ' + String(m).padStart(2, '0') + 'm';
+  }
   function activeTime(r) {
     if (!r) return '–';
     var el2 = 5 * 3600 - (r - Date.now() / 1000);
     if (el2 < 0) el2 = 0; if (el2 > 5 * 3600) el2 = 5 * 3600;
-    var h = Math.floor(el2 / 3600), m = Math.floor((el2 % 3600) / 60);
-    return h + 'h ' + String(m).padStart(2, '0') + 'm';
+    return hm(el2);
+  }
+  // Today's span, first message to last. The tile above it reads the five-hour window's elapsed
+  // part, which an account WITHOUT a window does not have at all (there is no such number to fall
+  // back on, see docs/header-fold-spec.md 1-3), so that account's tile answers this instead and the
+  // label beside it says which of the two it answered. Both ends come out of the transcripts the
+  // host already parses, so this is a reading and not an estimate.
+  function activeToday(d) {
+    var a = d && d.firstT, b = d && d.last && d.last.t;
+    if (!a || !b || b < a) return '–';
+    return hm((b - a) / 1000);
+  }
+  // THE ONE PLACE that asks whether this account has a five-hour window at all.
+  //
+  // 2026-10-30 turned Max 20x into Ultra and an authenticated Ultra account has no five-hour limit,
+  // so the host pushes five_hour: null for ever while the week still fills (extension.js, the two
+  // places that build usageCache). "Not loaded yet" and "this account has none" used to be the same
+  // em dash, and six places in this file each drew half of that. They read `body.no-session` now and
+  // this is its only writer: the next reader cannot satisfy five of the six and miss the sixth.
+  //
+  // `sd != null` is what separates the two: the host rebuilds the whole cache on every successful
+  // response and leaves only the limits the account does not have as null, so a week with a reading
+  // and no window is an answer, while nothing at all is a failure and still draws the dash.
+  function noSessionWindow(d) {
+    return !!d && d.usageLoading !== true && d.sd != null && d.fh == null;
   }
 
   // ===========================================================================
@@ -128,35 +156,55 @@
     for (var i = 0; i < vis.length; i++) {
       var a = vis[i];
       var sheet = agentSheet(a.name);
-      var inner = sheet ? '<div class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, ROSTER_T) + '"></div>' : '';
+      var inner = sheet ? '<span class="cr-sprite" style="' + cropStyle(sheet.meta, sheet.meta.idleRow || 0, sheet.meta.idleCol || 0, ROSTER_T) + '"></span>' : '';
       var nick = displayName(a.name), role = displayRole(a.name);
       // built-ins have no custom role — label them as what they are
       if (a.builtin && !((lastData && lastData.roles) || {})[a.name]) role = 'built-in';
+      // TWO BUTTONS IN A WRAPPER, the same shape as a games list row (.gm-row / .gm-open /
+      // .gm-fav): the card picks the agent and the gear opens its settings, and a button cannot be
+      // nested in a button. The card used to be a bare <div> with a delegated click, which made the
+      // whole roster mouse-only: nothing in it could be tabbed to, so neither the agent nor the
+      // gear behind it was reachable without a pointer. The decorations (level, status badge) stay
+      // OUTSIDE the button: they are told, not pressed, and a button's name is read from its text.
       html += '<div class="cr-card' + (a.builtin ? ' builtin' : '') + '" data-agent="' + esc(a.name) + '">'
-        + '<button class="cr-gear" title="Settings">' + GEAR_SVG + '</button>'
+        + '<button type="button" class="cr-gear" aria-label="Settings for ' + esc(nick) + '" title="Settings">' + GEAR_SVG + '</button>'
         + '<div class="cr-lv">Lv.' + lvOf(a.name) + '</div>'
         + '<div class="cr-badge"></div>'
-        + '<div class="cr-body">' + inner + '</div>'
-        + '<div class="cr-name">' + esc(nick) + '</div>'
-        + '<div class="cr-role">' + esc(role) + '</div></div>';
+        + '<button type="button" class="cr-pick" data-agent="' + esc(a.name) + '" aria-pressed="false">'
+        + '<span class="cr-body">' + inner + '</span>'
+        + '<span class="cr-name">' + esc(nick) + '</span>'
+        + '<span class="cr-role">' + esc(role) + '</span></button></div>';
     }
     if (hid.length) {
-      // hidden agents stay reachable: an always-visible restore row, never a dead end
-      html += '<div class="hid-row" id="hidRow"><span class="hid-chev' + (_hiddenOpen ? ' open' : '') + '">›</span>Hidden (' + hid.length + ')</div>';
+      // Hidden agents stay reachable: an always-visible restore row, never a dead end. It discloses
+      // the pool below it, so it carries aria-expanded, the same as a folded paytable, and
+      // aria-controls only while that pool exists: an id pointing at nothing is worse than no
+      // pointer at all, and the open/shut state is already on aria-expanded.
+      html += '<button type="button" class="hid-row" id="hidRow" aria-expanded="' + (_hiddenOpen ? 'true' : 'false') + '"'
+        + (_hiddenOpen ? ' aria-controls="hidPool"' : '') + '>'
+        + '<span class="hid-chev' + (_hiddenOpen ? ' open' : '') + '">›</span>Hidden (' + hid.length + ')</button>';
       if (_hiddenOpen) {
-        html += '<div class="hid-pool">';
+        html += '<div class="hid-pool" id="hidPool">';
         for (var h = 0; h < hid.length; h++) {
           var ha = hid[h], hs = agentSheet(ha.name);
-          html += '<div class="hid-card" data-agent="' + esc(ha.name) + '" title="' + esc(ha.name) + ' — click to restore">'
-            + (hs ? '<div class="cr-sprite" style="' + cropStyle(hs.meta, hs.meta.idleRow || 0, hs.meta.idleCol || 0, 26) + '"></div>' : '')
+          html += '<button type="button" class="hid-card" data-agent="' + esc(ha.name) + '" title="' + esc(ha.name) + ': click to restore">'
+            + (hs ? '<span class="cr-sprite" style="' + cropStyle(hs.meta, hs.meta.idleRow || 0, hs.meta.idleCol || 0, 26) + '"></span>' : '')
             + '<span class="hid-name">' + esc(displayName(ha.name)) + '</span>'
-            + '<span class="hid-restore">show</span></div>';
+            + '<span class="hid-restore">show</span></button>';
         }
         html += '</div>';
       }
     }
     pool.innerHTML = html;
-    if (selectedAgent) { var sc = pool.querySelector('.cr-card[data-agent="' + selectedAgent + '"]'); if (sc) sc.classList.add('selected'); } // survive rebuilds
+    if (selectedAgent) { var sc = pool.querySelector('.cr-card[data-agent="' + selectedAgent + '"]'); if (sc) setPicked(sc, true); } // survive rebuilds
+  }
+  // one card's selected state, on the wrapper (the ring) and on its button (what a screen reader
+  // reads). Both or neither: a ring without aria-pressed is a selection only sighted users can see
+  function setPicked(card, on) {
+    if (!card) return;
+    card.classList.toggle('selected', !!on);
+    var b = card.querySelector('.cr-pick');
+    if (b) b.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
   // activity = { instances: [{key, agent, state, since, desc, tokens?, durMs?}],
   //              stats: {name: {runs, tokens, medMs}}, scope: {all, calls, matched} }
@@ -520,20 +568,38 @@
     }
   }, 60);
   // three views: usage, agents, and the games area (no tab button: the header credits line opens it).
-  // Inside games there is the list, or one game's screen; body.tab-* scopes compact mode to Usage
-  // and hides the header crab in the games area. body.game-<key> says which game is open
+  // Inside games there is the list, or one game's screen; body.tab-* scopes compact mode to Usage.
+  // body.game-<key> says which game is open. The chevron is not touched here: it says one thing
+  // (compact) and a tab switch does not change it
   function curTab() { return (vscode.getState() || {}).tab || 'usage'; }
-  function curGame() { return curTab() === 'games' ? ((vscode.getState() || {}).game || null) : null; }
+  // WHICH DOOR OF THE CROSSROADS IS OPEN, and null is the crossroads itself. It only means
+  // anything inside the games area, the same way `game` only means anything behind the Games door.
+  //
+  // A view STORED BEFORE THE CROSSROADS EXISTED knows a game but no door, and that is read as the
+  // Games door rather than migrated: a reload has to come back where it was, and writing a key into
+  // storage to say what the other key already implies is a second answer to one question
+  function curDoor() {
+    if (curTab() !== 'games') return null;
+    var s = vscode.getState() || {};
+    return s.door || (s.game ? 'games' : null);
+  }
+  function curGame() { return curDoor() === 'games' ? ((vscode.getState() || {}).game || null) : null; }
   function creditsHidden() { return (((lastData && lastData.cfg && lastData.cfg.panelHidden) || []).indexOf('credits') >= 0); }
   function applyView() {
-    var t = curTab(), g = curGame(), b = document.body, hdc = el('hdCredits'), id;
+    var t = curTab(), door = curDoor(), g = curGame(), b = document.body, hdc = el('hdCredits'), id;
     b.classList.toggle('tab-usage', t === 'usage');
     b.classList.toggle('tab-agents', t === 'agents');
+    // ONE body class for all four screens of the games area, and no new one for the depth: what
+    // compact means and what the chevron does are decided per TAB, and the crossroads, the list,
+    // the shop and a table are all the same tab
     b.classList.toggle('tab-games', t === 'games');
     setVis('panelUsage', t === 'usage');
     setVis('panelAgents', t === 'agents');
-    setVis('panelGames', t === 'games' && !g);
-    if (g) buildPanel(g); // the first time this game is opened, its markup is made here
+    setVis('panelCross', t === 'games' && !door);
+    setVis('panelShop', t === 'games' && door === 'shop');
+    setVis('panelGames', t === 'games' && door === 'games' && !g);
+    if (g) buildPanel(g);                          // the first time this game is opened, its markup is made here
+    if (t === 'games' && door === 'shop') shopBuild(); // and the shop's, for the same reason
     // every registered game, not a list of four: the open one shows, the rest hide, and one that
     // has never been opened has nothing to hide
     for (id in PANELS) {
@@ -544,32 +610,98 @@
     if (au) au.classList.toggle('active', t === 'usage');
     if (ag) ag.classList.toggle('active', t === 'agents');
     if (hdc) hdc.setAttribute('aria-pressed', t === 'games' ? 'true' : 'false');
-    if (typeof updateToggleChevron === 'function') updateToggleChevron();
   }
-  // Entering a game screen asks the host for its state; entering the list just takes the focus
+  // THE EDITOR'S FOCUS IS NOT THIS WEBVIEW'S, and this is the one place that difference is written.
+  //
+  // Every screen wants the keyboard back after a repaint that moved the control it was sitting on,
+  // and each one used to decide that by reading `document.activeElement`: body, hidden, disabled or
+  // outside the panel meant "my focus was lost, hand it back". That reading cannot tell two
+  // situations apart, because `document.body` is the answer in both of them:
+  //
+  //   1. the focus WAS in this panel and the repaint dropped it  -> handing it back is right
+  //   2. the focus was never here. It is in the chat input, the editor, another view, and this
+  //      document simply does not hold it -> taking it is theft
+  //
+  // The second one shipped, and it was reported as not being able to type: the market repaints once
+  // a second, so every tick pulled the keyboard out of Claude Code's chat input and into this panel
+  // while the user was in the middle of a sentence.
+  //
+  // `document.hasFocus()` is what separates the two: it is false whenever the editor's focus is
+  // anywhere outside this webview's frame. So the rule, for every screen and in one function: WHILE
+  // THIS DOCUMENT DOES NOT HOLD THE FOCUS, NOTHING HERE CALLS focus(). There is no situation in
+  // which moving the keyboard away from what somebody is typing into is the right answer, and that
+  // includes a panel that explicitly asked for it (`want`): entering a game also happens on the
+  // stored tab at startup, where honouring the ask would take the keyboard off whatever the window
+  // opened on.
+  //
+  // `want` is the panel's own ask (it entered, or the controls under the focus were swapped out).
+  // Returns whether the focus was actually moved.
+  function refocusIn(root, target, want) {
+    if (!document.hasFocus()) return false;
+    var a = document.activeElement;
+    var lost = !a || a === document.body || a.hidden || a.disabled || !(root && root.contains(a));
+    if (!want && !lost) return false;
+    if (!target || target.hidden || target.disabled) return false;
+    target.focus();
+    return true;
+  }
+
+  // Whichever of the four screens in the games area is showing takes it from here: a game asks the
+  // host for its round, the shop asks for what it sells, and the two screens that are only a choice
+  // take the focus. All four through refocusIn, because every one of them can be the screen a
+  // window OPENS on (a stored view), where taking the keyboard would take it off the editor
   function enterGames() {
+    var door = curDoor();
+    if (!door) {
+      var first = el('crDoorGames');
+      refocusIn(el('panelCross'), first, true);
+      return;
+    }
+    if (door === 'shop') { enterShop(); return; }
     var def = PANELS[curGame()];
     if (def) { if (def.node && def.enter) def.enter(); }
     else {
       // The row is a div, and a div takes no focus: the button inside it is what opens a game.
       // The list is flat and nothing folds any more, so the first open button in the page is the
       // first row anybody can see, Favourites included (it comes first in the document)
+      //
+      // Through refocusIn like every screen, because this runs on the stored tab at startup too: a
+      // window that opens on the games list would otherwise take the keyboard off the editor before
+      // the user has looked at it
       var first = document.querySelector('#panelGames .gm-rows:not([hidden]) .gm-open');
-      if (first) first.focus();
+      refocusIn(el('panelGames'), first, true);
     }
   }
   function switchTab(t) {
     if (['usage', 'agents', 'games'].indexOf(t) < 0) t = 'usage'; // a stored tab this build does not know
     if (t === 'games' && creditsHidden()) t = 'usage'; // Credits hidden in settings: no games either
     var left = curTab() === 'games' && t !== 'games';
-    var s = vscode.getState() || {}; s.tab = t; if (t !== 'games') { s.lastTab = t; s.game = null; } vscode.setState(s);
+    // LEAVING FORGETS THE DEPTH, doors included: coming back in through the coin shows the
+    // crossroads, because what the coin was asked for is the two ways in. A door remembered and
+    // reopened would be clever and would take that choice away again (docs/shop-spec.md, 4-3)
+    var s = vscode.getState() || {}; s.tab = t;
+    if (t !== 'games') { s.lastTab = t; s.game = null; s.door = null; }
+    vscode.setState(s);
     if (left) gameLeave();
     applyView();
     if (t === 'games') enterGames();
   }
+  // Out of the games area, to the tab that was showing when the coin was pressed. The coin is a
+  // toggle and this is its other half, which is also what Escape on the crossroads does
+  function leaveGames() { switchTab((vscode.getState() || {}).lastTab || 'usage'); }
+  // null goes back to the crossroads
+  function openDoor(d) {
+    var s = vscode.getState() || {};
+    s.door = d;
+    if (d !== 'games') s.game = null;   // the open game lives behind the Games door only
+    vscode.setState(s);
+    gameLeave();
+    applyView();
+    enterGames();
+  }
   // null goes back to the list
   function openGame(g) {
-    var s = vscode.getState() || {}; s.game = g; vscode.setState(s);
+    var s = vscode.getState() || {}; s.game = g; if (g) s.door = 'games'; vscode.setState(s);
     gameLeave(); // whichever game we were in stops pacing and lets a held header push through
     applyView();
     enterGames();
@@ -581,20 +713,83 @@
   function el(id) { return document.getElementById(id); }
   function setVis(id, on) { var e = el(id); if (e) e.style.display = on ? '' : 'none'; }
   function agoText(ts) { var s = Math.floor((Date.now() - ts) / 1000); if (s < 45) return 'now'; if (s < 3600) return Math.round(s / 60) + 'm ago'; return Math.round(s / 3600) + 'h ago'; }
+
+  // HOW OLD THE USAGE ENDPOINT'S ANSWER IS, and it is the only thing this row talks about.
+  //
+  // Everything else on this tab is read from the transcripts on disk and is live by construction,
+  // so a timestamp has nothing to say about it. The endpoint is the opposite: it goes quiet on a
+  // 429, an expired token or a sign-out, and it does it silently. Since the ring may now be
+  // drawing the WEEK (an account with no session window), a three-hour-old percentage presented as
+  // the current one is the panel telling a lie, and this row is the only thing that can prevent it.
+  //
+  // THREE STATES, which is one more than the field used to manage:
+  //   loading  the first call has not come back      -> "Checking usage", and the dot pulses
+  //   fresh    it answered recently                  -> the row is not on the screen at all
+  //   stale    it has not answered in STALE_AFTER_MS -> "Usage 12m ago", no dot
+  // The fourth state was the defect: a dash, drawn in precisely the situation the field exists
+  // for (a restored reading, or an endpoint that has stopped answering).
+  //
+  // THE THRESHOLD IS THE HOST'S OWN CADENCE, not a number chosen here:
+  //   - extension.js's usage loop polls every 60s signed in, 120s on a shared token, and retries a
+  //     refusal in 30s. It skips a cycle only while a tapped reading is under 110s old, and a tap
+  //     is itself a reading. So while the pipe works at all, the newest answer is about two
+  //     minutes old at worst.
+  //   - 300000 is already this extension's own word for "too old to sit on": it is the throttle on
+  //     both opportunistic refreshes (the window regaining focus, and the panel becoming visible),
+  //     each of which goes and fetches when the last fetch was longer ago than that.
+  // Five minutes is therefore two and a half times the worst healthy gap AND the point at which
+  // the host itself stops expecting silence. Under it, saying anything would be noise.
+  var STALE_AFTER_MS = 5 * 60 * 1000;
+  // ONE writer. There used to be three: render() wrote the endpoint's age, a 30s interval wrote it
+  // again, and the 1s tick wrote the age of the last PUSH over both of them. Since a push happens
+  // every 10 seconds whatever the endpoint is doing, the field read "now" almost always, which is
+  // how a reading that had not moved in an hour still called itself current.
+  function renderFreshness(d) {
+    var row = el('uhead'); if (!row) return;
+    var loading = !!d && d.usageLoading === true;
+    var at = (d && d.usageAt) || 0;
+    // no stamp at all is not fresh: it is a reading whose age this window cannot state
+    // (extension.js, restoredUsageAt), and an unstated age may not pass as a recent one
+    var stale = !loading && (!at || Date.now() - at > STALE_AFTER_MS);
+    row.classList.toggle('loading', loading);
+    row.classList.toggle('stale', stale);
+    var e = el('upd');
+    if (e) e.textContent = loading ? 'Checking usage' : (stale ? (at ? 'Usage ' + agoText(at) : 'Usage limits not read yet') : '');
+  }
   var _burnMsg = '';
   var _burnPrompt = '';
-  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  // The double quote matters as much as the angle brackets: every caller here builds markup as a
+  // string, and a nickname a user typed goes into attribute values (an agent's aria-label, its
+  // title, its data-agent). One `"` in `Bob "B"` would close the attribute and the rest of the tag
+  // would be parsed as whatever came next. In text content &quot; renders as the quote it was.
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   var WARN_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#e5484d" stroke="#e5484d" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
   var GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>';
   var WARN_MID_SVG ='<svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 22 20H2z" fill="#f5a623" stroke="#f5a623" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9.5v4.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="#fff"/></svg>';
+  // A hidden-list written before the bar and the ring became one control may still say `ring`. It
+  // meant exactly what `session` means now, so it is READ as that rather than ignored: a reader who
+  // had turned the ring off does not get it back on upgrade, the checkbox shows the state they
+  // actually have, and the next write through the sheet (which lists only the live checkboxes)
+  // replaces the old name on its own.
+  function normalizeHidden(hid) {
+    var out = (hid || []).slice(), r = out.indexOf('ring');
+    if (r < 0) return out;
+    out.splice(r, 1);
+    if (out.indexOf('session') < 0) out.push('session');
+    return out;
+  }
   function applyPanelVis(hid) {
-    setVis('pm_session', hid.indexOf('session') < 0);
+    hid = normalizeHidden(hid);
     setVis('pm_weekly', hid.indexOf('weekly') < 0);
     setVis('pm_fable', hid.indexOf('fable') < 0);
     setVis('pm_context', hid.indexOf('context') < 0);
-    setVis('pm_ring', hid.indexOf('ring') < 0);
+    // `session` IS the ring now that the session's bar is gone: one reading, one switch. A list
+    // that still says `ring` arrives here as `session` (normalizeHidden above)
+    setVis('pm_ring', hid.indexOf('session') < 0);
     setVis('pm_tiles', hid.indexOf('tiles') < 0);
-    setVis('mascot', hid.indexOf('mascot') < 0);
+    // the wrap, not the image: the box has a fixed height of its own now, so hiding the picture
+    // alone would leave 74px of nothing where the crab was
+    setVis('pm_mascot', hid.indexOf('mascot') < 0);
     setVis('hdCredits', hid.indexOf('credits') < 0);
     if (hid.indexOf('credits') >= 0 && curTab() === 'games') switchTab((vscode.getState() || {}).lastTab || 'usage');
   }
@@ -677,9 +872,11 @@
     else if (!_ccFlipT) setCoinRows(_ccRows);
     prev.cr = bal; prev.crCounting = counting;
     box.title = creditsTitle(c, bal, counting);
-    // a credit minted while a bet screen is up lights its chips at once
+    // a credit minted while a bet screen is up lights its chips at once, and the shop's one button
+    // is the same question asked about a price
     var open = PANELS[curGame()];
     if (open && open.node && open.credits) open.credits();
+    if (curDoor() === 'shop') renderShop();
   }
 
   // ===========================================================================
@@ -874,6 +1071,25 @@
   function setHeld(g, m) {
     if (typeof m.free === 'number' && typeof m.balance === 'number') gameHeld[g] = Math.max(0, m.balance - m.free);
   }
+  // What `g` may spend now: the balance less what the OTHER screens are holding, or null before the
+  // first balance has landed. One function, because the shop measures a price the same way a table
+  // measures a bet and two rules would be two answers to "can I afford this"
+  function freeFor(g) { return prev.cr == null ? null : Math.max(0, prev.cr - (gameHeld[g] || 0)); }
+
+  // --- what the shop has sold to this reader.
+  //
+  // One slot, so this is one question: has the floating crab been bought. The answer rides on every
+  // data push (shop.js, push) rather than on the shop's own replies, because the picture it decides
+  // is on the Usage tab and most readers never open the shop at all.
+  //
+  // The key is a STRING here on purpose. The push carries what is OWNED and not a verdict, for the
+  // same reason every other screen is handed figures rather than answers, and this is the one place
+  // that reads it: shop.js's slotOf('float')
+  var FLOAT_SLOT = 'mascot:float';
+  function ownsFloat() {
+    var o = lastData && lastData.shop && lastData.shop.owned;
+    return !!o && o.indexOf(FLOAT_SLOT) >= 0;
+  }
 
   // --- the one figure a list row may carry, on the right of the row.
   //
@@ -992,10 +1208,17 @@
     return true;
   }
   document.addEventListener('keydown', function (e) {
-    var g = curGame(); if (!g) return;
     if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
     var t = e.target; if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
     if (document.querySelector('.sheet:not([hidden])')) return;
+    var g = curGame();
+    if (!g) {
+      // The three screens of the games area that are not a game. Escape is the step the arrow
+      // takes, and on the crossroads, which has no arrow, it is the coin button: one step out of
+      // the area (docs/shop-spec.md, section 4-1)
+      if (e.key === 'Escape' && curTab() === 'games') { e.preventDefault(); if (curDoor()) backStep(); else leaveGames(); }
+      return;
+    }
     var def = PANELS[g];
     if (def && def.node && def.keys) def.keys(e);
   });
@@ -1018,26 +1241,48 @@
     }
     return def;
   }
-  // Each game stops its own clock; the held header is let go once, here
+  // Each game stops its own clock; the held header is let go once, here.
+  // The shop keeps a clock of its own for the same reason a game does (a reply that never comes),
+  // so leaving drops that too: without it a message in flight when the reader walks out leaves the
+  // screen locked for four seconds, and a reader who comes straight back gets the stale shelf
   function gameLeave() {
     for (var id in PANELS) { var def = PANELS[id]; if (def.node && def.leave) def.leave(); }
+    shopLeave();
     releaseHeldHeader();
   }
-  // One listener for every game's back arrow: the panels are all inside the stage.
+  // ONE ARROW MEANS ONE STEP, and this is the one place that says what a step is.
   //
-  // A game may have a depth INSIDE itself, and then the arrow has one level to climb before it leaves
-  // the game. `up()` is the optional contract for that (games/README.md, section 4): it returns true
-  // when it climbed one level of its own, and the arrow stops there. A game without it is a game with
-  // one depth, and nothing changes for it. This is why no screen needs a second back button of its
-  // own: two arrows on one heading was the market's, and one arrow that means one step is the rule
-  var _stage = el('gameStage');
-  if (_stage) _stage.addEventListener('click', function (e) {
+  // Every back arrow on the page runs through here: each game's, the games list's and the shop's.
+  // They are all the same control (.bj-back, games/casino.js) and they all climb one level, so a
+  // second answer for one of them would be a reader having to know which arrow they are pressing.
+  // The step depends only on where the reader is:
+  //   inside a game with a depth of its own  ->  that depth closes (the panel's `up`, below)
+  //   inside a game                          ->  the games list
+  //   the list, or the shop                  ->  the crossroads
+  // The crossroads has no arrow at all: the coin button above it is the way out, and a second
+  // control for the same step is exactly what this rule exists to prevent (docs/shop-spec.md, 4-2).
+  //
+  // `up()` is the optional contract for a game with a depth INSIDE itself (games/README.md,
+  // section 4): it returns true when it climbed one level of its own, and the arrow stops there.
+  function backStep() {
+    if (curGame()) {
+      var def = PANELS[curGame()];
+      if (def && def.node && def.up && def.up()) return;   // the game climbed one level inside itself
+      openGame(null);
+      return;
+    }
+    openDoor(null);
+  }
+  // Delegated on the card rather than on the games stage: the list's arrow and the shop's are in
+  // panels of their own, and three listeners for one control is three places to keep in step
+  var _cardEl = document.querySelector('.card');
+  if (_cardEl) _cardEl.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('.bj-back') : null;
-    if (!b) return;
-    var def = PANELS[curGame()];
-    if (def && def.node && def.up && def.up()) return;   // the game climbed one level inside itself
-    openGame(null);
+    if (b) backStep();
   });
+  var _crG = el('crDoorGames'), _crS = el('crDoorShop');
+  if (_crG) _crG.addEventListener('click', function () { openDoor('games'); });
+  if (_crS) _crS.addEventListener('click', function () { openDoor('shop'); });
 
   window.CUC = {
     // --- registration. id is the list row and the stored view; def.key is the message type
@@ -1067,7 +1312,7 @@
     balance: function () { return prev.cr; },
     // what game `g` may stake now: the balance less what the other tables hold, or null before the
     // first balance has landed
-    free: function (g) { return prev.cr == null ? null : Math.max(0, prev.cr - (gameHeld[g] || 0)); },
+    free: freeFor,
 
     // --- notices, and the one toggle every folded paytable shares
     live: setLive, err: setErr, note: setNote, rowFig: rowFig, why: wireWhy,
@@ -1081,6 +1326,9 @@
     timers: timers,
     reduceMotion: function () { return _reduceMotion; },
     press: pressPanel,
+    // the one rule every screen keeps about the keyboard: never take it while this document does
+    // not hold the focus. See refocusIn above for what that is protecting
+    refocus: refocusIn,
 
     // --- the open game, and the panel's only door to the webview's own memory (a game with a
     // remembered choice of its own needs this, the way the stakes remember theirs)
@@ -1088,6 +1336,197 @@
     state: function () { return vscode.getState() || {}; },
     setState: function (s) { vscode.setState(s); }
   };
+
+  // ===========================================================================
+  // THE SHOP. Not a game, so it is not a panel: no round, no stake, no pacing, and nothing in
+  // games/registry.js knows it exists (docs/shop-spec.md, section 4-5). It is drawn here for the
+  // same reason the Agents tab is: what is on it is DATA (which seats are owned, what the rest
+  // cost), and a screen built out of data cannot sit in html.js as markup.
+  //
+  // WHAT IT SELLS IS THE CRAB FLOATING IN THE WATER, the drawing the panel shows while nothing is
+  // being answered, and the screen is one question: this, or not. So the top of it is that drawing
+  // IN THE BOX IT WILL ACTUALLY BE DRAWN IN (88 x 74, contain, stood on the bottom edge: the
+  // mascot's own rules, styles.js) rather than a staged picture of it, because a preview that is
+  // not the real geometry is a promise the panel then breaks.
+  //
+  // THE REST OF THE SHELF IS EMPTY AND SAYS SO. What goes there has not been decided, so a slot
+  // carries no picture, no price and no name: an empty frame and the word. It is not a button and
+  // it is not in the tab order, because something that cannot be pressed should not be counted
+  // through by a reader on a keyboard.
+  //
+  // THE HOST JUDGES, here as everywhere: the row arrives with its price and whether it is owned,
+  // and this file prices nothing. The one comparison it does make is the chips' own (freeFor
+  // against the price), so that a credit minted while the screen is up lights the button at once
+  // instead of waiting for the next reply.
+  // ===========================================================================
+  var SHOP_T = { noReply: 4000 };
+  var SHOP_SOON = 2;           // empty slots beside it: enough for "more is coming", few enough
+                               // that the shelf is one row at every width (styles.js, .sh-grid)
+  // st: the host's last view. sig: the owned list as the last push or reply reported it
+  var sh = { st: null, busy: false, op: null, n: 0, to: null, wantFocus: false, sig: null };
+
+  function shopMarkup() {
+    return '<div class="ihead bj-head">'
+      + '<button type="button" class="bj-back" id="shBack" title="Games and shop">' + (ASSET_UI.chevron || '') + '</button>'
+      + '<div class="it" title="What the crab can be">' + (ASSET_UI.tag || '')
+      + '<span class="bj-ttl">Shop</span></div>'
+      // the corner stays EMPTY: it is for the one figure a depth keeps reading, and this screen's
+      // figures are all on the rows (docs/game-panels.md, section 2)
+      + '<div class="bj-side"></div></div>'
+      // the art is aria-hidden and the name beside it is what a reader is told, the same rule the
+      // pixel cards keep (CUC.cardWord)
+      + '<div class="sh-try" id="shTry" aria-hidden="true"></div>'
+      + '<div class="sh-meta"><span class="sh-nm" id="shName"></span><span class="sh-price" id="shPrice"></span></div>'
+      + '<div class="sh-grid" id="shGrid" role="group" aria-label="Shelf"></div>'
+      + '<div class="bj-sr" id="shLive" aria-live="polite"></div>'
+      + '<div class="bj-note" id="shNote" hidden></div>'
+      + '<div class="warnbar" id="shErr" hidden></div>'
+      + '<div class="bj-ctl" id="shCtl"><button type="button" class="bj-btn primary" id="shAct">Buy</button></div>';
+  }
+  // Built the first time the shop is opened, like a game's panel and for the same reason: a reader
+  // who never opens it pays nothing for it in the first paint
+  function shopBuild() {
+    var node = el('panelShop');
+    if (!node || node._built) return node;
+    node.innerHTML = shopMarkup();
+    node._built = true;
+    el('shAct').addEventListener('click', shopAct);
+    return node;
+  }
+  // `10` and `1K` are what the stake chips already print, so a price says 1K and not 1,000: this is
+  // formatting, and the figure itself is the host's
+  function shopTag(p) { return p >= 1000 ? (p / 1000) + 'K' : String(p); }
+  // The drawing, taken from the PICTURE THE PANEL ITSELF POINTS AT (#mascot's data-float, html.js)
+  // rather than from a second copy of the path: the shop sells that drawing, so a preview out of
+  // any other source could show something the panel never draws. A build without it draws no
+  // picture rather than a broken one
+  function shopArt() {
+    var m = el('mascot');
+    return (m && m.getAttribute('data-float')) || '';
+  }
+  function renderShop() {
+    var node = el('panelShop');
+    if (!node || !node._built) return;
+    var items = (sh.st && sh.st.items) || [];
+    if (!items.length) return;        // nothing has been answered yet: draw nothing rather than a guess
+    var it = items[0];
+    // 1. what it looks like, in the box it will be drawn in
+    var art = shopArt();
+    el('shTry').innerHTML = art ? '<img src="' + art + '" alt=""/>' : '';
+    // 2. its name, and what it costs while it is not yours. A price on something already bought is
+    // a figure about the past, and the line below already says what happened
+    el('shName').textContent = it.name;
+    el('shPrice').innerHTML = it.owned ? '' : COIN_FULL + '<b>' + fmtInt(it.price) + '</b>';
+    // 3. the shelf: the one thing on it, and the slots whose contents are not decided yet. The
+    // empty ones are spans with a role and no tabindex, so the keyboard goes from the arrow to the
+    // button and counts nothing in between
+    var html = '<span class="sh-cell' + (it.owned ? ' owned' : '') + '" role="img" aria-label="'
+      + esc(it.name + ', ' + (it.owned ? 'bought' : fmtInt(it.price) + ' credits')) + '">'
+      + (art ? '<img class="sh-pic" src="' + art + '" alt=""/>' : '')
+      + '<span class="sh-tag">' + (it.owned ? 'own' : esc(shopTag(it.price))) + '</span></span>';
+    for (var i = 0; i < SHOP_SOON; i++) {
+      html += '<span class="sh-cell soon" role="img" aria-label="An empty slot, nothing in it yet">'
+        + '<span class="sh-tag">Soon</span></span>';
+    }
+    el('shGrid').innerHTML = html;
+    // 4. the one control. It is on the screen while there is something to buy and GONE once there
+    // is not: a button that cannot be pressed on a screen with one row is furniture, and what a
+    // reader wants to know there is that it is theirs, which the line below says.
+    // What the price is measured against is the credits this screen may spend, not the header's
+    // balance: a round in progress elsewhere is holding some of that balance and the host would
+    // refuse a purchase made against it
+    var room = freeFor('shop'), known = prev.cr != null;
+    var afford = room != null && it.price <= room;
+    var btn = el('shAct');
+    el('shCtl').hidden = it.owned;
+    btn.disabled = sh.busy || it.owned || !afford;
+    btn.title = 'Buy the ' + it.name;
+    // 5. the one line under it: what was bought, or why it cannot be. The two refusals are the
+    // stake chips' own sentences, because being broke and having the credits tied up at a table are
+    // different problems
+    var note = el('shNote');
+    note.hidden = !it.owned && (!known || afford);
+    if (!note.hidden) {
+      note.textContent = it.owned
+        ? 'Bought. The crab floats while nothing is being answered.'
+        : prev.cr >= it.price ? HELD_ELSEWHERE + '.' : 'You need ' + fmtInt(it.price) + ' credits.';
+    }
+  }
+  function shopSend(op, key) {
+    if (sh.busy) return;
+    sh.busy = true; sh.op = op;
+    sh.n = postGame('shop', op, key ? { key: key } : null);
+    renderShop();                       // the button locks while the message is out
+    clearTimeout(sh.to);
+    sh.to = setTimeout(function () {
+      sh.busy = false; sh.op = null;
+      setErr('shErr', 'The shop didn’t respond. Try again.');
+      renderShop();
+    }, SHOP_T.noReply);
+  }
+  function shopAct() {
+    var items = (sh.st && sh.st.items) || [];
+    if (!items.length || sh.busy || items[0].owned) return;
+    shopSend('buy', items[0].key);
+  }
+  // A REPLY WITH NO `state` IS A REASON AND NOT A SHELF (games/README.md, section 5): the sentence
+  // goes up, what is drawn stays drawn, the wait is released and nothing else moves. The money on
+  // such a reply is still true, so the header takes it as it would any other
+  function shopReceive(m) {
+    var current = sh.op != null && m.n === sh.n;
+    if (!current && sh.op != null) return;   // an older reply while a newer request is still out
+    var was = sh.op;
+    clearTimeout(sh.to);
+    sh.busy = false; sh.op = null;
+    setHeld('shop', m);
+    if (m.state) { sh.st = m.state; sh.sig = shopSig(m.state); }
+    settleHeader(m);                         // the balance moves quietly: a purchase is not an earning
+    setErr('shErr', m.error || '');
+    renderShop();
+    if (current && was && was !== 'open' && !m.error && m.state) shopAnnounce(was);
+    shopFocusAfter();
+  }
+  function shopAnnounce(op) {
+    var items = (sh.st && sh.st.items) || [];
+    if (op !== 'buy' || !items.length) return;
+    setLive('shLive', items[0].name + ' bought. Balance ' + fmtInt(prev.cr || 0) + '.');
+  }
+  // The keyboard, by the one rule every screen keeps: the panel asks, and CUC.refocus decides
+  // whether the ask may be honoured at all (refocusIn above). The button is what a reader presses,
+  // so it takes the focus while it can be pressed, and the arrow out does when there is nothing
+  // left to buy: nothing on the shelf is pressable, so there is nothing else in here to land on
+  function shopFocusAfter() {
+    if (curDoor() !== 'shop') return;
+    var want = sh.wantFocus;
+    sh.wantFocus = false;
+    var btn = el('shAct');
+    var target = (btn && !btn.disabled && !el('shCtl').hidden) ? btn : el('shBack');
+    refocusIn(el('panelShop'), target, want);
+  }
+  function shopSig(s) { return (s.owned || []).join(','); }
+  // BOUGHT IN ANOTHER WINDOW. The drawing on the Usage tab needs nothing for this, because it is
+  // drawn out of the push itself on every push (ownsFloat above). What does need telling is this
+  // screen's own shelf, which comes from its REPLIES: it is re-asked only when the push says
+  // something its last reply did not, since otherwise it would ask again after every purchase it
+  // made itself, which is a round trip for an answer it already has.
+  function shopFromPush(d) {
+    var s = d && d.shop;
+    if (!s) return;
+    var sig = shopSig(s);
+    if (sig === sh.sig) return;
+    var first = sh.sig == null;
+    sh.sig = sig;
+    if (!first && curDoor() === 'shop' && !sh.busy) shopSend('open');
+  }
+  // What a game's leave() does, for the screen that is not a game: drop the clock and the request
+  // in flight. A late reply after this is drawn as it stands, which is the floor's rule for one
+  function shopLeave() { clearTimeout(sh.to); sh.busy = false; sh.op = null; }
+  function enterShop() {
+    shopBuild();
+    sh.wantFocus = true;
+    renderShop();          // whatever was already known, so the screen is never blank on a reopen
+    shopSend('open');
+  }
 
   // live tick every 1s: active time + countdowns + "Updated Ns ago"
   function tick() {
@@ -1097,11 +1536,17 @@
         var v = activeTime(d.fh.resets_at), te = el('st_time');
         if (te && te.textContent !== v) { te.textContent = v; roll('st_time'); }
         var r = cd(d.fh.resets_at); if (el('s_sub')) el('s_sub').textContent = r ? r + ' left' : '';
+      } else if (noSessionWindow(d) && d.sd) {
+        // no window to count down, so the line under the ring counts the week down instead. The
+        // tile above it is not ticked: today's span only moves when a message lands, and a message
+        // landing is a push
+        var rw = cd(d.sd.resets_at); if (el('s_sub')) el('s_sub').textContent = rw ? rw + ' left' : '';
       }
       if (d.sd) { var r2 = cd(d.sd.resets_at); if (el('w_sub')) el('w_sub').textContent = r2 ? r2 + ' left' : ''; }
     }
-    var age = Math.floor((Date.now() - refreshedAt) / 1000);
-    if (el('upd')) el('upd').textContent = age < 60 ? 'now' : Math.floor(age / 60) + 'm ago';
+    // the freshness row has to be able to APPEAR without a push, since the thing it reports is
+    // the absence of one. It is cheap: two class toggles and a string
+    renderFreshness(lastData);
   }
   setInterval(tick, 1000);
 
@@ -1120,8 +1565,174 @@
     if (showReset && el(pfx + '_sub')) { var r = cd(obj.resets_at); el(pfx + '_sub').textContent = r ? r + ' left' : ''; }
   }
 
+  // --- the mascot's four states, with a DEADBAND.
+  // The steps used to be hard lines at 50 / 70 / 90 against the raw percentage the host pushes, so
+  // a window sitting on 49.8 that ticked to 50.1 and back changed the drawing on every push. A step
+  // is ENTERED at its line and LEFT three points below it, which is wider than any jitter in a
+  // reading and narrower than any real move.
+  var MASCOT_STEPS = [
+    { name: 'working', up: 50, down: 47 },
+    { name: 'despair', up: 70, down: 67 },
+    { name: 'stunned', up: 90, down: 87 }
+  ];
+  var _mascotStep = 0;        // 0 = idle, otherwise the step's index plus one
+  // The first reading is not a transition, it is the first drawing, and a panel that has only just
+  // opened has no reading at all (the usage call is still out). So this turns true on the first
+  // push that CARRIES a session percentage, not on the first push.
+  var _mascotDrawn = false;
+  function mascotState(sess, weekly) {
+    var step = 0;
+    for (var i = 0; i < MASCOT_STEPS.length; i++) {
+      // standing on this step already? then the lower edge is what holds it here
+      var edge = _mascotStep > i ? MASCOT_STEPS[i].down : MASCOT_STEPS[i].up;
+      if (sess >= edge) step = i + 1; else break;
+    }
+    // What is REMEMBERED is where the session stands, and only that. A spent week stuns on top of
+    // it, and writing that down as the session's own step would make the session leave the top
+    // step at 87 without ever having reached 90: a window at 88% that was stunned by the week
+    // would stay stunned after the week turned over.
+    _mascotStep = step;
+    if (weekly >= 100) step = MASCOT_STEPS.length;
+    return step ? MASCOT_STEPS[step - 1].name : 'idle';
+  }
+  // WHAT THE STEPS ARE MEASURED AGAINST, as one number on the 0..100 scale they were drawn for.
+  //
+  // The steps and the deadband above are not touched by any of this, and that is the whole design:
+  // an account with a five-hour window gets exactly the number it got before, so the picture a Pro
+  // or Max reader sees cannot move. Only the input differs, and only for the account that has no
+  // window to read (webview.js, noSessionWindow).
+  //
+  // For that account the weekly percentage may NOT go in raw. A week fills over seven days, so 50%
+  // of it on day four is on course and 50% of a five-hour window is halfway through the afternoon:
+  // feeding the raw figure in would leave the crab idle through almost every week. What a reader
+  // actually wants to know is whether today's rate runs out before the reset does, which is a PACE:
+  // 1.0 is spending the week exactly evenly, and the x50 puts 1.0 on the working line (50), 1.4 on
+  // despair (70) and 1.8 on stunned (90) without moving a single threshold.
+  //
+  // THE SECOND AXIS ARRIVED, AND IT IS NOT IN HERE. "Is anyone working right now" picks WHICH
+  // DRAWING is shown and this function still answers WHICH STEP, so the two sit side by side
+  // (mascotQuiet and MASCOT_ART below) rather than one inside the other. Nothing about this
+  // function's inputs or its output moved, which is what keeps a Pro or Max reader's picture
+  // exactly where it was (docs/shop-spec.md, section 8).
+  function mascotStrain(d, noSession) {
+    if (!noSession) return (d.fh && d.fh.used_percentage) || 0;
+    if (!d.sd || d.sd.used_percentage == null) return 0;
+    var W = 7 * 86400;
+    // how far INTO the weekly window we are, from its reset time. A null reset reads as a full
+    // week elapsed, which makes the pace the raw percentage halved rather than a division by zero
+    var e = Math.min(1, Math.max(0, 1 - (d.sd.resets_at - Date.now() / 1000) / W));
+    // the percentage an even spender would have reached by now. The floor matters: for the first
+    // 8.4 hours of a week `e * 100` is under 5 and any real use divided by it explodes
+    var expected = Math.max(5, e * 100);
+    return Math.min(100, Math.round(d.sd.used_percentage / expected * 50));
+  }
+  // --- WHICH DRAWING, the second axis: is anything being answered right now.
+  //
+  // The step above is how much of the limit is gone. This is whether the account is being used at
+  // all, and it changes the picture without changing the step: the same idle step is a crab at a
+  // laptop while the replies are landing and a crab floating in the water when they stop.
+  //
+  // THE THRESHOLD IS COUNTED, NOT CHOSEN. Three days of this reader's own transcripts, 4,309
+  // assistant replies, put the gap between two replies at a median of 2.3s and a 99th percentile of
+  // 67.5s. 180s is 2.7 times that p99, and it is what leaves the fewest gaps sitting ON it: 15 gaps
+  // in three days cross it and 4 land within a quarter of it, against 55 and 62 at a minute
+  // (docs/shop-spec.md, section 5-2). A threshold on the shoulder of the distribution is a drawing
+  // that comes and goes during one piece of work.
+  var QUIET_MS = 180000;
+  // The two axes as one table: the step picks the row, `mascotQuiet` picks the column. Despair and
+  // stunned read the same either way, and deliberately: there the LIMIT is the news, and whether a
+  // reply landed ten seconds ago does not change it. Stunned also cannot really have two columns,
+  // because a blocked limit stops the replies that would keep it busy.
+  //
+  // THE IDLE ROW HAS A THIRD DRAWING, and that is the whole of the shop's reach into this tab: the
+  // floating crab is the one thing the shop sells (shop.js), so `quiet` is what a reader who has
+  // bought it sees and `free` is that same moment for everyone else, which is the small crab that
+  // was there before the shop existed. No other row has a `free`, because no other row has anything
+  // to sell: they read the same whether anything was ever bought or not.
+  var MASCOT_ART = {
+    idle: { busy: 'coding', quiet: 'float', free: 'idle' },
+    working: { busy: 'working', quiet: 'idle' },
+    despair: { busy: 'despair', quiet: 'despair' },
+    stunned: { busy: 'stunned', quiet: 'stunned' }
+  };
+  // WHICH DRAWING: the step picks the row, the clock picks the column, and what has been bought
+  // picks between the quiet drawing and the free one
+  function mascotArt(step, d) {
+    var row = MASCOT_ART[step];
+    if (!mascotQuiet(d)) return row.busy;
+    return (row.free && !ownsFloat()) ? row.free : row.quiet;
+  }
+  // NO DEADBAND HERE, and that is not an oversight: the steps have one because they cut a noisy
+  // scalar, and this cuts a clock. One side of it is an EVENT (a message landed, and the host's
+  // fs.watch pushes within 200ms) and the other is TIME (the threshold passed, and the host's own
+  // 10s loop is what notices), so there is no pair of edges to write. The asymmetry is the one the
+  // product wants: typing shows at once, stopping is noticed slowly.
+  function mascotQuiet(d) {
+    var t = d && d.last && d.last.t;   // today's last assistant message. None at all is quiet
+    return !t || (Date.now() - t) >= QUIET_MS;
+  }
+
+  // The cut between two states, one beat long: the sprite is pressed two whole pixels down and let
+  // back up in two frames (styles.js, .sparkle.beat). No crossfade and no filter: either one
+  // smears pixel art. Re-arming needs the class gone for a frame.
+  function beatMascot(img) {
+    img.classList.remove('beat');
+    void img.offsetWidth;
+    img.classList.add('beat');
+    clearTimeout(img._beat);
+    img._beat = setTimeout(function () { img.classList.remove('beat'); }, 160);
+  }
+
+  // The room HUD's session piece, TAKEN OUT of the page rather than blanked.
+  //
+  // It used to read `5h –`, and the empty slot plus the separator beside it reads as a broken
+  // gauge, not as a limit this account does not have. The separator has to go with it or the HUD
+  // starts with a dot. Both nodes are kept rather than dropped, because the account that has a
+  // window must get them back if a push ever carries one again.
+  // DETAILS GOES WHERE THE WEEKLY READING IS, and it is MOVED rather than drawn twice.
+  //
+  // #wkMore is the only way into the weekly sheet: nothing else opens it except a one-off dialog
+  // after sharing is switched on, and there is no command for it. It has always lived inside the
+  // Weekly bar's label, which was fine while that bar was always on screen. It is not: the account
+  // with no five-hour window hides the whole bar (styles.js, body.no-session #pm_weekly) because
+  // the ring is drawing the week and the same figure may not be drawn twice, and the button went
+  // with the bar. The reading moved and the control that details it did not, so that account had
+  // no entrance to the sheet at all.
+  //
+  // So the rule is the reading's: the button sits in the bar while the bar is the week, and under
+  // the ring when the RING is the week. It is not moved in state 1, where the ring is the session
+  // and a weekly control under it would be pointing at the wrong number, and it is not duplicated,
+  // because two buttons with one id is one listener and one of them dead.
+  // Details used to move under the ring when the account had no five-hour window, because the
+  // weekly BAR was hidden in that state and the button rode inside it. The bar is back (styles.js,
+  // the no-session block), so the button is reachable where it has always been and there is one
+  // seat again. Nothing calls for a second one: a control that changes address by account shape is
+  // a control the reader has to find twice.
+
+  var _hudKept = null;
+  function hudSessionPiece(on) {
+    var hud = document.querySelector('.ws-hud'); if (!hud) return;
+    if (on) {
+      if (!_hudKept) return;
+      var w = el('wsHudW');
+      hud.insertBefore(_hudKept[0], w);
+      if (_hudKept[1]) hud.insertBefore(_hudKept[1], w);
+      _hudKept = null;
+      return;
+    }
+    if (_hudKept) return;
+    var s = el('wsHudS'), sep = hud.querySelector('.ws-hud-sep');
+    if (!s) return;
+    _hudKept = [s, sep];
+    hud.removeChild(s);
+    if (sep) hud.removeChild(sep);
+  }
+
   function render(d) {
     lastData = d; refreshedAt = Date.now();
+    // this account has no five-hour window: one class, and every rule for that state hangs off it
+    var noSession = noSessionWindow(d);
+    document.body.classList.toggle('no-session', noSession);
     renderAgents(d.agents);
     applyAgentStates(d.agentActivity);
     applyXpEffects(d);
@@ -1129,7 +1740,9 @@
     if ((vscode.getState() || {}).rosterCollapsed) renderCrewMini(d.agentActivity); // keep collapsed strip live
     renderWaiting(d.agentActivity); // always: a fold must not hide a row the user may need to clear
     applyFavs(d.favGames); // the host owns the set, so every window hears about a star through here
+    shopFromPush(d);       // ...and about a seat bought in another window the same way
     // compact usage HUD over the room (so session/weekly stay visible on the Agents tab)
+    hudSessionPiece(!noSession);
     var _hs = el('wsHudS');
     if (_hs) { if (d.fh && d.fh.used_percentage != null) { var _sp = Math.round(d.fh.used_percentage); _hs.textContent = '5h ' + _sp + '%'; _hs.style.color = col(_sp); } else { _hs.textContent = '5h –'; _hs.style.color = ''; } }
     var _hw = el('wsHudW');
@@ -1141,7 +1754,7 @@
     // truth — a late-arriving stale push must not overwrite their in-progress choices.
     var _sh = el('settingsSheet');
     if (!_sh || _sh.hidden) {
-      var _ph = (d.cfg && d.cfg.panelHidden) || [];
+      var _ph = normalizeHidden((d.cfg && d.cfg.panelHidden) || []);
       applyPanelVis(_ph);
       var _pmc = document.querySelectorAll('.pmk');
       for (var _pi = 0; _pi < _pmc.length; _pi++) { _pmc[_pi].checked = _ph.indexOf(_pmc[_pi].getAttribute('data-k')) < 0; }
@@ -1149,25 +1762,44 @@
     }
     var _m = el('mascot');
     if (_m) {
-      // Mascot state by 5h session %: <50 idle, 50-69 working, 70-89 despair, >=90 stunned.
-      // Weekly at 100% also stuns.
-      var _sess = (d.fh && d.fh.used_percentage) || 0;
-      var _wk = (d.sd && d.sd.used_percentage) || 0;
-      var _state = (_sess >= 90 || _wk >= 100) ? 'stunned' : (_sess >= 70 ? 'despair' : (_sess >= 50 ? 'working' : 'idle'));
+      var _step = mascotState(mascotStrain(d, noSession), (d.sd && d.sd.used_percentage) || 0);
+      var _state = mascotArt(_step, d);
       var _want = _m.getAttribute('data-' + _state);
-      if (_want && _m.getAttribute('src') !== _want) _m.setAttribute('src', _want);
+      if (_want && _m.getAttribute('src') !== _want) {
+        _m.setAttribute('src', _want);
+        if (_mascotDrawn) beatMascot(_m);
+      }
+      // the first push is the first DRAWING and not a transition, so this turns true on the first
+      // push that carries a reading the steps can be measured against, which, for an account with
+      // no window, is the weekly one and not the session's
+      if (d.fh ? d.fh.used_percentage != null : noSession) _mascotDrawn = true;
+      // the box is one height and the drawing inside it is not, so the burn-rate bubble has to
+      // know which picture it is pointing at (styles.js, .mascot-wrap[data-state])
+      var _mbox = el('pm_mascot');
+      if (_mbox && _mbox.getAttribute('data-state') !== _state) _mbox.setAttribute('data-state', _state);
       var _stunned = _state === 'stunned';
       _m.style.cursor = _stunned ? 'pointer' : 'default';
       _m.title = _stunned ? 'poke' : '';
     }
 
-    meter('s', d.fh, true, d.usageLoading);
+    // the session has no bar: the ring below is its one showing, and meter() is called for the
+    // three that still have one
     meter('w', d.sd, true, d.usageLoading);
     meter('f', d.fable, true, d.usageLoading);
     meter('c', d.ctx, false, false);
     if (d.ctx && d.ctx.window && el('c_sub')) el('c_sub').textContent = '/ ' + (d.ctx.window >= 1e6 ? '1M' : '200K');
 
-    // ring + active time (session)
+    // the session, whole: the ring is the percentage and #s_sub under it is the time left in the
+    // window. That line is what the removed Session bar still owned, and losing it would mean the
+    // panel no longer says when the 5 hours turn over
+    // The ring is the biggest thing on this panel, so what it draws is the limit that actually
+    // binds the account: the window where there is one, the week where there is not. It says which
+    // (.rtext) rather than leaving the reader to guess, and the two readings never show at once:
+    // the weekly bar is hidden in that state (styles.js, body.no-session)
+    var _rt = document.querySelector('.rtext');
+    if (_rt) { var _rtw = noSession ? '7d used' : 'used'; if (_rt.textContent !== _rtw) _rt.textContent = _rtw; }
+    var _stl = el('st_time_lab');
+    if (_stl) { var _stw = noSession ? 'Active today' : 'Active time'; if (_stl.textContent !== _stw) _stl.textContent = _stw; }
     if (d.fh && d.fh.used_percentage != null) {
       var p = Math.round(d.fh.used_percentage);
       var arc = el('ringArc');
@@ -1175,10 +1807,22 @@
       tween('ringPct', prev.ring, p, function (v) { return Math.round(v); });
       prev.ring = p;
       if (el('st_time')) el('st_time').textContent = activeTime(d.fh.resets_at);
+    } else if (noSession && d.sd.used_percentage != null) {
+      var pw = Math.round(d.sd.used_percentage);
+      var arcw = el('ringArc');
+      if (arcw) { arcw.style.strokeDashoffset = (C * (1 - Math.min(pw, 100) / 100)).toFixed(1); arcw.style.stroke = col(pw); }
+      tween('ringPct', prev.ring, pw, function (v) { return Math.round(v); });
+      prev.ring = pw;
+      if (el('st_time')) el('st_time').textContent = activeToday(d);
     } else {
       var rpe = el('ringPct'); if (rpe) rpe.textContent = d.usageLoading ? '…' : '—';
       var arce = el('ringArc'); if (arce) arce.style.strokeDashoffset = String(C);
       var ste = el('st_time'); if (ste) ste.textContent = d.usageLoading ? 'loading' : '—';
+    }
+    if (el('s_sub')) {
+      // under the ring: the time left on whichever limit the ring just drew
+      var _rs = cd(d.fh ? d.fh.resets_at : (noSession ? d.sd.resets_at : 0)) || '';
+      el('s_sub').textContent = _rs ? _rs + ' left' : '';
     }
 
     // tokens (today's output)
@@ -1203,7 +1847,7 @@
 
     renderCredits(d.credits);
 
-    if (el('upd')) { var _ua = d.usageAt || 0; el('upd').textContent = _ua ? agoText(_ua) : (d.usageLoading ? 'loading' : '—'); }
+    renderFreshness(d);
 
     // burn-rate: only 2 levels shown — mid(amber) / high(red). calm = no bubble at all.
     var _mw = el('mwarn');
@@ -1234,6 +1878,8 @@
     var m = e.data; if (!m) return;
     if (m.type === 'data') render(m.data);
     else if (m.type === 'openWeekly') openWeekly();
+    // the shop is not a game, so it is not in the register the branch below dispatches through
+    else if (m.type === 'shop') shopReceive(m);
     // A reply for a game whose screen was never opened is dropped: that screen asks for the truth
     // when it opens, so there is nothing to keep in sync meanwhile.
     // Its list row is the exception. The row is in the page from the first paint, and a figure
@@ -1256,19 +1902,22 @@
   applyCompact(st0.compact);
   requestAnimationFrame(function () { requestAnimationFrame(function () { document.body.classList.remove('notrans'); }); });
   var tbtn = el('toggle');
-  // the top-right chevron is context-aware: Usage tab -> compact panel; Agents tab -> collapse roster
+  // THE HEADER CHEVRON KNOWS ONE THING: compact.
+  //
+  // It used to be "context-aware" and collapse the roster on the Agents tab, and that branch could
+  // not be reached: styles.js hides this button on every tab but Usage, and the Agents tab's two
+  // sections fold from their own headers (#wsFold, #crewFold), which is where a control that folds
+  // a section belongs. The dead branch was also wrong where it stood: it skipped applyCrewFold,
+  // so the roster and the chevron that claimed to own it disagreed.
   function updateToggleChevron() {
-    var s = vscode.getState() || {}, onAgents = (s.tab || 'usage') === 'agents';
-    var flip = onAgents ? !!s.rosterCollapsed : document.body.classList.contains('compact');
-    if (tbtn) {
-      var svg = tbtn.querySelector('svg'); if (svg) svg.style.transform = flip ? 'rotate(180deg)' : '';
-      tbtn.title = onAgents ? (s.rosterCollapsed ? 'Show roster' : 'Hide roster') : 'Compact / expand';
-    }
+    if (!tbtn) return;
+    var svg = tbtn.querySelector('svg');
+    if (svg) svg.style.transform = document.body.classList.contains('compact') ? 'rotate(180deg)' : '';
   }
   if (tbtn) tbtn.addEventListener('click', function () {
     var s = vscode.getState() || {};
-    if ((s.tab || 'usage') === 'agents') { s.rosterCollapsed = !s.rosterCollapsed; vscode.setState(s); applyRoster(s.rosterCollapsed); }
-    else { var c = !document.body.classList.contains('compact'); applyCompact(c); s.compact = c; vscode.setState(s); }
+    var c = !document.body.classList.contains('compact');
+    applyCompact(c); s.compact = c; vscode.setState(s);
     updateToggleChevron();
   });
 
@@ -1288,9 +1937,9 @@
   var _tu = el('tabUsage'), _ta = el('tabAgents');
   if (_tu) _tu.addEventListener('click', function () { switchTab('usage'); });
   if (_ta) _ta.addEventListener('click', function () { switchTab('agents'); });
-  // the header credits line is the way into the table, and back out to the last tab
+  // the header credits line is the way into the games area, and back out to the last tab
   var _hdcBtn = el('hdCredits');
-  if (_hdcBtn) _hdcBtn.addEventListener('click', function () { switchTab(curTab() === 'games' ? ((vscode.getState() || {}).lastTab || 'usage') : 'games'); });
+  if (_hdcBtn) _hdcBtn.addEventListener('click', function () { if (curTab() === 'games') leaveGames(); else switchTab('games'); });
   // --- the games list: the favourites at the top, and the blocks that fold.
   //
   // TWO MEMORIES, ON PURPOSE, and they are not interchangeable.
@@ -1363,7 +2012,9 @@
     if (open) openGame(open.getAttribute('data-game'));
   });
   applyFavs(null);   // before boot(): the empty list is a state too, and boot takes the focus
-  if (el('bjBack')) el('bjBack').addEventListener('click', function () { openGame(null); });
+  // (no listener for a game's own arrow here: #bjBack does not exist at load, because a game's
+  // markup is built the first time it is opened, and every .bj-back on the page is answered by the
+  // one delegated handler above)
 
   // room theme: chosen via the map dropdown (persisted); light-theme variant used when it exists
   function currentRoom() { var rs = ASSETS.rooms || {}; return rs[(vscode.getState() || {}).map || 'cave'] || rs.cave; }
@@ -1381,7 +2032,11 @@
   function syncMapName() {
     var n = el('wsMapName'); if (!n) return;
     var r = (ASSETS.rooms || {})[currentMap()];
-    n.textContent = (r && r.name) || 'Room';
+    var name = (r && r.name) || 'Room';
+    n.textContent = name;
+    // the name is a label at most widths and a tooltip at the narrowest, where the button is a
+    // glyph on its own (styles.js, body.narrow .ws-map span) and the section's own name has the row
+    var b = el('wsMap'); if (b) b.title = 'Room: ' + name;
   }
   function buildRoomGrid() {
     var g = el('roomGrid'); if (!g) return;
@@ -1411,7 +2066,7 @@
     this.hidden = true;
   });
 
-  // collapse / expand the roster — driven by the top-right chevron on the Agents tab
+  // collapse / expand the roster, driven by #crewFold in the Crew header
   function applyRoster(collapsed) {
     var pa = el('panelAgents'); if (pa) pa.classList.toggle('crew-collapsed', !!collapsed); // CSS animates pool <-> mini
     if (collapsed) renderCrewMini((lastData && lastData.agentActivity) || {});
@@ -1425,7 +2080,7 @@
   var _cf = el('crewFold');
   if (_cf) _cf.addEventListener('click', function () {
     var s = vscode.getState() || {}; s.rosterCollapsed = !s.rosterCollapsed; vscode.setState(s);
-    applyRoster(s.rosterCollapsed); applyCrewFold(s.rosterCollapsed); updateToggleChevron();
+    applyRoster(s.rosterCollapsed); applyCrewFold(s.rosterCollapsed);
   });
 
   // click a roster character -> select (border) + walk south (front-facing walk cycle)
@@ -1439,13 +2094,21 @@
   function deselectRoster() {
     if (!selectedAgent || !_poolEl) return;
     var c = _poolEl.querySelector('.cr-card[data-agent="' + selectedAgent + '"]');
-    if (c) { c.classList.remove('selected'); resetRosterSprite(c, selectedAgent); }
+    if (c) { setPicked(c, false); resetRosterSprite(c, selectedAgent); }
     selectedAgent = null;
   }
   if (_poolEl) _poolEl.addEventListener('click', function (e) {
     var t = e.target; if (!t || !t.closest) return;
     var hr = t.closest('.hid-row');
-    if (hr) { _hiddenOpen = !_hiddenOpen; _poolEl._sig = null; renderAgents((lastData && lastData.agents) || []); return; }
+    // the row is rebuilt by renderAgents, so the focus a keyboard press came with would land on a
+    // replaced element: put it back on the new row
+    if (hr) {
+      var wasFocused = document.activeElement === hr;
+      _hiddenOpen = !_hiddenOpen; _poolEl._sig = null;
+      renderAgents((lastData && lastData.agents) || []);
+      if (wasFocused) { var again = el('hidRow'); if (again) again.focus(); }
+      return;
+    }
     var hc = t.closest('.hid-card');
     if (hc) { vscode.postMessage({ type: 'setHidden', name: hc.getAttribute('data-agent'), hidden: false }); return; }
     var card = t.closest('.cr-card'); if (!card) { deselectRoster(); return; } // empty area -> deselect
@@ -1454,9 +2117,9 @@
     if (selectedAgent === name) { deselectRoster(); return; } // re-click same -> deselect
     if (selectedAgent) {
       var prev = _poolEl.querySelector('.cr-card[data-agent="' + selectedAgent + '"]');
-      if (prev) { prev.classList.remove('selected'); resetRosterSprite(prev, selectedAgent); }
+      if (prev) { setPicked(prev, false); resetRosterSprite(prev, selectedAgent); }
     }
-    selectedAgent = name; card.classList.add('selected');
+    selectedAgent = name; setPicked(card, true);
   });
   // Clear one waiting row. The host decides whether the key is really waiting and owns the record,
   // so the row does not disappear until the next push comes back, the same contract as the game stars.
@@ -1767,16 +2430,65 @@
     _mc.setAttribute('src', s);
   });
 
-  // hide the stat tiles when the panel is too narrow for their values
+  // --- how narrow the panel is, and why the question is asked in this particular way.
+  //
+  // Two classes hang off it: `narrow` drops the stat tiles so their values cannot truncate, and
+  // `wrapcols` puts the ring and the crab UNDER the bars instead of beside them.
+  //
+  // 1. THE INPUT MAY NOT MOVE WITH THE OUTPUT. This read `document.body.clientWidth`, which is the
+  //    viewport WITHOUT the scrollbar, so it got narrower by the gutter's width whenever the panel
+  //    grew tall enough to scroll. The panel's height is the one thing these classes change:
+  //    wrapping takes the card from 409 to 575 (measured, --probe at a 351px sidebar against 300),
+  //    and the Usage tab's own figures grow it as the context fills. So a sidebar sitting within a
+  //    gutter's width of the threshold had its layout decided by its own height: the context bar
+  //    filled, a scrollbar appeared, the reading dropped 15px past the threshold and the crab fell
+  //    166px to under the bars; the figure settled, the scrollbar went, and it came back. Reported
+  //    from a real sidebar.
+  //    `window.innerWidth` is the whole viewport, gutter included, so nothing this function does
+  //    can move it. The two thresholds stay the numbers they were: measured against innerWidth
+  //    they are the verdict the old reading gave whenever no scrollbar was showing, which is the
+  //    state they were tuned in. While one IS showing the columns get the gutter less than the
+  //    threshold intends, and that is the side to err on: the alternative is shifting both
+  //    thresholds up by the gutter, which would wrap every scrollbar platform 15px early forever.
+  //
+  // 2. ONE THRESHOLD IS NOT A THRESHOLD. The value that turns a class on and the value that turns
+  //    it off were the same number, so any jitter at all on the input flips the class back and
+  //    forth; the crab's four steps have had a deadband for exactly this reason (MASCOT_STEPS
+  //    above). The pair here is sticky in the direction the narrow layout is entered: the class
+  //    goes on below the threshold and comes off only a band above it.
+  //
+  // 3. THE BAND IS MEASURED, NOT CHOSEN. The gutter is the widest the old reading could ever jump
+  //    by on its own, so it is the widest flutter this page can be asked to absorb, and it is read
+  //    off the window rather than written down here because it is 15 on one platform, 17 on
+  //    another and 0 wherever the scrollbar is drawn over the content. The floor of 2 is for the
+  //    platform that reports 0: the width arrives rounded and VS Code re-lays the sidebar out by a
+  //    pixel when a badge appears, and the 160ms debounce below catches a blip but not a flutter.
+  var _gutter = 0;              // the widest gutter this window's scrollbar has ever taken
+  function respWidth() {
+    var sb = window.innerWidth - document.documentElement.clientWidth;
+    // past 40 it is not a scrollbar: a harness or a mid-layout read, and believing it would make
+    // the band wider than the distance between the two thresholds
+    if (sb > _gutter && sb <= 40) _gutter = sb;
+    return window.innerWidth;
+  }
+  function respBand() { return Math.max(2, _gutter); }
+  // `on` is the class as it stands, which is what makes the two edges a pair rather than two reads
+  // of one number
+  function respNarrower(w, t, on) { return on ? w < t + respBand() : w < t; }
+
   // Debounced so a momentary width blip (sidebar re-layout when a badge count appears)
   // doesn't flip the panel to its narrow layout and back.
   function applyResponsive() {
-    var w = document.body.clientWidth;
-    document.body.classList.toggle('narrow', w < 232);
-    document.body.classList.toggle('wrapcols', w < 340);
+    var w = respWidth(), cls = document.body.classList;
+    cls.toggle('narrow', respNarrower(w, 232, cls.contains('narrow')));
+    cls.toggle('wrapcols', respNarrower(w, 340, cls.contains('wrapcols')));
     // keep the roster a 4-column grid at any width by scaling characters + labels down to fit
-    // (derive from body width so it's correct even while the Agents tab is hidden)
-    var contentW = w - 70; // wrap+card+inner paddings
+    // (derive from body width so it's correct even while the Agents tab is hidden).
+    // The gutter comes off here and not above: this is a size and not a threshold, so it has no
+    // edge to flutter across, and a card that assumes the gutter is taken is a card that fits
+    // whether it is or not. It is the WIDEST gutter seen rather than the live one, so the roster
+    // cannot resize itself by growing tall enough to scroll
+    var contentW = w - _gutter - 70; // scrollbar gutter + wrap/card/inner paddings
     var colW = (contentW - 2 * 3) / 4; // 4 cols, ~2px gaps
     var scale = Math.max(0.5, Math.min(1, colW / 52)); // 52px = comfortable full-size card
     document.body.style.setProperty('--cr-scale', scale.toFixed(3));
@@ -1805,8 +2517,7 @@
   // x on the banner dismisses it
   var _wbEl = el('warnbar');
   if (_wbEl) _wbEl.addEventListener('click', function (e) { if (e.target && e.target.closest && e.target.closest('.wbx')) { _wbEl.hidden = true; vscode.postMessage({ type: 'dismissBurn' }); } });
-  // keep "updated Xm ago" ticking between data pushes
-  setInterval(function () { if (lastData && el('upd')) { var ua = lastData.usageAt || 0; if (ua) el('upd').textContent = agoText(ua); } }, 30000);
+  // (the freshness row is kept current by the 1s tick, which is its only writer)
 
   // The games' panel scripts are loaded after this file, so the stored view can only be applied
   // once they have all registered: a reload straight into a game has to find that game's panel.

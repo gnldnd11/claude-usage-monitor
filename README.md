@@ -45,7 +45,7 @@ Because a background subagent has no knowable progress, running agents show an i
 ## Usage panel
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/usage-panel.png" width="330" alt="Usage panel with session, weekly, Fable and context meters, a usage ring, the crab mascot and today's stat tiles" />
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/usage-panel.png" width="330" alt="Usage panel with weekly, Fable and context meters, a usage ring, the crab mascot and today's stat tiles" />
 </p>
 
 <p align="center">

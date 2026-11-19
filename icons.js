@@ -20,6 +20,13 @@ module.exports = {
   // aria-hidden like `coin`: the button beside it carries the name
   star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1l2.75 5.57 6.15.9-4.45 4.34 1.05 6.12L12 17.14l-5.5 2.89 1.05-6.12L3.1 9.57l6.15-.9z"/></svg>',
 
+  // The shop's heading. A PRICE TAG, because that is the one thing on that screen that the five
+  // game glyphs cannot be confused with, and NOT the coin: the header's credits button is already
+  // that drawing, and the same picture in two places is two places a reader has to tell apart.
+  // Read at 15px like the rest of this block, so the outline is 2 units and the hole is a FILLED
+  // circle at r 1.9: a ring of 1 unit there is the first thing to disappear at that size.
+  tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13.7 3.3h5.4a1.6 1.6 0 0 1 1.6 1.6v5.4a2 2 0 0 1-.6 1.4l-8 8a2 2 0 0 1-2.8 0l-6-6a2 2 0 0 1 0-2.8l8-8a2 2 0 0 1 1.4-.6z"/><circle cx="16.4" cy="7.6" r="1.9" fill="currentColor" stroke="none"/></svg>',
+
   // --- the glyphs that only a game panel head uses ---
   //
   // `bomb`, `tower`, `grid` and `rocket` are not claimed by any game right now (the minefield, the

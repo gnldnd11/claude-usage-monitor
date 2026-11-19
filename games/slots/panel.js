@@ -227,13 +227,16 @@
     CUC.renderStakes(SU, locked);
     slPays(st);
   }
+  // Whether the focus may be taken at all is CUC.refocus's decision and not this panel's: it is the
+  // one place that knows "my own repaint dropped the focus" from "the focus is in the editor and
+  // this document does not hold it". Read its comment in webview.js before changing anything here
   function slFocusAfter() {
     if (CUC.current() !== 'slots') return;
-    var a = document.activeElement, panel = el('panel-slots');
-    var lost = !a || a === document.body || a.hidden || a.disabled || !(panel && panel.contains(a));
-    if (!sl.wantFocus && !lost) return;
+    // cleared whether or not the focus moves: an ask refused because the editor's focus is
+    // elsewhere is refused for good, not saved up for the next repaint
+    var want = sl.wantFocus;
     sl.wantFocus = false;
-    var d = el('slDeal'); if (d && !d.disabled) d.focus();
+    CUC.refocus(el('panel-slots'), el('slDeal'), want);
   }
 
   function slSend(op, extra) {
