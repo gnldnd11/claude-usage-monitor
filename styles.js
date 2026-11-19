@@ -528,40 +528,65 @@ module.exports = `
   /* --- the shop. The casino's chrome is games/casino.js and every game's own CSS lives with that
      game, but the shop is not a game (docs/shop-spec.md, section 4-5), so its screen is here,
      beside the Agents tab's, and it borrows the chrome's heading, note, warning bar and button.
-     It adds no colour and no type size: 12.5 for the name, 11 for the price, 10.5 for a cell's
-     word, which is three of the six (docs/game-panels.md, section 2). --- */
-  /* WHAT IS BEING BOUGHT, DRAWN IN THE BOX IT WILL BE DRAWN IN: 88 x 74, fitted with contain and
-     stood on the bottom edge, which is the mascot's own box to the pixel (.sparkle above). A
-     preview with any other geometry is a promise the panel then breaks, and this one cannot drift
-     because the rules are the same three. The plate behind it is --track, the surface this
-     stylesheet already uses to lift a block off a card: no new colour, and no felt, because what
-     is bought here is not at a table. */
-  .sh-try{display:flex;align-items:flex-end;justify-content:center;height:90px;
-    padding:8px 14px;box-sizing:border-box;border-radius:12px;background:var(--track);}
-  .sh-try img{width:88px;height:74px;object-fit:contain;object-position:bottom;
-    image-rendering:pixelated;display:block;}
-  .sh-meta{display:flex;align-items:baseline;gap:8px;margin-top:10px;padding:0 2px;}
-  .sh-nm{font-size:12.5px;font-weight:700;color:var(--text);}
-  .sh-price{margin-left:auto;display:inline-flex;align-items:center;gap:4px;
-    font-size:11px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
-  /* THREE SLOTS AND ONE ROW, at every width. auto-fill makes as many tracks as fit, which leaves a
-     ragged tail on a shelf holding one thing and a different tail at every sidebar width; three
-     with 64 as a ceiling is one row at 250, 351 and 420, square where there is room for it and
-     shrinking rather than overflowing where there is not. */
-  .sh-grid{display:grid;grid-template-columns:repeat(3,minmax(0,64px));gap:4px;margin-top:10px;}
+     It adds no colour and no type size: 12.5 for a scene's name, 11 for the price, 10.5 for when
+     that scene shows and for a cell's word, which is three of the six (docs/game-panels.md,
+     section 2). The one accent is the ember the roster's picked card already uses. --- */
+  /* THE FOUR SCENES. Each is a line saying which moment it is and a row of cells saying what may
+     be in it. The cells are a grid with the column count set from the DATA (webview.js), so a
+     third drawing in any scene widens every row without a rule here changing */
+  /* TWO SCENES ABREAST where there is room for two. A scene is as wide as its cells (two of 64 and
+     the gap between them = 132), so the track is that and the fourth of them cannot be half a
+     scene; at a 250px sidebar one track fits and the four stack instead, which is what every other
+     part of this panel does when the sidebar is narrow. Measured: the card is 541 at a 351px
+     sidebar with the four of them two-by-two, against 703 in one column, and the difference is
+     whether the button that buys something is above the fold on a 600px-tall sidebar. */
+  .sh-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:11px 8px;}
+  .sh-shead{display:flex;flex-direction:column;min-width:0;}
+  .sh-sn{font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;}
+  .sh-sw{font-size:10.5px;line-height:13px;color:var(--muted);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;}
+  .sh-opts{display:grid;gap:4px;margin-top:5px;}
   .sh-cell{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;
-    height:64px;padding:0 0 4px;border-radius:9px;background:var(--inner);
-    box-shadow:inset 0 0 0 1px var(--iborder);}
+    height:64px;padding:0 0 4px;border:0;border-radius:9px;background:var(--inner);
+    box-shadow:inset 0 0 0 1px var(--iborder);font-family:inherit;font-size:inherit;}
   .sh-pic{width:100%;height:36px;object-fit:contain;object-position:bottom;
     image-rendering:pixelated;display:block;}
-  /* AN EMPTY SLOT: the frame, and the word in the middle of it. No picture and no price, because
-     what goes there has not been decided, and nothing pressable, because a slot that cannot be
-     pressed should not be counted through by a reader on a keyboard */
+  /* THE ONE IN USE, in the shape the roster's picked card already has (.cr-card.selected above):
+     the same ember, the same tint, no new colour and no gold. The word in the cell says it too, so
+     this is not the only way to see it */
+  .sh-cell.on{background:rgba(232,137,90,.13);box-shadow:inset 0 0 0 1.5px #e8895a;}
+  /* ...and a cell is only pressable where a press changes something (webview.js): a scene with one
+     drawing is settled and a drawing that has not been bought is bought with the button below */
+  .sh-cell.pick{cursor:pointer;}
+  .sh-cell.pick:hover:not(.on){background:rgba(127,127,127,.09);}
+  .sh-cell.pick:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  /* AN EMPTY SLOT: the frame, and the word in the middle of it. NO PICTURE, which is the one thing
+     that tells it from a drawing nobody can press: that one has a crab in it and says when the
+     crab shows up, and this says only that something will go here */
   .sh-cell.soon{justify-content:center;}
-  /* a cell says what it is in WORDS as well as in weight: own, or what it costs */
+  /* a cell says what it is in WORDS as well as in weight: free, own, what it costs, or Soon */
   .sh-tag{font-size:10.5px;line-height:12px;font-weight:700;color:var(--muted);
     font-variant-numeric:tabular-nums;}
   .sh-cell.owned .sh-tag{color:var(--text);}
+  /* WHAT IS ON SALE, next to the button that buys it, DRAWN IN THE BOX IT WILL BE DRAWN IN: 88 x
+     74, fitted with contain and stood on the bottom edge, which is the mascot's own box to the
+     pixel (.sparkle above). A preview with any other geometry is a promise the panel then breaks,
+     and this one cannot drift because the rules are the same three. The plate behind it is
+     --track, the surface this stylesheet already uses to lift a block off a card. */
+  /* IT WRAPS RATHER THAN SQUEEZING THE NAME. The picture is a fixed 88 and the words beside it ask
+     for 100, so at a 250px sidebar (144 of content) the two cannot share a line and the words drop
+     under the picture instead: measured, the name and the price were cut off at 44px wide before
+     this, which is a price a reader cannot read. The height follows, so min-height and not height */
+  .sh-try{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;min-height:90px;margin-top:13px;
+    padding:8px 14px;box-sizing:border-box;border-radius:12px;background:var(--track);}
+  .sh-try[hidden]{display:none;}
+  .sh-try img{width:88px;height:74px;object-fit:contain;object-position:bottom;
+    image-rendering:pixelated;display:block;flex:none;}
+  .sh-what{flex:1 1 100px;display:flex;flex-direction:column;gap:3px;min-width:0;padding-bottom:7px;}
+  .sh-nm{font-size:12.5px;font-weight:700;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sh-price{display:inline-flex;align-items:center;gap:4px;
+    font-size:11px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
   /* --- credits: header second line. The coin fills bottom-up in 6 rows toward the next credit --- */
   /* no margin on top: it used to sit under a 16px title and it is the only line in .ttl now */
   .ttl .t2.cc{display:flex;align-items:center;gap:4px;font-size:12px;line-height:16px;}

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.32.1: Four moments, and you pick the crab for each
+
+- **The crab has four moments and you choose the drawing for each.** Quiet, typing, burning through the limit, and out of it. The shop sells into those moments, every one of them arrives with the drawing it has always had, and the busy crab that used to turn up on its own is now one you can also put in the typing moment. A reader who chooses nothing sees no change at all, because the four defaults are exactly the four pictures that were there before.
+- **The floating crab goes in the burning moment**, which is the one with the most motion in it and the one you reach by spending. It is worn the moment it is bought rather than waiting for a second press, and taking it back out is one press and costs nothing. What was bought stays bought: the choice is kept beside the nicknames rather than in the ledger, so changing your mind never rewrites a record that says what you paid.
+- A drawing nobody bought cannot be worn however the message was made. The refusal is the host's, and the stored choice is read against what you own on every push, so a purchase that lost a race between two windows cannot leave a picture on the screen that was never paid for.
+- The shelf was one column and 703px tall, which put the button that buys something below the fold on an ordinary sidebar. Two moments sit abreast now, at 539, and at a 250px sidebar the price of the thing on sale is no longer cut to "1,0".
+
 ## 1.32.0: The coin opens two doors, the crab works while you do, and an account with no 5 hour limit has a dashboard again
 
 - **The coin button went straight to the card games, and that was the only thing credits were for.** It opens a crossroads now, and the two ways out of it are drawn rather than labelled: a crab in a bow tie behind green felt, and a crab behind a market stall. Games is the five tables. Shop is new, and it holds one thing.

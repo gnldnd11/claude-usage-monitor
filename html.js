@@ -154,12 +154,11 @@ function renderHtml(vars) {
              rendered them 49.5, 73.7, 104.5, 49.5, 55.6 and 81.6 tall: every state change shoved
              the stat tiles below down or up, and a session reset (90%+ to single digits) did it in
              one 55px jump.
-             SIX DRAWINGS, TWO AXES AND ONE PURCHASE. The limit's step picks the row (idle,
-             working, despair, stunned) and whether anything has been answered lately picks the
-             column, so the idle step is coding while replies are landing; the quiet side of it is
-             float for a reader who has bought it in the shop and idle for everyone else
-             (webview.js, MASCOT_ART). All six are named here so the script only ever swaps the
-             source for one of them. -->
+             SIX DRAWINGS, TWO AXES AND FOUR SCENES. The limit's step picks the row (idle, working,
+             despair, stunned) and whether anything has been answered lately picks the column, and
+             then the reader's own choice picks the picture wherever that cell is one of the four
+             scenes the shop sells into (webview.js, MASCOT_ART and MASCOT_SLOT). All six are named
+             here so the script only ever swaps the source for one of them. -->
         <div class="mascot-wrap" id="pm_mascot">
           <div class="mwarn" id="mwarn" hidden>${IC.warn}</div>
           <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" data-coding="${mascotCodingUri}" data-float="${mascotFloatUri}" alt=""/>

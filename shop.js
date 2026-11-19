@@ -61,17 +61,28 @@ const REPLICA_RE = /^[0-9a-f]{16}$/;
 // the casino's MIN_BET makes.
 const PRICES = Object.freeze([1000]);
 
-// The one slot there is: which drawing the crab uses when nothing is being answered. A key carries
-// it (`mascot:float`) so that the day a second kind of thing is sold there is no record to move: a
-// shop with two slots is two prefixes, not a migration.
+// The prefix every record key carries (`mascot:float`). It names the KIND of thing bought, not the
+// scene it is worn in, so the four scenes below did not move a single stored key when they arrived:
+// everything here is a drawing of the crab. A shop that one day sells something that is not is a
+// second prefix, not a migration.
 const SLOT = 'mascot';
 
 // The catalog. `key` MAY NOT CHANGE: it is what a record holds, so renaming one would orphan
 // everything bought. `name` is only what the screen prints.
 //
-// `float` is webview.js's name for the drawing as well (MASCOT_ART's quiet column), and that is the
-// whole of the wiring: owning this key is what lets that column be drawn.
+// Each key is webview.js's name for the drawing as well (MASCOT_ART and #mascot's data-*
+// attributes), and that is the whole of the wiring: the chosen key IS the picture that is drawn.
+//
+// WHAT IS FREE COMES WITH THE EXTENSION and is never in a record's `owned`: nothing was paid for
+// it, and a record that held it could be made to un-hold it. It is on the shelf rather than off it
+// because the reader CHOOSES it, and a shelf showing only what is on sale cannot tell "has not
+// bought the floating crab" from "prefers the one that was always there".
 const ITEMS = Object.freeze([
+  { key: 'idle', name: 'Small crab', price: 0 },
+  { key: 'coding', name: 'Laptop crab', price: 0 },
+  { key: 'working', name: 'Busy crab', price: 0 },
+  { key: 'despair', name: 'Sinking crab', price: 0 },
+  { key: 'stunned', name: 'Flat crab', price: 0 },
   { key: 'float', name: 'Floating crab', price: 1000 }
 ].map((s) => Object.freeze(s)));
 
@@ -81,10 +92,47 @@ const ITEMS = Object.freeze([
 // its place in every record and is not drawn on the shelf, because the shelf is built from ITEMS.
 const RETIRED = Object.freeze([]);
 
-// every price has to be one of the table's, or the rule above is a comment rather than a rule, and
-// nothing may be priced at nothing: a free row would be something the shop cannot sell
+// --- THE FOUR SCENES ----------------------------------------------------------------------------
+//
+// What the reader actually sees is four moments, and these are the four they named: quiet, typing,
+// burning through the limit, and out of it. Each one is a SLOT holding one drawing, with the free
+// drawing it has always held and whatever else may go in it.
+//
+// A slot is NOT a cell of MASCOT_ART. That table is four steps by two columns and it is not
+// touched: webview.js keeps it as the drawing every cell uses by default and reads a slot only
+// where one governs the cell (MASCOT_SLOT there). The mapping, and the one judgement in it:
+//
+//   idle step,    quiet  ->  quiet      working step, quiet  ->  quiet
+//   idle step,    busy   ->  typing     working step, busy   ->  NO SLOT, always `working`
+//   despair step, both   ->  burn       stunned step, both   ->  spent
+//
+// THE WORKING STEP'S BUSY CELL IS LEFT ALONE, and that is a decision rather than an omission. It is
+// the one picture that says the limit is filling up WHILE you work, and a slot over it would let
+// the typing choice flatten 5% and 65% into the same drawing: the step axis would then say nothing
+// at all in the busy column until despair. The reader asked for four scenes and this is not one of
+// them, so it keeps what it had. `working` is still choosable, in the typing slot, where it is an
+// alternative rather than the only answer.
+// `when` is SHORT because of where it is drawn: two scenes sit side by side at the sidebar width
+// this panel is built for, which leaves about 90px of 10.5px text, and a line that ellipsizes
+// explains nothing (measured, docs/game-panels.md section 2)
+const SLOTS = Object.freeze([
+  { id: 'quiet', name: 'Quiet', when: 'Nothing answered', free: 'idle', opts: ['idle'] },
+  { id: 'typing', name: 'Typing', when: 'Replies landing', free: 'coding', opts: ['coding', 'working'] },
+  { id: 'burn', name: 'Burning', when: 'Limit mostly gone', free: 'despair', opts: ['despair', 'float'] },
+  { id: 'spent', name: 'Spent', when: 'Limit used up', free: 'stunned', opts: ['stunned'] }
+].map((s) => Object.freeze(Object.assign({}, s, { opts: Object.freeze(s.opts) }))));
+
+const OPS = Object.freeze(['buy']);
+
+const BY_KEY = new Map(ITEMS.concat(RETIRED).map((s) => [s.key, s]));
+const BY_SLOT = new Map(SLOTS.map((s) => [s.id, s]));
+function itemOf(key) { return (typeof key === 'string' && BY_KEY.get(key)) || null; }
+function slotOf(key) { return SLOT + ':' + key; }
+
+// every price has to be one of the table's or nothing at all, or the rule above is a comment
+// rather than a rule
 for (const s of ITEMS.concat(RETIRED)) {
-  if (PRICES.indexOf(s.price) < 0) throw new Error('shop: ' + s.key + ' is priced outside the table');
+  if (s.price !== 0 && PRICES.indexOf(s.price) < 0) throw new Error('shop: ' + s.key + ' is priced outside the table');
 }
 // and two rows may not claim one key: `owned` is keyed by it
 (function () {
@@ -93,13 +141,19 @@ for (const s of ITEMS.concat(RETIRED)) {
     if (seen[s.key]) throw new Error('shop: two rows claim the key ' + s.key);
     seen[s.key] = 1;
   }
+  if (BY_SLOT.size !== SLOTS.length) throw new Error('shop: two slots claim one id');
+  // ...and a slot's options have to be rows, its default has to be one of its own options, and
+  // that default has to be free: a slot whose fallback had a price would be a slot a reader who
+  // bought nothing could not fill at all
+  for (const s of SLOTS) {
+    if (s.opts.indexOf(s.free) < 0) throw new Error('shop: ' + s.id + ' falls back to something it does not hold');
+    for (const k of s.opts) {
+      const it = itemOf(k);
+      if (!it) throw new Error('shop: ' + s.id + ' holds ' + k + ', which is not a row');
+      if (k === s.free && it.price) throw new Error('shop: ' + s.id + ' falls back to something priced');
+    }
+  }
 })();
-
-const OPS = Object.freeze(['buy']);
-
-const BY_KEY = new Map(ITEMS.concat(RETIRED).map((s) => [s.key, s]));
-function itemOf(key) { return (typeof key === 'string' && BY_KEY.get(key)) || null; }
-function slotOf(key) { return SLOT + ':' + key; }
 
 // --- the record ---------------------------------------------------------------------------------
 //
@@ -111,9 +165,11 @@ function slotOf(key) { return SLOT + ':' + key; }
 //          what makes (moves, by) the record's name
 //   by     the window that last wrote it. The host fills it in; this module invents nothing
 //
-// THERE IS NO "WHICH ONE IS ON" FIELD. With one slot and no way back, owning the drawing IS using
-// it, and a field saying so again could disagree with `owned` (webview.js reads ownership and
-// nothing else). The day something is sold that can be turned off, that is the day for the field.
+// WHICH DRAWING IS IN WHICH SCENE IS NOT IN HERE. That is a preference and this is money: a reader
+// changing their mind may not rewrite the record that says what they paid, and `owned` answering
+// "what was bought" while a second field answered "what is worn" is one fact with two homes. The
+// preference lives in globalState beside the nicknames and the agents' appearances
+// (extension.js), and `wornSlots` below is what the two of them mean together.
 const REC_FIELDS = Object.freeze(['moves', 'spent']);
 
 // Empty, and that is the rule rather than an omission (see the header). The market's is empty for
@@ -131,14 +187,28 @@ function fresh(by) {
   return { by: by == null ? '' : String(by), owned: {}, moves: 0, spent: 0 };
 }
 
+// THE ONE PLACE THAT ANSWERS "do they have it". Free is had by everyone from the first launch and
+// is never in a record, priced is had only if the record says it was paid for. Asked by the screen,
+// by the purchase rule, and by the slot resolver below, so two answers here would be two shops
 function owns(rec, key) {
-  return !!(rec && rec.owned && rec.owned[slotOf(key)]);
+  const it = itemOf(key);
+  if (!it) return false;
+  return !it.price || !!(rec && rec.owned && rec.owned[slotOf(key)]);
+}
+// ...and the same question off the push's own list, which is all a window has when it has not read
+// the record (extension.js composes the push from both)
+function heldIn(ownedSlots, key) {
+  const it = itemOf(key);
+  if (!it) return false;
+  return !it.price || (ownedSlots || []).indexOf(slotOf(key)) >= 0;
 }
 // The slots a record holds, in the catalog's own order rather than the object's: the same record
 // has to read the same whichever window wrote it, and insertion order is whoever bought first
 function ownedList(rec) {
   const out = [];
-  for (const s of ITEMS.concat(RETIRED)) if (rec && rec.owned[slotOf(s.key)]) out.push(slotOf(s.key));
+  for (const s of ITEMS.concat(RETIRED)) {
+    if (s.price && rec && rec.owned[slotOf(s.key)]) out.push(slotOf(s.key));
+  }
   return out;
 }
 
@@ -147,9 +217,11 @@ function ownedList(rec) {
 // cannot ride along. The host calls this at the storage boundary, the way credits.js calls
 // market.clean.
 //
-// `owned` takes only keys this build knows (ITEMS and RETIRED), which is what stops a hand-edited
-// store from holding a thousand items, and is the same rule that makes an empty shelf slot
-// unbuyable: there is no key for it to be bought or stored under.
+// `owned` takes only PRICED keys this build knows (ITEMS and RETIRED), which is what stops a
+// hand-edited store from holding a thousand items, and is the same rule that makes an empty shelf
+// slot unbuyable: there is no key for it to be bought or stored under. A free drawing is dropped
+// rather than kept, because `owns` already answers yes for it and a record that held it could be
+// edited into one that does not.
 function clean(rec) {
   if (!rec || typeof rec !== 'object') return null;
   const out = fresh(REPLICA_RE.test(rec.by) ? rec.by : '');
@@ -158,7 +230,10 @@ function clean(rec) {
     out[k] = (Number.isSafeInteger(n) && n > 0 && n <= REC_CEIL[k]) ? n : 0;
   }
   const src = (rec.owned && typeof rec.owned === 'object') ? rec.owned : {};
-  for (const s of ITEMS.concat(RETIRED)) if (src[slotOf(s.key)]) out.owned[slotOf(s.key)] = 1;
+  for (const s of ITEMS.concat(RETIRED)) {
+    if (!s.price) continue;                           // free comes with the extension, not with a record
+    if (src[slotOf(s.key)]) out.owned[slotOf(s.key)] = 1;
+  }
   return out;
 }
 
@@ -230,6 +305,43 @@ function netOf(rec) {
   return rec ? -rec.spent : 0;
 }
 
+// --- which drawing is in which scene ------------------------------------------------------------
+
+// WHAT THE PREFERENCE AND THE RECORD MEAN TOGETHER, in one function, because every way of getting
+// it wrong has to land in the same place. A stored choice can name a slot this build dropped, a
+// drawing that slot does not hold, a drawing this build does not have at all, or a purchase whose
+// record lost a merge in another window; a first launch has nothing stored; and the answer to all
+// of those is the drawing the slot has always held. The host is the only thing that calls this and
+// the screen and the panel are told the result, so no window works it out for itself.
+//
+// `ownedSlots` is the push's own list (`owned`), not a record: a window that has never opened the
+// shop still has to be able to draw the right crab.
+function wornSlots(ownedSlots, pref) {
+  const out = {};
+  for (const s of SLOTS) {
+    const want = (pref && typeof pref[s.id] === 'string') ? pref[s.id] : '';
+    if (s.opts.indexOf(want) >= 0 && heldIn(ownedSlots, want)) { out[s.id] = want; continue; }
+    // NOTHING CHOSEN: what has been BOUGHT for this slot, and the free one otherwise. A purchase
+    // that showed nothing until a second press would read as nothing having happened, and a reader
+    // who then prefers the free drawing says so and is kept, because a choice is stored by name
+    out[s.id] = s.free;
+    for (const k of s.opts) {
+      const it = itemOf(k);
+      if (it && it.price && heldIn(ownedSlots, k)) { out[s.id] = k; break; }
+    }
+  }
+  return out;
+}
+// Why `slot` cannot be given `key`, or null. The host asks this on the message, so the screen is
+// not what stops it: a drawing nobody bought cannot be worn however the press was made
+function whyNotWear(ownedSlots, slot, key) {
+  const s = (typeof slot === 'string' && BY_SLOT.get(slot)) || null;
+  if (!s) return 'no such scene';
+  if (s.opts.indexOf(key) < 0) return 'that does not go there';
+  if (!heldIn(ownedSlots, key)) return 'that has not been bought';
+  return null;
+}
+
 // --- what may be done ---------------------------------------------------------------------------
 
 // Why `op` cannot be done, or null. Takes the message form, because every move here is about one
@@ -263,30 +375,48 @@ function act(rec, op) {
 // Everything the screen needs and nothing more. There is nothing face down in a shop, so nothing is
 // withheld either; what is NOT here is a verdict per row, and that is deliberate.
 //
-// A shelf row is three facts (what it is, what it costs, is it mine) and the screen draws them.
-// What it may not do is work out a PRICE, and it does not: the only comparison it makes is the
-// stake chips' own, the price against what this screen may spend (webview.js, freeFor), and the
+// The shelf is the four scenes, each with what may go in it: a cell is four facts (what it is,
+// what it costs, is it mine, can choosing it change anything) and the screen draws them.
+// What the screen may not do is work out a PRICE, and it does not: the only comparison it makes is
+// the stake chips' own, the price against what this screen may spend (webview.js, freeFor), and the
 // figure in it is the one below. A second verdict sent from here would be a second answer to the
 // same question that could disagree with the first between two replies, which is precisely what the
 // chips read `free` rather than the header balance to avoid.
+// WHICH ONE IS WORN IS NOT IN HERE: it is on every data push instead (`slots` below), because the
+// panel's own crab needs it whether the shop was ever opened or not, and a second copy of it in
+// this reply could disagree with that one between two messages.
 // The HOST is still the only thing that can accept a purchase: whyNot() is asked again on the
 // message, and its sentence is what the screen's warning bar shows.
 function view(rec) {
   const st = rec || fresh('');
+  const owned = ownedList(st);
   return {
-    owned: ownedList(st),
+    owned: owned,
     spent: st.spent,
     prices: PRICES.slice(),
-    items: ITEMS.map((s) => ({
-      key: s.key, slot: slotOf(s.key), name: s.name, price: s.price, owned: owns(st, s.key)
-    }))
+    slots: SLOTS.map((s) => {
+      const opts = s.opts.map((k) => {
+        const it = itemOf(k);
+        return { key: k, name: it.name, price: it.price, owned: owns(st, k) };
+      });
+      return {
+        id: s.id, name: s.name, when: s.when, free: s.free, opts: opts,
+        // CAN A PRESS CHANGE ANYTHING. One owned drawing means the scene is settled, and a cell
+        // that cannot change the answer may not be a button: a keyboard would otherwise stop on
+        // it and nothing would happen (docs/game-panels.md, section 2)
+        pick: opts.filter((o) => o.owned).length > 1
+      };
+    })
   };
 }
 
-// What every data push carries, so the panel can draw the right crab without the shop having been
-// opened and a second window hears about a purchase it did not make
-function push(rec) {
-  return { owned: ownedList(rec || fresh('')) };
+// What every data push carries: what was bought, and which drawing is in each scene. The panel's
+// crab is drawn from this and nothing else, so it is right in a window that has never opened the
+// shop and in a second window that did not make the purchase.
+// `pref` is the reader's stored choice, which is the host's (globalState) and not this module's
+function push(rec, pref) {
+  const owned = ownedList(rec || fresh(''));
+  return { owned: owned, slots: wornSlots(owned, pref) };
 }
 
 // --- the host side ------------------------------------------------------------------------------
@@ -341,8 +471,11 @@ function createHandler(deps) {
   return {
     key: 'shop',
     // What the data push carries. Read through sync() so a window that has never opened the shop
-    // still draws the crab another window bought
-    pushed() { sync(); return push(rec); },
+    // still draws the crab another window bought, and handed the reader's own choice, which is the
+    // host's (globalState) rather than this module's
+    pushed() { sync(); return push(rec, deps.pref && deps.pref()); },
+    // What the reader has bought, for the host's own refusals: the same list the push carries
+    owned() { sync(); return ownedList(rec); },
     handle(m) {
       reqN = Number.isSafeInteger(m.n) ? m.n : null;
       sync();
@@ -361,8 +494,10 @@ function createHandler(deps) {
 }
 
 module.exports = {
-  // the catalog
-  ITEMS, RETIRED, PRICES, SLOT, OPS, slotOf, itemOf, owns,
+  // the catalog and the four scenes
+  ITEMS, SLOTS, RETIRED, PRICES, SLOT, OPS, slotOf, itemOf, owns, heldIn,
+  // what the preference and the record mean together. The host's, and nobody else's
+  wornSlots, whyNotWear,
   // storage: the rules credits.js calls rather than copies
   clean, load, save, newer, merge, same, kept, netOf, REC_FIELDS, MAX_FIELDS,
   // the game that is not a game

@@ -536,23 +536,50 @@ const SH = (by, moves, spent, keys) => ({
 const shopBalance = (led) => credits.creditSummary(credits.normalizeLedger(led), 'x', false).balance;
 const FLOAT = 1000;
 
-test('shop: one thing is sold, it is priced out of the table, and nothing is free', () => {
+test('shop: one thing is sold, the rest comes with the extension, and one price covers it', () => {
   // one price and no second one without a reason written into shop.js: a price per item is a
-  // judgement per item. The catalog is one row today and the rule holds over however many there are
+  // judgement per item. Free is free, and everything else is one of the table's figures
   assert.deepEqual(shopMod.PRICES, [FLOAT]);
-  assert.ok(shopMod.ITEMS.length >= 1);
-  assert.ok(shopMod.ITEMS.every((s) => shopMod.PRICES.indexOf(s.price) >= 0), 'a price outside the table');
-  assert.ok(shopMod.ITEMS.every((s) => s.price > 0), 'a row the shop cannot sell');
+  assert.ok(shopMod.ITEMS.every((s) => s.price === 0 || shopMod.PRICES.indexOf(s.price) >= 0),
+    'a price outside the table');
+  assert.equal(shopMod.ITEMS.filter((s) => s.price).length, 1, 'more than one thing is on sale');
   assert.equal(shopMod.itemOf('float').price, FLOAT);
   assert.equal(shopMod.slotOf('float'), 'mascot:float');
-  // a reader who has bought nothing owns nothing. There is no row that comes with the extension,
-  // because what a reader has before buying is the drawing that was always there and is not sold
+  // THE FOUR SCENES, each falling back to a drawing that is free: a scene whose fallback had a
+  // price would be a scene a reader who bought nothing could not fill at all
+  assert.deepEqual(shopMod.SLOTS.map((s) => s.id), ['quiet', 'typing', 'burn', 'spent']);
+  assert.deepEqual(shopMod.SLOTS.map((s) => s.free), ['idle', 'coding', 'despair', 'stunned']);
+  for (const s of shopMod.SLOTS) {
+    assert.equal(shopMod.itemOf(s.free).price, 0, s.id + ' falls back to something priced');
+    assert.ok(s.opts.indexOf(s.free) >= 0);
+    for (const k of s.opts) assert.ok(shopMod.itemOf(k), s.id + ' holds a key that is not a row');
+  }
+  // a reader who has bought nothing holds a record of nothing, and still HAS everything free: that
+  // is one question with one answer, asked by the screen, the purchase rule and the scenes alike
   const none = shopMod.fresh('');
   assert.deepEqual(none.owned, {});
   assert.equal(shopMod.owns(none, 'float'), false);
+  for (const s of shopMod.ITEMS.filter((i) => !i.price)) {
+    assert.equal(shopMod.owns(none, s.key), true, s.key + ' is free and was not had');
+    assert.equal(shopMod.heldIn([], s.key), true, s.key + ' is free and was not had off the push');
+  }
+  assert.equal(shopMod.owns(none, 'nothing'), false, 'a key the catalog has no row for was had');
   // and there is no field that could ever hand money back, or any second answer to "is it mine"
   assert.equal('earned' in none, false, 'a shop with an earned is a shop with a refund');
   assert.equal('seat' in none, false, 'a second answer to what `owned` already says');
+});
+
+test('shop: what is free is never in a record, however the store was edited', () => {
+  // A record that held a free drawing could be edited into one that does NOT, and then `owns`
+  // would answer no for something nobody can take away. So the boundary drops it: free is had
+  // because the catalog says so, not because a record does
+  const withFree = credits.normalizeLedger({
+    shop: { by: RA, moves: 1, spent: FLOAT, owned: { 'mascot:float': 1, 'mascot:idle': 1, 'mascot:coding': 1 } }
+  }).shop;
+  assert.deepEqual(Object.keys(withFree.owned), ['mascot:float'], 'a free drawing was stored');
+  assert.equal(shopMod.owns(withFree, 'idle'), true, 'and it is had all the same');
+  assert.deepEqual(shopMod.view(withFree).owned, ['mascot:float'], 'the screen is told about a free holding');
+  assert.equal(shopBalance({ shop: withFree }), -FLOAT, 'a free drawing moved the balance');
 });
 
 test('shop: the balance is what the shop was paid, and it only ever subtracts', () => {
@@ -650,6 +677,34 @@ test('shop: every accepted move spends, and nothing can be bought twice', () => 
   assert.equal(shopMod.act(rec, { op: 'buy', key: 'float' }), rec, 'a refused move returned a new record');
 });
 
+test('shop: the scenes are what the choice and the record mean together', () => {
+  // ONE FUNCTION ANSWERS IT, because every way of being wrong has to land in the same place: a
+  // choice naming a scene this build dropped, a drawing that scene does not hold, a drawing this
+  // build has no row for, a purchase whose record lost a merge, and a first launch with nothing
+  // stored at all. The answer is the drawing the scene has always had
+  const FREE_SET = { quiet: 'idle', typing: 'coding', burn: 'despair', spent: 'stunned' };
+  assert.deepEqual(shopMod.wornSlots([], null), FREE_SET, 'a fresh install is not the four defaults');
+  assert.deepEqual(shopMod.wornSlots([], {}), FREE_SET);
+  assert.deepEqual(shopMod.wornSlots([], { burn: 'float' }), FREE_SET, 'a drawing nobody bought is worn');
+  assert.deepEqual(shopMod.wornSlots([], { burn: 'coding', typing: 'float', quiet: 'nothing', bogus: 'idle' }), FREE_SET);
+  assert.deepEqual(shopMod.wornSlots([], { typing: 'working' }),
+    Object.assign({}, FREE_SET, { typing: 'working' }), 'a free alternative needs no purchase');
+  // ...and what WAS bought is worn without a second press, because a purchase that showed nothing
+  // would read as nothing having happened. An explicit choice of the free drawing still holds
+  const paid = [shopMod.slotOf('float')];
+  assert.deepEqual(shopMod.wornSlots(paid, null), Object.assign({}, FREE_SET, { burn: 'float' }));
+  assert.deepEqual(shopMod.wornSlots(paid, { burn: 'despair' }), FREE_SET, 'a choice of the free one was overruled');
+  assert.deepEqual(shopMod.wornSlots(paid, { burn: 'float' }), Object.assign({}, FREE_SET, { burn: 'float' }));
+  // the same question as a refusal, for the host to answer a message with
+  assert.equal(shopMod.whyNotWear(paid, 'burn', 'float'), null);
+  assert.equal(shopMod.whyNotWear([], 'burn', 'float'), 'that has not been bought');
+  assert.equal(shopMod.whyNotWear([], 'burn', 'coding'), 'that does not go there');
+  assert.equal(shopMod.whyNotWear([], 'quiet', 'float'), 'that does not go there');
+  assert.equal(shopMod.whyNotWear([], 'nope', 'idle'), 'no such scene');
+  assert.equal(shopMod.whyNotWear([], null, 'idle'), 'no such scene');
+  assert.equal(shopMod.whyNotWear([], 'typing', 'working'), null, 'a free alternative was refused');
+});
+
 test('shop: nothing is bought by naming something that is not sold', () => {
   // THE EMPTY SLOTS ON THE SHELF ARE NOT CATALOG ROWS, so there is no name for one to be bought
   // under: this is the same rule that stops a hand-edited store holding a thousand items, read from
@@ -658,6 +713,11 @@ test('shop: nothing is bought by naming something that is not sold', () => {
   for (const key of ['soon', 'witch', 'mascot:float', '', 'float ', '__proto__']) {
     assert.equal(shopMod.whyNot(none, { op: 'buy', key }, 1e9), 'nothing is sold under that name', key);
     assert.equal(shopMod.act(none, { op: 'buy', key }), none, key + ' was bought');
+  }
+  // ...and what comes with the extension cannot be bought either, because it is already theirs
+  for (const s of shopMod.ITEMS.filter((i) => !i.price)) {
+    assert.equal(shopMod.whyNot(none, { op: 'buy', key: s.key }, 1e9), 'you already have the ' + s.name);
+    assert.equal(shopMod.act(none, { op: 'buy', key: s.key }), none, s.key + ' was bought');
   }
   assert.equal(shopMod.whyNot(none, { op: 'buy', key: null }, 1e9), 'nothing is sold under that name');
   assert.equal(shopMod.whyNot(none, { op: 'melt', key: 'float' }, 1e9), 'unknown action');
@@ -680,12 +740,16 @@ test('shop: nothing dearer than the budget can be bought, and a broken budget re
   // per row would be a second answer to that question, able to disagree with the first one between
   // two replies, and the host is asked again on the message anyway
   const v = shopMod.view(none);
-  const row = v.items[0];
-  assert.deepEqual(Object.keys(row).sort(), ['key', 'name', 'owned', 'price', 'slot']);
+  const burn = v.slots.filter((s) => s.id === 'burn')[0];
+  const row = burn.opts.filter((o) => o.key === 'float')[0];
+  assert.deepEqual(Object.keys(row).sort(), ['key', 'name', 'owned', 'price']);
   assert.equal(row.price, FLOAT);
   assert.equal(row.owned, false);
-  assert.equal(shopMod.view(bought).items[0].owned, true);
-  assert.deepEqual(v.items.map((i) => i.price), shopMod.ITEMS.map((s) => s.price));
+  assert.equal(burn.pick, false, 'a scene with one drawing of their own is one a press can change');
+  const boughtBurn = shopMod.view(bought).slots.filter((s) => s.id === 'burn')[0];
+  assert.equal(boughtBurn.opts.filter((o) => o.key === 'float')[0].owned, true);
+  assert.equal(boughtBurn.pick, true, 'a scene with two of their own is settled');
+  assert.deepEqual(Object.keys(burn).sort(), ['free', 'id', 'name', 'opts', 'pick', 'when']);
   // and the view cannot be asked to price anything: it takes no budget at all
   assert.equal(shopMod.view.length, 1, 'the view was handed a purse');
 });
@@ -727,6 +791,7 @@ test('shop: what was bought stays bought when it leaves the price list', () => {
   // what the rule actually promises: every key the catalog knows survives a round trip, and the
   // money is kept whatever happens to the lists, because `spent` is one number and not a sum of rows
   for (const key of known) {
+    if (!shopMod.itemOf(key).price) continue;      // free is had without a record saying so
     const rec = SH(RA, 1, shopMod.itemOf(key).price, [key]);
     const back = credits.normalizeLedger({ shop: rec }).shop;
     assert.equal(shopMod.owns(back, key), true, key + ' did not survive the boundary');

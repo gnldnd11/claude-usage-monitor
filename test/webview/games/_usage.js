@@ -18,10 +18,11 @@
 //      answered in the last three minutes says which column, so the same step is two drawings.
 //      The threshold is a clock and not a reading, so it has no deadband to walk (webview.js) and
 //      what is walked here instead is the edge itself, in both directions, on two steps.
-//   7. AND WHAT THE SHOP SOLD, on one step only. The quiet side of the idle step is the floating
-//      crab for a reader who has bought it and the small one for everyone else, so a purchase
-//      arriving on a push changes the picture with no reading having moved. Every other step reads
-//      the same bought or not, and no busy side is for sale.
+//   7. AND WHICH DRAWING IS IN WHICH SCENE. The shop sells drawings into four scenes (shop.js,
+//      SLOTS) and the host puts the answer on every push, so a choice made anywhere changes the
+//      picture with no reading having moved. Which CELL each scene governs is the thing to get
+//      wrong: the working step's busy cell is governed by none of them, because it is the only
+//      picture that says the limit is filling up while you work.
 //
 // THE SECOND MODE, `usage-nosession`, is the account that has no five-hour window at all: an
 // authenticated Ultra, where the host pushes five_hour: null for ever (2026-10-30). Half of this
@@ -55,9 +56,12 @@ function withWindow(h) {
     const resets = () => Math.floor(Date.now() / 1000) + 3 * HOUR + 50 * 60;
     // one push of the host's own message. `wk` left out means the weekly reading has not landed,
     // `quietFor` is how long ago the last assistant message was (left out: just now, which is the
-    // busy column of MASCOT_ART), and `bought` is whether the shop has sold this reader the
-    // floating crab, which every push carries (shop.js, push)
-    const push = (sess, wk, hidden, quietFor, bought) => {
+    // busy column of MASCOT_ART), and `slots` is which drawing is in which scene.
+    // THE HOST WORKED THAT OUT, not the page: it reads the reader's stored choice against what
+    // they own, in one place (shop.js, wornSlots), and what arrives here is the answer. So this
+    // helper pushes answers and never a choice, which is what the page actually gets
+    const WORN = { quiet: 'idle', typing: 'coding', burn: 'despair', spent: 'stunned' };
+    const push = (sess, wk, hidden, quietFor, slots) => {
       toWebview({
         type: 'data',
         data: Object.assign({}, base, {
@@ -65,7 +69,10 @@ function withWindow(h) {
           fh: { used_percentage: sess, resets_at: resets() },
           sd: wk == null ? null : { used_percentage: wk, resets_at: resets() },
           last: quietFor === null ? null : { t: Date.now() - (quietFor || 0) },
-          shop: { owned: bought ? ['mascot:float'] : [] }
+          shop: {
+            owned: slots && slots.burn === 'float' ? ['mascot:float'] : [],
+            slots: Object.assign({}, WORN, slots || {})
+          }
         })
       });
       advance(20);
@@ -153,66 +160,79 @@ function withWindow(h) {
     // walked here is the edge in both directions on the two steps that HAVE two columns, and then
     // that the other two steps have one. Each reading is pushed with an age for the last message:
     // the step cannot tell the difference and the drawing must.
-    // AND THE THIRD THING, on one step only: the quiet side of idle is the drawing the shop sells,
-    // so it is the floating crab for a reader who has bought it and the small one for everyone
-    // else. No other step has anything to sell and the busy side is free on every step.
     const AXIS = [
       { pct: 4, quiet: 0, want: 'coding', why: 'a reply just landed' },
       { pct: 4, quiet: 179000, want: 'coding', why: 'a second inside the threshold is still typing' },
       { pct: 4, quiet: 181000, want: 'idle', why: 'and a second past it is not' },
       { pct: 4, quiet: null, want: 'idle', why: 'a day with no reply at all is quiet' },
       { pct: 4, quiet: 0, want: 'coding', why: 'and typing again is an event, not a wait' },
-      { pct: 4, quiet: 181000, bought: true, want: 'float', why: 'the same quiet step, bought' },
-      { pct: 4, quiet: null, bought: true, want: 'float', why: 'and with no reply at all, bought' },
-      { pct: 4, quiet: 0, bought: true, want: 'coding', why: 'the busy side is not for sale' },
       { pct: 55, quiet: 0, want: 'working', why: 'the working step, busy' },
       { pct: 55, quiet: 600000, want: 'idle', why: 'the working step, quiet: the old drawing' },
-      { pct: 55, quiet: 600000, bought: true, want: 'idle', why: 'which the purchase does not reach' },
       { pct: 75, quiet: 0, want: 'despair', why: 'despair reads the same either way:' },
       { pct: 75, quiet: 600000, want: 'despair', why: 'the limit is the news, not the keyboard' },
-      { pct: 75, quiet: 600000, bought: true, want: 'despair', why: 'bought or not' },
       { pct: 95, quiet: 0, want: 'stunned' },
-      { pct: 95, quiet: 600000, want: 'stunned', why: 'a blocked limit stops the replies anyway' },
-      { pct: 95, quiet: 600000, bought: true, want: 'stunned', why: 'and that is not something to buy out of' }
+      { pct: 95, quiet: 600000, want: 'stunned', why: 'a blocked limit stops the replies anyway' }
     ];
     let axisDrawn = [];
     for (const step of AXIS) {
-      push(step.pct, 40, null, step.quiet, step.bought);
+      push(step.pct, 40, null, step.quiet);
       axisDrawn.push(shown());
       ok('at ' + step.pct + '% with the last reply ' + (step.quiet === null ? 'never' : (step.quiet / 1000) + 's ago')
-        + (step.bought ? ', bought,' : ',') + ' the crab is ' + step.want + (step.why ? ' (' + step.why + ')' : ''),
-        shown() === step.want, 'drew ' + shown());
+        + ' the crab is ' + step.want + (step.why ? ' (' + step.why + ')' : ''), shown() === step.want, 'drew ' + shown());
       advance(400);
     }
-    ok('all six drawings are reachable from the three together',
+    // 7. THE FOUR SCENES, over that same table. Each row says which drawing is in which scene and
+    //    which cell of the table that reaches, and the one that reaches NOTHING is the point
+    const SCENES = [
+      { pct: 75, quiet: 0, slots: { burn: 'float' }, want: 'float', why: 'the burning scene, bought and worn' },
+      { pct: 75, quiet: 600000, slots: { burn: 'float' }, want: 'float', why: 'both sides of that step, which has one picture' },
+      { pct: 75, quiet: 0, want: 'despair', why: 'taken back out, and the drawing that was always there returns' },
+      { pct: 4, quiet: 600000, slots: { burn: 'float' }, want: 'idle', why: 'the burning scene does not reach a quiet idle step' },
+      { pct: 4, quiet: 0, slots: { burn: 'float' }, want: 'coding', why: 'nor a busy one' },
+      { pct: 4, quiet: 0, slots: { typing: 'working' }, want: 'working', why: 'the typing scene IS the idle step\'s busy cell' },
+      { pct: 4, quiet: 600000, slots: { typing: 'working' }, want: 'idle', why: 'and not its quiet one' },
+      { pct: 55, quiet: 0, slots: { typing: 'working' }, want: 'working', why: 'the working step keeps its own busy picture:' },
+      { pct: 55, quiet: 0, slots: { typing: 'coding' }, want: 'working', why: 'no scene governs that cell, so nothing chosen reaches it' },
+      { pct: 55, quiet: 600000, slots: { quiet: 'idle' }, want: 'idle', why: 'its quiet cell is the quiet scene' },
+      { pct: 95, quiet: 0, slots: { burn: 'float', typing: 'working' }, want: 'stunned', why: 'and the spent step is its own scene' }
+    ];
+    for (const step of SCENES) {
+      push(step.pct, 40, null, step.quiet, step.slots);
+      axisDrawn.push(shown());
+      ok('at ' + step.pct + '%, ' + (step.quiet ? 'quiet' : 'busy') + ', with '
+        + JSON.stringify(step.slots || {}) + ' the crab is ' + step.want
+        + (step.why ? ' (' + step.why + ')' : ''), shown() === step.want, 'drew ' + shown());
+      advance(400);
+    }
+    ok('all six drawings are reachable from the steps, the clock and the scenes together',
       new Set(axisDrawn.concat(drawn)).size === 6, [...new Set(axisDrawn.concat(drawn))].join(' '));
-    // THE PURCHASE ALONE MOVES THE PICTURE. Nothing about the readings changes here: the same
-    // percentage, the same stamp, one more thing owned, and the crab is a different drawing. This
-    // is how a purchase made in ANOTHER window arrives, since what carries it is the push
-    push(4, 40, null, 600000); advance(400);
-    ok('quiet and unbought is the small crab', shown() === 'idle', shown());
-    push(4, 40, null, 600000, true);
-    ok('and the purchase on its own turns it into the floating one, with the same beat as any change',
+    // A CHOICE ALONE MOVES THE PICTURE. Nothing about the readings changes here: the same
+    // percentage, the same stamp, one drawing swapped in one scene. This is also how a choice made
+    // in ANOTHER window arrives, since what carries it is the push
+    push(75, 40, null, 0); advance(400);
+    ok('the burning step is the sinking crab', shown() === 'despair', shown());
+    push(75, 40, null, 0, { burn: 'float' });
+    ok('and the choice on its own turns it into the floating one, with the same beat as any change',
       shown() === 'float' && beating(), shown() + (beating() ? ' (beat)' : ' (no beat)'));
     advance(400);
     // the step is NOT what moved across the edge: the same reading, two drawings
-    push(4, 40, null, 0, true); advance(400);
+    push(4, 40, null, 0); advance(400);
     const bodyBefore = doc.body.getAttribute('class');
-    push(4, 40, null, 600000, true);
+    push(4, 40, null, 600000);
     ok('crossing the threshold changes the drawing and nothing about the state',
-      shown() === 'float' && beating() && doc.body.getAttribute('class') === bodyBefore,
+      shown() === 'idle' && beating() && doc.body.getAttribute('class') === bodyBefore,
       shown() + ' / ' + doc.body.getAttribute('class'));
     advance(400);
     // and the box follows the drawing, not the step: the bubble's tail is placed against the
     // drawing's top edge and coding, float and idle are three different edges (styles.js)
-    push(4, 40, null, 0, true); advance(400);
+    push(4, 40, null, 0); advance(400);
     ok('the box says coding while the step is still idle', $('pm_mascot').getAttribute('data-state') === 'coding',
       $('pm_mascot').getAttribute('data-state'));
-    push(4, 40, null, 600000, true); advance(400);
-    ok('and says float on the other side of the same step', $('pm_mascot').getAttribute('data-state') === 'float',
-      $('pm_mascot').getAttribute('data-state'));
     push(4, 40, null, 600000); advance(400);
-    ok('and says idle there for a reader who has not bought it', $('pm_mascot').getAttribute('data-state') === 'idle',
+    ok('and says idle on the other side of the same step', $('pm_mascot').getAttribute('data-state') === 'idle',
+      $('pm_mascot').getAttribute('data-state'));
+    push(75, 40, null, 600000, { burn: 'float' }); advance(400);
+    ok('and says float where the floating crab was put', $('pm_mascot').getAttribute('data-state') === 'float',
       $('pm_mascot').getAttribute('data-state'));
 
     // 4. the session's one showing
@@ -457,9 +477,11 @@ function noSession(h) {
     // and the activity axis works on this account too, off the same field: the step is a pace and
     // the column is a clock, so the two cannot be reading each other
     push(at(0.5), 4.4, { last: null }); advance(400);
-    ok('a quiet week on a quiet day is the small crab, unbought', shown() === 'idle', shown());
-    push(at(0.5), 4.4, { last: null, shop: { owned: ['mascot:float'] } }); advance(400);
-    ok('and the floating one once the shop has sold it, on this account too', shown() === 'float', shown());
+    ok('a quiet week on a quiet day is the small crab', shown() === 'idle', shown());
+    // and the four scenes reach this account exactly as they reach the other one: the pace is what
+    // picks the step and the step is what a scene hangs off
+    push(at(1.4), 4.4, { shop: { owned: ['mascot:float'], slots: { quiet: 'idle', typing: 'coding', burn: 'float', spent: 'stunned' } } }); advance(400);
+    ok('and the floating crab where the burning scene reaches, on this account too', shown() === 'float', shown());
     push(at(0.5), 4.4); advance(400);
     ok('and a reply landing brings the laptop back', shown() === 'coding', shown());
     // the same reading is a different picture depending on where in the week it is read, which is

@@ -876,8 +876,17 @@ const gameHandlers = registry.createHandlers({
 // leave the balance the instant something is bought. The other direction matters and is kept: a
 // purchase is budgeted against balance MINUS what the live rounds hold, so a bet in progress
 // cannot be spent twice (budgetFor('shop')).
+// WHICH DRAWING IS IN WHICH SCENE. A preference, not money, so it is here with the nicknames and
+// the agents' appearances and not in the credit ledger: a reader changing their mind may not
+// rewrite a record that says what they paid for (credits.js's rules), and "what was bought" and
+// "what is worn" are two questions that must not share one field.
+// globalState rather than workspaceState for the reason the appearances are: this is what the crab
+// IS, which is not a property of one open folder. Two windows disagreeing is last writer wins, and
+// that is fine for a preference.
+let mascotSlots = {};
 const storedShop = () => (creditStore ? creditStore.read().shop : null);
 const shopHandler = shop.createHandler({
+  pref: () => mascotSlots,
   reply: gameReply,
   budget: budgetFor,
   replica: () => gameReplica,
@@ -1344,9 +1353,10 @@ function collect() {
     favGames: gameFavorites,
     xp: xpSummary(),
     credits: syncCredits(tokens),
-    // WHAT THE SHOP HAS SOLD THIS READER, on every push. The panel has to be able to draw the right
-    // crab without the shop ever having been opened, and a purchase made in another window has to
-    // reach this one: both of those are this field (shop.js, push)
+    // WHAT THE SHOP HAS SOLD AND WHICH CRAB IS IN WHICH SCENE, on every push. The panel has to be
+    // able to draw the right crab without the shop ever having been opened, and a purchase or a
+    // change made in another window has to reach this one: both of those are this field
+    // (shop.js, push)
     shop: shopHandler.pushed()
   };
 }
@@ -1467,6 +1477,22 @@ class UsageViewProvider {
         if (m.on) gameFavorites[m.id] = 1; else delete gameFavorites[m.id];
         if (extContext) extContext.globalState.update('gameFavoritesV1', gameFavorites);
         push();
+      }
+      // THE SCENE'S DRAWING. The host refuses, not the screen: a drawing nobody bought cannot be
+      // worn however the press was made, and a key that does not belong to that scene is not a
+      // key at all. Both answers come from shop.js, which is also what the push is composed with,
+      // so the refusal and the drawing cannot disagree.
+      // No reply: the data push is what says which drawing is worn, here as for the panel's own
+      // crab, and a second channel for it would be a second answer
+      else if (m.type === 'mascotSlot' && typeof m.slot === 'string') {
+        const key = typeof m.key === 'string' ? m.key : '';
+        const why = shop.whyNotWear(shopHandler.owned(), m.slot, key);
+        if (why) logLine('[mascot] ' + m.slot + ' <- ' + key + ': ' + why);
+        else if (mascotSlots[m.slot] !== key) {
+          mascotSlots = Object.assign({}, mascotSlots, { [m.slot]: key });
+          if (extContext) extContext.globalState.update('mascotSlotsV1', mascotSlots);
+          push();
+        }
       }
       else if (m.type === 'setAppearance' && m.name) {
         if (m.appearance) agentAppearance[m.name] = m.appearance; else delete agentAppearance[m.name];
@@ -1785,6 +1811,9 @@ function activate(context) {
   agentNicknames = context.globalState.get('agentNicknamesV1', {}) || {}; // restore agent nicknames
   agentRoles = context.globalState.get('agentRolesV1', {}) || {}; // restore agent role/title aliases
   agentAppearance = context.globalState.get('agentAppearanceV1', {}) || {}; // restore appearance overrides
+  // ...and which crab is in which scene. Nothing is validated here: a stored choice is read
+  // against what the reader owns on every push, in one place (shop.js, wornSlots)
+  mascotSlots = context.globalState.get('mascotSlotsV1', {}) || {};
   gameFavorites = context.globalState.get('gameFavoritesV1', {}) || {};     // restore the starred games
   // restore the swept invocations, then expire on the spot: after a night's reload every id in
   // there is older than the window and would otherwise sit in storage until the next sweep

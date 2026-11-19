@@ -1076,19 +1076,17 @@
   // measures a bet and two rules would be two answers to "can I afford this"
   function freeFor(g) { return prev.cr == null ? null : Math.max(0, prev.cr - (gameHeld[g] || 0)); }
 
-  // --- what the shop has sold to this reader.
+  // --- which crab is in which scene.
   //
-  // One slot, so this is one question: has the floating crab been bought. The answer rides on every
-  // data push (shop.js, push) rather than on the shop's own replies, because the picture it decides
-  // is on the Usage tab and most readers never open the shop at all.
+  // Scene id -> drawing key, as the HOST worked it out: what the reader chose, read against what
+  // they actually own, with every way of being wrong landing on the drawing the scene has always
+  // had (shop.js, wornSlots). It rides every data push rather than the shop's own replies, because
+  // the pictures it decides are on the Usage tab and most readers never open the shop at all.
   //
-  // The key is a STRING here on purpose. The push carries what is OWNED and not a verdict, for the
-  // same reason every other screen is handed figures rather than answers, and this is the one place
-  // that reads it: shop.js's slotOf('float')
-  var FLOAT_SLOT = 'mascot:float';
-  function ownsFloat() {
-    var o = lastData && lastData.shop && lastData.shop.owned;
-    return !!o && o.indexOf(FLOAT_SLOT) >= 0;
+  // Nothing here decides anything: a window that works out its own answer is a second answer, and
+  // the two would disagree the moment a purchase lost a merge in another window.
+  function mascotWorn() {
+    return (lastData && lastData.shop && lastData.shop.slots) || {};
   }
 
   // --- the one figure a list row may carry, on the right of the row.
@@ -1340,48 +1338,72 @@
   // ===========================================================================
   // THE SHOP. Not a game, so it is not a panel: no round, no stake, no pacing, and nothing in
   // games/registry.js knows it exists (docs/shop-spec.md, section 4-5). It is drawn here for the
-  // same reason the Agents tab is: what is on it is DATA (which seats are owned, what the rest
-  // cost), and a screen built out of data cannot sit in html.js as markup.
+  // same reason the Agents tab is: what is on it is DATA (what the four scenes hold, what the rest
+  // costs), and a screen built out of data cannot sit in html.js as markup.
   //
-  // WHAT IT SELLS IS THE CRAB FLOATING IN THE WATER, the drawing the panel shows while nothing is
-  // being answered, and the screen is one question: this, or not. So the top of it is that drawing
-  // IN THE BOX IT WILL ACTUALLY BE DRAWN IN (88 x 74, contain, stood on the bottom edge: the
-  // mascot's own rules, styles.js) rather than a staged picture of it, because a preview that is
-  // not the real geometry is a promise the panel then breaks.
+  // THE SHELF IS THE FOUR SCENES the reader named: quiet, typing, burning through the limit, out of
+  // it (shop.js, SLOTS). Each one shows what is in it now and what else may go in it, and every
+  // scene shows the same number of cells, so the shelf is a rectangle: the cells a scene has
+  // nothing for yet are EMPTY SLOTS, which is also exactly where a new drawing would go. That is
+  // what keeps a scene with one drawing from reading as a broken row.
   //
-  // THE REST OF THE SHELF IS EMPTY AND SAYS SO. What goes there has not been decided, so a slot
-  // carries no picture, no price and no name: an empty frame and the word. It is not a button and
-  // it is not in the tab order, because something that cannot be pressed should not be counted
-  // through by a reader on a keyboard.
+  // THREE KINDS OF CELL, and they have to be told apart at a glance:
+  //   a drawing that is in use or can be chosen  a picture, a word about itself, and a ring when
+  //                                             it is the one in use. A button only when choosing
+  //                                             it could change anything
+  //   a drawing that has not been bought         a picture and a price. Not a button: the control
+  //                                             row buys it, a cell does not
+  //   an empty slot                              NO PICTURE, and the word `Soon`. Not a button and
+  //                                             not in the tab order, because something that
+  //                                             cannot be pressed should not be counted through by
+  //                                             a reader on a keyboard
+  // The picture is the separator that matters: two of those three cannot be pressed, so what tells
+  // them apart is that one of them has a crab in it and says when that crab shows up.
   //
-  // THE HOST JUDGES, here as everywhere: the row arrives with its price and whether it is owned,
-  // and this file prices nothing. The one comparison it does make is the chips' own (freeFor
-  // against the price), so that a credit minted while the screen is up lights the button at once
-  // instead of waiting for the next reply.
+  // WHAT IS ON SALE SITS NEXT TO THE BUTTON THAT BUYS IT, at the bottom, and it is drawn IN THE BOX
+  // IT WILL ACTUALLY BE DRAWN IN (88 x 74, contain, stood on the bottom edge: the mascot's own
+  // rules, styles.js), because a preview that is not the real geometry is a promise the panel then
+  // breaks. That block and the control row leave together: a shop with nothing left to sell is a
+  // wardrobe, and a disabled button on it would be furniture.
+  //
+  // THE HOST JUDGES, here as everywhere. Every cell arrives with its price, whether it is owned and
+  // whether choosing it could change anything, and which drawing is in which scene comes from the
+  // data push (shop.js, wornSlots) rather than being worked out here: a window that worked it out
+  // itself would be a second answer, and the two would disagree the moment a purchase lost a merge
+  // in another window. The one comparison this file does make is the chips' own (freeFor against
+  // the price), so that a credit minted while the screen is up lights the button at once instead of
+  // waiting for the next reply.
   // ===========================================================================
   var SHOP_T = { noReply: 4000 };
-  var SHOP_SOON = 2;           // empty slots beside it: enough for "more is coming", few enough
-                               // that the shelf is one row at every width (styles.js, .sh-grid)
-  // st: the host's last view. sig: the owned list as the last push or reply reported it
-  var sh = { st: null, busy: false, op: null, n: 0, to: null, wantFocus: false, sig: null };
+  var SHOP_CELL = 36;          // the drawing inside a cell. The cell is 64 tall (styles.js)
+  var SHOP_COL = 64;           // and 64 wide at most, which is what makes it square
+  // st: the host's last view (the shelf). sig: the owned list and the worn scenes as the last push
+  // reported them. pressed: the cell a press just rebuilt, so the keyboard lands back on it
+  var sh = {
+    st: null, busy: false, op: null, n: 0, to: null, wantFocus: false, pressed: null,
+    // what the last push said, in two halves (shopFromPush), and the worn map it said it with
+    sigOwned: null, sigWorn: null, worn: null, justBought: false, opKey: null
+  };
 
   function shopMarkup() {
     return '<div class="ihead bj-head">'
       + '<button type="button" class="bj-back" id="shBack" title="Games and shop">' + (ASSET_UI.chevron || '') + '</button>'
-      + '<div class="it" title="What the crab can be">' + (ASSET_UI.tag || '')
+      + '<div class="it" title="Which crab shows up when">' + (ASSET_UI.tag || '')
       + '<span class="bj-ttl">Shop</span></div>'
       // the corner stays EMPTY: it is for the one figure a depth keeps reading, and this screen's
-      // figures are all on the rows (docs/game-panels.md, section 2)
+      // figures are all on the cells (docs/game-panels.md, section 2)
       + '<div class="bj-side"></div></div>'
-      // the art is aria-hidden and the name beside it is what a reader is told, the same rule the
-      // pixel cards keep (CUC.cardWord)
-      + '<div class="sh-try" id="shTry" aria-hidden="true"></div>'
-      + '<div class="sh-meta"><span class="sh-nm" id="shName"></span><span class="sh-price" id="shPrice"></span></div>'
-      + '<div class="sh-grid" id="shGrid" role="group" aria-label="Shelf"></div>'
+      + '<div class="sh-slots" id="shSlots"></div>'
+      // what is on sale, beside the button that buys it. The art is aria-hidden and the name
+      // beside it is what a reader is told, the same rule the pixel cards keep (CUC.cardWord)
+      + '<div class="sh-try" id="shTry" hidden>'
+      + '<img id="shArt" src="" alt="" aria-hidden="true"/>'
+      + '<span class="sh-what"><span class="sh-nm" id="shName"></span>'
+      + '<span class="sh-price" id="shPrice"></span></span></div>'
       + '<div class="bj-sr" id="shLive" aria-live="polite"></div>'
       + '<div class="bj-note" id="shNote" hidden></div>'
       + '<div class="warnbar" id="shErr" hidden></div>'
-      + '<div class="bj-ctl" id="shCtl"><button type="button" class="bj-btn primary" id="shAct">Buy</button></div>';
+      + '<div class="bj-ctl" id="shCtl" hidden><button type="button" class="bj-btn primary" id="shAct">Buy</button></div>';
   }
   // Built the first time the shop is opened, like a game's panel and for the same reason: a reader
   // who never opens it pays nothing for it in the first paint
@@ -1390,71 +1412,143 @@
     if (!node || node._built) return node;
     node.innerHTML = shopMarkup();
     node._built = true;
+    el('shSlots').addEventListener('click', function (e) {
+      var c = e.target.closest ? e.target.closest('button.sh-cell') : null;
+      if (!c) return;
+      shopWear(c.getAttribute('data-slot'), c.getAttribute('data-key'));
+    });
     el('shAct').addEventListener('click', shopAct);
     return node;
   }
   // `10` and `1K` are what the stake chips already print, so a price says 1K and not 1,000: this is
   // formatting, and the figure itself is the host's
   function shopTag(p) { return p >= 1000 ? (p / 1000) + 'K' : String(p); }
-  // The drawing, taken from the PICTURE THE PANEL ITSELF POINTS AT (#mascot's data-float, html.js)
-  // rather than from a second copy of the path: the shop sells that drawing, so a preview out of
-  // any other source could show something the panel never draws. A build without it draws no
-  // picture rather than a broken one
-  function shopArt() {
+  // A drawing's picture, taken from the ones THE PANEL ITSELF POINTS AT (#mascot's data-*, html.js)
+  // rather than from a second list of paths: the shop sells those drawings, so a cell out of any
+  // other source could show something the panel never draws. The catalog's keys are those
+  // attributes' names, which is the whole of the wiring (shop.js). A key with no attribute draws
+  // no picture rather than a broken one
+  function shopArt(key) {
     var m = el('mascot');
-    return (m && m.getAttribute('data-float')) || '';
+    return (m && key && m.getAttribute('data-' + key)) || '';
+  }
+  // The one thing that can still be bought, or null. First come, first served: with one price and
+  // one priced drawing there is nothing to order, and the day there are two the shelf's own order
+  // is the one the reader is reading
+  function shopOnSale(slots) {
+    for (var i = 0; i < slots.length; i++) {
+      for (var j = 0; j < slots[i].opts.length; j++) {
+        if (slots[i].opts[j].price && !slots[i].opts[j].owned) return slots[i].opts[j];
+      }
+    }
+    return null;
+  }
+  // One cell. `on` is whether this drawing is the one in that scene now, and `pick` whether
+  // choosing in this scene could change anything at all
+  function shopCellHtml(slot, o, on, pick) {
+    var art = shopArt(o.key);
+    var what = o.owned ? (on ? 'in use' : 'yours') : fmtInt(o.price) + ' credits';
+    var tag = o.owned ? (o.price ? 'own' : 'free') : shopTag(o.price);
+    var body = (art ? '<img class="sh-pic" src="' + art + '" alt=""/>' : '')
+      + '<span class="sh-tag">' + esc(tag) + '</span>';
+    var cls = 'sh-cell' + (o.owned ? ' owned' : '') + (on ? ' on' : '');
+    // A BUTTON ONLY WHERE A PRESS DOES SOMETHING. A scene with one drawing is settled and a
+    // drawing that has not been bought is bought with the button below, so neither is pressable,
+    // and neither may be in the tab order
+    // ...and both kinds carry which scene and which drawing they are, because that is what the
+    // cell IS. Only an empty slot has neither, since there is nothing there to name
+    var at = ' data-slot="' + esc(slot.id) + '" data-key="' + esc(o.key) + '"';
+    if (!pick || !o.owned) {
+      return '<span class="' + cls + '"' + at + ' role="img" aria-label="'
+        + esc(o.name + ', ' + what) + '">' + body + '</span>';
+    }
+    return '<button type="button" class="' + cls + ' pick"' + at
+      + ' aria-pressed="' + (on ? 'true' : 'false') + '"'
+      + ' aria-label="' + esc(o.name + ', ' + what) + '">' + body + '</button>';
+  }
+  // An empty slot: the frame, the word, and no picture. It says that more goes here without saying
+  // what, because that has not been decided
+  function shopSoonHtml() {
+    return '<span class="sh-cell soon" role="img" aria-label="An empty slot, nothing in it yet">'
+      + '<span class="sh-tag">Soon</span></span>';
   }
   function renderShop() {
     var node = el('panelShop');
     if (!node || !node._built) return;
-    var items = (sh.st && sh.st.items) || [];
-    if (!items.length) return;        // nothing has been answered yet: draw nothing rather than a guess
-    var it = items[0];
-    // 1. what it looks like, in the box it will be drawn in
-    var art = shopArt();
-    el('shTry').innerHTML = art ? '<img src="' + art + '" alt=""/>' : '';
-    // 2. its name, and what it costs while it is not yours. A price on something already bought is
-    // a figure about the past, and the line below already says what happened
-    el('shName').textContent = it.name;
-    el('shPrice').innerHTML = it.owned ? '' : COIN_FULL + '<b>' + fmtInt(it.price) + '</b>';
-    // 3. the shelf: the one thing on it, and the slots whose contents are not decided yet. The
-    // empty ones are spans with a role and no tabindex, so the keyboard goes from the arrow to the
-    // button and counts nothing in between
-    var html = '<span class="sh-cell' + (it.owned ? ' owned' : '') + '" role="img" aria-label="'
-      + esc(it.name + ', ' + (it.owned ? 'bought' : fmtInt(it.price) + ' credits')) + '">'
-      + (art ? '<img class="sh-pic" src="' + art + '" alt=""/>' : '')
-      + '<span class="sh-tag">' + (it.owned ? 'own' : esc(shopTag(it.price))) + '</span></span>';
-    for (var i = 0; i < SHOP_SOON; i++) {
-      html += '<span class="sh-cell soon" role="img" aria-label="An empty slot, nothing in it yet">'
-        + '<span class="sh-tag">Soon</span></span>';
+    var slots = (sh.st && sh.st.slots) || [];
+    if (!slots.length) return;        // nothing has been answered yet: draw nothing rather than a guess
+    var worn = mascotWorn(), i, j;
+    // which cell the keyboard is on, before this repaint takes it away (restored at the end)
+    var was = document.activeElement;
+    var onCell = (was && was.closest) ? was.closest('.sh-cell') : null;
+    var keep = onCell && [onCell.getAttribute('data-slot'), onCell.getAttribute('data-key')];
+    // every scene shows the same number of cells, which is as many as the widest one has: the
+    // shelf is a rectangle and the spare cells are where the next drawing goes
+    var wide = 1;
+    for (i = 0; i < slots.length; i++) wide = Math.max(wide, slots[i].opts.length);
+    var html = '';
+    for (i = 0; i < slots.length; i++) {
+      var s = slots[i], on = worn[s.id] || s.free;
+      html += '<div class="sh-slot">'
+        + '<div class="sh-shead"><span class="sh-sn">' + esc(s.name) + '</span>'
+        + '<span class="sh-sw">' + esc(s.when) + '</span></div>'
+        // the column count is the DATA's, so a third drawing in any scene widens every row
+        // without a stylesheet edit
+        + '<div class="sh-opts" role="group" aria-label="' + esc(s.name) + '"'
+        + ' style="grid-template-columns:repeat(' + wide + ',minmax(0,' + SHOP_COL + 'px))">';
+      for (j = 0; j < s.opts.length; j++) html += shopCellHtml(s, s.opts[j], s.opts[j].key === on, s.pick);
+      for (j = s.opts.length; j < wide; j++) html += shopSoonHtml();
+      html += '</div></div>';
     }
-    el('shGrid').innerHTML = html;
-    // 4. the one control. It is on the screen while there is something to buy and GONE once there
-    // is not: a button that cannot be pressed on a screen with one row is furniture, and what a
-    // reader wants to know there is that it is theirs, which the line below says.
-    // What the price is measured against is the credits this screen may spend, not the header's
-    // balance: a round in progress elsewhere is holding some of that balance and the host would
-    // refuse a purchase made against it
-    var room = freeFor('shop'), known = prev.cr != null;
-    var afford = room != null && it.price <= room;
-    var btn = el('shAct');
-    el('shCtl').hidden = it.owned;
-    btn.disabled = sh.busy || it.owned || !afford;
-    btn.title = 'Buy the ' + it.name;
-    // 5. the one line under it: what was bought, or why it cannot be. The two refusals are the
-    // stake chips' own sentences, because being broke and having the credits tied up at a table are
-    // different problems
+    el('shSlots').innerHTML = html;
+    // what is on sale, and the one control. Both leave together when there is nothing left to buy
+    var sale = shopOnSale(slots);
+    el('shTry').hidden = !sale;
+    el('shCtl').hidden = !sale;
     var note = el('shNote');
-    note.hidden = !it.owned && (!known || afford);
-    if (!note.hidden) {
-      note.textContent = it.owned
-        ? 'Bought. The crab floats while nothing is being answered.'
-        : prev.cr >= it.price ? HELD_ELSEWHERE + '.' : 'You need ' + fmtInt(it.price) + ' credits.';
+    note.hidden = true;
+    if (sale) {
+      el('shArt').setAttribute('src', shopArt(sale.key));
+      el('shName').textContent = sale.name;
+      el('shPrice').innerHTML = COIN_FULL + '<b>' + fmtInt(sale.price) + '</b>';
+      // what the price is measured against is the credits this screen may spend, not the header's
+      // balance: a round in progress elsewhere is holding some of that balance and the host would
+      // refuse a purchase made against it
+      var room = freeFor('shop'), known = prev.cr != null;
+      var afford = room != null && sale.price <= room;
+      var btn = el('shAct');
+      btn.disabled = sh.busy || !afford;
+      btn.title = 'Buy the ' + sale.name;
+      // and why not, when the answer is no. The same two sentences the stake chips use, because
+      // being broke and having the credits tied up at a table are different problems
+      note.hidden = !known || afford;
+      if (!note.hidden) {
+        note.textContent = prev.cr >= sale.price
+          ? HELD_ELSEWHERE + '.'
+          : 'You need ' + fmtInt(sale.price) + ' credits.';
+      }
     }
+    // A REPAINT MAY NOT DROP THE KEYBOARD. The whole shelf is replaced, so whatever cell the
+    // reader was on is detached by it, and the same repaint is run by more than one thing (a
+    // choice, a credit landing, another window's push). So which cell it was is read off the page
+    // BEFORE the replace rather than remembered from the press, and handed back after, through
+    // refocusIn so that a document which does not hold the focus is handed nothing
+    if (keep) {
+      var again = el('shSlots').querySelector('.sh-cell[data-slot="' + keep[0] + '"][data-key="' + keep[1] + '"]');
+      if (again) refocusIn(node, again, false);
+    }
+  }
+  // Choosing is NOT a shop message and not money: it is a preference, and the host keeps it beside
+  // the nicknames and the agents' appearances (extension.js). Nothing is drawn here either: the
+  // data push is what says which drawing is in a scene, the panel's own crab reads that same
+  // field, and drawing it early would be a second answer for as long as the round trip takes
+  function shopWear(slot, key) {
+    if (!slot || !key) return;
+    vscode.postMessage({ type: 'mascotSlot', slot: slot, key: key });
   }
   function shopSend(op, key) {
     if (sh.busy) return;
-    sh.busy = true; sh.op = op;
+    sh.busy = true; sh.op = op; sh.opKey = key || null;
     sh.n = postGame('shop', op, key ? { key: key } : null);
     renderShop();                       // the button locks while the message is out
     clearTimeout(sh.to);
@@ -1465,9 +1559,9 @@
     }, SHOP_T.noReply);
   }
   function shopAct() {
-    var items = (sh.st && sh.st.items) || [];
-    if (!items.length || sh.busy || items[0].owned) return;
-    shopSend('buy', items[0].key);
+    var sale = shopOnSale((sh.st && sh.st.slots) || []);
+    if (!sale || sh.busy) return;
+    shopSend('buy', sale.key);
   }
   // A REPLY WITH NO `state` IS A REASON AND NOT A SHELF (games/README.md, section 5): the sentence
   // goes up, what is drawn stays drawn, the wait is released and nothing else moves. The money on
@@ -1475,48 +1569,92 @@
   function shopReceive(m) {
     var current = sh.op != null && m.n === sh.n;
     if (!current && sh.op != null) return;   // an older reply while a newer request is still out
-    var was = sh.op;
+    var was = sh.op, wasKey = sh.opKey;
     clearTimeout(sh.to);
-    sh.busy = false; sh.op = null;
+    sh.busy = false; sh.op = null; sh.opKey = null;
     setHeld('shop', m);
-    if (m.state) { sh.st = m.state; sh.sig = shopSig(m.state); }
+    // the reply moves the OWNED half of what is known and not the worn half, which it does not
+    // carry (shopFromPush above)
+    if (m.state) { sh.st = m.state; sh.sigOwned = shopOwnedSig(m.state); }
     settleHeader(m);                         // the balance moves quietly: a purchase is not an earning
     setErr('shErr', m.error || '');
     renderShop();
-    if (current && was && was !== 'open' && !m.error && m.state) shopAnnounce(was);
+    if (current && was && was !== 'open' && !m.error && m.state) {
+      shopAnnounce(was, wasKey);
+      // ...and the push that follows a purchase carries the scene it went into, which is the same
+      // event. One event is one announcement, so the scene is not read out on top of it
+      if (was === 'buy') sh.justBought = true;
+    }
     shopFocusAfter();
   }
-  function shopAnnounce(op) {
-    var items = (sh.st && sh.st.items) || [];
-    if (op !== 'buy' || !items.length) return;
-    setLive('shLive', items[0].name + ' bought. Balance ' + fmtInt(prev.cr || 0) + '.');
+  // What a drawing is CALLED, out of the shelf the host last sent: the names are not this file's
+  function shopNameOf(key) {
+    var slots = (sh.st && sh.st.slots) || [], i, j;
+    for (i = 0; i < slots.length; i++) {
+      for (j = 0; j < slots[i].opts.length; j++) if (slots[i].opts[j].key === key) return slots[i].opts[j].name;
+    }
+    return 'It';
+  }
+  function shopAnnounce(op, key) {
+    if (op !== 'buy') return;
+    // the key is the one that was SENT: by the time this reply has landed the thing bought is no
+    // longer the thing on sale, so the screen cannot be asked what it was
+    setLive('shLive', shopNameOf(key) + ' bought. Balance ' + fmtInt(prev.cr || 0) + '.');
   }
   // The keyboard, by the one rule every screen keeps: the panel asks, and CUC.refocus decides
-  // whether the ask may be honoured at all (refocusIn above). The button is what a reader presses,
-  // so it takes the focus while it can be pressed, and the arrow out does when there is nothing
-  // left to buy: nothing on the shelf is pressable, so there is nothing else in here to land on
+  // whether the ask may be honoured at all (refocusIn above). What a reader presses takes it: the
+  // button while there is something to buy, else the first cell a press would do something to, and
+  // the arrow out when the shelf is settled and there is nothing in here to land on
   function shopFocusAfter() {
     if (curDoor() !== 'shop') return;
     var want = sh.wantFocus;
     sh.wantFocus = false;
     var btn = el('shAct');
-    var target = (btn && !btn.disabled && !el('shCtl').hidden) ? btn : el('shBack');
+    var target = (btn && !btn.disabled && !el('shCtl').hidden) ? btn
+      : (el('shSlots') && el('shSlots').querySelector('button.sh-cell')) || el('shBack');
     refocusIn(el('panelShop'), target, want);
   }
-  function shopSig(s) { return (s.owned || []).join(','); }
-  // BOUGHT IN ANOTHER WINDOW. The drawing on the Usage tab needs nothing for this, because it is
-  // drawn out of the push itself on every push (ownsFloat above). What does need telling is this
-  // screen's own shelf, which comes from its REPLIES: it is re-asked only when the push says
-  // something its last reply did not, since otherwise it would ask again after every purchase it
-  // made itself, which is a round trip for an answer it already has.
+  // WHAT THE PUSH LAST SAID, as TWO signatures rather than one, because the two halves come from
+  // different places and a change in each needs a different thing done about it:
+  //
+  //   WHAT IS OWNED is on the shelf's own rows, and those come from a REPLY, so a purchase has to
+  //   be asked for again. Only when it moved, or the screen would re-ask after every purchase it
+  //   made itself, which is a round trip for an answer it already has: a reply moves this half on
+  //   its own for exactly that reason.
+  //   WHICH DRAWING IS WORN rides the push, so a choice is a repaint and not a round trip, here
+  //   and in the window that did not make it. A reply does NOT carry it and so may not move this
+  //   half: one that did would leave the next push looking like a change nobody made.
+  function shopOwnedSig(s) { return (s.owned || []).join(','); }
+  function shopWornSig(s) { return JSON.stringify(s.slots || {}); }
   function shopFromPush(d) {
     var s = d && d.shop;
     if (!s) return;
-    var sig = shopSig(s);
-    if (sig === sh.sig) return;
-    var first = sh.sig == null;
-    sh.sig = sig;
-    if (!first && curDoor() === 'shop' && !sh.busy) shopSend('open');
+    var ownedSig = shopOwnedSig(s), wornSig = shopWornSig(s);
+    var first = sh.sigOwned == null;
+    var ownedMoved = !first && ownedSig !== sh.sigOwned;
+    var wornMoved = !first && wornSig !== sh.sigWorn;
+    var was = sh.worn;
+    sh.sigOwned = ownedSig; sh.sigWorn = wornSig; sh.worn = s.slots || {};
+    if (first || curDoor() !== 'shop') return;
+    if (ownedMoved) { if (!sh.busy) shopSend('open'); return; }
+    if (!wornMoved) return;
+    renderShop();
+    if (sh.justBought) sh.justBought = false;      // the purchase has already been read out
+    else shopSceneLive(was, s.slots || {});
+  }
+  // A choice, read out: the scene that MOVED and what is in it now. The names are the shelf's own,
+  // so this says nothing the screen is not also showing
+  function shopSceneLive(was, now) {
+    var slots = (sh.st && sh.st.slots) || [], i, j;
+    for (i = 0; i < slots.length; i++) {
+      var id = slots[i].id;
+      if (!was || was[id] === now[id]) continue;
+      for (j = 0; j < slots[i].opts.length; j++) {
+        if (slots[i].opts[j].key !== now[id]) continue;
+        setLive('shLive', slots[i].name + ': ' + slots[i].opts[j].name + '.');
+        return;
+      }
+    }
   }
   // What a game's leave() does, for the screen that is not a game: drop the clock and the request
   // in flight. A late reply after this is drawn as it stands, which is the floor's rule for one
@@ -1643,24 +1781,39 @@
   // stunned read the same either way, and deliberately: there the LIMIT is the news, and whether a
   // reply landed ten seconds ago does not change it. Stunned also cannot really have two columns,
   // because a blocked limit stops the replies that would keep it busy.
-  //
-  // THE IDLE ROW HAS A THIRD DRAWING, and that is the whole of the shop's reach into this tab: the
-  // floating crab is the one thing the shop sells (shop.js), so `quiet` is what a reader who has
-  // bought it sees and `free` is that same moment for everyone else, which is the small crab that
-  // was there before the shop existed. No other row has a `free`, because no other row has anything
-  // to sell: they read the same whether anything was ever bought or not.
   var MASCOT_ART = {
-    idle: { busy: 'coding', quiet: 'float', free: 'idle' },
+    idle: { busy: 'coding', quiet: 'idle' },
     working: { busy: 'working', quiet: 'idle' },
     despair: { busy: 'despair', quiet: 'despair' },
     stunned: { busy: 'stunned', quiet: 'stunned' }
   };
-  // WHICH DRAWING: the step picks the row, the clock picks the column, and what has been bought
-  // picks between the quiet drawing and the free one
+  // --- AND WHICH OF THE FOUR SCENES each of those cells is, where the reader has a say.
+  //
+  // The shop sells drawings into four scenes the reader named: quiet, typing, burning through the
+  // limit, and out of it (shop.js, SLOTS). Those are not the same shape as the table above, which
+  // is four steps by two columns, so this says which cell belongs to which scene and the table is
+  // left exactly as it was: a cell with no entry here keeps the drawing above it whatever anybody
+  // chooses, and a cell with one reads the scene's drawing out of the push and falls back to the
+  // table when there is nothing to read (a window that has not had a push yet, or a host that is
+  // older than this file).
+  //
+  // THE WORKING STEP'S BUSY CELL IS THE ONE WITH NO ENTRY, and that is a decision. It is the only
+  // picture that says the limit is filling up WHILE you work, and putting the typing scene over it
+  // would let one choice flatten 5% and 65% of the limit into the same drawing: the step axis would
+  // then say nothing at all in the busy column until despair. `working` is still choosable, in the
+  // typing scene, where it is an alternative rather than the only answer.
+  var MASCOT_SLOT = {
+    idle: { busy: 'typing', quiet: 'quiet' },
+    working: { quiet: 'quiet' },
+    despair: { busy: 'burn', quiet: 'burn' },
+    stunned: { busy: 'spent', quiet: 'spent' }
+  };
+  // WHICH DRAWING: the step picks the row, the clock picks the column, and the reader's own choice
+  // picks the picture wherever that cell is one of the four scenes
   function mascotArt(step, d) {
-    var row = MASCOT_ART[step];
-    if (!mascotQuiet(d)) return row.busy;
-    return (row.free && !ownsFloat()) ? row.free : row.quiet;
+    var col = mascotQuiet(d) ? 'quiet' : 'busy';
+    var scene = MASCOT_SLOT[step][col];
+    return (scene && mascotWorn()[scene]) || MASCOT_ART[step][col];
   }
   // NO DEADBAND HERE, and that is not an oversight: the steps have one because they cut a noisy
   // scalar, and this cuts a clock. One side of it is an EVENT (a message landed, and the host's

@@ -173,7 +173,7 @@ function playMarket({ purse, ticker, amount, agoMs }) {
 // record is seeded through the STORAGE boundary rather than bought on the spot, so that both states
 // of the screen are reachable: `owned: []` is the one with something to buy and a button, and
 // `owned: ['float']` is the one with neither.
-function playShop({ purse, owned }) {
+function playShop({ purse, owned, slots }) {
   const shop = require(path.join(ROOT, 'shop.js'));
   const by = 'a1b2c3d4e5f60718';
   // cleaned by the module's own boundary, so this is a record save() could have produced
@@ -186,6 +186,9 @@ function playShop({ purse, owned }) {
   const sent = [];
   const balance = () => purse + shop.netOf(store);
   const h = shop.createHandler({
+    // which drawing is in which scene is a PREFERENCE and the host's (globalState), so the driver
+    // stands in for that store the way it stands in for the ledger
+    pref: () => slots || {},
     reply(key, viewer, rec, reqN, error) {
       const bal = balance();
       const msg = { type: key, balance: bal, free: bal };
@@ -202,10 +205,13 @@ function playShop({ purse, owned }) {
   });
   h.handle({ type: 'shop', op: 'open', n: 1 });
   const v = sent[sent.length - 1].state;
+  const worn = shop.wornSlots(v.owned, slots || {});
   return {
     sent,
     owned: v.owned,
+    slots: worn,
     note: v.owned.length + ' bought, purse ' + balance() + ', spent ' + v.spent
+      + ', worn ' + Object.keys(worn).map((k) => k + '=' + worn[k]).join(' ')
   };
 }
 
@@ -320,16 +326,16 @@ const SHOTS = {
   },
   shop: {
     file: 'measure-shop', tab: 'games', door: 'shop', measure: true,
-    // NOTHING BOUGHT, which is the state every reader sees first: the price is on the meta row and
-    // the button is on the screen
+    // NOTHING BOUGHT, which is the state every reader sees first: the block saying what is on sale
+    // is on the screen and so is the button
     shop: { owned: [] }
   },
   // ...and the same screen with nothing left to buy, which is the OTHER state and not a smaller
-  // version of this one: the control row goes and a line of its own arrives in its place, so which
-  // of the two is taller is a question only a measurement answers
+  // version of this one: the sale block and the control row both go, so which of the two is taller
+  // is a question only a measurement answers
   'shop-own': {
     file: 'measure-shop-own', tab: 'games', door: 'shop', measure: true,
-    shop: { owned: ['float'] }
+    shop: { owned: ['float'], slots: { burn: 'float', typing: 'working' } }
   }
 };
 
@@ -346,6 +352,12 @@ const SHOTS = {
 // not answered in a while (a 429, an expired token, a sign-out), which is the only condition that
 // puts the freshness row on the screen. Without it the row is never measurable, since every
 // reading this file invents is stamped "now".
+// What the host's own push carries about the shop, built by the module that builds it there: the
+// reader's stored choice read against what they own, in one place (shop.js, wornSlots)
+function shopPush(owned, pref) {
+  const shop = require(path.join(ROOT, 'shop.js'));
+  return { owned: owned || [], slots: shop.wornSlots(owned || [], pref || {}) };
+}
 function usageData({ pct, weekly, warn, session, stale, quiet, bought, shop }) {
   const now = Date.now(), sec = Math.floor(now / 1000);
   const agents = [
@@ -386,10 +398,12 @@ function usageData({ pct, weekly, warn, session, stale, quiet, bought, shop }) {
       stats: {}, scope: { all: false, calls: 6, matched: 6, verdict: 'matched' }
     },
     nicknames: {}, roles: {}, appearance: {}, hidden: {}, favGames: [],
-    // WHAT THE SHOP HAS SOLD. A push carries this whether the shop has ever been opened or not
-    // (extension.js), and the mascot's quiet drawing is chosen by it, so --quiet ALONE measures the
-    // small crab: the floating one is bought, and --bought is the only way to reach it here
-    shop: shop || { owned: bought ? ['mascot:float'] : [] },
+    // WHAT THE SHOP HAS SOLD AND WHICH CRAB IS IN WHICH SCENE. A push carries this whether the
+    // shop has ever been opened or not (extension.js), and every drawing but one is chosen by it.
+    // --bought buys the floating crab and puts it in the scene it is sold for, which is the only
+    // way to reach that drawing here: --quiet alone measures the small crab, since the quiet scene
+    // has nothing else in it
+    shop: shop || shopPush(bought ? ['mascot:float'] : [], bought ? { burn: 'float' } : {}),
     credits: { balance: 1240, today: 86, frac: 3, perCredit: 10000, counting: false },
     cfg: { statusBar: 'session+weekly', panelHidden: [], burnRate: true }
   };
@@ -789,7 +803,7 @@ const USAGE = [
   '  --no-session     push five_hour: null, the account with no five-hour limit',
   '  --stale          push a usage reading 18 minutes old, which shows the freshness row',
   '  --quiet          push the last reply as ten minutes old, which is the mascot\'s quiet drawing',
-  '  --bought         the floating crab has been bought, which is what --quiet then draws',
+  '  --bought         the floating crab has been bought and is in the scene it is sold for',
   '  --click <sel>    press something once the replies have been drawn, then measure',
   '  --out <dir>      write the PNGs somewhere other than media/',
   '  --width --dpr --bg --pct --purse --warn --theme --keep --list'
@@ -845,7 +859,7 @@ async function main() {
       note = (want.session === false ? 'no 5h limit on this account' : 'session ' + want.pct + '%')
         + ', weekly ' + want.weekly + '%' + (want.warn ? ', burn-rate warning' : '')
         + (want.stale ? ', usage 18m old' : '') + (want.quiet ? ', last reply 10m ago' : '')
-        + (want.bought ? ', the floating crab bought' : '')
+        + (want.bought ? ', the floating crab bought and worn' : '')
         + ' (invented readings)';
     } else if (shot.market) {
       const m = playMarket(Object.assign({ purse }, shot.market));
@@ -855,7 +869,7 @@ async function main() {
       const s = playShop(Object.assign({ purse }, shot.shop));
       // the data push first (what the shop has sold, and the readings the header needs), then the
       // shop's own reply: the screen asks for itself on entry, and this is that answer
-      messages = [{ type: 'data', data: usageData({ pct: 42, weekly: 61, session: true, quiet: !!f.quiet, shop: { owned: s.owned } }) }].concat(s.sent);
+      messages = [{ type: 'data', data: usageData({ pct: 42, weekly: 61, session: true, quiet: !!f.quiet, shop: { owned: s.owned, slots: s.slots } }) }].concat(s.sent);
       note = s.note;
     } else {
       const played = playUntil(shot.dir || shot.game, shot, purse);
