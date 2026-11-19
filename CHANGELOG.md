@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.31.5: The listing says what it is first
+
+- Nothing in the extension changed. The marketplace entry led with the subagents and the pixel characters, which is the part you cannot get anywhere else but not the thing anyone is searching for at the moment they search. Someone typing "claude usage" wants to know how much they have used, so that is the first clause now and the characters are the second.
+- Keywords were 17, five of them about the card games. They are 25 now and the usage ones come first, which is also the vocabulary the other extensions in this category are found by.
+
 ## 1.31.4: A dot in your path emptied the room
 
 - **A workspace with a dot, an underscore or a space in its path never matched its own transcripts.** Claude Code names a session's folder after the launch directory with every character outside `A-Z a-z 0-9 -` turned into a dash, and this read only the separators. So `/home/you/_GITHUB/you.github.io` was looked for under `-home-you-_GITHUB-you.github.io` while Claude Code had written `-home-you--GITHUB-you-github-io`, three characters apart in one path, and no agent could ever walk into that window's room.
