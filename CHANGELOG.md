@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.31.4: A dot in your path emptied the room
+
+- **A workspace with a dot, an underscore or a space in its path never matched its own transcripts.** Claude Code names a session's folder after the launch directory with every character outside `A-Z a-z 0-9 -` turned into a dash, and this read only the separators. So `/home/you/_GITHUB/you.github.io` was looked for under `-home-you-_GITHUB-you.github.io` while Claude Code had written `-home-you--GITHUB-you-github-io`, three characters apart in one path, and no agent could ever walk into that window's room.
+- The rule was measured rather than reasoned about: the CLI was run in three directories and the folder it created read back. Dots, underscores, spaces, brackets, `@ + # , ~ ' = %` and Hangul all become one dash each, letter case is left alone, and the substitution stays one character for one, which the parent-directory test depends on.
+- Four tests pin it, including a Hangul path and a path that needs no substitution at all. Put the old expression back and three of them fail.
+- This is the fault behind the empty room reported in #1, and 1.31.3's note was describing it correctly: runs had happened, and none of them could match.
+
 ## 1.31.3: An empty room says why it is empty
 
 - **Three different situations drew the same empty room.** Nobody was invoked, someone is still running, and someone ran but matched no folder open in this window. The third is a fault and it looked exactly like a quiet afternoon, which is how a report of it sat unanswered for seven weeks. The room now says `3 runs today, none from this folder` when that is what happened.

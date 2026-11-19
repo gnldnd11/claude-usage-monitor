@@ -848,6 +848,32 @@ test('agents.scope=all puts that same run in the room, and says so', () => {
   assert.equal(sc.matched, 0, 'matched still reports the truth about the folder, not the setting');
 });
 
+// --- the folder name Claude Code actually writes --------------------------------------------
+// Issue #1 was not the scope test being too strict, it was the encoding being wrong. Claude Code
+// replaces every character outside [A-Za-z0-9-], and this encoded only the separators, so a
+// workspace with a dot or an underscore in it could never equal the folder its own transcripts
+// sat in. The reporter's path had both: /home/vale/_GITHUB/.../valentinherrmann.github.io.
+// Measured against the real CLI in three directories, including Hangul, which is 1:1 like the
+// rest (the ancestor test indexes the raw path by the encoded length, so that has to hold).
+const ENCODINGS = [
+  ['/ws/_GITHUB/Valentin/site.github.io', '-ws--GITHUB-Valentin-site-github-io', 'dots and an underscore'],
+  ['/ws/my project (old)', '-ws-my-project--old-', 'spaces and brackets'],
+  ['/ws/한글폴더-테스트', '-ws---------', 'Hangul, one dash a syllable'],
+  ['/ws/plain', '-ws-plain', 'a path that needed no replacing at all']
+];
+for (const [wsPath, folder, what] of ENCODINGS) {
+  test('a run is matched to a workspace with ' + what, () => {
+    const dir = path.join(HOME, '.claude', 'projects', folder);
+    fs.mkdirSync(dir, { recursive: true });
+    const id = 'toolu_enc' + folder.replace(/[^a-z0-9]/gi, '');
+    fs.writeFileSync(path.join(dir, 'enc.jsonl'),
+      JSON.stringify(agentCall(id, 'code-reviewer', Date.now() - 2 * MIN, 'review')) + '\n');
+    withWorkspace(wsPath, null, () => { onMessage({ type: 'ready' }); });
+    assert.ok(instance(id), 'nobody walked in from ' + folder + ' for a window open on ' + wsPath);
+    assert.equal(lastPush().agentActivity.scope.verdict, 'matched');
+  });
+}
+
 test('the counts the room quotes are today\'s, not the four hours of yesterday the list keeps', () => {
   // calls are collected from AGENT_RUN_WINDOW_MS BEFORE midnight so a run started last night and
   // still going can walk in. A sentence that says "today" may not count those, or the room reads

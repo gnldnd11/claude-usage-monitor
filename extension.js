@@ -203,10 +203,20 @@ function activeProjectPaths() {
 // 'all' drops the workspace filter on the room and the crew's activity. Default stays
 // 'workspace': one window showing one project's agents is the point of the room.
 function agentScopeAll() { return vscode.workspace.getConfiguration('claudeUsage').get('agents.scope', 'workspace') === 'all'; }
-// What becomes a dash. POSIX turns '/' into one; Windows turns both '\\' and the drive colon
-// into one, so c:\\dev\\workspace lands as c--dev-workspace. Every replacement is 1:1 in length,
-// which the ancestor test below depends on.
-const PATH_SEP_RE = /[\\/:]/g;
+// What becomes a dash. Claude Code replaces EVERY character outside [A-Za-z0-9-], not only the
+// separators: measured, not guessed, by running it in three directories and reading back the
+// folder it made under projects/.
+//
+//   /…/_GITHUB/probe.github.io              -> …--GITHUB-probe-github-io
+//   /…/p2/a b@c+d#e(f)g,h~i'j=k%l           -> …-p2-a-b-c-d-e-f-g-h-i-j-k-l
+//   /…/p3/한글폴더-테스트                     -> …-p3---------
+//
+// This was /[\\/:]/g, which kept dots and underscores, so a workspace holding either could never
+// equal the folder Claude Code wrote and the room stayed empty for good. That is issue #1: a
+// window open on /home/…/_GITHUB/…/name.github.io encoded two characters differently in one path.
+// Case is NOT folded here (GITHUB and ValentinHerrmann came back untouched), and every
+// replacement is still 1:1 in length, including Hangul, which the ancestor test below depends on.
+const PATH_SEP_RE = /[^A-Za-z0-9-]/g;
 // Windows hands back the drive letter in whichever case the launcher used. One machine had
 // c--dev-workspace and C--Users-URP-... side by side, and fsPath is not guaranteed to agree
 // with either, so the comparison folds case there. POSIX paths stay case-sensitive.
