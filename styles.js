@@ -65,7 +65,7 @@ module.exports = `
      crab with its tail on nothing. test/panel-css.test.js recomputes both numbers from the four
      PNGs' own headers, so a new drawing with a new ratio fails there rather than on screen. */
   .mwarn{position:absolute;top:-15px;left:50%;transform:translateX(-50%);background:#fff;border-radius:10px;padding:3px 5px 4px;box-shadow:0 3px 9px rgba(0,0,0,.25);cursor:pointer;z-index:6;}
-  /* SIX DRAWINGS, SIX OFFSETS, and every one of them is read out of the file rather than chosen.
+  /* EIGHT DRAWINGS, EIGHT OFFSETS, and every one of them is read out of the file rather than chosen.
      The bubble has a tail pointing down at the crab's head, so it is placed against the top of the
      INK: contain fits each canvas into the 88x74 box and sits it on the bottom edge, and then the
      drawing starts wherever its own transparent padding ends. Those are two different things and
@@ -77,14 +77,20 @@ module.exports = `
      canvas.
      -15 is the bubble's own lift, so each rule is (where the ink starts) - 15. The base value is
      what the box uses before any state has been drawn.
-     test/panel-css.test.js recomputes all six by DECODING THE FRAMES (test/apng.js) and fails if a
-     rule and a drawing disagree by a pixel, so the next redraw breaks a test and not a screen. */
+     test/panel-css.test.js recomputes all eight by DECODING THE FRAMES (test/apng.js) and fails if
+     a rule and a drawing disagree by a pixel, so the next redraw breaks a test and not a screen.
+     The two newest were cropped to their own ink before they came in (tools/fit-mascot.mjs), which
+     is why sleep's offset is the base value: with no transparent border left, the drawing starts
+     where the canvas does. Written out anyway rather than left to the fallback, so the list is
+     eight long and a reader does not have to work out which one is missing and why. */
   .mascot-wrap[data-state="idle"] .mwarn{top:20.5px;}
   .mascot-wrap[data-state="working"] .mwarn{top:-13.1px;}
   .mascot-wrap[data-state="despair"] .mwarn{top:-9.3px;}
   .mascot-wrap[data-state="stunned"] .mwarn{top:12.8px;}
   .mascot-wrap[data-state="coding"] .mwarn{top:25.6px;}
   .mascot-wrap[data-state="float"] .mwarn{top:7.2px;}
+  .mascot-wrap[data-state="sleep"] .mwarn{top:-15px;}
+  .mascot-wrap[data-state="blackhole"] .mwarn{top:-8.4px;}
   .mwarn.calm{animation:none;cursor:default;}
   .mwarn.mid{animation:pulse 1.9s ease-in-out infinite;}
   .mwarn.high{animation:pulse 1.2s ease-in-out infinite;}
@@ -595,6 +601,10 @@ module.exports = `
      the same ember, the same tint, no new colour and no gold. The word in the cell says it too, so
      this is not the only way to see it */
   .sh-cell.on{background:rgba(232,137,90,.13);box-shadow:inset 0 0 0 1.5px #e8895a;}
+  /* ...and the word in it carries the same weight as the ring, so the ring is never the only way
+     to see it. The scene cells already got this through .owned; the last row's do not, because
+     there the question is not whether you have the drawing but whether it is in play at all */
+  .sh-cell.on .sh-tag{color:var(--text);}
   /* WHAT THE ONE BUTTON IS AIMED AT, in the same ember and a different shape. The ring above says
      what IS; this bar lies on the bottom edge, directly under the price, and says what Buy pays.
      A SHAPE AND NOT A SECOND COLOUR: the screen has one accent and the two marks never land on one
@@ -612,6 +622,21 @@ module.exports = `
   .sh-cell.pick:hover:not(.on),.sh-cell.buy:hover:not(.aim){background:rgba(127,127,127,.09);}
   .sh-cell.pick:focus-visible,.sh-cell.buy:focus-visible{outline:2px solid var(--focus);
     outline-offset:1px;}
+  /* --- THE LAST ROW, which is not a fifth scene and is not drawn as one.
+     WHY IT IS NOT IN THE GRID ABOVE, in two parts. Mechanically: that grid is a RECTANGLE, every
+     scene given as many cells as the widest one has (webview.js), so a four-cell row among them
+     would make all four of them four wide, eleven of the twenty empty, and the shelf drop from two
+     columns to one. And in meaning: a scene holds exactly one drawing and always holds one, while
+     this holds a SET that may be empty, and empty is the useful state in it. Two shapes, two
+     places. So it sits under them, across the whole width, with a hairline between.
+     THE HAIRLINE IS THE DIVIDER, not a card and not a second accent: a box around it would make it
+     the loudest thing on a screen whose subject is the four scenes above. */
+  .sh-rand{margin-top:11px;padding-top:11px;border-top:1px solid var(--iborder);}
+  /* FOUR ACROSS WHERE THERE IS ROOM, two by two where there is not, by the same auto-fit the shelf
+     above uses and with the same 64px cell. Four of them plus the gaps come to 268 against the 273
+     this panel is built for; at a 250px sidebar four would be 40 wide, which is narrower than the
+     word inside them, and the row folds instead, which is what the scenes above do at that width */
+  .sh-rand .sh-opts{grid-template-columns:repeat(auto-fit,minmax(60px,64px));}
   /* AN EMPTY SLOT: the frame, and the word in the middle of it. NO PICTURE, which is the one thing
      that tells it from a drawing nobody can press: that one has a crab in it and says when the
      crab shows up, and this says only that something will go here */

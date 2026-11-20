@@ -45,6 +45,11 @@ module.exports = {
     const cells = () => doc.querySelectorAll('#shSlots .sh-cell');
     const cell = (key) => doc.querySelector('#shSlots .sh-cell[data-key="' + key + '"]');
     const soon = () => doc.querySelectorAll('#shSlots .sh-cell.soon');
+    // the last row, which is NOT in #shSlots: a set rather than a scene, so it is its own block
+    const rand = () => $('shRand');
+    const randCells = () => doc.querySelectorAll('#shRand .sh-cell');
+    const randSoon = () => doc.querySelectorAll('#shRand .sh-cell.soon');
+    const poolCell = (key) => doc.querySelector('#shRand .sh-cell[data-pool="' + key + '"]');
     const worn = () => cells().filter((c) => c.classList.contains('on'));
     const wornKeys = () => worn().map((c) => c.getAttribute('data-key') || (c.querySelector('.sh-pic') || {}).src || '?');
     const btn = () => $('shAct');
@@ -202,9 +207,15 @@ module.exports = {
 
     // ---------- 4. three kinds of cell ----------
     // a drawing with a picture: its own, out of the ones the panel itself points at
+    // every drawing the shelf shows anywhere: the four scenes, and the row under them that has no
+    // scene. Both kinds take their picture from the ones the panel itself points at, so a cell can
+    // never show something the crab box never draws
+    const shelfItems = shop.ITEMS.filter((i) => shop.POOL.indexOf(i.key) < 0);
     ok('every drawing on the shelf is the picture the panel would draw',
-      shop.ITEMS.every((i) => picOf(cell(i.key)) === artOf(i.key)),
-      shop.ITEMS.map((i) => i.key + (picOf(cell(i.key)) === artOf(i.key) ? ' ok' : ' MISMATCH')).join(' '));
+      shelfItems.every((i) => picOf(cell(i.key)) === artOf(i.key))
+      && shop.POOL.every((k) => picOf(poolCell(k)) === artOf(k)),
+      shelfItems.concat(shop.POOL.map((k) => ({ key: k })))
+        .map((i) => i.key + ((picOf(cell(i.key)) || picOf(poolCell(i.key))) === artOf(i.key) ? ' ok' : ' MISMATCH')).join(' '));
     // AN EMPTY SLOT HAS NO PICTURE. That is the separator that matters: it and the laptop crab are
     // both unpressable, so what tells them apart is that one of them has a crab in it
     ok('an empty slot carries no picture, no price and no name for what might go in it',
@@ -228,13 +239,15 @@ module.exports = {
       soon().every((c) => !c.hasAttribute('data-key') && !c.hasAttribute('data-slot')),
       soon().map((c) => c.getAttribute('data-key') + '/' + c.getAttribute('data-slot')).join(' '));
     ok('and nor is a drawing in a scene with nothing to choose between',
-      cell('idle').localName !== 'button' && cell('stunned').localName !== 'button'
-      && cell('despair').localName !== 'button',
-      ['idle', 'stunned', 'despair'].map((k) => k + ':' + cell(k).localName).join(' '));
-    // ...while the scene that HAS two of their own is pressable on both of them
-    ok('the scene with two drawings of their own is pressable on both',
-      cell('coding').localName === 'button' && cell('working').localName === 'button',
-      'coding:' + cell('coding').localName + ' working:' + cell('working').localName);
+      cell('stunned').localName !== 'button' && cell('despair').localName !== 'button',
+      ['stunned', 'despair'].map((k) => k + ':' + cell(k).localName).join(' '));
+    // ...while a scene that HAS two of their own is pressable on both of them. Quiet is one since
+    // the sleeping crab arrived beside the small one, which is what that drawing was for: it is
+    // the scene the panel is in most of the time and it was the one with nothing to choose
+    ok('a scene with two drawings of their own is pressable on both',
+      cell('coding').localName === 'button' && cell('working').localName === 'button'
+      && cell('idle').localName === 'button' && cell('sleep').localName === 'button',
+      ['idle', 'sleep', 'coding', 'working'].map((k) => k + ':' + cell(k).localName).join(' '));
     ok('the unbought drawing says what it costs, as the stake chips write a figure',
       cell('float').textContent.trim() === '1K', cell('float').textContent);
     ok('and every cell says what it is for a reader who cannot see it',
@@ -243,6 +256,43 @@ module.exports = {
       && cell('float').getAttribute('aria-label') === 'Floating crab, 1,000 credits',
       cells().map((c) => JSON.stringify(c.getAttribute('aria-label'))).join(' '));
 
+    // ---------- 4a. the row that has no scene ----------
+    // THE FIFTH ROW IS NOT A FIFTH SCENE, and the two reasons it is drawn apart are both checked
+    // here. In meaning: it has no moment to belong to, so what it says under its name is the only
+    // honest answer there is. Mechanically: the four above are a RECTANGLE sized by the widest
+    // scene, so a four-cell row inside it would make all four of them four wide and eleven of the
+    // twenty empty. It is out of that grid, under a hairline, in its own block.
+    ok('the last row is outside the shelf’s rectangle, so the four scenes keep their two cells',
+      !!rand() && !doc.querySelector('#shSlots [data-pool]')
+      && scenes().every((s) => s.querySelectorAll('.sh-cell').length === widest),
+      scenes().map((s) => s.querySelectorAll('.sh-cell').length).join(','));
+    ok('and it is divided off with a hairline rather than a card or a second accent',
+      /\.sh-rand\{[^}]*border-top:1px solid var\(--iborder\)/.test(css())
+      && !/\.sh-rand\{[^}]*background/.test(css()),
+      (/\.sh-rand\{[^}]*\}/.exec(css()) || ['(no rule)'])[0]);
+    ok('it names itself and says when, with the only answer it has',
+      rand().querySelector('.sh-sn').textContent === 'Random'
+      && rand().querySelector('.sh-sw').textContent === 'Now and then',
+      rand().querySelector('.sh-sn').textContent + '/' + rand().querySelector('.sh-sw').textContent);
+    ok('it holds four cells, the spare ones empty, as the scenes’ spare ones are',
+      randCells().length === 4 && randSoon().length === 4 - shop.POOL.length,
+      randCells().length + ' cells, ' + randSoon().length + ' empty');
+    // NOTHING IN HERE HAS A PRICE AND NOTHING EVER WILL. A drawing that cannot be summoned must
+    // not be something a reader paid for: the word under it is on or off, never a figure
+    ok('nothing in it carries a price: the word under it says whether it is in play',
+      shop.POOL.every((k) => /^(on|off)$/.test(poolCell(k).textContent.trim())),
+      shop.POOL.map((k) => k + ':' + JSON.stringify(poolCell(k).textContent.trim())).join(' '));
+    // ...AND IT IS ALWAYS PRESSABLE, unlike a scene with one drawing. A scene must always have
+    // something in it, so one drawing settles it; this may be empty, and emptying it is the whole
+    // of the off switch for a reader who does not want the panel changing under them
+    ok('every drawing in it is pressable, because off is a state this row may be in',
+      shop.POOL.every((k) => poolCell(k).localName === 'button' && poolCell(k).hasAttribute('aria-pressed')),
+      shop.POOL.map((k) => k + ':' + poolCell(k).localName).join(' '));
+    ok('and it says in words, not only with a ring, which it is',
+      shop.POOL.every((k) => poolCell(k).classList.contains('on')
+        && poolCell(k).getAttribute('aria-pressed') === 'true'
+        && /, in play$/.test(poolCell(k).getAttribute('aria-label'))),
+      shop.POOL.map((k) => JSON.stringify(poolCell(k).getAttribute('aria-label'))).join(' '));
     // ---------- 5. what is worn, and what is on sale ----------
     ok('one drawing is in use in every scene, and it is the four that come with the extension',
       worn().length === 4 && ['idle', 'coding', 'despair', 'stunned'].every((k) => cell(k).classList.contains('on')),
@@ -285,6 +335,28 @@ module.exports = {
     // ---------- 6. choosing, which is not buying ----------
     const ledger0 = JSON.stringify(h.gs.data.creditLedgerV1);
     const sent0 = h.sent('shop').length;
+    // THE LAST ROW'S PRESS, which is the third kind: not "which of these is in that moment" but
+    // "is this in play at all". It is here rather than beside the rest of that row because a press
+    // moves the keyboard, and what the focus is on entry is asserted above
+    poolCell(shop.POOL[0]).focus();
+    poolCell(shop.POOL[0]).click(); advance(40);
+    ok('one press takes a drawing out of play, and the screen waits for the host to say so',
+      !poolCell(shop.POOL[0]).classList.contains('on')
+      && poolCell(shop.POOL[0]).getAttribute('aria-pressed') === 'false'
+      && poolCell(shop.POOL[0]).textContent.trim() === 'off',
+      poolCell(shop.POOL[0]).getAttribute('aria-label'));
+    // A PRESS REBUILDS THE WHOLE SHELF, so the cell the keyboard was standing on is detached by
+    // the answer to its own press. The scenes' cells are handed back by name and this row's have
+    // to be too, or a reader on a keyboard is put back at the top of the panel every time
+    ok('and the keyboard is handed back to the cell that was pressed, not to the top of the panel',
+      doc.activeElement === poolCell(shop.POOL[0]),
+      doc.activeElement && (doc.activeElement.getAttribute('aria-label') || doc.activeElement.localName));
+    poolCell(shop.POOL[0]).click(); advance(40);
+    ok('and a second press puts it back',
+      poolCell(shop.POOL[0]).classList.contains('on'),
+      poolCell(shop.POOL[0]).getAttribute('aria-label'));
+    ok('and switching it costs nothing and buys nothing',
+      !stored() || stored().spent === 0, JSON.stringify(stored()));
     h.mouseClick(cell('working')); advance(20);   // a real press focuses the button it presses
     ok('a choice swaps the drawing in that scene',
       cell('working').classList.contains('on') && !cell('coding').classList.contains('on')

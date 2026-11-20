@@ -13,6 +13,13 @@
 // them: a placeholder is not a catalog row, which is also why nothing can be bought by naming one
 // (itemOf below believes the catalog and nothing else).
 //
+// 2026-11-20 added two drawings and neither is for sale: a sleeping crab, which joined the quiet
+// scene beside the small one, and a crab going into a black hole, which belongs to no scene at all
+// and is the first thing in the POOL (below). Both are free and the shelf still has one price on
+// it. Where a new drawing goes is a question with three answers in this file now, and they are
+// different shapes rather than three sizes of the same one: a scene's option, a scene's fallback,
+// or the pool.
+//
 // --- the money, and why this file owns its own record -------------------------------------------
 //
 // A purchase outlives the window, several windows share one purse, and a message that acted on the
@@ -79,11 +86,13 @@ const SLOT = 'mascot';
 // bought the floating crab" from "prefers the one that was always there".
 const ITEMS = Object.freeze([
   { key: 'idle', name: 'Small crab', price: 0 },
+  { key: 'sleep', name: 'Sleeping crab', price: 0 },
   { key: 'coding', name: 'Laptop crab', price: 0 },
   { key: 'working', name: 'Busy crab', price: 0 },
   { key: 'despair', name: 'Sinking crab', price: 0 },
   { key: 'stunned', name: 'Flat crab', price: 0 },
-  { key: 'float', name: 'Floating crab', price: 1000 }
+  { key: 'float', name: 'Floating crab', price: 1000 },
+  { key: 'blackhole', name: 'Black hole crab', price: 0 }
 ].map((s) => Object.freeze(s)));
 
 // SOLD ONCE AND NO LONGER OFFERED. Empty today, and it is here rather than waiting to be invented:
@@ -115,12 +124,48 @@ const RETIRED = Object.freeze([]);
 // `when` is SHORT because of where it is drawn: two scenes sit side by side at the sidebar width
 // this panel is built for, which leaves about 90px of 10.5px text, and a line that ellipsizes
 // explains nothing (measured, docs/game-panels.md section 2)
+//
+// QUIET HOLDS TWO AND ITS FALLBACK DID NOT MOVE. The sleeping crab (2026-11-20) went in beside the
+// small one rather than over it. `free` is what a reader who has pressed nothing sees, and the
+// quiet scene is the one the panel is in most of the time, so that drawing is the most looked-at
+// thing in this product: changing it would redraw every installed copy without anybody pressing
+// anything, which is precisely what this fallback exists to make impossible. It is also what turns
+// the one scene that could not be chosen in (`pick` was false with a single drawing) into a row
+// with something to press. Making the sleeping crab the default is one word here if that is wanted.
 const SLOTS = Object.freeze([
-  { id: 'quiet', name: 'Quiet', when: 'Nothing answered', free: 'idle', opts: ['idle'] },
+  { id: 'quiet', name: 'Quiet', when: 'Nothing answered', free: 'idle', opts: ['idle', 'sleep'] },
   { id: 'typing', name: 'Typing', when: 'Replies landing', free: 'coding', opts: ['coding', 'working'] },
   { id: 'burn', name: 'Burning', when: 'Limit mostly gone', free: 'despair', opts: ['despair', 'float'] },
   { id: 'spent', name: 'Spent', when: 'Limit used up', free: 'stunned', opts: ['stunned'] }
 ].map((s) => Object.freeze(Object.assign({}, s, { opts: Object.freeze(s.opts) }))));
+
+// --- THE POOL: DRAWINGS WITH NO SCENE -----------------------------------------------------------
+//
+// A scene is a condition: nothing answered, a reply landing, the limit nearly gone, the limit gone.
+// The pool is the absence of one. What is in it turns up now and then, for a few seconds, and then
+// is not there any more, and the whole of it is that there is no rule to find. It holds four and
+// there is one drawing in it today; the other three cells are empty on the shelf for the same
+// reason the scenes' spare cells are, and nothing can be bought or stored under them.
+//
+// IT IS NOT A SCENE AND IT IS NOT A FIFTH SLOT, which is a shape decision and not a label. A slot
+// holds exactly ONE drawing and always has one, because a moment the panel can be in must always
+// have something to draw. The pool holds a SET, it may be empty, and empty is a legal and useful
+// state: it is how a reader who does not want the panel changing under them turns the whole thing
+// off, in the one place they would look for it. Those are different objects and one name for both
+// would be a slot whose rules only half apply.
+//
+// NOTHING IS WON BY IT. Everything in here is free and stays free (see `price` below, and the
+// header's rule about the single price): paying for a drawing nobody can summon would be the worst
+// thing in this file. No credit is earned, spent or held by its appearing, nothing is recorded, and
+// the timer that shows it is the window's own and reads nothing but a clock (webview.js).
+const POOL_ID = 'pool';                 // what the preference stores the chosen set under
+const POOL_NAME = 'Random';
+// `when` answers the same question the scenes' does, with the only honest answer there is. The
+// screen may not be told the rest (which steps it skips, how rare): that is the panel explaining
+// itself, and this product does not do that on screen (docs/game-panels.md)
+const POOL_WHEN = 'Now and then';
+const POOL_CELLS = 4;                   // how many fit on the shelf's last row
+const POOL = Object.freeze(['blackhole']);
 
 const OPS = Object.freeze(['buy']);
 
@@ -151,6 +196,21 @@ for (const s of ITEMS.concat(RETIRED)) {
       const it = itemOf(k);
       if (!it) throw new Error('shop: ' + s.id + ' holds ' + k + ', which is not a row');
       if (k === s.free && it.price) throw new Error('shop: ' + s.id + ' falls back to something priced');
+    }
+  }
+  // ...and the pool: its key may not collide with a scene's (they share one preference object), it
+  // may not outgrow the row it is drawn on, everything in it has to be a row of the catalog, and
+  // nothing in it may ALSO belong to a scene. That last one is the rule worth stating: a drawing
+  // that is both a scene's answer and a random one would turn up meaning "this is the state" and
+  // meaning "this is nothing" and the reader could not tell the two apart.
+  if (BY_SLOT.has(POOL_ID)) throw new Error('shop: the pool and a scene claim the id ' + POOL_ID);
+  if (POOL.length > POOL_CELLS) throw new Error('shop: the pool holds more than its row shows');
+  for (const k of POOL) {
+    const it = itemOf(k);
+    if (!it) throw new Error('shop: the pool holds ' + k + ', which is not a row');
+    if (it.price) throw new Error('shop: ' + k + ' is in the pool and priced; nothing unsummonable is sold');
+    for (const s of SLOTS) {
+      if (s.opts.indexOf(k) >= 0) throw new Error('shop: ' + k + ' is both a ' + s.id + ' drawing and a random one');
     }
   }
 })();
@@ -332,6 +392,40 @@ function wornSlots(ownedSlots, pref) {
   }
   return out;
 }
+// WHAT IS IN PLAY, by the same discipline one line up: every way of being wrong lands in one
+// place. A stored list can name a drawing this build dropped, one that was never in the pool, or
+// one whose purchase lost a merge, and the answer to all of them is that it is not in play.
+//
+// NOTHING STORED MEANS EVERYTHING IS IN PLAY, which is the one default worth arguing. A gimmick
+// nobody has seen is not one, and unlike a changed scene default this adds a four-second showing
+// roughly three times in a working day and leaves every other second of the panel exactly as it
+// was. It is also off again in one press, and that press is on the drawing itself.
+function randomPool(ownedSlots, pref) {
+  const want = (pref && Array.isArray(pref[POOL_ID])) ? pref[POOL_ID] : null;
+  const out = [];
+  for (const k of POOL) {
+    if (!heldIn(ownedSlots, k)) continue;
+    if (!want || want.indexOf(k) >= 0) out.push(k);
+  }
+  return out;
+}
+// The pool preference after one press, or null when the press changes nothing.
+// A SET AND NOT A TOGGLE: the window says which state it wants rather than "the other one", so two
+// windows pressing at the same moment land on a value instead of flipping past each other. The
+// result is in the catalog's order, so one set reads the same whichever window wrote it.
+function poolAfter(ownedSlots, pref, key, on) {
+  if (POOL.indexOf(key) < 0) return null;
+  const now = randomPool(ownedSlots, pref);
+  const want = on ? now.concat([key]) : now.filter((k) => k !== key);
+  const out = POOL.filter((k) => want.indexOf(k) >= 0);
+  return (out.length === now.length && out.every((k, i) => k === now[i])) ? null : out;
+}
+// Why `key` cannot be switched, or null. Asked on the message for the reason whyNotWear is
+function whyNotPool(ownedSlots, key) {
+  if (POOL.indexOf(key) < 0) return 'that is not one of the random drawings';
+  if (!heldIn(ownedSlots, key)) return 'that has not been bought';
+  return null;
+}
 // Why `slot` cannot be given `key`, or null. The host asks this on the message, so the screen is
 // not what stops it: a drawing nobody bought cannot be worn however the press was made
 function whyNotWear(ownedSlots, slot, key) {
@@ -406,7 +500,18 @@ function view(rec) {
         // it and nothing would happen (docs/game-panels.md, section 2)
         pick: opts.filter((o) => o.owned).length > 1
       };
-    })
+    }),
+    // THE LAST ROW, and what is NOT in it: which of these is in play. That rides the push beside
+    // the worn scenes (`push` below) for the same reason they do, and a second copy of it here
+    // could disagree with that one between two messages. The cell count IS here, because an empty
+    // cell is a shape and not a state
+    pool: {
+      id: POOL_ID, name: POOL_NAME, when: POOL_WHEN, cells: POOL_CELLS,
+      opts: POOL.map((k) => {
+        const it = itemOf(k);
+        return { key: k, name: it.name, price: it.price, owned: owns(st, k) };
+      })
+    }
   };
 }
 
@@ -416,7 +521,7 @@ function view(rec) {
 // `pref` is the reader's stored choice, which is the host's (globalState) and not this module's
 function push(rec, pref) {
   const owned = ownedList(rec || fresh(''));
-  return { owned: owned, slots: wornSlots(owned, pref) };
+  return { owned: owned, slots: wornSlots(owned, pref), pool: randomPool(owned, pref) };
 }
 
 // --- the host side ------------------------------------------------------------------------------
@@ -494,10 +599,11 @@ function createHandler(deps) {
 }
 
 module.exports = {
-  // the catalog and the four scenes
+  // the catalog, the four scenes, and the pool that is not one
   ITEMS, SLOTS, RETIRED, PRICES, SLOT, OPS, slotOf, itemOf, owns, heldIn,
+  POOL, POOL_ID, POOL_NAME, POOL_WHEN, POOL_CELLS,
   // what the preference and the record mean together. The host's, and nobody else's
-  wornSlots, whyNotWear,
+  wornSlots, whyNotWear, randomPool, poolAfter, whyNotPool,
   // storage: the rules credits.js calls rather than copies
   clean, load, save, newer, merge, same, kept, netOf, REC_FIELDS, MAX_FIELDS,
   // the game that is not a game

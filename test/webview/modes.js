@@ -14,6 +14,10 @@
 //   focused optional: false says the editor's focus was NOT in this webview when the page loaded,
 //           by mode name (a window opening on a stored tab while the user types somewhere else)
 //   html    optional: (html, mode) -> html, to break the page before it is parsed
+//   timers  optional: true says this mode's clock RUNS setInterval, by mode name. Off everywhere
+//           else, and deliberately: a repeating timer makes advance() mean something different in
+//           every assertion that uses it, so it is opted into by the one mode whose subject is a
+//           thing that happens on its own rather than on a push
 //   run     (h, mode) -> void. `h` is the harness handle table.test.js builds; see its header
 //
 // It must be requirable on its own: the engines and the host come from `h`, so loading this register

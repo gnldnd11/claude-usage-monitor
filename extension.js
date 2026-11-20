@@ -1525,6 +1525,23 @@ class UsageViewProvider {
           push();
         }
       }
+      // WHETHER A DRAWING WITH NO SCENE IS IN PLAY. The same preference object, a different shape
+      // in it (a list, under a key that may not be a scene's: shop.js asserts that at load), and
+      // the same two rules: the host refuses, and the data push is the only thing that says what
+      // the state now is. `on` is the state the window WANTS rather than "the other one", so two
+      // windows pressing at once settle on a value instead of flipping past each other.
+      else if (m.type === 'mascotPool' && typeof m.key === 'string') {
+        const why = shop.whyNotPool(shopHandler.owned(), m.key);
+        if (why) logLine('[mascot] pool ' + m.key + ': ' + why);
+        else {
+          const next = shop.poolAfter(shopHandler.owned(), mascotSlots, m.key, m.on !== false);
+          if (next) {
+            mascotSlots = Object.assign({}, mascotSlots, { [shop.POOL_ID]: next });
+            if (extContext) extContext.globalState.update('mascotSlotsV1', mascotSlots);
+            push();
+          }
+        }
+      }
       else if (m.type === 'setAppearance' && m.name) {
         if (m.appearance) agentAppearance[m.name] = m.appearance; else delete agentAppearance[m.name];
         if (extContext) extContext.globalState.update('agentAppearanceV1', agentAppearance);
@@ -1580,6 +1597,9 @@ class UsageViewProvider {
     // right now (webview.js, MASCOT_ART)
     const mascotCodingUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-coding.png'));
     const mascotFloatUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-float.png'));
+    // the quiet scene's second drawing, and the one that belongs to no scene at all (shop.js, POOL)
+    const mascotSleepUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-sleep.png'));
+    const mascotBlackholeUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-blackhole.png'));
     // the two doors of the crossroads the credits button opens (html.js, #panelCross)
     const heroGamesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'hero-games.png'));
     const heroShopUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'hero-shop.png'));
@@ -1629,7 +1649,8 @@ class UsageViewProvider {
       csp: webview.cspSource,
       scriptUri, crabUri,
       mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
-      mascotCodingUri, mascotFloatUri, heroGamesUri, heroShopUri,
+      mascotCodingUri, mascotFloatUri, mascotSleepUri, mascotBlackholeUri,
+      heroGamesUri, heroShopUri,
       roomMinecraftUri, assetsJson, gameList, gameScripts
     });
   }

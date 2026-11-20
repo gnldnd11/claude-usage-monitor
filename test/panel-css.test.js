@@ -115,6 +115,7 @@ const PAGE = require(path.join(ROOT, 'html.js')).renderHtml({
   mascotIdleUri: 'mascot-idle.png', mascotWorkingUri: 'mascot-working.png',
   mascotDespairUri: 'mascot-despair.png', mascotStunnedUri: 'mascot-stunned.png',
   mascotCodingUri: 'mascot-coding.png', mascotFloatUri: 'mascot-float.png',
+  mascotSleepUri: 'mascot-sleep.png', mascotBlackholeUri: 'mascot-blackhole.png',
   heroGamesUri: 'hero-games.png', heroShopUri: 'hero-shop.png',
   roomMinecraftUri: 'room-minecraft.png',
   assetsJson: '{}', gameList: [], gameScripts: []
@@ -196,12 +197,14 @@ function pngSize(name) {
 }
 const apng = require('./apng');
 const INK = {};   // per state: the canvas, the frame count, and the ink's union over the frames
-// SIX, not four: the activity axis added `coding` and `float` beside the four steps, and they are
-// two more ratios going into the same box (353x223 and 345x320 against 160x90, 320x268, 480x570).
-// Every number below is computed out of these files' own headers, so a seventh drawing with a
-// seventh ratio fails here rather than on screen.
+// EIGHT, not four: the activity axis added `coding` and `float` beside the four steps, the quiet
+// scene took a second drawing (`sleep`), and `blackhole` belongs to no step or scene at all and
+// covers whatever is there for four seconds now and then (webview.js, the cameo). It is in here
+// because it goes into the SAME BOX through the same attribute, so every geometry rule below
+// applies to it exactly as it does to a scene's drawing. Eight ratios, 0.84 to 1.78, and every
+// number is computed out of these files' own headers, so a ninth fails here rather than on screen.
 const STATES = ['mascot-idle.png', 'mascot-working.png', 'mascot-despair.png', 'mascot-stunned.png',
-  'mascot-coding.png', 'mascot-float.png'];
+  'mascot-coding.png', 'mascot-float.png', 'mascot-sleep.png', 'mascot-blackhole.png'];
 
 const wrap = declOf('.mascot-wrap') || {};
 const img = declOf('.sparkle') || {};
@@ -218,7 +221,7 @@ function renderedHeight(state) {
   return w == null ? null : w / (s.w / s.h);
 }
 const heights = STATES.map(renderedHeight);
-ok('the six mascot drawings lay out at one height',
+ok('the eight mascot drawings lay out at one height',
   heights.every((v) => v != null) && new Set(heights).size === 1,
   STATES.map((s, i) => s.replace(/^mascot-|\.png$/g, '') + ' ' + heights[i]).join(', '));
 ok('and that height is the box’s, so no state can move what is under it',
@@ -294,7 +297,7 @@ ok('the ink is found inside the canvas, not assumed to fill it', padded.length >
 // handed: a state with no data-* of its own would leave the picture on whatever was there before
 const mascotEl = DOC.getElementById('mascot');
 const named = STATES.map((f) => f.replace(/^mascot-|\.png$/g, ''));
-ok('the page hands the script all six drawings by name, each pointing at its own file',
+ok('the page hands the script all eight drawings by name, each pointing at its own file',
   named.every((s, i) => mascotEl.getAttribute('data-' + s) === STATES[i]),
   named.map((s) => s + '=' + mascotEl.getAttribute('data-' + s)).join(' '));
 

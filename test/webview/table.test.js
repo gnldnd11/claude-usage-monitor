@@ -22,6 +22,7 @@ const MODE = process.argv[2] || 'normal';
 const EXT = process.env.EXT || path.join(__dirname, '..', '..');
 const CASE = modes.forMode(MODE);                      // throws on a name no file claims
 const START = (CASE.start && CASE.start[MODE]) || 1000;
+const TIMERS = !!(CASE.timers && CASE.timers[MODE]);   // see modes.js: opted into, never default
 const HOME = fs.mkdtempSync(path.join(process.env.CUC_TABLE_TMPDIR || os.tmpdir(), 'cuc-table-')); // run.js passes a parent it cleans up
 
 let fails = 0;
@@ -121,7 +122,12 @@ try {
     } }),
     requestAnimationFrame: (f) => later(16, guard(() => f(now))),
     setTimeout: (f, ms) => later(ms, guard(f)), clearTimeout: cancel,
-    setInterval: () => 0, clearInterval() {},
+    // A REPEATING TIMER IS OFF unless the mode asks for one. advance() is the clock every
+    // assertion in every mode is written against, and a timer that re-arms itself changes what a
+    // number passed to it means, so the thirty-six modes whose subject arrives on a push keep the
+    // stub they have always had. The one whose subject happens on its OWN (the cameo) opts in
+    setInterval: TIMERS ? (f, ms) => { const g = guard(f); const tick = () => { later(ms, tick); g(); }; return later(ms, tick); } : () => 0,
+    clearInterval() {},
     matchMedia: (qs) => ({ matches: /(^|-)reduce$/.test(MODE) && /reduced-motion/.test(qs) }), // reduce, header-reduce, hilo-reduce
     ResizeObserver: function (cb) { const rec = { cb, targets: [] }; roCbs.push(rec); this.observe = (t) => rec.targets.push(t); },
     // THE VIEWPORT, which is what the two responsive thresholds read. `innerWidth` is the whole of
@@ -137,6 +143,12 @@ try {
   sandbox.window = sandbox;
   toWebview = (m) => { try { winMessage({ data: m }); } catch (e) { errors.push(e); } };
   vm.createContext(sandbox);
+  // A SEEDABLE COIN. One thing on this page decides something for itself rather than being told
+  // (the cameo: how rare, and which drawing), and a test of "now and then" that waited for chance
+  // would be a test that fails on some runs. So the page's Math.random is a wrapper around one a
+  // mode may replace, and until a mode replaces it this is the real one, bit for bit.
+  sandbox.__cucRand = Math.random;
+  vm.runInContext('Math.random = function () { return __cucRand(); };', sandbox);
   // Every script the page carries, in the order the HTML lists them: webview.js first, then one
   // panel per registered game. Taken from the rendered HTML rather than listed here, so a game
   // added to games/registry.js is loaded by this harness without touching it
@@ -268,6 +280,9 @@ try {
     reopenTable, dealerCards, allCards, isBack, lineText, hdrBal, latchIdle, active, activeName,
     mouseClick, ledgerBalance, useSeed, standOut, watch, noStaleTimer,
     sent: sentOf, sentOps, sentHl, hostLog, errors, roCbs,
+    // the page's coin, for the one mode whose subject is chance. Called with nothing, it is the
+    // real Math.random again
+    setRandom: (f) => { sandbox.__cucRand = typeof f === 'function' ? f : Math.random; },
     toWebview: (m) => toWebview(m),
     hostSend: (m) => hostOnMessage(m),
     ext, bj, credits, registry, gs, config

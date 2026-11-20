@@ -206,12 +206,17 @@ function playShop({ purse, owned, slots }) {
   h.handle({ type: 'shop', op: 'open', n: 1 });
   const v = sent[sent.length - 1].state;
   const worn = shop.wornSlots(v.owned, slots || {});
+  // ...and the row that has no scene, which the push carries beside the worn ones: a shot without
+  // it would draw that row switched off, and the measurement would be of a screen nobody has
+  const pool = shop.randomPool(v.owned, slots || {});
   return {
     sent,
     owned: v.owned,
     slots: worn,
+    pool,
     note: v.owned.length + ' bought, purse ' + balance() + ', spent ' + v.spent
       + ', worn ' + Object.keys(worn).map((k) => k + '=' + worn[k]).join(' ')
+      + ', in play ' + (pool.join(' ') || 'nothing')
   };
 }
 
@@ -356,9 +361,14 @@ const SHOTS = {
 // reader's stored choice read against what they own, in one place (shop.js, wornSlots)
 function shopPush(owned, pref) {
   const shop = require(path.join(ROOT, 'shop.js'));
-  return { owned: owned || [], slots: shop.wornSlots(owned || [], pref || {}) };
+  // the worn scenes AND the row that has no scene, both as the host resolves them: a shot that
+  // left the pool out would draw that row switched off and nothing would say why
+  return {
+    owned: owned || [], slots: shop.wornSlots(owned || [], pref || {}),
+    pool: shop.randomPool(owned || [], pref || {})
+  };
 }
-function usageData({ pct, weekly, warn, session, stale, quiet, bought, shop }) {
+function usageData({ pct, weekly, warn, session, stale, quiet, bought, worn, shop }) {
   const now = Date.now(), sec = Math.floor(now / 1000);
   const agents = [
     { name: 'code-reviewer', model: 'opus', description: 'Reviews a change.' },
@@ -401,9 +411,11 @@ function usageData({ pct, weekly, warn, session, stale, quiet, bought, shop }) {
     // WHAT THE SHOP HAS SOLD AND WHICH CRAB IS IN WHICH SCENE. A push carries this whether the
     // shop has ever been opened or not (extension.js), and every drawing but one is chosen by it.
     // --bought buys the floating crab and puts it in the scene it is sold for, which is the only
-    // way to reach that drawing here: --quiet alone measures the small crab, since the quiet scene
-    // has nothing else in it
-    shop: shop || shopPush(bought ? ['mascot:float'] : [], bought ? { burn: 'float' } : {}),
+    // way to reach that drawing here. --worn reaches the rest: a scene with more than one FREE
+    // drawing in it (the quiet one, since the sleeping crab arrived) cannot be measured any other
+    // way, because the drawing it falls back to is the one that was always there.
+    shop: shop || shopPush(bought ? ['mascot:float'] : [],
+      Object.assign(bought ? { burn: 'float' } : {}, worn || {})),
     credits: { balance: 1240, today: 86, frac: 3, perCredit: 10000, counting: false },
     cfg: { statusBar: 'session+weekly', panelHidden: [], burnRate: true }
   };
@@ -560,6 +572,7 @@ function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, c
     // the activity axis's two drawings and the crossroads' two doors: the page names them all, so
     // leaving one out here measures a box with a broken image in it
     mascotCodingUri: 'mascot-coding.png', mascotFloatUri: 'mascot-float.png',
+    mascotSleepUri: 'mascot-sleep.png', mascotBlackholeUri: 'mascot-blackhole.png',
     heroGamesUri: 'hero-games.png', heroShopUri: 'hero-shop.png',
     roomMinecraftUri: 'room-minecraft.png',
     assetsJson, gameList, gameScripts: registry.panels()
@@ -806,7 +819,7 @@ function flags(argv) {
 // the run fell through to its default (every listing shot, into media/) and overwrote the six
 // PNGs the marketplace README serves off raw.githubusercontent. A subtree push would have shipped
 // them. The default run is the destructive one, so it may not be what a typo lands on.
-const KNOWN = BOOLS.concat(['only', 'theme', 'width', 'dpr', 'bg', 'out', 'purse', 'probe', 'pct', 'click']);
+const KNOWN = BOOLS.concat(['only', 'theme', 'width', 'dpr', 'bg', 'out', 'purse', 'probe', 'pct', 'click', 'worn']);
 const USAGE = [
   'node tools/shoot-panels.mjs [--only <shot,shot>] [--theme light|dark|both] [--probe <sel,sel>]',
   '',
@@ -819,6 +832,8 @@ const USAGE = [
   '  --stale          push a usage reading 18 minutes old, which shows the freshness row',
   '  --quiet          push the last reply as ten minutes old, which is the mascot\'s quiet drawing',
   '  --bought         the floating crab has been bought and is in the scene it is sold for',
+  '  --worn <s=k,..>  which drawing is in which scene, as a stored choice (quiet=sleep). The only',
+  '                   way to reach the second FREE drawing in a scene, since the fallback wins',
   '  --click <sel>    press something once the replies have been drawn, then measure',
   '  --out <dir>      write the PNGs somewhere other than media/',
   '  --width --dpr --bg --pct --purse --warn --theme --keep --list'
@@ -869,7 +884,14 @@ async function main() {
       messages = [{ type: 'weekly', data: r }];
       note = r.days.length + ' days, ' + r.team.rows.length + ' PCs, account ' + r.plan.pct + '%';
     } else if (shot.usage) {
-      const want = Object.assign({ warn: !!f.warn, session: !f['no-session'], stale: !!f.stale, quiet: !!f.quiet, bought: !!f.bought }, shot.usage, f.pct != null ? { pct: Number(f.pct) } : null);
+      // --worn quiet=sleep,typing=working: which drawing is in which scene, as the reader's own
+      // stored choice. Unknown scenes and drawings are dropped by shop.js, not here
+      const worn = String(f.worn || '').split(',').filter(Boolean).reduce((o, pair) => {
+        const [k, v] = pair.split('=');
+        if (k && v) o[k.trim()] = v.trim();
+        return o;
+      }, {});
+      const want = Object.assign({ warn: !!f.warn, session: !f['no-session'], stale: !!f.stale, quiet: !!f.quiet, bought: !!f.bought, worn }, shot.usage, f.pct != null ? { pct: Number(f.pct) } : null);
       messages = [{ type: 'data', data: usageData(want) }];
       note = (want.session === false ? 'no 5h limit on this account' : 'session ' + want.pct + '%')
         + ', weekly ' + want.weekly + '%' + (want.warn ? ', burn-rate warning' : '')
@@ -884,7 +906,7 @@ async function main() {
       const s = playShop(Object.assign({ purse }, shot.shop));
       // the data push first (what the shop has sold, and the readings the header needs), then the
       // shop's own reply: the screen asks for itself on entry, and this is that answer
-      messages = [{ type: 'data', data: usageData({ pct: 42, weekly: 61, session: true, quiet: !!f.quiet, shop: { owned: s.owned, slots: s.slots } }) }].concat(s.sent);
+      messages = [{ type: 'data', data: usageData({ pct: 42, weekly: 61, session: true, quiet: !!f.quiet, shop: { owned: s.owned, slots: s.slots, pool: s.pool } }) }].concat(s.sent);
       note = s.note;
     } else {
       const played = playUntil(shot.dir || shot.game, shot, purse);

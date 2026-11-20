@@ -1088,6 +1088,12 @@
   function mascotWorn() {
     return (lastData && lastData.shop && lastData.shop.slots) || {};
   }
+  // ...and which drawings belong to no scene at all but are in play (shop.js, POOL). Same source,
+  // same reason: the host resolved it against what the reader owns, and a window working it out
+  // for itself would be a second answer. Empty is a legal answer and means nothing ever appears
+  function mascotPool() {
+    return (lastData && lastData.shop && lastData.shop.pool) || [];
+  }
 
   // --- the one figure a list row may carry, on the right of the row.
   //
@@ -1399,7 +1405,7 @@
   var sh = {
     st: null, busy: false, op: null, n: 0, to: null, wantFocus: false, pressed: null, aim: null,
     // what the last push said, in two halves (shopFromPush), and the worn map it said it with
-    sigOwned: null, sigWorn: null, worn: null, justBought: false, opKey: null
+    sigOwned: null, sigWorn: null, worn: null, pool: null, justBought: false, opKey: null
   };
 
   function shopMarkup() {
@@ -1420,7 +1426,16 @@
       + '<div class="bj-sr" id="shLive" aria-live="polite"></div>'
       + '<div class="bj-note" id="shNote" hidden></div>'
       + '<div class="warnbar" id="shErr" hidden></div>'
-      + '<div class="bj-ctl" id="shCtl" hidden><button type="button" class="bj-btn primary" id="shAct">Buy</button></div>';
+      + '<div class="bj-ctl" id="shCtl" hidden><button type="button" class="bj-btn primary" id="shAct">Buy</button></div>'
+      // ...AND THEN THE ROW THAT HAS NO SCENE, below the button rather than above it. Everything
+      // over that button is what the button acts on: the shelf is what a press chooses and buys
+      // into, the block is what it will buy, the button buys it. This row has no price, no button
+      // and no part in that, so it goes after the thing it has nothing to do with. Measured, it is
+      // also what keeps Buy where it was: in front of this row the control sat at 606 on a 351px
+      // sidebar, which is under the fold of a 600-tall one, and behind it the button is at 486.
+      // When there is nothing left to buy the block and the button leave together and this simply
+      // moves up under the shelf, so neither order leaves a hole
+      + '<div class="sh-rand" id="shRand"></div>';
   }
   // Built the first time the shop is opened, like a game's panel and for the same reason: a reader
   // who never opens it pays nothing for it in the first paint
@@ -1436,6 +1451,14 @@
       if (!c) return;
       if (c.classList.contains('buy')) shopPick(c.getAttribute('data-key'));
       else shopWear(c.getAttribute('data-slot'), c.getAttribute('data-key'));
+    });
+    // AND A THIRD KIND OF PRESS, on its own row: not "which of these is in that moment" but
+    // "is this in play at all". It is a SWITCH, and the state it asks for is the one the cell is
+    // not in now, so two windows pressing at once settle rather than flip past each other
+    el('shRand').addEventListener('click', function (e) {
+      var c = e.target.closest ? e.target.closest('button.sh-cell') : null;
+      if (!c) return;
+      shopPoolSet(c.getAttribute('data-pool'), c.getAttribute('aria-pressed') !== 'true');
     });
     el('shAct').addEventListener('click', shopAct);
     return node;
@@ -1525,6 +1548,37 @@
       + ' aria-pressed="' + (on ? 'true' : 'false') + '"'
       + ' aria-label="' + esc(o.name + ', ' + what) + '">' + body + '</button>';
   }
+  // A CELL ON THE LAST ROW, which asks a different question from every cell above it. Those say
+  // which ONE drawing is in a moment; this says whether a drawing that belongs to no moment is in
+  // play at all. So the ring is the same ring and means the same thing it always means (this one
+  // is showing), and the word under it is `on` or `off` rather than what it cost: nothing in this
+  // row costs anything and nothing ever will (shop.js, POOL).
+  // IT IS ALWAYS PRESSABLE, unlike a scene with one drawing. A scene must always have something in
+  // it, so one drawing settles it and the cell is not a button; a pool may be empty, and emptying
+  // it is how a reader who does not want the panel changing under them turns the whole thing off.
+  function shopPoolCellHtml(o, on) {
+    var art = shopArt(o.key);
+    return '<button type="button" class="sh-cell pick' + (on ? ' on' : '') + '"'
+      + ' data-pool="' + esc(o.key) + '" aria-pressed="' + (on ? 'true' : 'false') + '"'
+      + ' aria-label="' + esc(o.name + ', ' + (on ? 'in play' : 'off')) + '">'
+      + (art ? '<img class="sh-pic' + (inkLift(o.key) ? ' ink-lift' : '') + '" src="' + art + '" alt=""/>' : '')
+      + '<span class="sh-tag">' + (on ? 'on' : 'off') + '</span></button>';
+  }
+  // The row itself: the same heading the scenes have, because it answers the same question with
+  // the only answer it has, and then the cells. The empty ones are the scenes' empty ones exactly
+  function shopPoolHtml() {
+    var p = sh.st && sh.st.pool;
+    if (!p || !p.opts) return '';
+    var on = mascotPool(), j;
+    var html = '<div class="sh-shead"><span class="sh-sn">' + esc(p.name) + '</span>'
+      + '<span class="sh-sw">' + esc(p.when) + '</span></div>'
+      // no inline column count here: this row is four across or two by two by its own rule
+      // (styles.js, .sh-rand .sh-opts) rather than by the widest scene above it
+      + '<div class="sh-opts" role="group" aria-label="' + esc(p.name) + '">';
+    for (j = 0; j < p.opts.length; j++) html += shopPoolCellHtml(p.opts[j], on.indexOf(p.opts[j].key) >= 0);
+    for (j = p.opts.length; j < p.cells; j++) html += shopSoonHtml();
+    return html + '</div>';
+  }
   // An empty slot: the frame, the word, and no picture. It says that more goes here without saying
   // what, because that has not been decided
   function shopSoonHtml() {
@@ -1540,7 +1594,10 @@
     // which cell the keyboard is on, before this repaint takes it away (restored at the end)
     var was = document.activeElement;
     var onCell = (was && was.closest) ? was.closest('.sh-cell') : null;
-    var keep = onCell && [onCell.getAttribute('data-slot'), onCell.getAttribute('data-key')];
+    // a cell is named by its scene and its drawing, or, on the last row, by its drawing alone
+    var keep = onCell && (onCell.getAttribute('data-pool')
+      ? '[data-pool="' + onCell.getAttribute('data-pool') + '"]'
+      : '[data-slot="' + onCell.getAttribute('data-slot') + '"][data-key="' + onCell.getAttribute('data-key') + '"]');
     // every scene shows the same number of cells, which is as many as the widest one has: the
     // shelf is a rectangle and the spare cells are where the next drawing goes
     var wide = 1;
@@ -1567,6 +1624,7 @@
       html += '</div></div>';
     }
     el('shSlots').innerHTML = html;
+    el('shRand').innerHTML = shopPoolHtml();
     // what is on sale, and the one control. Both leave together when there is nothing left to buy
     el('shTry').hidden = !sale;
     el('shCtl').hidden = !sale;
@@ -1600,7 +1658,7 @@
     // BEFORE the replace rather than remembered from the press, and handed back after, through
     // refocusIn so that a document which does not hold the focus is handed nothing
     if (keep) {
-      var again = el('shSlots').querySelector('.sh-cell[data-slot="' + keep[0] + '"][data-key="' + keep[1] + '"]');
+      var again = node.querySelector('.sh-cell' + keep);
       if (again) refocusIn(node, again, false);
     }
   }
@@ -1611,6 +1669,12 @@
   function shopWear(slot, key) {
     if (!slot || !key) return;
     vscode.postMessage({ type: 'mascotSlot', slot: slot, key: key });
+  }
+  // ...and switching one that belongs to no scene in or out. Same rule, same silence: the host
+  // refuses or stores it, and the data push is what says what the state now is
+  function shopPoolSet(key, on) {
+    if (!key) return;
+    vscode.postMessage({ type: 'mascotPool', key: key, on: !!on });
   }
   // Pointing the one button at a price. NOTHING IS SENT AND NOTHING IS STORED: no money moves, the
   // host is not asked, and the next repaint would work the same answer out again. A cursor is the
@@ -1715,7 +1779,9 @@
   //   and in the window that did not make it. A reply does NOT carry it and so may not move this
   //   half: one that did would leave the next push looking like a change nobody made.
   function shopOwnedSig(s) { return (s.owned || []).join(','); }
-  function shopWornSig(s) { return JSON.stringify(s.slots || {}); }
+  // the last row rides the same half: what is in play is a choice, it comes on the push, and a
+  // press on it is a repaint rather than a round trip, here and in the window that did not press
+  function shopWornSig(s) { return JSON.stringify(s.slots || {}) + '|' + (s.pool || []).join(','); }
   function shopFromPush(d) {
     var s = d && d.shop;
     if (!s) return;
@@ -1723,14 +1789,27 @@
     var first = sh.sigOwned == null;
     var ownedMoved = !first && ownedSig !== sh.sigOwned;
     var wornMoved = !first && wornSig !== sh.sigWorn;
-    var was = sh.worn;
-    sh.sigOwned = ownedSig; sh.sigWorn = wornSig; sh.worn = s.slots || {};
+    var was = sh.worn, wasPool = sh.pool;
+    sh.sigOwned = ownedSig; sh.sigWorn = wornSig; sh.worn = s.slots || {}; sh.pool = s.pool || [];
     if (first || curDoor() !== 'shop') return;
     if (ownedMoved) { if (!sh.busy) shopSend('open'); return; }
     if (!wornMoved) return;
     renderShop();
     if (sh.justBought) sh.justBought = false;      // the purchase has already been read out
-    else shopSceneLive(was, s.slots || {});
+    else if (!shopPoolLive(wasPool, s.pool || [])) shopSceneLive(was, s.slots || {});
+  }
+  // A switch, read out, and whether there was one: the scene reader below is asked only when
+  // there was not, since one press cannot be both
+  function shopPoolLive(was, now) {
+    var p = sh.st && sh.st.pool;
+    if (!p || !p.opts || !was) return false;
+    for (var i = 0; i < p.opts.length; i++) {
+      var k = p.opts[i].key, on = now.indexOf(k) >= 0;
+      if (on === (was.indexOf(k) >= 0)) continue;
+      setLive('shLive', p.opts[i].name + (on ? ' is in play.' : ' is off.'));
+      return true;
+    }
+    return false;
   }
   // A choice, read out: the scene that MOVED and what is in it now. The names are the shelf's own,
   // so this says nothing the screen is not also showing
@@ -1775,6 +1854,8 @@
     // the freshness row has to be able to APPEAR without a push, since the thing it reports is
     // the absence of one. It is cheap: two class toggles and a string
     renderFreshness(lastData);
+    // ...and the drawing with no scene, which is the other thing here that happens without a push
+    cameoTick();
   }
   setInterval(tick, 1000);
 
@@ -1915,6 +1996,114 @@
     return !t || (Date.now() - t) >= QUIET_MS;
   }
 
+  // --- A DRAWING WITH NO SCENE ----------------------------------------------------------------
+  //
+  // Everything above answers a question about the account: how much of the limit is gone, and
+  // whether anything is being answered. This answers none. It is a drawing that turns up now and
+  // then for a few seconds and is then not there any more, and the whole of it is that there is no
+  // rule to find.
+  //
+  // IT CANNOT BE SUMMONED AND NOTHING IS WON BY IT. No credit is earned, spent or held by its
+  // appearing, nothing is recorded, no message is sent when it does, and spending more tokens does
+  // not make it likelier: the clock below is the only input. Two windows run their own and will
+  // disagree, which is right for a decoration, and neither takes the focus or moves anything: the
+  // picture goes into the same fixed 88x74 box every state uses (styles.js, .mascot-wrap), so the
+  // card is the same height during one as it is the rest of the time.
+  //
+  // IT IS COUNTED IN TICKS AND NOT IN WALL CLOCK, which is the one implementation choice here
+  // worth writing down. The panel already has a one-second tick and that tick IS the unit the
+  // rarity is stated in: a second of a panel somebody could have been looking at. A clock would
+  // count a laptop that was shut for the afternoon and hand the reader three of these in a row on
+  // waking, and it would count a sidebar that was closed all morning. So the counter below only
+  // moves when the tick runs and the document is visible, and "twenty minutes" means twenty
+  // minutes of that.
+  //
+  // HOW RARE, in two numbers, because one would not do it.
+  //   CAMEO_FLOOR  Nothing twice inside five minutes. "No pattern" has to stop short of "it keeps
+  //                doing it": two showings thirty seconds apart read as a beat and five minutes
+  //                apart do not. It is also longer than the quiet threshold above (180s), so a
+  //                cameo can never be the SECOND thing that changes the crab inside one quiet
+  //                transition. It is counted from a panel OPENING too, so the first thing a reader
+  //                sees is never this.
+  //   CAMEO_ODDS   One in 900 ticks above that floor, which is memoryless, so there is no rhythm
+  //                left to learn: every tick carries the same chance. Mean gap 20 minutes, median
+  //                15.4, nine in ten under 40.
+  // At four seconds a showing that is 0.33% of the time.
+  //
+  // HOW LONG. Four seconds is five whole loops of the drawing in the pool today (8 frames x 100ms,
+  // measured). The file loops for ever, so the panel is what ends it: one loop would be a flicker
+  // nobody could name, and much longer would start to compete with the state it borrowed.
+  //
+  // WHERE IT MAY NOT GO, and this is the part that is not taste. Not in despair and not in
+  // stunned: there the drawing IS the message, and a vortex over "the limit is used up" replaces a
+  // warning with a joke. And not while the burn-rate bubble is up, because that bubble's tail is
+  // placed against the top of the INK of whatever is under it (styles.js, .mwarn), so swapping the
+  // picture under a raised bubble moves the head out from under the tail. It also ENDS the instant
+  // either becomes true, so a cameo can never be what delayed bad news.
+  var CAMEO_SECS = 4;
+  var CAMEO_FLOOR = 300;
+  var CAMEO_ODDS = 900;
+  // `left` is the ticks a showing has to run, `since` the ticks of visible panel since the last
+  // one ended. `since` starts at zero, so the floor covers a panel that has just been opened.
+  var cameo = { key: null, left: 0, since: 0 };
+  var _mascotStepNow = 'idle';       // the step the last paint worked out, for the tick to read
+  function cameoHolds(step) {
+    if (step !== 'idle' && step !== 'working') return false;
+    var w = el('mwarn');
+    if (w && !w.hidden) return false;
+    return !cameo.key || mascotPool().indexOf(cameo.key) >= 0;   // switched off in another window
+  }
+  function cameoEnd() { cameo.key = null; cameo.left = 0; cameo.since = 0; }
+  // Once a second, off the panel's own tick. Two decisions and never both: end the one that is
+  // running, or start one
+  function cameoTick() {
+    if (cameo.key) {
+      if (--cameo.left <= 0 || !cameoHolds(_mascotStepNow)) { cameoEnd(); paintMascot(); }
+      return;
+    }
+    if (document.hidden || !lastData) return;
+    if (++cameo.since < CAMEO_FLOOR) return;
+    if (!cameoHolds(_mascotStepNow)) return;
+    var pool = mascotPool();
+    if (!pool.length || Math.random() * CAMEO_ODDS >= 1) return;
+    cameo.key = pool[Math.floor(Math.random() * pool.length)];
+    cameo.left = CAMEO_SECS;
+    paintMascot();
+  }
+
+  // THE ONE PLACE THE CRAB IS DRAWN, called by the push and by the tick. It decides nothing about
+  // the account: the step is worked out once per push (render) and handed here, and which drawing
+  // that step means is the table's and the reader's (mascotArt). The only thing it settles is
+  // whether a cameo is covering the answer at this instant
+  function paintMascot() {
+    var d = lastData, m = el('mascot');
+    if (!d || !m) return;
+    if (cameo.key && !cameoHolds(_mascotStepNow)) cameoEnd();
+    var state = cameo.key || mascotArt(_mascotStepNow, d);
+    var want = m.getAttribute('data-' + state);
+    if (want && m.getAttribute('src') !== want) {
+      m.setAttribute('src', want);
+      if (_mascotDrawn) beatMascot(m);
+    }
+    // the lift belongs to the DRAWING, not to the slot, so it is set beside the source and on
+    // every push rather than only when the source changes: re-arming stunned puts the same
+    // picture back, and a window that opens on a lifted state has to start lifted
+    m.classList.toggle('ink-lift', inkLift(state));
+    // the first push is the first DRAWING and not a transition, so this turns true on the first
+    // push that carries a reading the steps can be measured against, which, for an account with
+    // no window, is the weekly one and not the session's
+    if (d.fh ? d.fh.used_percentage != null : noSessionWindow(d)) _mascotDrawn = true;
+    // the box is one height and the drawing inside it is not, so the burn-rate bubble has to
+    // know which picture it is pointing at (styles.js, .mascot-wrap[data-state])
+    var box = el('pm_mascot');
+    if (box && box.getAttribute('data-state') !== state) box.setAttribute('data-state', state);
+    // POKING IS THE COLLAPSE'S, not the cameo's. A drawing that is only there for four seconds
+    // must not grow something to press, or a reader loses the press by waiting
+    var stunned = state === 'stunned';
+    m.style.cursor = stunned ? 'pointer' : 'default';
+    m.title = stunned ? 'poke' : '';
+  }
+
   // The cut between two states, one beat long: the sprite is pressed two whole pixels down and let
   // back up in two frames (styles.js, .sparkle.beat). No crossfade and no filter: either one
   // smears pixel art. Re-arming needs the class gone for a frame.
@@ -2003,31 +2192,12 @@
       for (var _pi = 0; _pi < _pmc.length; _pi++) { _pmc[_pi].checked = _ph.indexOf(_pmc[_pi].getAttribute('data-k')) < 0; }
       var _cb0 = el('cfgBurn'); if (_cb0) _cb0.checked = !(d.cfg && d.cfg.burnRate === false);
     }
-    var _m = el('mascot');
-    if (_m) {
-      var _step = mascotState(mascotStrain(d, noSession), (d.sd && d.sd.used_percentage) || 0);
-      var _state = mascotArt(_step, d);
-      var _want = _m.getAttribute('data-' + _state);
-      if (_want && _m.getAttribute('src') !== _want) {
-        _m.setAttribute('src', _want);
-        if (_mascotDrawn) beatMascot(_m);
-      }
-      // the lift belongs to the DRAWING, not to the slot, so it is set beside the source and on
-      // every push rather than only when the source changes: re-arming stunned puts the same
-      // picture back, and a window that opens on a lifted state has to start lifted
-      _m.classList.toggle('ink-lift', inkLift(_state));
-      // the first push is the first DRAWING and not a transition, so this turns true on the first
-      // push that carries a reading the steps can be measured against, which, for an account with
-      // no window, is the weekly one and not the session's
-      if (d.fh ? d.fh.used_percentage != null : noSession) _mascotDrawn = true;
-      // the box is one height and the drawing inside it is not, so the burn-rate bubble has to
-      // know which picture it is pointing at (styles.js, .mascot-wrap[data-state])
-      var _mbox = el('pm_mascot');
-      if (_mbox && _mbox.getAttribute('data-state') !== _state) _mbox.setAttribute('data-state', _state);
-      var _stunned = _state === 'stunned';
-      _m.style.cursor = _stunned ? 'pointer' : 'default';
-      _m.title = _stunned ? 'poke' : '';
-    }
+    // the step is worked out HERE, once per push, because mascotState carries the deadband and
+    // that is a thing with a memory: feeding it on the 1s tick as well would be the same reading
+    // written into it a hundred times between two pushes. The paint below is called by the tick
+    // too (the cameo), so it reads the answer rather than asking again
+    _mascotStepNow = mascotState(mascotStrain(d, noSession), (d.sd && d.sd.used_percentage) || 0);
+    paintMascot();
 
     // the session has no bar: the ring below is its one showing, and meter() is called for the
     // three that still have one
@@ -2116,6 +2286,11 @@
         _mw.title = _burnMsg + (_burnPrompt ? '\n"' + _burnPrompt + '"' : '');
       }
     }
+    // THE BUBBLE IS DECIDED AFTER THE CRAB IS DRAWN, so a push that raises it has to be allowed to
+    // take a cameo away again: the tail is placed against the top of the ink of whatever is under
+    // it, and a vortex under a raised bubble points the tail at nothing. One extra paint, and only
+    // in the four seconds a year where both land on the same push
+    if (cameo.key && !cameoHolds(_mascotStepNow)) { cameoEnd(); paintMascot(); }
   }
 
   // ===========================================================================

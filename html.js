@@ -66,13 +66,29 @@ const symbols = require('./games/symbols');
 // So a drawing is lifted when the lift is mostly spent on what is broken. Both figures are from
 // tools the repository keeps: test/apng.js measures the marks, and the share was measured off the
 // rendered page. Reverting either decision is one word in the lists below.
+//
+// 2026-11-20, two more drawings, measured the same way and landing on opposite sides of it:
+//
+//   sleep      5.79:1 at its dimmest mark, 15.62:1 over the bed and the crab. It clears the floor
+//              and so it is left alone, full stop, by the rule above.
+//   blackhole  1.49:1 at its dimmest, and 5.4% of its ink is under 3:1. Declined, below.
 const INK_LIFT = ['coding'];
 // ...and the ones that measure under 3:1 and are deliberately left alone, with the reason, so that
 // test/panel-css.test.js can tell a decision from an oversight. A drawing under 3:1 that is in
 // neither list fails there.
 const INK_LIFT_DECLINED = {
   despair: 'only 32% of the edge lands on the broken marks; the rest outlines a desk that reads',
-  float: 'only 12%; the rest outlines an astronaut at 15.4:1 to rescue two 2.75px bubbles'
+  float: 'only 12%; the rest outlines an astronaut at 15.4:1 to rescue two 2.75px bubbles',
+  // 39% of the edge, which is between despair's 32% and coding's 57%, so the share alone does not
+  // settle it and the drawing does. This is the only one of the eight that is LIT rather than
+  // outlined: the other seven are pixel art with a black line round them, and this is a purple
+  // glow on darkness, which is what a dark theme is. The 61% would put a grey rim around the
+  // spiral and around all 154 sparks, which is the sticker the paragraph above is about, at its
+  // worst. What it would buy is the 5.4% of the ink that is under 3:1, and that is the dimmest of
+  // the sparks: the crab reads at 15.26:1 and the spiral at 3.43 to 4.42, so the picture's whole
+  // sentence survives without them. The hole itself measures about 1:1 on the dark card, which is
+  // the drawing working rather than failing: a black hole that is a hole in the panel.
+  blackhole: '39% of the edge, and the 61% would rim a glow that is 3.4-15:1 already; what it saves is 5.4% of spark'
 };
 const inkEdgeFilter = `<svg class="cuc-fx" aria-hidden="true" width="0" height="0"><filter id="cucInkEdge" color-interpolation-filters="sRGB" x="-20%" y="-20%" width="140%" height="140%"><feColorMatrix type="luminanceToAlpha" result="lum"/><feComponentTransfer in="lum" result="darkness"><feFuncA type="table" tableValues="1 1 1 0 0 0 0 0 0"/></feComponentTransfer><feComposite in="darkness" in2="SourceGraphic" operator="in" result="darkInk"/><feMorphology in="darkInk" operator="dilate" radius="1" result="grown"/><feFlood id="cucInkFlood" result="tint"/><feComposite in="tint" in2="grown" operator="in" result="edge"/><feMerge><feMergeNode in="edge"/><feMergeNode in="SourceGraphic"/></feMerge></filter></svg>`;
 
@@ -91,7 +107,7 @@ function renderHtml(vars) {
   const {
     csp, scriptUri, crabUri,
     mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
-    mascotCodingUri, mascotFloatUri,
+    mascotCodingUri, mascotFloatUri, mascotSleepUri, mascotBlackholeUri,
     heroGamesUri, heroShopUri,
     roomMinecraftUri, assetsJson, gameList, gameScripts
   } = vars;
@@ -218,16 +234,17 @@ function renderHtml(vars) {
           </div>
           <div class="rleft" id="s_sub"></div>
         </div>
-        <!-- The box is a FIXED height and the picture is bottom-aligned inside it. The six APNGs
-             are 160x90, 320x268, 480x570, 160x90, 353x223 and 345x320, so a width with height:auto
-             rendered them 49.5, 73.7, 104.5, 49.5, 55.6 and 81.6 tall: every state change shoved
-             the stat tiles below down or up, and a session reset (90%+ to single digits) did it in
-             one 55px jump.
-             SIX DRAWINGS, TWO AXES AND FOUR SCENES. The limit's step picks the row (idle, working,
-             despair, stunned) and whether anything has been answered lately picks the column, and
-             then the reader's own choice picks the picture wherever that cell is one of the four
-             scenes the shop sells into (webview.js, MASCOT_ART and MASCOT_SLOT). All six are named
-             here so the script only ever swaps the source for one of them.
+        <!-- The box is a FIXED height and the picture is bottom-aligned inside it. The APNGs are
+             every ratio from 0.84 to 1.78, so a width with height:auto rendered them 49.5 to 104.5
+             tall: every state change shoved the stat tiles below down or up, and a session reset
+             (90%+ to single digits) did it in one 55px jump.
+             EIGHT DRAWINGS, TWO AXES, FOUR SCENES AND ONE POOL. The limit's step picks the row
+             (idle, working, despair, stunned) and whether anything has been answered lately picks
+             the column, and then the reader's own choice picks the picture wherever that cell is
+             one of the four scenes the shop sells into (webview.js, MASCOT_ART and MASCOT_SLOT).
+             The eighth belongs to no cell at all: it is in the pool, and it covers whatever is
+             there for four seconds now and then (webview.js, the cameo). All eight are named here
+             so the script only ever swaps the source for one of them.
              data-lift is beside them because it is a fact ABOUT those files: which of them carry
              ink the dark floor swallows (see INK_LIFT at the top). It is read by whatever draws one
              of these pictures, in all three places they appear, so the stylesheet never learns a
@@ -236,7 +253,7 @@ function renderHtml(vars) {
              drawing that stops needing the lift fails here just as loudly as one that starts. -->
         <div class="mascot-wrap" id="pm_mascot">
           <div class="mwarn" id="mwarn" hidden>${IC.warn}</div>
-          <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" data-coding="${mascotCodingUri}" data-float="${mascotFloatUri}" data-lift="${INK_LIFT.join(' ')}" alt=""/>
+          <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" data-coding="${mascotCodingUri}" data-float="${mascotFloatUri}" data-sleep="${mascotSleepUri}" data-blackhole="${mascotBlackholeUri}" data-lift="${INK_LIFT.join(' ')}" alt=""/>
         </div>
       </div>
     </div>

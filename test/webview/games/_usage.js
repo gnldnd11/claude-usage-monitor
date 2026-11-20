@@ -36,10 +36,14 @@ const DAY = 86400;
 
 module.exports = {
   id: 'usage',
-  modes: ['usage-mascot', 'usage-nosession'],
+  modes: ['usage-mascot', 'usage-nosession', 'usage-cameo'],
+  // the only mode in the harness whose clock repeats, because the only thing on this page that
+  // happens without a push is in it (modes.js)
+  timers: { 'usage-cameo': true },
 
   run: function (h, MODE) {
     if (MODE === 'usage-nosession') return noSession(h);
+    if (MODE === 'usage-cameo') return cameo(h);
     return withWindow(h);
   }
 };
@@ -545,4 +549,154 @@ function noSession(h) {
       doc.body.getAttribute('class'));
 
     ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e.message).join('; '));
+}
+
+// ---------------------------------------------------------------------------------------------
+// the drawing with no scene: it turns up on its own, and everything about it is WHEN IT MAY NOT
+// ---------------------------------------------------------------------------------------------
+// Everything else on this tab is drawn by a push. This is the one thing the page decides, so it is
+// also the one place where "nothing happened" is the assertion that matters. What is pinned:
+//
+//   1. IT CANNOT BE SUMMONED. Nothing is sent to the host while one runs, no credit moves, and the
+//      only input is a clock: a reader who spends more tokens does not get more of them.
+//   2. IT GOES AWAY. The file loops for ever, so the panel is what ends it, and four seconds later
+//      whatever the account's real state is, is back on screen.
+//   3. IT NEVER COVERS BAD NEWS. Not at despair, not at stunned, and not under a raised burn-rate
+//      bubble, however the coin falls. This is the half that would be expensive to get wrong: the
+//      crab is the only thing on the panel that says the limit is gone.
+//   4. AN EMPTY ROW MEANS NEVER. That is the whole of the off switch, so it has to be absolute.
+//   5. IT MOVES NOTHING. The box is a fixed height and the picture goes in it; nothing is given an
+//      inline style and the keyboard is not touched.
+//
+// The page's coin is seeded here (h.setRandom), because a test of "now and then" that waited on
+// chance is a test that fails on some runs. Always-wins and never-wins are both run.
+function cameo(h) {
+  const { ok, advance, doc, $, toWebview, setRandom } = h;
+  const WORN = { quiet: 'idle', typing: 'coding', burn: 'despair', spent: 'stunned' };
+  const DRAWINGS = ['idle', 'working', 'despair', 'stunned', 'coding', 'float', 'sleep', 'blackhole'];
+  const mascot = () => $('mascot');
+  const shown = () => {
+    const m = mascot(), src = m.getAttribute('src');
+    return DRAWINGS.filter((s) => m.getAttribute('data-' + s) === src)[0] || src;
+  };
+  const resets = () => Math.floor(Date.now() / 1000) + 3 * HOUR;
+  // one push. `pool` is what the HOST resolved (shop.js, randomPool), never a choice, and `burn`
+  // raises the burn-rate bubble by handing the page a spike against a small average
+  const push = (sess, pool, burn) => {
+    toWebview({
+      type: 'data',
+      data: {
+        agents: [], xp: {}, today: {}, count: burn ? 10 : 0, cfg: { panelHidden: [] },
+        credits: { balance: 0, today: 0, frac: 0, perCredit: 10000, counting: false },
+        fh: { used_percentage: sess, resets_at: resets() },
+        sd: { used_percentage: 10, resets_at: resets() },
+        last: { t: Date.now() },
+        avg: burn ? 100 : 0, peak: burn ? { total: 1000, t: Date.now() } : null,
+        shop: { owned: [], slots: WORN, pool: pool || [] }
+      }
+    });
+    advance(20);
+  };
+  // how many DIFFERENT seconds in a stretch had the cameo on screen, and the longest unbroken run
+  // of them, both counted a second at a time so a showing that overran would be visible as a
+  // number rather than as a missing assertion
+  const watchFor = (secs) => {
+    let on = 0, run = 0, longest = 0, gapsOk = true, lastEnd = null, shortestGap = Infinity;
+    for (let i = 0; i < secs; i++) {
+      advance(1000);
+      if (shown() === 'blackhole') {
+        if (!run && lastEnd != null) {
+          const gap = i - lastEnd;
+          if (gap < 300) gapsOk = false;
+          if (gap < shortestGap) shortestGap = gap;
+        }
+        on++; run++; if (run > longest) longest = run;
+      } else {
+        if (run) lastEnd = i;
+        run = 0;
+      }
+    }
+    return { on, longest, gapsOk, shortestGap };
+  };
+
+  // ---------- 1. the floor, counted from the panel OPENING ----------
+  // A coin rigged to win every single second, straight after the first push. Even then the first
+  // five minutes are silent: the floor is counted from a panel opening as well as from the last
+  // showing, so the first thing a reader is shown is never this
+  setRandom(() => 0);
+  push(10, ['blackhole']);
+  ok('the crab starts as the account’s own state, not as a gimmick', shown() === 'coding', shown());
+  ok('a winning coin still shows nothing in the first five minutes a panel is open',
+    watchFor(290).on === 0, 'in the first 290s');
+  ok('and then the floor is out and it turns up', watchFor(60).on > 0);
+
+  // ---------- 2. a coin that never wins ----------
+  setRandom(() => 0.999);
+  push(10, ['blackhole']);
+  const w = watchFor(7200);
+  ok('two hours of a coin that never wins show nothing at all', w.on === 0, w.on + ' second(s) of it');
+
+  // ---------- 3. how long one lasts, and how close two may be ----------
+  setRandom(() => 0);
+  const run = watchFor(1200);
+  ok('and then it does turn up', run.on > 0, run.on + ' second(s) of it in twenty minutes');
+  // IT GOES AWAY. Four seconds is five whole loops of the drawing; a file that loops for ever and
+  // a panel that never took it off would leave the crab as a vortex until the next push
+  ok('and it is gone again four seconds later, never longer', run.longest === 4,
+    'longest showing ' + run.longest + 's');
+  ok('and two of them are never closer together than five minutes', run.gapsOk,
+    'shortest gap ' + (run.shortestGap === Infinity ? 'n/a' : run.shortestGap + 's'));
+  ok('the account’s own drawing is what is on screen the rest of the time', shown() === 'coding', shown());
+  // 1. NOTHING IS SENT AND NOTHING IS OWED. The host is not told, so there is nothing to pay for
+  // and nothing to win: the only input is the clock
+  ok('nothing was sent to the host for any of it',
+    h.sent('mascotPool').length === 0 && h.sent('shop').length === 0 && h.sent('mascotSlot').length === 0,
+    JSON.stringify(h.hostLog.map((l) => l.type).filter((t, i, a) => a.indexOf(t) === i)));
+  // 5. IT MOVES NOTHING. The box is a fixed height in the stylesheet and the picture is fitted into
+  // it, so a showing may not put a length on anything
+  ok('and nothing was given a size of its own, so the card cannot have moved',
+    !$('pm_mascot').getAttribute('style') && !mascot().getAttribute('style'),
+    ($('pm_mascot').getAttribute('style') || '') + ' / ' + (mascot().getAttribute('style') || ''));
+  ok('and the keyboard was left where it was', doc.activeElement === doc.body,
+    doc.activeElement && doc.activeElement.localName);
+
+  // ---------- 4. where it may not go ----------
+  // THE TWO STEPS WHERE THE DRAWING IS THE MESSAGE. A vortex over "the limit is used up" replaces
+  // a warning with a joke, and the coin is rigged to win every second here
+  push(95, ['blackhole']);
+  ok('at a spent limit the crab is the one that says so', shown() === 'stunned', shown());
+  let bad = watchFor(3600);
+  ok('and an hour of a winning coin never covers it', bad.on === 0, bad.on + ' second(s) of it');
+  push(75, ['blackhole']);
+  ok('at a limit mostly gone the crab is the one that says so', shown() === 'despair', shown());
+  bad = watchFor(3600);
+  ok('and an hour of a winning coin never covers that either', bad.on === 0, bad.on + ' second(s) of it');
+  // ...AND NOT UNDER A RAISED BUBBLE. That one is geometry rather than taste: the bubble's tail is
+  // placed against the top of the ink of whatever is under it (styles.js, .mwarn), so swapping the
+  // picture would point the tail at nothing
+  push(10, ['blackhole'], true);
+  ok('a burn-rate spike raises the bubble over the crab', !$('mwarn').hidden, 'hidden=' + $('mwarn').hidden);
+  bad = watchFor(3600);
+  ok('and nothing may go under it while it is up', bad.on === 0, bad.on + ' second(s) of it');
+  // and the moment it comes down, the same account is open to one again
+  push(10, ['blackhole']);
+  ok('the bubble comes down with the spike', $('mwarn').hidden, 'hidden=' + $('mwarn').hidden);
+  ok('and then one may turn up again', watchFor(1800).on > 0);
+
+  // ---------- 5. the off switch ----------
+  // Emptying the row is the whole of it, and it is a press on the drawing itself (the shop's last
+  // row). Off has to mean never, or it is not an off switch
+  push(10, []);
+  const off = watchFor(7200);
+  ok('an empty row means nothing ever turns up, however the coin falls', off.on === 0,
+    off.on + ' second(s) of it in two hours');
+  // and one that is running when the row is emptied in ANOTHER window goes away with it
+  push(10, ['blackhole']);
+  for (let i = 0; i < 400 && shown() !== 'blackhole'; i++) advance(1000);
+  ok('one is on screen to interrupt', shown() === 'blackhole', shown());
+  push(10, []);
+  ok('and switching the row off in another window takes it off this screen at once',
+    shown() === 'coding', shown());
+
+  ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e.message).join('; '));
 }
