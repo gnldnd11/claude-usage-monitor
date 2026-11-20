@@ -158,7 +158,7 @@ async function sync(cfg, totals, sevenDay, version) {
 // what each PC spent, which IS separated to the person and needs nothing, and says why there is
 // no percentage. `others` carries what was witnessed rather than inferred (weekly.js,
 // othersFloor), for the one thing that can still be said: at least this much was not the table's.
-function split(summary, myPcId, rate, accountPct, othersPct) {
+function split(summary, myPcId, rate, accountPct, sharePct) {
   const pcs = (summary && summary.pcs) || [];
   const acct = accountPct != null ? accountPct : (summary ? summary.account_pct : null);
   const total = pcs.reduce((a, p) => a + (p.cost || 0), 0);
@@ -173,8 +173,16 @@ function split(summary, myPcId, rate, accountPct, othersPct) {
   // phantom rows, which is 1.30.0 over again. The server keeps every PC's hourly spend and could
   // answer it for a team; it is not read here, so for a team this stays zero and the division is
   // what it has always been.
+  //
+  // On a table of one the row is the plan's own estimate (weekly.js), which is the tighter of two
+  // bounds that are tight in opposite conditions: the week minus what was witnessed (good where
+  // this PC is rarely alone, so idle stretches are plentiful) and this PC's spend times the
+  // lowest percent-per-$ any interval showed (good where it often is, so an interval close to
+  // alone exists). Turning sharing on or off then shows the same number, which it must: sharing
+  // adds PCs to a table, it does not change what this PC did.
   const lone = pcs.length === 1;
-  const others = byAccount && lone ? Math.max(0, Math.min(othersPct || 0, acct)) : 0;
+  const est = sharePct == null ? null : Math.max(0, Math.min(sharePct, acct));
+  const others = byAccount && lone && est != null ? Math.max(0, acct - est) : 0;
   const divisible = Math.max(0, acct - others);
   const rows = pcs.map((p) => {
     const ofTeam = total > 0 ? (p.cost || 0) / total : 0;

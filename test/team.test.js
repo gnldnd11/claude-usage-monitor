@@ -135,24 +135,35 @@ test('the plan tier comes from .claude.json too (macOS keeps credentials in the 
 // the row named after that PC read the whole account's week. 1.4B tokens and $474 of
 // API-equivalent use drawn as 75% of an Ultra week. ofTeam is $mine / $the table's, which is 1
 // when the table holds one PC, so the division did nothing and handed over everything
-test('a lone sharing PC does not take the whole account when others were seen spending', () => {
+test('a lone sharing PC does not take the whole account', () => {
   const s = summary(75, [474]);
-  // nothing witnessed: unchanged, which is also the account with nobody outside it
-  assert.equal(team.split(s, 'pc0', 0.05, 75, 0).rows[0].pct, 75);
-  assert.equal(team.split(s, 'pc0', 0.05, 75, 0).others, 0);
-  // 55 points moved while this PC spent nothing. They are somebody else's and no row may take them
-  const seen = team.split(s, 'pc0', 0.05, 75, 55);
+  // the estimate says 20 of the account's 75 was this PC, so the other 55 was not
+  const seen = team.split(s, 'pc0', 0.05, 75, 20);
   assert.equal(seen.rows[0].pct, 20);
   assert.equal(seen.others, 55);
   assert.equal(round1(seen.rows[0].pct + seen.others), 75);   // still adds to the account
+  // an estimate that reaches the whole week leaves nothing for anyone else, and that is allowed:
+  // it is what a one-person account looks like
+  assert.equal(team.split(s, 'pc0', 0.05, 75, 75).rows[0].pct, 75);
+  assert.equal(team.split(s, 'pc0', 0.05, 75, 75).others, 0);
 });
 
-test('what was witnessed cannot exceed the week or go below zero', () => {
+// SHARING ON AND SHARING OFF MUST AGREE. Sharing adds PCs to a table; it does not change what
+// this PC did, so a lone PC's row is the same number the sheet shows with sharing off
+test('a lone sharing PC reads the same as it did before it shared', () => {
+  const planShare = 20;                        // weekly.js, min of the two bounds
+  const s = team.split(summary(75, [474]), 'pc0', 0.0932, 75, planShare);
+  assert.equal(s.rows[0].pct, planShare);
+});
+
+test('an estimate outside the week is brought back into it', () => {
   const s = summary(30, [100]);
-  assert.equal(team.split(s, 'pc0', 0.05, 30, 999).rows[0].pct, 0);
-  assert.equal(team.split(s, 'pc0', 0.05, 30, 999).others, 30);
-  assert.equal(team.split(s, 'pc0', 0.05, 30, -5).others, 0);
-  assert.equal(team.split(s, 'pc0', 0.05, 30).others, 0);       // not passed at all
+  assert.equal(team.split(s, 'pc0', 0.05, 30, 999).rows[0].pct, 30);   // never above the account
+  assert.equal(team.split(s, 'pc0', 0.05, 30, 999).others, 0);
+  assert.equal(team.split(s, 'pc0', 0.05, 30, -5).rows[0].pct, 0);
+  // no estimate at all: nothing is claimed for anyone, and the row is the old division
+  assert.equal(team.split(s, 'pc0', 0.05, 30).others, 0);
+  assert.equal(team.split(s, 'pc0', 0.05, 30).rows[0].pct, 30);
 });
 
 // The measurement is "the week moved while THIS PC spent nothing", so on a table of two a
@@ -160,7 +171,7 @@ test('what was witnessed cannot exceed the week or go below zero', () => {
 // IS in the table and draw it as one that is not, which is 1.30.0's phantom row again
 test('a teammate idling is not somebody outside the table', () => {
   const s = summary(33, [690, 345]);
-  const r = team.split(s, 'pc1', 0.05, 33, 20);   // 20 points of it were the teammate
+  const r = team.split(s, 'pc1', 0.05, 33, 8);    // this PC's own estimate, not the team's
   assert.equal(r.others, 0);
   assert.ok(near(r.rows[0].pct, 22) && near(r.rows[1].pct, 11));
   assert.ok(near(r.rows[0].pct + r.rows[1].pct, 33));

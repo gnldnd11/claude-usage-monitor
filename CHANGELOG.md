@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.32.5: Turning sharing on no longer changes what this PC did
+
+- **A lone sharing PC read one number with sharing off and another with it on.** Sharing adds PCs to a table; it does not change what this PC spent, so the two have to agree. The sheet with sharing off already showed the tighter of two bounds, and the table ignored it and worked from one of them. The row is now that same figure, whichever way the switch is set.
+- **Two bounds, tight in opposite conditions, and the smaller one wins.** The week minus what was witnessed (the account's percentage moving while this PC spent nothing) is tight on an account where this PC is rarely alone, because idle stretches are then plentiful. This PC's spend times the lowest percent-per-dollar any interval showed is tight where it often is alone, because an interval close to alone then exists. An account of five people and an account of one are opposite cases, and taking the smaller covers both.
+- **The lowest ratio is the one nearest the truth, and that is arithmetic rather than a guess.** Between two readings the account's percentage rose for everyone while only this PC's spend is known here, so percentage-over-spend is never below the real figure and equals it when nobody else was working. Other people can only push it up.
+- **It is still an upper bound.** Intervals where this PC and somebody else were both working cannot be divided between them, and nothing at all is recorded while the PC is off. The number is at most this, and it tightens on its own as more PCs on the account start sharing: a table of two or more goes back to the exact division, which needs no bound and no estimate.
+
 ## 1.32.4: What one PC saw of a week it did not spend
 
 - **1.32.3 took what somebody else spent off the account before dividing the rest, and on a table of two PCs that was the other PC.** The measurement is "the account's percentage moved while THIS PC spent nothing", which is exactly everybody else when one PC shares and includes a teammate who was simply working while you were not when two do. Subtracting it there removes a PC that IS in the table and draws it as one that is not, which is the phantom row 1.30.0 was reported for. It applies to a table of one now, which is the case it was measured for and the case that was broken.

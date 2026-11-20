@@ -1531,7 +1531,7 @@ class UsageViewProvider {
       if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
       if (!cfg.on || !cfg.key) return;
       const res = await teamSync();
-      r.team = res && res.ok ? team.split(res.summary, cfg.pcId, r.plan.rate, r.plan.pct, r.plan.others) : { error: res ? res.error : 'off' };
+      r.team = res && res.ok ? team.split(res.summary, cfg.pcId, r.plan.rate, r.plan.pct, r.plan.share) : { error: res ? res.error : 'off' };
       if (this.view) this.view.webview.postMessage({ type: 'weekly', data: r });
     }).catch((e) => { if (log) log.appendLine('[weekly] report failed: ' + (e && e.message)); });
   }
