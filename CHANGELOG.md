@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.33.0: The raw token counts, kept apart from the price list
+
+- **Everything this extension says about a shared account's weekly limit goes through one number, how much of the limit a dollar of use costs, and that number is borrowed rather than measured.** The dollars are API list prices; the weekly limit is not spent in proportion to them. On three accounts whose own rate can be read cleanly, each account's week over that whole account's spend, it came out 0.0319, 0.0364 and 0.0462 percent per dollar: a spread of 1.45x, which is why a single constant cannot be used and every figure built on one is a bound rather than a reading.
+- **The four token kinds are now kept apart, per model, in every reading and in every report.** Input, output, cache write and cache read, as raw counts, beside the dollar figure rather than folded into it. A weight per kind can be fitted from those against the account's own percentage, and a fitted weight is a measurement where the price list is a guess. The counts are already grouped by model, so neither the stored series nor the report payload gains an entry.
+- A PC running an older version sends no counts and is simply not in that sample; everything else about it works as before.
+
 ## 1.32.6: A reading every time something moved, instead of one every ten minutes
 
 - **The two bounds behind a shared account's figures are read off the gaps between readings, and the gaps were ten minutes wide.** One of them wants a gap this PC sat out whole; the other wants a gap nobody else was in. Ten minutes is long enough for both to have happened inside one, and a gap like that says nothing and is thrown away. The percentage is polled every sixty seconds anyway, and a reading is now kept whenever anything moved, so roughly a tenth as many gaps have something in them from both sides.

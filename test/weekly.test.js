@@ -121,6 +121,31 @@ test('a reading is kept whenever anything moved, and a quiet run stays one row',
   W.setSamples([]);
 });
 
+// cost folds the four kinds together with the API price list, and the weekly limit is not spent
+// in proportion to that list. The raw counts are what a weight per kind can be fitted from
+test('a reading carries the raw token counts, four kinds per model', async () => {
+  // outside TMP: two later tests scan TMP itself, and a fixture under it would join their counts
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-kinds-'));
+  const proj = path.join(dir, 'projects', 'work');
+  fs.mkdirSync(proj, { recursive: true });
+  const t = Date.now() - 2 * HOUR;
+  fs.writeFileSync(path.join(proj, 's.jsonl'),
+    line('m1', 'r1', t, 'claude-opus-5-5', [100, 20, 5, 9000]) + '\n');
+  weekly.init({ load: () => [], save: () => {} });
+  weekly.setProjectsDir(path.join(dir, 'projects'));
+  W.setSamples([]);
+  const r = Math.floor(Date.now() / 1000) + 86400;
+  await weekly.sample(12, r); await new Promise((f) => setTimeout(f, 120));
+  const s = W.getSamples();
+  assert.equal(s.length, 1, 'rows: ' + s.length);
+  assert.deepEqual(s[0].tk, { 'Opus 5.5': [100, 20, 5, 9000] });
+  // and the same counts travel to the server, where the weights get fitted
+  const w = weekly.windowTotals(r);
+  assert.deepEqual(w.byModel['Opus 5.5'].kinds, [100, 20, 5, 9000]);
+  W.setSamples([]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('the series holds a week at the poll cadence', () => {
   // 800 was a reading every ten minutes. At sixty seconds that is thirteen hours
   assert.ok(W.MAX_SAMPLES >= 10000, 'cap: ' + W.MAX_SAMPLES);

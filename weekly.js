@@ -248,16 +248,54 @@ function windowTotals(resetsAt, now) {
       for (const [model, v] of models) {
         const k = modelLabel(model);
         const cc = costOf(model, v), tk = U.tokenTotal(v);
-        const e = byModel[k] || (byModel[k] = { tokens: 0, cost: 0 });
+        // ...and the four kinds apart, because `cost` has already folded them together with the
+        // API price list, and the weekly limit is not spent in proportion to that list. Which is
+        // measurable only from the raw counts: on three accounts whose own rate reads cleanly it
+        // came out 0.0319, 0.0364 and 0.0462 percent per dollar, a 1.45x spread, and the way to
+        // close that is to fit a weight per kind instead of borrowing a price. One row per model
+        // either way, so the payload does not grow an entry
+        const e = byModel[k] || (byModel[k] = { tokens: 0, cost: 0, kinds: [0, 0, 0, 0] });
         e.tokens += tk; e.cost += cc; cost += cc; tokens += tk;
+        e.kinds[0] += v.input || 0; e.kinds[1] += v.output || 0;
+        e.kinds[2] += v.cache_creation || 0; e.kinds[3] += v.cache_read || 0;
       }
     }
   }
   return { cost, tokens, byModel };
 }
 
+// Raw token counts since a moment, per model, four kinds each: the same numbers windowTotals
+// sends, kept locally per reading so the series can be regressed against the account's percentage
+// without the API price list in the middle of it
+function kindsSince(since) {
+  const out = {};
+  for (const c of files.values()) {
+    for (const [h, models] of c.hours) {
+      if (h + HOUR <= since) continue;
+      for (const [model, v] of models) {
+        const k = modelLabel(model);
+        const e = out[k] || (out[k] = [0, 0, 0, 0]);
+        e[0] += v.input || 0; e[1] += v.output || 0;
+        e[2] += v.cache_creation || 0; e[3] += v.cache_read || 0;
+      }
+    }
+  }
+  return out;
+}
+function sameKinds(a, b) {
+  if (!a || !b) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    const x = a[k], y = b[k];
+    if (!y || x[0] !== y[0] || x[1] !== y[1] || x[2] !== y[2] || x[3] !== y[3]) return false;
+  }
+  return true;
+}
+
 // --- share estimate -----------------------------------------------------------------
-// samples: [{ t, pct, r (weekly reset, epoch s), cost (this PC's weighted use since the window opened) }]
+// samples: [{ t, pct, r (weekly reset, epoch s), cost (this PC's weighted use since the window
+// opened), tk ({model: [input, output, cache write, cache read]} since the same moment) }]
 let samples = [];
 let store = null; // { load(): [], save(arr) }
 
@@ -373,11 +411,14 @@ function sample(pct, resetsAt) {
   if (pct == null || !resetsAt) return;
   scan().then(() => {
     const now = Date.now();
-    const cost = costSince(windowStartOf(resetsAt, now));
+    const from = windowStartOf(resetsAt, now);
+    const cost = costSince(from);
+    const tk = kindsSince(from);
     const last = samples[samples.length - 1];
-    const still = last && sameWindow(last, { r: resetsAt }) && last.pct === pct && last.cost === cost;
+    const still = last && sameWindow(last, { r: resetsAt }) && last.pct === pct
+      && last.cost === cost && sameKinds(last.tk, tk);
     if (still) last.t = now;                    // extend the quiet stretch, do not split it
-    else samples.push({ t: now, pct, r: resetsAt, cost });
+    else samples.push({ t: now, pct, r: resetsAt, cost, tk });
     samples = samples.filter((s) => now - s.t < KEEP_MS).slice(-MAX_SAMPLES);
     try { if (store && store.save) store.save(samples); } catch (e) { /* ignore */ }
   }).catch(() => {});
