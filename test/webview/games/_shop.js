@@ -31,7 +31,12 @@ module.exports = {
   // 3,000 buys the one thing on the shelf and leaves something over. 5 is a purse that cannot
   // reach it, and 1,500 is a purse that can until a table is holding 1,000 of it, which is what
   // the two different short-purse sentences need
-  start: { shop: 3000, 'shop-poor': 5, 'shop-held': 1500 },
+  // `shop` has to be able to buy the WHOLE shelf, because the last part of that run is what the
+  // screen does once there is nothing left to sell. It is the shelf's own total plus room, read
+  // here rather than written, so a new drawing on a higher rung does not quietly turn that last
+  // part of the run into a purse that ran out. `shop-poor` is the opposite case on purpose: five
+  // credits reaches nothing at all
+  start: { shop: 50000, 'shop-poor': 5, 'shop-held': 1500 },
   // the two shop modes RESUME INTO THE SHOP, which also says that the stored door comes back
   state: {
     shop: { tab: 'games', door: 'shop', lastTab: 'usage' },
@@ -169,9 +174,18 @@ module.exports = {
         !$('shCtl').hidden && btn().textContent === 'Buy', btn().textContent);
       // AIMING IS NOT AFFORDING. What the button is pointed at is the reader's, what it may be
       // pressed for is the host's, and a purse that cannot reach the price takes neither away
-      ok('and the price is still a cell that can be pressed, and still the one aimed at',
-        cell('float').localName === 'button' && cell('float').classList.contains('aim'),
-        cell('float').localName + ' ' + (cell('float').getAttribute('class') || ''));
+      // which cell that is comes from the shelf rather than from a name written here: the aim
+      // falls on the first thing still for sale, and what stands first moved when a second
+      // priced drawing went into an earlier scene (2026-11-20)
+      {
+        const forSale = cells().filter((c) => c.classList.contains('buy'));
+        const first = forSale[0];
+        ok('and the price is still a cell that can be pressed, and still the one aimed at',
+          !!first && first.localName === 'button' && first.classList.contains('aim')
+          && forSale.filter((c) => c.classList.contains('aim')).length === 1,
+          (first ? first.localName + ' ' + (first.getAttribute('class') || '') : 'nothing for sale')
+          + ' | for sale ' + forSale.length);
+      }
       ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e && e.message).join(' | '));
       return;
     }
@@ -183,11 +197,14 @@ module.exports = {
     ok('and it asked the host once for what it sells',
       h.sent('shop').filter((m) => m.op === 'open').length === 1,
       h.sent('shop').map((m) => m.op).join(','));
-    // the heading: one arrow, the shop's own glyph, and a corner that stays empty
+    // the heading: one arrow, the shop's own glyph, and a corner that stays empty.
+    // IT IS NAMED FOR WHAT IT SELLS. `Shop` is the DOOR's word, where it stands beside `Games` and
+    // the two pictures say what each one is; the screen behind it has no picture to lean on and
+    // sells one kind of thing, so it says which (docs/shop-spec.md, 1-1)
     ok('the heading is an arrow, a glyph and the name',
       !!$('shBack') && doc.querySelectorAll('#panelShop .bj-back').length === 1
       && !!doc.querySelector('#panelShop .ihead .it svg')
-      && doc.querySelector('#panelShop .bj-ttl').textContent === 'Shop'
+      && doc.querySelector('#panelShop .bj-ttl').textContent === 'Mascot shop'
       && doc.querySelector('#panelShop .bj-side').textContent === '',
       doc.querySelector('#panelShop .ihead').textContent.trim());
     ok('the shelf is the four scenes, named, each saying which moment it is',
@@ -238,18 +255,34 @@ module.exports = {
     ok('and an empty slot has no drawing to name, so there is nothing to send for it',
       soon().every((c) => !c.hasAttribute('data-key') && !c.hasAttribute('data-slot')),
       soon().map((c) => c.getAttribute('data-key') + '/' + c.getAttribute('data-slot')).join(' '));
-    ok('and nor is a drawing in a scene with nothing to choose between',
-      cell('stunned').localName !== 'button' && cell('despair').localName !== 'button',
-      ['stunned', 'despair'].map((k) => k + ':' + cell(k).localName).join(' '));
-    // ...while a scene that HAS two of their own is pressable on both of them. Quiet is one since
-    // the sleeping crab arrived beside the small one, which is what that drawing was for: it is
-    // the scene the panel is in most of the time and it was the one with nothing to choose
+    // A SCENE IS SETTLED UNTIL THE READER HAS TWO OF THEIR OWN IN IT, which is not the same as
+    // its having two cells. Quiet shows the small crab beside a sleeping one that costs 1K, and
+    // until that is bought there is still only one drawing to put in that moment, so its cell is
+    // not a choosing button. Read off the catalog rather than named here, so a drawing changing
+    // rung or scene moves this with it
+    const settled = shop.SLOTS.filter((sc) => sc.opts.filter((k) => !shop.itemOf(k).price).length < 2);
+    const choosable = shop.SLOTS.filter((sc) => sc.opts.filter((k) => !shop.itemOf(k).price).length > 1);
+    ok('and nor is a drawing in a scene with nothing to choose between YET',
+      settled.length > 0
+      && settled.every((sc) => sc.opts.every((k) => cell(k).localName !== 'button' || cell(k).classList.contains('buy'))),
+      settled.map((sc) => sc.id + ':' + sc.opts.map((k) => k + '=' + cell(k).localName
+        + (cell(k).classList.contains('buy') ? '(buy)' : '')).join('/')).join(' '));
+    // ...while a scene that HAS two free ones is pressable on both of them
     ok('a scene with two drawings of their own is pressable on both',
-      cell('coding').localName === 'button' && cell('working').localName === 'button'
-      && cell('idle').localName === 'button' && cell('sleep').localName === 'button',
-      ['idle', 'sleep', 'coding', 'working'].map((k) => k + ':' + cell(k).localName).join(' '));
-    ok('the unbought drawing says what it costs, as the stake chips write a figure',
-      cell('float').textContent.trim() === '1K', cell('float').textContent);
+      choosable.length > 0 && choosable.every((sc) => sc.opts.every((k) => cell(k).localName === 'button')),
+      choosable.map((sc) => sc.id + ':' + sc.opts.map((k) => k + '=' + cell(k).localName).join('/')).join(' '));
+    // EVERY PRICE ON THE SHELF IS A RUNG OF THE LADDER and is written the way the stake chips
+    // write a figure. Walked over the catalog so a new drawing on a higher rung is covered here
+    // the day it lands, rather than the one priced drawing this used to name
+    const forSaleKeys = shop.ITEMS.filter((i) => i.price).map((i) => i.key);
+    ok('every unbought drawing says what it costs, as the stake chips write a figure',
+      forSaleKeys.length > 1
+      && forSaleKeys.every((k) => (cell(k) || poolCell(k)).textContent.trim()
+        === (shop.itemOf(k).price / 1000) + 'K'),
+      forSaleKeys.map((k) => k + ':' + (cell(k) || poolCell(k)).textContent.trim()).join(' '));
+    ok('and every one of those prices is a rung of the ladder, not a number of its own',
+      forSaleKeys.every((k) => shop.PRICES.indexOf(shop.itemOf(k).price) >= 0),
+      forSaleKeys.map((k) => k + '@' + shop.itemOf(k).price).join(' ') + ' vs ' + shop.PRICES.join('/'));
     ok('and every cell says what it is for a reader who cannot see it',
       cells().every((c) => c.getAttribute('role') === 'img' || c.hasAttribute('aria-pressed'))
       && cells().every((c) => !!c.getAttribute('aria-label'))
@@ -277,22 +310,38 @@ module.exports = {
     ok('it holds four cells, the spare ones empty, as the scenes’ spare ones are',
       randCells().length === 4 && randSoon().length === 4 - shop.POOL.length,
       randCells().length + ' cells, ' + randSoon().length + ' empty');
-    // NOTHING IN HERE HAS A PRICE AND NOTHING EVER WILL. A drawing that cannot be summoned must
-    // not be something a reader paid for: the word under it is on or off, never a figure
-    ok('nothing in it carries a price: the word under it says whether it is in play',
-      shop.POOL.every((k) => /^(on|off)$/.test(poolCell(k).textContent.trim())),
-      shop.POOL.map((k) => k + ':' + JSON.stringify(poolCell(k).textContent.trim())).join(' '));
-    // ...AND IT IS ALWAYS PRESSABLE, unlike a scene with one drawing. A scene must always have
-    // something in it, so one drawing settles it; this may be empty, and emptying it is the whole
-    // of the off switch for a reader who does not want the panel changing under them
-    ok('every drawing in it is pressable, because off is a state this row may be in',
-      shop.POOL.every((k) => poolCell(k).localName === 'button' && poolCell(k).hasAttribute('aria-pressed')),
-      shop.POOL.map((k) => k + ':' + poolCell(k).localName).join(' '));
-    ok('and it says in words, not only with a ring, which it is',
-      shop.POOL.every((k) => poolCell(k).classList.contains('on')
-        && poolCell(k).getAttribute('aria-pressed') === 'true'
-        && /, in play$/.test(poolCell(k).getAttribute('aria-label'))),
-      shop.POOL.map((k) => JSON.stringify(poolCell(k).getAttribute('aria-label'))).join(' '));
+    // A CELL ON THIS ROW HAS TWO LIVES AND BOTH ARE PINNED. Unbought it is a price like every
+    // other price on the shelf; bought it is the switch that is the whole of the off button.
+    // This is the first life, because nothing on this row has been bought yet; the second is
+    // checked where it exists, right after the purchase below.
+    //
+    // THE FIRST LIFE IS NOT A SPECIAL CASE. Same class, same word, same mark, same press: a
+    // reader who learned the scenes' priced cells has nothing new to learn here, and a cell that
+    // behaved differently would be a second vocabulary for one question
+    const priced = shop.POOL.filter((k) => shop.itemOf(k).price);
+    ok('the row has something priced on it, which is what the rest of this block is about',
+      priced.length > 0, shop.POOL.map((k) => k + '@' + shop.itemOf(k).price).join(' '));
+    ok('an unbought drawing in it wears its price, off the same ladder as the rest',
+      priced.every((k) => poolCell(k).classList.contains('buy')
+        && poolCell(k).textContent.trim() === (shop.itemOf(k).price / 1000) + 'K'
+        && shop.PRICES.indexOf(shop.itemOf(k).price) >= 0),
+      priced.map((k) => k + ':' + JSON.stringify(poolCell(k).textContent.trim())).join(' '));
+    ok('and it is a button with the same state every priced cell carries, not a switch',
+      priced.every((k) => poolCell(k).localName === 'button'
+        && poolCell(k).hasAttribute('aria-pressed')
+        && !/in play|, off$/.test(poolCell(k).getAttribute('aria-label'))),
+      priced.map((k) => k + ':' + JSON.stringify(poolCell(k).getAttribute('aria-label'))).join(' '));
+    // AND IT SAYS THE FIGURE OUT LOUD, because a reader who cannot see the tag is being asked to
+    // spend. The tag is `10K` and the label is the whole number, which is the scenes' rule
+    ok('and it reads out the price in full rather than the tag',
+      priced.every((k) => poolCell(k).getAttribute('aria-label')
+        === shop.itemOf(k).name + ', ' + shop.itemOf(k).price.toLocaleString('en-US') + ' credits'),
+      priced.map((k) => JSON.stringify(poolCell(k).getAttribute('aria-label'))).join(' '));
+    // NOTHING UNBOUGHT IS IN PLAY. The ring means "this one is showing" everywhere on this screen,
+    // and a drawing nobody paid for showing up would be a teaser for something unsummonable
+    ok('and nothing unbought wears the ring, because nothing unbought is in play',
+      priced.every((k) => !poolCell(k).classList.contains('on')),
+      priced.map((k) => k + ':' + (poolCell(k).getAttribute('class') || '')).join(' '));
     // ---------- 5. what is worn, and what is on sale ----------
     ok('one drawing is in use in every scene, and it is the four that come with the extension',
       worn().length === 4 && ['idle', 'coding', 'despair', 'stunned'].every((k) => cell(k).classList.contains('on')),
@@ -301,17 +350,25 @@ module.exports = {
       cell('idle').getAttribute('aria-label') === 'Small crab, in use'
       && cell('working').getAttribute('aria-label') === 'Busy crab, yours',
       cell('idle').getAttribute('aria-label') + ' / ' + cell('working').getAttribute('aria-label'));
+    // WHICH ONE IS READ OFF THE SHELF, not written here: what stands first for sale moved the day
+    // a second priced drawing went into an earlier scene (2026-11-20, the sleeping crab in quiet)
+    const aim0 = doc.querySelector('#panelShop .sh-cell.aim');
+    const aim0Key = aim0 && (aim0.getAttribute('data-key') || aim0.getAttribute('data-pool'));
     ok('what is on sale sits next to the button that buys it, at its real size',
-      !$('shTry').hidden && srcOf($('shArt')) === artOf('float')
-      && $('shName').textContent === 'Floating crab' && /1,000/.test($('shPrice').textContent),
+      !!aim0Key && !$('shTry').hidden && srcOf($('shArt')) === artOf(aim0Key)
+      && $('shName').textContent === shop.itemOf(aim0Key).name
+      && $('shPrice').textContent.indexOf(shop.itemOf(aim0Key).price.toLocaleString('en-US')) >= 0,
       $('shName').textContent + ' ' + $('shPrice').textContent);
     // THE BLOCK AND A CELL POINT AT EACH OTHER. The screen opens with the first thing for sale
     // already aimed at, so a reader is never shown a price in two places with nothing joining them
     // and is never left to guess that a cell is pressable at all
+    // ONE MARK ON THE WHOLE SCREEN, and that now means both rows: the last row's priced cells can
+    // be aimed at too, so counting only the scenes would miss a second bar appearing down there
     ok('and the cell it was filled from is marked, so the two point at each other',
-      cell('float').classList.contains('aim') && cell('float').getAttribute('aria-pressed') === 'true'
-      && doc.querySelectorAll('#shSlots .sh-cell.aim').length === 1,
-      doc.querySelectorAll('#shSlots .sh-cell.aim').map((c) => c.getAttribute('data-key')).join());
+      !!aim0 && aim0.getAttribute('aria-pressed') === 'true'
+      && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 1,
+      doc.querySelectorAll('#panelShop .sh-cell.aim')
+        .map((c) => c.getAttribute('data-key') || c.getAttribute('data-pool')).join());
     // ONE ACCENT, TWO SHAPES. A ring encloses the cell and says what is in that scene; a bar lies
     // on the bottom edge and says what Buy pays. The screen gains no second colour for it, and the
     // bar is a fill rather than a lifted plate so the high-contrast theme still shows it
@@ -335,28 +392,25 @@ module.exports = {
     // ---------- 6. choosing, which is not buying ----------
     const ledger0 = JSON.stringify(h.gs.data.creditLedgerV1);
     const sent0 = h.sent('shop').length;
-    // THE LAST ROW'S PRESS, which is the third kind: not "which of these is in that moment" but
-    // "is this in play at all". It is here rather than beside the rest of that row because a press
-    // moves the keyboard, and what the focus is on entry is asserted above
-    poolCell(shop.POOL[0]).focus();
-    poolCell(shop.POOL[0]).click(); advance(40);
-    ok('one press takes a drawing out of play, and the screen waits for the host to say so',
-      !poolCell(shop.POOL[0]).classList.contains('on')
-      && poolCell(shop.POOL[0]).getAttribute('aria-pressed') === 'false'
-      && poolCell(shop.POOL[0]).textContent.trim() === 'off',
-      poolCell(shop.POOL[0]).getAttribute('aria-label'));
-    // A PRESS REBUILDS THE WHOLE SHELF, so the cell the keyboard was standing on is detached by
-    // the answer to its own press. The scenes' cells are handed back by name and this row's have
-    // to be too, or a reader on a keyboard is put back at the top of the panel every time
-    ok('and the keyboard is handed back to the cell that was pressed, not to the top of the panel',
-      doc.activeElement === poolCell(shop.POOL[0]),
-      doc.activeElement && (doc.activeElement.getAttribute('aria-label') || doc.activeElement.localName));
-    poolCell(shop.POOL[0]).click(); advance(40);
-    ok('and a second press puts it back',
-      poolCell(shop.POOL[0]).classList.contains('on'),
-      poolCell(shop.POOL[0]).getAttribute('aria-label'));
-    ok('and switching it costs nothing and buys nothing',
-      !stored() || stored().spent === 0, JSON.stringify(stored()));
+    // THE LAST ROW'S PRICE IS PRESSED THE WAY EVERY PRICE IS, because that is what it is until it
+    // is bought: the press points the one button at it and sends nothing. The switch that cell
+    // becomes afterwards is checked after the purchase, which is where it exists
+    const poolBuy = shop.POOL.filter((k) => shop.itemOf(k).price)[0];
+    h.mouseClick(poolCell(poolBuy)); advance(40);
+    ok('a price on the last row aims the one button at itself, like every other price',
+      poolCell(poolBuy).classList.contains('aim')
+      && poolCell(poolBuy).getAttribute('aria-pressed') === 'true'
+      && $('shName').textContent === shop.itemOf(poolBuy).name
+      && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 1,
+      $('shName').textContent + ' | aim on ' + doc.querySelectorAll('#panelShop .sh-cell.aim')
+        .map((c) => c.getAttribute('data-key') || c.getAttribute('data-pool')).join());
+    ok('and it does not switch anything on, because nobody owns it yet',
+      !poolCell(poolBuy).classList.contains('on') && h.sent('mascotPool').length === 0,
+      JSON.stringify(h.sent('mascotPool')));
+    ok('and aiming at it spent nothing and sent the host nothing',
+      stored() === null && h.sent('shop').length === sent0, JSON.stringify(stored()));
+    // ...and the aim goes back where it was, so the rest of this run reads the shelf as it found it
+    h.mouseClick(cells().filter((c) => c.classList.contains('buy'))[0]); advance(40);
     h.mouseClick(cell('working')); advance(20);   // a real press focuses the button it presses
     ok('a choice swaps the drawing in that scene',
       cell('working').classList.contains('on') && !cell('coding').classList.contains('on')
@@ -422,15 +476,23 @@ module.exports = {
       (/\.sh-try\.ping\{[^}]*\}/.exec(css()) || ['(no rule)'])[0]);
 
     // ---------- 8. the purchase ----------
-    const price = shop.itemOf('float').price;
+    // WHICH ITEM IS READ OFF THE SHELF, not written here. The aim falls on the first thing still
+    // for sale, and what stands first moves whenever a priced drawing joins an earlier scene
+    // (2026-11-20: the sleeping crab went into quiet, which is the first scene)
+    const aimCell = doc.querySelector('#shSlots .sh-cell.aim');
+    const aimKey = aimCell && aimCell.getAttribute('data-key');
+    const aimSlot = aimCell && aimCell.getAttribute('data-slot');
+    const price = shop.itemOf(aimKey).price;
     const bal0 = h.ledgerBalance();
+    ok('the shelf aims at something, and it is a drawing with a price on it',
+      !!aimKey && price > 0, aimKey + ' at ' + price);
     ok('it can be afforded, which is what the next few checks need', !btn().disabled, btn().textContent);
     btn().click(); advance(20);
     ok('buying charges the price exactly once',
       h.ledgerBalance() === bal0 - price, bal0 + ' -> ' + h.ledgerBalance());
     ok('and the ledger holds the purchase and the money in ONE record',
       !!stored() && stored().spent === price
-      && Object.keys(stored().owned).join() === 'mascot:float' && stored().moves === 1,
+      && Object.keys(stored().owned).join() === shop.slotOf(aimKey) && stored().moves === 1,
       JSON.stringify(stored()));
     advance(700);   // the header counts down to its new figure; this is past the end of that
     ok('the header says the same thing the record does',
@@ -443,15 +505,23 @@ module.exports = {
       $('ccBal').getAttribute('class') || '(no class)');
     // IT IS WORN AT ONCE. A purchase that showed nothing until a second press would read as
     // nothing having happened
+    const aimFree = shop.SLOTS.filter((s) => s.id === aimSlot).map((s) => s.free)[0];
     ok('what was bought is in its scene without a second press',
-      cell('float').classList.contains('on') && !cell('despair').classList.contains('on'),
+      cell(aimKey).classList.contains('on') && !cell(aimFree).classList.contains('on'),
       wornKeys().join(' '));
     ok('and the scene it went into can now be pressed, because there are two of their own in it',
-      cell('float').localName === 'button' && cell('despair').localName === 'button'
-      && cell('float').textContent.trim() === 'own',
-      cell('float').localName + '/' + cell('despair').localName + ' ' + cell('float').textContent);
-    ok('it said so out loud, once', /Floating crab bought/.test($('shLive').textContent), $('shLive').textContent);
-    // and the shop stops being a shop: nothing left to sell, so the block and the button go
+      cell(aimKey).localName === 'button' && cell(aimFree).localName === 'button'
+      && cell(aimKey).textContent.trim() === 'own',
+      cell(aimKey).localName + '/' + cell(aimFree).localName + ' ' + cell(aimKey).textContent);
+    ok('it said so out loud, once',
+      new RegExp(shop.itemOf(aimKey).name + ' bought').test($('shLive').textContent), $('shLive').textContent);
+    // THE SHOP STOPS BEING A SHOP, but only once there is nothing left, and there are three
+    // priced drawings now rather than one. Buy the rest the same way the reader would, off the
+    // button, and count the presses rather than naming the items
+    let more = 0;
+    while (!$('shCtl').hidden && !btn().disabled && more < 8) { btn().click(); advance(20); more++; }
+    ok('the rest of the shelf can be bought the same way, one press each',
+      more === shop.ITEMS.filter((s) => s.price).length - 1, more + ' more press(es)');
     ok('with nothing left to sell, the sale block and the button leave together',
       $('shTry').hidden && $('shCtl').hidden && note().hidden,
       ($('shTry').hidden ? 'no block' : 'block') + ', ' + ($('shCtl').hidden ? 'no button' : 'button'));
@@ -465,25 +535,74 @@ module.exports = {
     ok('and the stylesheet really hides a hidden sale block, which display:flex would not',
       /\.sh-try\[hidden\]\{display:none/.test(css()),
       (/\.sh-try\[hidden\][^}]*\}/.exec(css()) || ['(no rule)'])[0]);
-    // ...and it can be taken back out, by name, which is what keeps an explicit choice of the free
-    // drawing from being overruled by the purchase
-    cell('despair').click(); advance(20);
+    // WHAT THE WHOLE SHELF COST, summed off the catalog rather than written down, so a drawing
+    // moving rung moves this with it
+    const spentAll = shop.ITEMS.filter((i) => i.price).reduce((n, i) => n + i.price, 0);
+    ok('the purse is down by the sum of the shelf and not a credit more',
+      stored().spent === spentAll && h.ledgerBalance() === bal0 - spentAll,
+      bal0 + ' -> ' + h.ledgerBalance() + ' against ' + spentAll);
+
+    // ---------- 8a. THE SECOND LIFE OF A POOL CELL ----------
+    // A cell on the last row was a price a moment ago and is a switch now. That is the whole
+    // bargain of selling something nobody can summon: buying it is what puts it in play, and the
+    // off switch is the thing bought rather than a setting somewhere else
+    ok('a drawing on the last row is in play the moment it is bought, with no second press',
+      poolCell(poolBuy).classList.contains('on')
+      && poolCell(poolBuy).getAttribute('aria-label') === shop.itemOf(poolBuy).name + ', in play',
+      poolCell(poolBuy).getAttribute('aria-label'));
+    ok('and its cell stopped being a price and became a switch',
+      !poolCell(poolBuy).classList.contains('buy') && !poolCell(poolBuy).classList.contains('aim')
+      && poolCell(poolBuy).textContent.trim() === 'on',
+      (poolCell(poolBuy).getAttribute('class') || '') + ' ' + JSON.stringify(poolCell(poolBuy).textContent.trim()));
+    const spentBefore = stored().spent;
+    poolCell(poolBuy).focus();
+    poolCell(poolBuy).click(); advance(40);
+    ok('one press takes it out of play, and the screen waits for the host to say so',
+      !poolCell(poolBuy).classList.contains('on')
+      && poolCell(poolBuy).getAttribute('aria-pressed') === 'false'
+      && poolCell(poolBuy).textContent.trim() === 'off',
+      poolCell(poolBuy).getAttribute('aria-label'));
+    // A PRESS REBUILDS THE WHOLE SHELF, so the cell the keyboard was standing on is detached by
+    // the answer to its own press. The scenes' cells are handed back by name and this row's have
+    // to be too, or a reader on a keyboard is put back at the top of the panel every time
+    ok('and the keyboard is handed back to the cell that was pressed, not to the top of the panel',
+      doc.activeElement === poolCell(poolBuy),
+      doc.activeElement && (doc.activeElement.getAttribute('aria-label') || doc.activeElement.localName));
+    poolCell(poolBuy).click(); advance(40);
+    ok('and a second press puts it back', poolCell(poolBuy).classList.contains('on'),
+      poolCell(poolBuy).getAttribute('aria-label'));
+    // SWITCHING IS NOT SELLING BACK. Taking it out of play must not look like a refund, or the
+    // one-direction promise this shop makes is a lie (shop.js, there is no refund)
+    ok('and switching it off and on neither charged nor refunded anything',
+      stored().spent === spentBefore && h.ledgerBalance() === bal0 - spentAll
+      && stored().owned[shop.slotOf(poolBuy)] === 1, JSON.stringify(stored()));
+
+    // ...and a bought drawing can be taken back out of its scene, by name, which is what keeps an
+    // explicit choice of the free drawing from being overruled by the purchase. Which scene that
+    // is comes off the aim the run started with rather than a name written here
+    cell(aimFree).click(); advance(20);
     ok('the bought drawing can be taken back out of its scene',
-      cell('despair').classList.contains('on') && !cell('float').classList.contains('on')
-      && h.gs.data.mascotSlotsV1.burn === 'despair', wornKeys().join(' '));
-    ok('and that did not refund anything', stored().spent === price && h.ledgerBalance() === bal0 - price,
-      JSON.stringify(stored()));
-    cell('float').click(); advance(20);
-    ok('and put back in', cell('float').classList.contains('on'), wornKeys().join(' '));
+      cell(aimFree).classList.contains('on') && !cell(aimKey).classList.contains('on')
+      && h.gs.data.mascotSlotsV1[aimSlot] === aimFree, wornKeys().join(' '));
+    ok('and that did not refund anything',
+      stored().spent === spentAll && h.ledgerBalance() === bal0 - spentAll, JSON.stringify(stored()));
+    cell(aimKey).click(); advance(20);
+    ok('and put back in', cell(aimKey).classList.contains('on'), wornKeys().join(' '));
     // the same press again is refused BY THE HOST, and the shelf does not move
-    const spent1 = stored().spent;
-    h.hostSend({ type: 'shop', op: 'buy', key: 'float', n: 9001 }); advance(20);
+    const ownedSig = Object.keys(stored().owned).sort().join();
+    h.hostSend({ type: 'shop', op: 'buy', key: aimKey, n: 9001 }); advance(20);
     ok('the host refuses a second purchase of the same thing, and nothing is charged',
-      stored().spent === spent1 && h.ledgerBalance() === bal0 - price, JSON.stringify(stored()));
-    for (const key of ['soon', 'witch', 'mascot:float', '', 'idle']) {
+      stored().spent === spentAll && h.ledgerBalance() === bal0 - spentAll, JSON.stringify(stored()));
+    // ...including, now, one of the last row's: it is sold like the rest, so it is refused like
+    // the rest rather than through a rule of its own
+    h.hostSend({ type: 'shop', op: 'buy', key: poolBuy, n: 9002 }); advance(20);
+    ok('and a second purchase of the last row’s drawing is refused the same way',
+      stored().spent === spentAll && Object.keys(stored().owned).sort().join() === ownedSig,
+      JSON.stringify(stored()));
+    for (const key of ['soon', 'witch', shop.slotOf(aimKey), '', shop.SLOTS[0].free]) {
       h.hostSend({ type: 'shop', op: 'buy', key, n: 9100 }); advance(20);
       ok('a message buying "' + key + '" buys nothing and costs nothing',
-        stored().spent === spent1 && Object.keys(stored().owned).join() === 'mascot:float'
+        stored().spent === spentAll && Object.keys(stored().owned).sort().join() === ownedSig
         && !$('shErr').hidden, JSON.stringify(stored()) + ' / ' + $('shErr').textContent);
     }
 

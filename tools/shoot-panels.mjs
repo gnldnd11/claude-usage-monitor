@@ -173,8 +173,12 @@ function playMarket({ purse, ticker, amount, agoMs }) {
 // record is seeded through the STORAGE boundary rather than bought on the spot, so that both states
 // of the screen are reachable: `owned: []` is the one with something to buy and a button, and
 // `owned: ['float']` is the one with neither.
-function playShop({ purse, owned, slots }) {
+function playShop({ purse, owned, slots, ownAll }) {
   const shop = require(path.join(ROOT, 'shop.js'));
+  // `ownAll` is every priced drawing there is, read off the catalog, so a drawing added on
+  // a new rung joins this shot the day it lands rather than leaving it measuring a shelf
+  // that still has something on it
+  if (ownAll) owned = shop.ITEMS.filter((i) => i.price).map((i) => i.key);
   const by = 'a1b2c3d4e5f60718';
   // cleaned by the module's own boundary, so this is a record save() could have produced
   let store = shop.clean({
@@ -338,9 +342,12 @@ const SHOTS = {
   // ...and the same screen with nothing left to buy, which is the OTHER state and not a smaller
   // version of this one: the sale block and the control row both go, so which of the two is taller
   // is a question only a measurement answers
+  // ...and the same screen with nothing left to buy. WHAT THAT TAKES IS READ OFF THE CATALOG
+  // rather than listed here: there were one priced drawing, then three (2026-11-20), and a list
+  // written out would have quietly turned this back into "most of the shelf bought"
   'shop-own': {
     file: 'measure-shop-own', tab: 'games', door: 'shop', measure: true,
-    shop: { owned: ['float'], slots: { burn: 'float', typing: 'working' } }
+    shop: { ownAll: true, slots: { burn: 'float', typing: 'working' } }
   }
 };
 

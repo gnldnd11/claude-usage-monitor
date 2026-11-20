@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.36.0: Prices come off a ladder, and the rung is how much was drawn
+
+- **The two drawings that arrived yesterday were free, and they should not have been.** The sleeping crab is 1,000 credits and the black hole is 10,000. Nothing that was already free has a price put on it: every scene still falls back to a drawing that costs nothing, so a panel with nothing bought looks exactly as it did.
+- **There are four prices and there will not be a fifth without a reason.** 1K, 10K, 100K, 1000K, and which rung a drawing stands on is its frame count: four frames, eight, sixteen, thirty two. That is the one thing about a drawing that is not an opinion, so nobody has to argue about how good one is, and a drawing redrawn with more frames in it fails a test rather than shipping at a price that no longer matches what was drawn. The top two rungs are empty today.
+- **Ten times apart rather than twice, because a price here is a two or three character tag.** `1K` beside `10K` reads as a different kind of thing; doubling reads as noise. Frames double while the price goes up tenfold, since drawing twice as many frames is far more than twice the work.
+- **The random row can carry a price now, and the black hole does.** Before it is bought that row is empty and nothing turns up, which is the same bargain every scene makes: the drawing you bought is the drawing you get. An unbought cell on that row behaves like every other priced cell, with its price as its word and the one button pointed at it, and becomes the on-and-off switch the moment it is yours.
+- **The shop screen says what it sells.** Its heading is `Mascot shop` rather than `Shop`, which named a place without naming what was in it. The door at the crossroads still says `Shop`, because that column is 82px at a narrow sidebar and a longer word folds to two lines while `Games` beside it stays on one.
+
 ## 1.35.0: A crab asleep in a bed, and one that falls into a hole
 
 - **Quiet had one drawing and no choice in it.** The small crab is still what a panel shows when nothing has answered, and nothing moves for anyone who does not go and pick: a crab asleep in a bed is beside it now, free, and that scene is a row you can choose in for the first time. The default was deliberately not changed, because Quiet is where a panel spends most of its life and a new drawing there would arrive on every screen without anybody having asked for it.

@@ -1412,7 +1412,7 @@
     return '<div class="ihead bj-head">'
       + '<button type="button" class="bj-back" id="shBack" title="Games and shop">' + (ASSET_UI.chevron || '') + '</button>'
       + '<div class="it" title="Which crab shows up when">' + (ASSET_UI.tag || '')
-      + '<span class="bj-ttl">Shop</span></div>'
+      + '<span class="bj-ttl">Mascot shop</span></div>'
       // the corner stays EMPTY: it is for the one figure a depth keeps reading, and this screen's
       // figures are all on the cells (docs/game-panels.md, section 2)
       + '<div class="bj-side"></div></div>'
@@ -1458,7 +1458,11 @@
     el('shRand').addEventListener('click', function (e) {
       var c = e.target.closest ? e.target.closest('button.sh-cell') : null;
       if (!c) return;
-      shopPoolSet(c.getAttribute('data-pool'), c.getAttribute('aria-pressed') !== 'true');
+      // ...unless it has not been bought yet, in which case it is the same press every priced
+      // cell above takes: point the one button at it. A switch for something nobody owns would
+      // be a switch with nothing behind it
+      if (c.classList.contains('buy')) shopPick(c.getAttribute('data-pool'));
+      else shopPoolSet(c.getAttribute('data-pool'), c.getAttribute('aria-pressed') !== 'true');
     });
     el('shAct').addEventListener('click', shopAct);
     return node;
@@ -1487,11 +1491,20 @@
     return !!key && list.split(' ').indexOf(key) >= 0;
   }
   // Everything still for sale, in the shelf's own order, which is the order a reader is reading
+  // ...and the last row is walked after them, in the order the shelf is read. A drawing in the
+  // pool can carry a price like any other (shop.js, PRICES), and leaving it out here would draw a
+  // price on a cell the one button could never be pointed at
   function shopForSale(slots) {
     var out = [], i, j;
     for (i = 0; i < slots.length; i++) {
       for (j = 0; j < slots[i].opts.length; j++) {
         if (slots[i].opts[j].price && !slots[i].opts[j].owned) out.push(slots[i].opts[j]);
+      }
+    }
+    var p = sh.st && sh.st.pool;
+    if (p && p.opts) {
+      for (j = 0; j < p.opts.length; j++) {
+        if (p.opts[j].price && !p.opts[j].owned) out.push(p.opts[j]);
       }
     }
     return out;
@@ -1512,6 +1525,8 @@
     for (i = 0; i < slots.length; i++) {
       for (j = 0; j < slots[i].opts.length; j++) if (slots[i].opts[j].key === key) return slots[i].opts[j];
     }
+    var p = sh.st && sh.st.pool;
+    if (p && p.opts) for (j = 0; j < p.opts.length; j++) if (p.opts[j].key === key) return p.opts[j];
     return null;
   }
   // One cell. `on` is whether this drawing is the one in that scene now, `pick` whether choosing in
@@ -1551,18 +1566,34 @@
   // A CELL ON THE LAST ROW, which asks a different question from every cell above it. Those say
   // which ONE drawing is in a moment; this says whether a drawing that belongs to no moment is in
   // play at all. So the ring is the same ring and means the same thing it always means (this one
-  // is showing), and the word under it is `on` or `off` rather than what it cost: nothing in this
-  // row costs anything and nothing ever will (shop.js, POOL).
+  // is showing), and the word under it is `on` or `off` rather than what it cost.
+  //
+  // UNTIL IT HAS BEEN BOUGHT, and a drawing on this row can have a price (shop.js, PRICES: the
+  // black hole is 10K). Then it is the same cell every priced cell above is: the price as its
+  // word, the aim bar when the one button is pointed at it, and a press that moves that aim
+  // rather than switching something nobody owns yet.
+  //
   // IT IS ALWAYS PRESSABLE, unlike a scene with one drawing. A scene must always have something in
   // it, so one drawing settles it and the cell is not a button; a pool may be empty, and emptying
   // it is how a reader who does not want the panel changing under them turns the whole thing off.
-  function shopPoolCellHtml(o, on) {
+  function shopPoolCellHtml(o, on, aim) {
     var art = shopArt(o.key);
+    var buy = o.price && !o.owned;
+    var pic = art ? '<img class="sh-pic' + (inkLift(o.key) ? ' ink-lift' : '') + '" src="' + art + '" alt=""/>' : '';
+    if (buy) {
+      // ONE GRAMMAR FOR BOTH LIVES AND FOR BOTH ROWS: aria-pressed on a button, and the LABEL says
+      // which sense it is in. Here it is the priced sense the scenes' cells use, so the state it
+      // carries is the one they carry, which is whether the button below is pointed at this cell.
+      // Leaving it off would make this the only pressable cell on the shelf with no state at all
+      return '<button type="button" class="sh-cell buy' + (aim ? ' aim' : '') + '"'
+        + ' data-pool="' + esc(o.key) + '" aria-pressed="' + (aim ? 'true' : 'false') + '"'
+        + ' aria-label="' + esc(o.name + ', ' + fmtInt(o.price) + ' credits') + '">'
+        + pic + '<span class="sh-tag">' + esc(shopTag(o.price)) + '</span></button>';
+    }
     return '<button type="button" class="sh-cell pick' + (on ? ' on' : '') + '"'
       + ' data-pool="' + esc(o.key) + '" aria-pressed="' + (on ? 'true' : 'false') + '"'
       + ' aria-label="' + esc(o.name + ', ' + (on ? 'in play' : 'off')) + '">'
-      + (art ? '<img class="sh-pic' + (inkLift(o.key) ? ' ink-lift' : '') + '" src="' + art + '" alt=""/>' : '')
-      + '<span class="sh-tag">' + (on ? 'on' : 'off') + '</span></button>';
+      + pic + '<span class="sh-tag">' + (on ? 'on' : 'off') + '</span></button>';
   }
   // The row itself: the same heading the scenes have, because it answers the same question with
   // the only answer it has, and then the cells. The empty ones are the scenes' empty ones exactly
@@ -1575,7 +1606,11 @@
       // no inline column count here: this row is four across or two by two by its own rule
       // (styles.js, .sh-rand .sh-opts) rather than by the widest scene above it
       + '<div class="sh-opts" role="group" aria-label="' + esc(p.name) + '">';
-    for (j = 0; j < p.opts.length; j++) html += shopPoolCellHtml(p.opts[j], on.indexOf(p.opts[j].key) >= 0);
+    var sale = shopOnSale((sh.st && sh.st.slots) || []);
+    for (j = 0; j < p.opts.length; j++) {
+      html += shopPoolCellHtml(p.opts[j], on.indexOf(p.opts[j].key) >= 0,
+        !!sale && sale.key === p.opts[j].key);
+    }
     for (j = p.opts.length; j < p.cells; j++) html += shopSoonHtml();
     return html + '</div>';
   }

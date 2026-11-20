@@ -1047,15 +1047,26 @@ test('shop: open answers with the catalog, nothing owned and nothing held', () =
   assert.deepEqual(r.state.slots.map((s) => s.id), shop.SLOTS.map((s) => s.id));
   assert.deepEqual(r.state.slots.map((s) => s.opts.map((o) => o.price)),
     shop.SLOTS.map((s) => s.opts.map((k) => shop.itemOf(k).price)), 'the screen is not pricing anything');
-  // everything free is had from the first launch and the one priced drawing is not
+  // everything free is had from the first launch and nothing priced is
   const row = (slot, key) => r.state.slots.filter((s) => s.id === slot)[0].opts.filter((o) => o.key === key)[0];
   assert.equal(row('quiet', 'idle').owned, true);
   assert.equal(row('typing', 'working').owned, true);
-  assert.equal(row('burn', 'float').owned, false);
   assert.equal(row('burn', 'despair').owned, true);
-  // ...and only a scene with two drawings of their own is one a press can change. Quiet is one of
-  // them since the sleeping crab arrived: it used to be settled with a single drawing in it
-  assert.deepEqual(r.state.slots.map((s) => s.pick), [true, true, false, false]);
+  assert.equal(row('burn', 'float').owned, false);
+  assert.equal(row('quiet', 'sleep').owned, false, 'a priced drawing was had for nothing');
+  // EVERY SCENE FALLS BACK TO SOMETHING FREE, which is what stops a fresh install having a scene
+  // it cannot fill. Read off the catalog rather than listed here, so a drawing moving rung cannot
+  // leave a scene unfillable without this failing
+  for (const s of r.state.slots) {
+    assert.equal(shop.itemOf(s.free).price, 0, s.id + ' falls back to something priced');
+    assert.ok(s.opts.some((o) => o.owned), s.id + ' has nothing in it a fresh install may wear');
+  }
+  // ...and a press can only change a scene that holds more than one drawing THE READER HAS. A
+  // priced drawing beside a free one does not make the scene choosable until it is bought, which
+  // is why quiet is settled here and not after the purchase a few tests down
+  assert.deepEqual(r.state.slots.map((s) => s.pick),
+    shop.SLOTS.map((s) => s.opts.filter((k) => !shop.itemOf(k).price).length > 1));
+  assert.deepEqual(r.state.slots.map((s) => s.pick), [false, true, false, false]);
   assert.equal(r.free, r.balance, 'nothing is riding, so the whole balance may be spent');
   assert.equal(shopRec(), null, 'opening the shop wrote a record');
 });
@@ -1064,16 +1075,25 @@ test('shop: open answers with the catalog, nothing owned and nothing held', () =
 // moment at all. The reply carries what the cells ARE and not which of them are in play, exactly
 // as it carries the scenes' drawings and not which one is worn: that half rides the data push, and
 // a second copy here could disagree with it between two messages.
-test('shop: the shelf also carries the row that has no scene, priced at nothing', () => {
+//
+// IT IS SOLD LIKE ANY OTHER ROW. That is the part worth pinning, because it reads oddly at first:
+// nobody can summon one of these to look at what they bought. What makes the bargain the same as a
+// scene's is that an UNBOUGHT pool drawing is not in play at all, so buying it is what puts it in
+// play. The cell therefore has two lives, and the second one is the switch (the test below).
+test('shop: the shelf carries the row that has no scene, and it is sold like the rest', () => {
   const r = send({ type: 'shop', op: 'open', n: 12 });
   assert.equal(r.state.pool.id, shop.POOL_ID);
   assert.ok(r.state.pool.cells >= r.state.pool.opts.length, 'the row shows at least what is in it');
   assert.deepEqual(r.state.pool.opts.map((o) => o.key), shop.POOL.slice());
-  // NOTHING IN HERE IS FOR SALE AND NOTHING IN HERE IS OWED. A drawing that cannot be summoned
-  // must not be something a reader paid for, and shop.js refuses at load if one ever is
-  assert.deepEqual(r.state.pool.opts.map((o) => o.price), r.state.pool.opts.map(() => 0));
-  assert.deepEqual(r.state.pool.opts.map((o) => o.owned), r.state.pool.opts.map(() => true));
-  assert.equal('pool' in r.state.pool.opts[0], false, 'which ones are in play is not in the reply');
+  // ITS PRICES COME OFF THE SAME LADDER as every other row's, and the screen is handed them rather
+  // than working one out. Read against the catalog, so a drawing moving rung moves both at once
+  assert.deepEqual(r.state.pool.opts.map((o) => o.price), shop.POOL.map((k) => shop.itemOf(k).price));
+  for (const o of r.state.pool.opts) {
+    assert.ok(o.price === 0 || shop.PRICES.indexOf(o.price) >= 0, o.key + ' is priced off the ladder');
+  }
+  // NOTHING PRICED IS HAD FOR NOTHING, here as everywhere: `owns` is the one place that answers it
+  assert.deepEqual(r.state.pool.opts.map((o) => o.owned), shop.POOL.map((k) => !shop.itemOf(k).price));
+  assert.equal('on' in r.state.pool.opts[0], false, 'which ones are in play is not in the reply');
   assert.equal(shopRec(), null, 'reading the shelf wrote a record');
 });
 
@@ -1229,9 +1249,13 @@ test('shop: what every push carries is what was bought and what is worn', () => 
   // just bought is worn without a second press: a purchase that showed nothing would read as
   // nothing having happened
   assert.deepEqual(d.shop.slots, { quiet: 'idle', typing: 'coding', burn: 'float', spent: 'stunned' });
-  // ...and what is in play with no scene at all. EVERYTHING, for a reader who has pressed nothing:
-  // a drawing nobody has seen is not a gimmick, and one press takes it out again
-  assert.deepEqual(d.shop.pool, shop.POOL.slice());
+  // ...and what is in play with no scene at all. EVERYTHING OWNED, which for a reader who has
+  // bought only the floating crab is nothing: the pool's default is "everything owned", and
+  // ownership is the same question `owns` answers everywhere else. A priced drawing showing up
+  // unbought would be a teaser for something nobody can summon
+  assert.deepEqual(d.shop.pool, []);
+  assert.deepEqual(d.shop.pool, shop.randomPool(d.shop.owned, {}),
+    'the push worked the pool out differently from shop.js');
 });
 
 test('shop: a scene takes only a drawing that goes in it and has been bought', () => {
@@ -1276,33 +1300,49 @@ test('shop: a drawing nobody bought cannot be worn, whatever is stored', () => {
   assert.equal(shop.whyNotWear([], 'nope', 'idle'), 'no such scene');
 });
 
-// THE OFF SWITCH, which is the only thing a reader can do about a drawing that turns up on its
-// own. It is on the drawing itself rather than in a settings sheet, so emptying the row is how the
-// whole thing is turned off, and that is a state the model has to be able to hold.
-test('shop: the row with no scene switches off, and off is a state the store can hold', () => {
-  const spent = shopRec().spent, owned = JSON.stringify(shopRec().owned);
+// A POOL CELL HAS TWO LIVES and this is the join between them: unbought it is a price like any
+// other, and bought it is a switch. The switch is the only thing a reader can do about a drawing
+// that turns up on its own, it is on the drawing itself rather than in a settings sheet, and
+// emptying the row is how the whole thing is turned off, so off has to be a state the model holds.
+test('shop: a drawing in that row is bought first and is a switch after', () => {
+  const only = shop.POOL[0];
   const pool = () => lastPush().shop.pool;
   const set = (key, on) => onMessage({ type: 'mascotPool', key, on });
-  const only = shop.POOL[0];
-  assert.deepEqual(pool(), shop.POOL.slice(), 'everything starts in play');
+  // UNBOUGHT IT IS NOT IN PLAY, and it cannot be switched into play either: the switch is for
+  // something that was paid for, and the host says so rather than the screen
+  assert.deepEqual(pool(), [], 'something nobody bought was in play');
+  set(only, true);
+  assert.deepEqual(pool(), [], 'an unbought drawing was switched on');
+  assert.equal(shop.whyNotPool([], only), 'that has not been bought');
+  // ...so it is bought, off the same message and the same ladder as every other priced drawing
+  const paid = shopRec() ? shopRec().spent : 0;
+  const bought = send({ type: 'shop', op: 'buy', key: only, n: 61 });
+  assert.equal(bought.error, undefined, 'the pool drawing could not be bought');
+  assert.equal(shopRec().spent, paid + shop.itemOf(only).price, 'it was not charged its own price');
+  assert.equal(shop.whyNotPool([shop.slotOf(only)], only), null);
+  // AND BUYING IT PUTS IT IN PLAY, with no second press. A purchase that showed nothing would
+  // read as nothing having happened, which is the scenes' rule too (wornSlots)
+  assert.deepEqual(pool(), [only], 'buying it did not put it in play');
+
+  const spent = shopRec().spent, owned = JSON.stringify(shopRec().owned);
   set(only, false);
   assert.deepEqual(pool(), [], 'the last one could not be switched off');
   assert.deepEqual(gs.data.mascotSlotsV1[shop.POOL_ID], [], 'the switch is not in globalState');
-  // AN EMPTY LIST IS NOT "NOTHING STORED". The default is everything in play, so a reader who
-  // turned it off must not get it back on the next launch
-  assert.deepEqual(shop.randomPool(shop.POOL.slice(), gs.data.mascotSlotsV1), []);
+  // AN EMPTY LIST IS NOT "NOTHING STORED". The default is everything OWNED, so a reader who
+  // turned it off must not get it back on the next launch, however much they own
+  assert.deepEqual(shop.randomPool([shop.slotOf(only)], gs.data.mascotSlotsV1), []);
+  assert.deepEqual(shop.randomPool([shop.slotOf(only)], {}), [only], 'nothing stored is not everything off');
   set(only, true);
   assert.deepEqual(pool(), [only], 'it could not be switched back on');
   // REFUSED BY THE HOST, and nothing moves: a key that is not in the row, a scene's drawing, junk
-  const before = JSON.stringify(pool());
+  const before2 = JSON.stringify(pool());
   for (const key of ['idle', 'float', 'nothing', '', 'mascot:blackhole', '__proto__']) {
     set(key, false);
-    assert.equal(JSON.stringify(pool()), before, key + ' was allowed into the row');
+    assert.equal(JSON.stringify(pool()), before2, key + ' was allowed into the row');
   }
-  assert.equal(shop.whyNotPool([], 'idle'), 'that is not one of the random drawings');
-  assert.equal(shop.whyNotPool([], only), null, 'a free drawing needs no purchase');
+  assert.equal(shop.whyNotPool([shop.slotOf(only)], 'idle'), 'that is not one of the random drawings');
   // a press that asks for the state it is already in writes nothing
-  assert.equal(shop.poolAfter([], gs.data.mascotSlotsV1, only, true), null);
+  assert.equal(shop.poolAfter([shop.slotOf(only)], gs.data.mascotSlotsV1, only, true), null);
   // and no money moved for any of it
   assert.equal(shopRec().spent, spent, 'switching a drawing cost credits');
   assert.equal(JSON.stringify(shopRec().owned), owned, 'switching a drawing changed what is owned');

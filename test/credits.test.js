@@ -536,14 +536,32 @@ const SH = (by, moves, spent, keys) => ({
 const shopBalance = (led) => credits.creditSummary(credits.normalizeLedger(led), 'x', false).balance;
 const FLOAT = 1000;
 
-test('shop: one thing is sold, the rest comes with the extension, and one price covers it', () => {
-  // one price and no second one without a reason written into shop.js: a price per item is a
-  // judgement per item. Free is free, and everything else is one of the table's figures
-  assert.deepEqual(shopMod.PRICES, [FLOAT]);
+test('shop: prices come off a ladder, and the rung is the drawing\'s frame count', () => {
+  // A ladder is one judgement; a price per item is a judgement per item, which comes out
+  // differently every time. Free is free, and everything else stands on a rung
+  assert.deepEqual(shopMod.PRICES, [1000, 10000, 100000, 1000000]);
   assert.ok(shopMod.ITEMS.every((s) => s.price === 0 || shopMod.PRICES.indexOf(s.price) >= 0),
-    'a price outside the table');
-  assert.equal(shopMod.ITEMS.filter((s) => s.price).length, 1, 'more than one thing is on sale');
+    'a price outside the ladder');
+  // ten times apart, so two rungs cannot be confused in a two or three character tag
+  for (let i = 1; i < shopMod.PRICES.length; i++) {
+    assert.equal(shopMod.PRICES[i], shopMod.PRICES[i - 1] * 10, 'the rungs are not a decade apart');
+  }
+  // WHICH RUNG, read off the file rather than off an opinion: four frames is the first rung and
+  // eight is the second. A redrawn asset with more frames in it fails here rather than shipping
+  // at a price that no longer matches what was drawn
+  const apng = require(path.join(__dirname, 'apng.js'));
+  const RUNG_OF_FRAMES = { 4: 1000, 8: 10000, 16: 100000, 32: 1000000 };
+  // frames double while the price goes up tenfold, and the ladder says so in both directions
+  assert.deepEqual(Object.keys(RUNG_OF_FRAMES).map(Number), [4, 8, 16, 32]);
+  assert.deepEqual(Object.values(RUNG_OF_FRAMES), shopMod.PRICES.slice());
+  for (const s of shopMod.ITEMS) {
+    if (!s.price) continue;
+    const f = apng.read(path.join(ROOT, 'mascot-' + s.key + '.png')).frames;
+    assert.equal(s.price, RUNG_OF_FRAMES[f], s.key + ' has ' + f + ' frames but costs ' + s.price);
+  }
   assert.equal(shopMod.itemOf('float').price, FLOAT);
+  assert.equal(shopMod.itemOf('sleep').price, FLOAT);
+  assert.equal(shopMod.itemOf('blackhole').price, 10000);
   assert.equal(shopMod.slotOf('float'), 'mascot:float');
   // THE FOUR SCENES, each falling back to a drawing that is free: a scene whose fallback had a
   // price would be a scene a reader who bought nothing could not fill at all

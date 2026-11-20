@@ -1,12 +1,16 @@
 // The crab's shop. Credits go OUT here and nothing comes back, which makes it the only place in
 // this extension where money moves in one direction, and that is what every rule below is about.
 //
-// THERE IS ONE THING ON SALE: the drawing of the crab floating in the water, which the panel shows
-// while nothing is being answered (mascot-float.png, webview.js's MASCOT_ART). Before it is bought
-// that quiet moment is the old small crab, exactly as it was before this screen existed, and buying
-// it is what puts the floating one there instead. Nothing that was free has a price put on it: the
-// agents' 34 appearances stay free, the rooms stay free, and the drawing shown WHILE the account is
-// being used (mascot-coding.png) is free and is not in the catalog at all.
+// THREE THINGS ARE ON SALE. The floating crab and the sleeping crab are each an ALTERNATIVE
+// inside a scene the panel already draws something for, so before either is bought that moment
+// looks exactly as it did before this screen existed. The black hole is not an alternative to
+// anything: it belongs to no scene and turns up on its own. It costs ten times as much because it
+// is twice the drawing, eight frames against four, and the ladder is read off frames (PRICES).
+//
+// Nothing that was free has a price put on it, and that rule has held through every addition: the
+// agents' 34 appearances stay free, the rooms stay free, every scene keeps the free drawing it
+// opened with, and the drawing shown WHILE the account is being used (mascot-coding.png) is free
+// and is a scene's fallback rather than a catalog row anybody has to buy.
 //
 // The shelf has room for more and the rest of it is empty on purpose. What goes there has not been
 // decided, so the screen draws the empty slots as slots and this file does not invent names for
@@ -59,14 +63,38 @@
 // extension.js makes these (16 hex characters). Anything else, "__proto__" included, is dropped
 const REPLICA_RE = /^[0-9a-f]{16}$/;
 
-// ONE PRICE, AND A SECOND IS NOT ADDED without a reason written down here. A price per item is a
-// judgement per item, and that judgement comes out differently every time. 1,000 is a quarter of a
-// day of this reader's own earning (4,807 credits a day over the last 30 days), so the one thing on
-// the shelf is affordable within a day of installing and is still worth pressing a button for.
-// It is NOT retuned when CREDIT_UNIT moves. The ledger stores raw tokens and prices them on every
-// read, so a changed rate re-prices the past and leaves this where it is, which is the same promise
-// the casino's MIN_BET makes.
-const PRICES = Object.freeze([1000]);
+// FOUR TIERS, TEN TIMES APART, AND NOTHING BETWEEN THEM. A price is a judgement, and a judgement
+// made per item comes out differently every time; a ladder is a judgement made once, after which
+// pricing an item is only choosing which rung it stands on. A row priced off the ladder refuses to
+// load (the price check below ITEMS), so the ladder cannot be widened by one item quietly adding
+// a rung of its own.
+//
+// Ten times apart rather than two, because the rungs have to be TELLABLE APART at a glance on a
+// shelf where the price is a two or three character tag (`1K`, `10K`). Doubling reads as noise;
+// an order of magnitude reads as a different kind of thing.
+//
+// WHICH RUNG AN ITEM STANDS ON IS ITS FRAME COUNT, which is the one thing about a drawing that is
+// not an opinion: it is how much was drawn. Four frames is a rung, eight is the next one up. That
+// also means the ladder cannot drift, because nobody has to argue about how good a drawing is.
+//
+//     1K      4 frames    floating crab, sleeping crab
+//     10K     8 frames    black hole crab
+//     100K   16 frames    unclaimed
+//     1000K  32 frames    unclaimed
+//
+// Frames double while the price goes up tenfold, which is on purpose: drawing twice as many
+// frames is far more than twice the work, and the top of the ladder should be something somebody
+// saved for rather than something they passed on the way.
+//
+// For scale, against this reader's own earning of 4,807 credits a day over 30 days: 1K is a
+// quarter of a day, 10K is two days, 100K is three weeks, 1000K is seven months. The top two
+// rungs are deliberately empty and may stay that way. A ladder with only its bottom rungs used is
+// still a ladder; a rung invented to fit one item is a number pulled out of the air.
+//
+// NOT RETUNED when CREDIT_UNIT moves. The ledger stores raw tokens and prices them on every read,
+// so a changed rate re-prices the past and leaves this where it is, which is the same promise the
+// casino's MIN_BET makes.
+const PRICES = Object.freeze([1000, 10000, 100000, 1000000]);
 
 // The prefix every record key carries (`mascot:float`). It names the KIND of thing bought, not the
 // scene it is worn in, so the four scenes below did not move a single stored key when they arrived:
@@ -86,13 +114,13 @@ const SLOT = 'mascot';
 // bought the floating crab" from "prefers the one that was always there".
 const ITEMS = Object.freeze([
   { key: 'idle', name: 'Small crab', price: 0 },
-  { key: 'sleep', name: 'Sleeping crab', price: 0 },
+  { key: 'sleep', name: 'Sleeping crab', price: 1000 },
   { key: 'coding', name: 'Laptop crab', price: 0 },
   { key: 'working', name: 'Busy crab', price: 0 },
   { key: 'despair', name: 'Sinking crab', price: 0 },
   { key: 'stunned', name: 'Flat crab', price: 0 },
   { key: 'float', name: 'Floating crab', price: 1000 },
-  { key: 'blackhole', name: 'Black hole crab', price: 0 }
+  { key: 'blackhole', name: 'Black hole crab', price: 10000 }
 ].map((s) => Object.freeze(s)));
 
 // SOLD ONCE AND NO LONGER OFFERED. Empty today, and it is here rather than waiting to be invented:
@@ -208,7 +236,13 @@ for (const s of ITEMS.concat(RETIRED)) {
   for (const k of POOL) {
     const it = itemOf(k);
     if (!it) throw new Error('shop: the pool holds ' + k + ', which is not a row');
-    if (it.price) throw new Error('shop: ' + k + ' is in the pool and priced; nothing unsummonable is sold');
+    // A POOL ITEM MAY BE PRICED, and the black hole is (10K, PRICES). It reads oddly at first,
+    // since nobody can summon it to look at what they bought, and the answer is that randomPool
+    // already filters by ownership: an unbought pool drawing is not in play, so buying it is what
+    // puts it in play, which is the same bargain a scene's drawing makes. What it may NOT be is
+    // the only thing in the pool while unbought AND the pool's whole default, which is checked a
+    // line down rather than here: nothing stored means everything OWNED is in play, so a reader
+    // who has bought nothing has an empty pool and sees nothing rather than a teaser.
     for (const s of SLOTS) {
       if (s.opts.indexOf(k) >= 0) throw new Error('shop: ' + k + ' is both a ' + s.id + ' drawing and a random one');
     }
