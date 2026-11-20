@@ -12,9 +12,11 @@
 //   3. the shelf is the FOUR SCENES, every one of them showing the same number of cells, and the
 //      shop prices nothing: each cell arrives with its price, whether it is owned and whether a
 //      press on it could change anything.
-//   4. THREE KINDS OF CELL ARE TOLD APART. A drawing that can be chosen is a button; a drawing
-//      that cannot (nothing to choose between, or not bought yet) is not; an empty slot has NO
-//      PICTURE, which is the one thing that separates it from a drawing nobody can press.
+//   4. THREE KINDS OF CELL ARE TOLD APART. A drawing that can be chosen is a button; a PRICE is a
+//      button too, and pressing it points the one control at that drawing (a ring says what is in
+//      a scene, a bar under the price says what Buy pays, and no second colour is spent on the
+//      difference); a drawing in a settled scene is not a button; an empty slot has NO PICTURE,
+//      which is the one thing that separates it from a drawing nobody can press.
 //   5. A PURCHASE IS CHARGED ONCE AND IS NOT A WIN. The balance falls by the price, the ledger
 //      holds the purchase and the money in one record, and the header does not celebrate it.
 //   6. what cannot be afforded SAYS WHY, and says which of the two reasons it is: there are none,
@@ -79,9 +81,14 @@ module.exports = {
     ok('the first door takes the focus', active() === $('crDoorGames'), activeName());
     // the pictures have no pixel grid to preserve, so nearest-neighbour would drop their outlines
     ok('the heroes are scaled smoothly while the pixel art is not',
-      /\.cr-art img\{[^}]*max-height:120px/.test(css())
+      /\.cr-art\{[^}]*aspect-ratio:2\/1[^}]*max-height:72px/.test(css())
       && !/\.cr-art img\{[^}]*image-rendering/.test(css())
       && /\.sparkle\{[^}]*image-rendering:pixelated/.test(css()),
+      (/\.cr-art\{[^}]*\}/.exec(css()) || [''])[0]);
+    // each drawing fills the BOX, not its column: that is what puts the two on one height and
+    // leaves the width neither of them needs as air around them (docs/shop-spec.md, section 2-2)
+    ok('and each one is fitted whole into that box rather than stretched across its column',
+      /\.cr-art img\{width:100%;height:100%;object-fit:contain;object-position:bottom/.test(css()),
       (/\.cr-art img\{[^}]*\}/.exec(css()) || [''])[0]);
 
     // ---------- 2. one arrow is one step, from every depth ----------
@@ -155,6 +162,11 @@ module.exports = {
         JSON.stringify(note().textContent));
       ok('and the button is still on the screen, because there is still something to buy',
         !$('shCtl').hidden && btn().textContent === 'Buy', btn().textContent);
+      // AIMING IS NOT AFFORDING. What the button is pointed at is the reader's, what it may be
+      // pressed for is the host's, and a purse that cannot reach the price takes neither away
+      ok('and the price is still a cell that can be pressed, and still the one aimed at',
+        cell('float').localName === 'button' && cell('float').classList.contains('aim'),
+        cell('float').localName + ' ' + (cell('float').getAttribute('class') || ''));
       ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e && e.message).join(' | '));
       return;
     }
@@ -202,12 +214,16 @@ module.exports = {
       !!picOf(cell('idle')) && cell('idle').textContent.trim() === 'free'
       && !cell('idle').classList.contains('soon'),
       JSON.stringify(cell('idle') && cell('idle').textContent));
-    // NOT PRESSABLE AND NOT IN THE TAB ORDER, for both of those kinds: something that cannot be
-    // chosen should not be counted through by a reader on a keyboard
-    ok('neither an empty slot nor the unbought drawing is a button',
-      soon().every((c) => c.localName !== 'button' && !c.hasAttribute('tabindex'))
-      && cell('float').localName !== 'button' && !cell('float').hasAttribute('tabindex'),
-      soon().map((c) => c.localName).join(' ') + ' / ' + cell('float').localName);
+    // NOT PRESSABLE AND NOT IN THE TAB ORDER: something that cannot be chosen should not be
+    // counted through by a reader on a keyboard
+    ok('an empty slot is not a button',
+      soon().every((c) => c.localName !== 'button' && !c.hasAttribute('tabindex')),
+      soon().map((c) => c.localName).join(' '));
+    // ...but A PRICE IS. The reported fault was a cell with a figure on it that did nothing when it
+    // was pressed, and the answer is that pressing it aims the one control at that drawing
+    ok('the unbought drawing is a button, because pressing a price points Buy at it',
+      cell('float').localName === 'button' && !cell('float').hasAttribute('disabled'),
+      cell('float').localName);
     ok('and an empty slot has no drawing to name, so there is nothing to send for it',
       soon().every((c) => !c.hasAttribute('data-key') && !c.hasAttribute('data-slot')),
       soon().map((c) => c.getAttribute('data-key') + '/' + c.getAttribute('data-slot')).join(' '));
@@ -239,6 +255,24 @@ module.exports = {
       !$('shTry').hidden && srcOf($('shArt')) === artOf('float')
       && $('shName').textContent === 'Floating crab' && /1,000/.test($('shPrice').textContent),
       $('shName').textContent + ' ' + $('shPrice').textContent);
+    // THE BLOCK AND A CELL POINT AT EACH OTHER. The screen opens with the first thing for sale
+    // already aimed at, so a reader is never shown a price in two places with nothing joining them
+    // and is never left to guess that a cell is pressable at all
+    ok('and the cell it was filled from is marked, so the two point at each other',
+      cell('float').classList.contains('aim') && cell('float').getAttribute('aria-pressed') === 'true'
+      && doc.querySelectorAll('#shSlots .sh-cell.aim').length === 1,
+      doc.querySelectorAll('#shSlots .sh-cell.aim').map((c) => c.getAttribute('data-key')).join());
+    // ONE ACCENT, TWO SHAPES. A ring encloses the cell and says what is in that scene; a bar lies
+    // on the bottom edge and says what Buy pays. The screen gains no second colour for it, and the
+    // bar is a fill rather than a lifted plate so the high-contrast theme still shows it
+    ok('the two marks are one colour in two shapes, and neither is a new colour',
+      /\.sh-cell\.on\{[^}]*box-shadow:inset 0 0 0 1\.5px #e8895a/.test(css())
+      && /\.sh-cell\.aim::after\{[^}]*background:#e8895a/.test(css())
+      && !/\.sh-cell\.aim[^}]*box-shadow/.test(css()),
+      (/\.sh-cell\.aim::after\{[^}]*\}/.exec(css()) || ['(no rule)'])[0]);
+    ok('and the worn ring and the aimed bar are never on one cell',
+      cells().every((c) => !(c.classList.contains('on') && c.classList.contains('aim'))),
+      cells().filter((c) => c.classList.contains('aim')).map((c) => c.getAttribute('class')).join(' | '));
     ok('and it is the mascot box to the pixel, so the preview and the panel cannot disagree',
       /\.sh-try img\{[^}]*width:88px/.test(css()) && /\.sh-try img\{[^}]*height:74px/.test(css())
       && /\.sh-try img\{[^}]*object-fit:contain/.test(css())
@@ -289,6 +323,32 @@ module.exports = {
         wornKeys().join(' '));
     }
 
+    // ---------- 7b. pressing a price, which is not buying either ----------
+    // A PRESS IS ANSWERED EVEN WHEN THE SHELF HAS NOTHING TO MOVE. One drawing is on sale, so the
+    // cell a reader presses is the one already aimed at, and without this the press would look
+    // exactly like the fault that was reported: a figure on a cell and nothing happening
+    const ledger1 = JSON.stringify(h.gs.data.creditLedgerV1);
+    const sent1a = h.sent('shop').length;
+    $('shTry').classList.remove('ping');
+    h.mouseClick(cell('float')); advance(20);
+    ok('pressing the price answers in the block the price is in',
+      $('shTry').classList.contains('ping') && srcOf($('shArt')) === artOf('float'),
+      $('shTry').getAttribute('class') || '(no class)');
+    ok('and the aim stays where it was, because there is nothing else to aim at',
+      cell('float').classList.contains('aim')
+      && doc.querySelectorAll('#shSlots .sh-cell.aim').length === 1, wornKeys().join(' '));
+    ok('nothing was spent, nothing was sent and nothing was worn by it',
+      JSON.stringify(h.gs.data.creditLedgerV1) === ledger1 && stored() === null
+      && h.sent('shop').length === sent1a && !h.gs.data.mascotSlotsV1.burn,
+      JSON.stringify(stored()) + ' / ' + JSON.stringify(h.gs.data.mascotSlotsV1));
+    ok('and the keyboard is still on the cell that was pressed',
+      active() === cell('float') && $('shSlots').contains(active()), activeName());
+    // the one piece of motion on this screen, and it is off where a reader asked for no motion
+    ok('the answer is a step of attention, and it is off under reduced motion',
+      /\.sh-try\.ping\{animation:shPing/.test(css())
+      && /@media \(prefers-reduced-motion:reduce\)\{\.sh-try\.ping\{animation:none/.test(css()),
+      (/\.sh-try\.ping\{[^}]*\}/.exec(css()) || ['(no rule)'])[0]);
+
     // ---------- 8. the purchase ----------
     const price = shop.itemOf('float').price;
     const bal0 = h.ledgerBalance();
@@ -323,6 +383,13 @@ module.exports = {
     ok('with nothing left to sell, the sale block and the button leave together',
       $('shTry').hidden && $('shCtl').hidden && note().hidden,
       ($('shTry').hidden ? 'no block' : 'block') + ', ' + ($('shCtl').hidden ? 'no button' : 'button'));
+    // ...and the mark that pointed at the button goes with them. A bar under a price with no
+    // button under it would be a cursor on a control that is not there any more
+    ok('and the mark that aimed it goes with them, on its own',
+      doc.querySelectorAll('#shSlots .sh-cell.aim').length === 0
+      && doc.querySelectorAll('#shSlots .sh-cell.buy').length === 0,
+      doc.querySelectorAll('#shSlots .sh-cell.aim,#shSlots .sh-cell.buy')
+        .map((c) => c.getAttribute('data-key')).join());
     ok('and the stylesheet really hides a hidden sale block, which display:flex would not',
       /\.sh-try\[hidden\]\{display:none/.test(css()),
       (/\.sh-try\[hidden\][^}]*\}/.exec(css()) || ['(no rule)'])[0]);

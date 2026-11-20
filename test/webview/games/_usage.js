@@ -85,6 +85,13 @@ function withWindow(h) {
       return DRAWINGS.filter((s) => m.getAttribute('data-' + s) === src)[0] || src;
     };
     const beating = () => mascot().classList.contains('beat');
+    // THE INK LIFT FOLLOWS THE DRAWING, not the element. Some of the six carry ink that is the
+    // same colour as a dark floor and some do not, so the page lifts the ones that do and leaves
+    // the rest exactly as drawn (html.js, INK_LIFT; styles.js, .ink-lift). The wanted set is read
+    // off the page rather than written here: panel-css.test.js is what checks that list against
+    // the PNGs, and this checks that the class actually tracks it as the drawing changes.
+    const WANTS_LIFT = (mascot().getAttribute('data-lift') || '').split(' ').filter(Boolean);
+    const lifted = () => mascot().classList.contains('ink-lift');
 
     // 1 + 2. A walk up and down across all three lines. Each step says what should be on screen
     // and whether the page was allowed to beat; the pairs just inside and just outside an edge are
@@ -121,8 +128,15 @@ function withWindow(h) {
       ok('  and the box says which drawing it holds', !!box && box.getAttribute('data-state') === step.want,
         box && box.getAttribute('data-state'));
       ok('  and it ' + (step.beat ? 'beats' : 'does not beat') + ' there', beat === step.beat);
+      ok('  and the ink lift is ' + (WANTS_LIFT.indexOf(step.want) >= 0 ? 'on' : 'off') + ' for it',
+        lifted() === (WANTS_LIFT.indexOf(step.want) >= 0),
+        step.want + ' -> class ' + mascot().getAttribute('class'));
       advance(400); // let the beat finish before the next push arms another one
     }
+    // and the walk is worth something only if it crossed both kinds of drawing
+    ok('the walk covered a lifted drawing and an unlifted one',
+      drawn.some((s) => WANTS_LIFT.indexOf(s) >= 0) && drawn.some((s) => WANTS_LIFT.indexOf(s) < 0),
+      'lift list ' + WANTS_LIFT.join(' ') + ' | drew ' + [...new Set(drawn)].join(' '));
     ok('a walk over every edge changed the drawing exactly as often as the state changed',
       drawn.join(' ') === walk.map((s) => s.want).join(' '), drawn.join(' '));
     const changes = walk.filter((s, i) => i > 0 && s.want !== walk[i - 1].want).length;

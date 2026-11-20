@@ -672,6 +672,20 @@ function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, c
     var out = {};
     PROBE.forEach(function (sel) {
       if (sel.indexOf('fonts:') === 0) { out[sel] = fontsUnder(sel.slice(6)); return; }
+      // "ink:<sel>" is the PAINTED size of an object-fit:contain image, which is not its box.
+      // Once a picture is given a box of its own (.cr-art), getBoundingClientRect answers with the
+      // box for every ratio alike and the drawing's real size on screen becomes invisible to a
+      // probe. This is the one question those rows of docs/shop-spec.md are actually asking.
+      if (sel.indexOf('ink:') === 0) {
+        var im = document.querySelector(sel.slice(4));
+        if (!im || !im.naturalWidth) { out[sel] = null; return; }
+        var ib = im.getBoundingClientRect(), ar = im.naturalWidth / im.naturalHeight;
+        var iw = Math.min(ib.width, ib.height * ar), ih = Math.min(ib.height, ib.width / ar);
+        out[sel] = { w: +iw.toFixed(2), h: +ih.toFixed(2), x: +ib.left.toFixed(2), y: +ib.top.toFixed(2),
+          lines: 1, font: im.naturalWidth + 'x' + im.naturalHeight, color: '', clipped: false,
+          text: 'ratio ' + ar.toFixed(3) + ', box ' + ib.width.toFixed(2) + ' x ' + ib.height.toFixed(2) };
+        return;
+      }
       var e = document.querySelector(sel);
       if (!e) { out[sel] = null; return; }
       var r = e.getBoundingClientRect(), cs = getComputedStyle(e);
@@ -799,7 +813,8 @@ const USAGE = [
   '  --only <ids>     just these shots (--list names them). WITHOUT it every listing shot is',
   '                   reshot into media/, which is what the marketplace README serves',
   '  --probe <sels>   measure instead of shooting: no file is written at all. "fonts:<sel>"',
-  '                   answers with the type sizes rendered under one root',
+  '                   answers with the type sizes rendered under one root, "ink:<img sel>" with',
+  '                   the painted size of a contained image rather than the size of its box',
   '  --no-session     push five_hour: null, the account with no five-hour limit',
   '  --stale          push a usage reading 18 minutes old, which shows the freshness row',
   '  --quiet          push the last reply as ten minutes old, which is the mascot\'s quiet drawing',

@@ -7,6 +7,75 @@ const IC = require('./icons');
 // a string either side of the wall
 const symbols = require('./games/symbols');
 
+// WHAT THE DARK THEMES DO TO THE MASCOT, and the one thing CSS can do about it.
+//
+// The six drawings are the user's own pixel art and are not touched by this repository. Three of
+// them carry ink that is all but black: mascot-coding's keystrokes (rgb(15..25) at full alpha, and
+// the laptop under them), mascot-despair's stress puffs and speed lines, mascot-float's bubbles.
+// On the light card (#ffffff) that ink measures 18.6:1 and reads. On the dark card (#232326) it
+// measures 1.21:1, on --inner 1.08:1 and on the high-contrast black 1.18:1, which is not "hard to
+// see": it is the same colour as the floor. The crab itself is bright and was never the problem,
+// so what is needed is a light edge around the DARK ink and nothing else, on the drawings that
+// need it and no others (INK_LIFT below).
+//
+// mascot-stunned is NOT one of them, although a count of dim marks says it is. Its two specks are
+// drawn at alpha 33..61, and a mark that measures 1.97:1 on WHITE was drawn to be faint rather
+// than hidden by the theme. test/apng.js's `marks` leaves marks like it out for that reason.
+//
+// WHY A FILTER AND NOT A COLOUR. Nothing in CSS recolours part of an image. brightness() is a
+// multiply, so rgb(20) goes to rgb(36) and stays invisible; a lighter plate behind the mascot would
+// have to reach about rgb(96) before near-black cleared 3:1 on it, which is a grey rectangle in the
+// middle of a dark panel. A drop-shadow glow does work, but it haloes the whole silhouette: the
+// crab, which already reads at 11-17:1, gets the same treatment as the keystrokes.
+//
+// WHAT THIS DOES, in six primitives: take the luminance, keep only the part of it that is nearly
+// black AND inside the drawing, grow that by a pixel, fill it with the stylesheet's grey, and put
+// it UNDER the drawing. Under is what makes it selective without any per-drawing tuning: a dark
+// mark surrounded by transparency shows its new edge, and a dark mark surrounded by opaque crab
+// (the eyes) has that edge covered by the crab. Measured against the unfiltered render: every
+// pixel that changes is a background pixel and not one pixel of the art is altered, so this is not
+// the smearing the stylesheet warns about on .sparkle.beat.
+//
+// The colour is NOT here. styles.js sets flood-color on #cucInkFlood from --muted, because it is a
+// theme colour and every other one in this product lives in that file. That same file also hides
+// this element, and NOT with display:none: a filter inside a display:none subtree still resolves,
+// but its flood-color comes out as the initial black and the edge disappears into the floor.
+//
+// AND IT IS AIMED, which it was not at first. The first version put this on .sparkle, .sh-pic and
+// #shArt, so all six drawings got it. Three of them did not need it and were made worse by it: an
+// edge grows wherever near-black ink meets transparency, and five of the six are drawn with a black
+// outline, so a drawing that read perfectly well came back as a sticker. In the shop's 36px cells
+// mascot-idle was the clearest case. The rule now follows the MEASUREMENT and not the element: at
+// or above 3:1 on the dark card, a drawing is left alone. Full stop, no exceptions.
+//
+// BELOW 3:1 THE ANSWER IS USUALLY YES AND SOMETIMES NO, so the ones that measure badly are listed
+// either way and never by silence. The filter cannot aim itself: it edges every near-black mark,
+// and the marks that are BROKEN are only some of them. Measured, as a share of the pixels the edge
+// actually adds to the 88x74 drawing:
+//
+//   coding   57% of the new edge lands on the marks that were under 3:1 (the keystrokes and the
+//            laptop). They are also what the picture is OF, and the coral body is not outlined at
+//            all because its own silhouette edge is coral and not black. Lifted.
+//   despair  32%. The other two thirds outline a desk that reads fine, and at 62.3x74 (the
+//            smallest-drawn of the six) that perimeter becomes the brightest continuous shape in
+//            the picture, over the white paper stacks that are its subject. What is bought for it
+//            is the stress puffs, a mood accent on a scene that already reads from its fills.
+//   float    12%. Seven eighths of the edge outlines an astronaut that reads at 15.4:1, to rescue
+//            two bubbles 2.75px across, on the one drawing the shop SELLS and shows at 88x74.
+//
+// So a drawing is lifted when the lift is mostly spent on what is broken. Both figures are from
+// tools the repository keeps: test/apng.js measures the marks, and the share was measured off the
+// rendered page. Reverting either decision is one word in the lists below.
+const INK_LIFT = ['coding'];
+// ...and the ones that measure under 3:1 and are deliberately left alone, with the reason, so that
+// test/panel-css.test.js can tell a decision from an oversight. A drawing under 3:1 that is in
+// neither list fails there.
+const INK_LIFT_DECLINED = {
+  despair: 'only 32% of the edge lands on the broken marks; the rest outlines a desk that reads',
+  float: 'only 12%; the rest outlines an astronaut at 15.4:1 to rescue two 2.75px bubbles'
+};
+const inkEdgeFilter = `<svg class="cuc-fx" aria-hidden="true" width="0" height="0"><filter id="cucInkEdge" color-interpolation-filters="sRGB" x="-20%" y="-20%" width="140%" height="140%"><feColorMatrix type="luminanceToAlpha" result="lum"/><feComponentTransfer in="lum" result="darkness"><feFuncA type="table" tableValues="1 1 1 0 0 0 0 0 0"/></feComponentTransfer><feComposite in="darkness" in2="SourceGraphic" operator="in" result="darkInk"/><feMorphology in="darkInk" operator="dilate" radius="1" result="grown"/><feFlood id="cucInkFlood" result="tint"/><feComposite in="tint" in2="grown" operator="in" result="edge"/><feMerge><feMergeNode in="edge"/><feMergeNode in="SourceGraphic"/></feMerge></filter></svg>`;
+
 // Render the panel webview HTML. All per-webview values (CSP source, asset URIs, the serialized
 // asset catalog, and the script URIs) are injected via `vars` so this stays free of vscode
 // specifics. The static stylesheet and icon set are required directly.
@@ -64,7 +133,7 @@ function renderHtml(vars) {
   const gameRows = (list) => list.map((g) => gameRow(g, 'gmRows')).join('\n');
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
-<style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}<div class="wrap"><div class="card">
+<style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}${inkEdgeFilter}<div class="wrap"><div class="card">
   <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11px;font-weight:600;line-height:1.35">
     <span>Sign in for <b>live</b> session &amp; weekly %</span>
     <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11px;white-space:nowrap">Sign In</button>
@@ -158,10 +227,16 @@ function renderHtml(vars) {
              despair, stunned) and whether anything has been answered lately picks the column, and
              then the reader's own choice picks the picture wherever that cell is one of the four
              scenes the shop sells into (webview.js, MASCOT_ART and MASCOT_SLOT). All six are named
-             here so the script only ever swaps the source for one of them. -->
+             here so the script only ever swaps the source for one of them.
+             data-lift is beside them because it is a fact ABOUT those files: which of them carry
+             ink the dark floor swallows (see INK_LIFT at the top). It is read by whatever draws one
+             of these pictures, in all three places they appear, so the stylesheet never learns a
+             drawing's name and a redrawn mascot is one word here rather than nine selectors.
+             test/panel-css.test.js recomputes this list from the PNGs and fails BOTH ways, so a
+             drawing that stops needing the lift fails here just as loudly as one that starts. -->
         <div class="mascot-wrap" id="pm_mascot">
           <div class="mwarn" id="mwarn" hidden>${IC.warn}</div>
-          <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" data-coding="${mascotCodingUri}" data-float="${mascotFloatUri}" alt=""/>
+          <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" data-coding="${mascotCodingUri}" data-float="${mascotFloatUri}" data-lift="${INK_LIFT.join(' ')}" alt=""/>
         </div>
       </div>
     </div>
@@ -210,9 +285,12 @@ function renderHtml(vars) {
        does not already take) and NO NUMBERS AT ALL, because the balance is in that same button.
        The pictures are the point and the words under them are the caption: the shop's awning and
        the dealer's felt say which door is which before either label is read.
+       Each drawing is fitted into a box of its own rather than stretched across its column, which
+       is what stands them at one height with air around them instead of wall to wall
+       (styles.js, .cr-art; docs/shop-spec.md, section 2-2).
        Neither picture is given image-rendering:pixelated, and that is measured rather than chosen:
        417 of hero-shop's 645 column boundaries are a single pixel apart, so nearest-neighbour at
-       0.205x drops four out of five of them and the black outline goes with them
+       0.126x drops seven out of eight of them and the black outline goes with them
        (docs/shop-spec.md, section 2-4). -->
   <div class="inner cr" id="panelCross" style="display:none">
     <div class="cr-pair">
@@ -306,4 +384,7 @@ ${gameScripts.map((u) => `<script src="${u}"></script>`).join('\n')}
 </body></html>`;
 }
 
-module.exports = { renderHtml };
+// INK_LIFT goes out on the page itself (#mascot's data-lift), so it is not exported here. The
+// declined list has nowhere else to be read from, and test/panel-css.test.js has to be able to
+// tell a drawing that was decided against from one that was forgotten.
+module.exports = { renderHtml, INK_LIFT_DECLINED };

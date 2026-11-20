@@ -299,6 +299,103 @@ ok('the page hands the script all six drawings by name, each pointing at its own
   named.map((s) => s + '=' + mascotEl.getAttribute('data-' + s)).join(' '));
 
 // ---------------------------------------------------------------------------------------------
+// 2a-ii. the drawings against the floor they stand on
+// ---------------------------------------------------------------------------------------------
+// WHY THIS IS NOT COVERED BY ANYTHING ABOVE. Section 2a reads the pixels and every check it makes
+// is about WHERE they are. None of them looks at what colour they are, so all of them passed
+// while mascot-coding's keystrokes sat at 1.21:1 on the dark card: the same colour as the floor,
+// at full alpha, in the one state the panel shows while the reader is working. A user reported it;
+// no test could have.
+//
+// THE CONTRACT IS TWO-WAY, and it is two-way because of what happened next. The first fix put the
+// edge on .sparkle, .sh-pic and #shArt, which is to say on all six drawings. Three of them measure
+// 5:1 and up, needed nothing, and came back with a grey rim around the whole crab, worst in the
+// shop's 36px cells. Testing only "the dim ones are lifted" would have passed that happily. So:
+//
+//   at or above 3:1 on the dark card   the drawing MUST NOT be lifted
+//   below 3:1                          the drawing is lifted, OR html.js records why it is not
+//
+// Both halves are needed. The first stops the next person lifting everything again; the second
+// stops a drawing being dropped by silence, and it is what makes a redrawn mascot fail here rather
+// than on screen. The figures come out of the PNGs (test/apng.js), never out of this comment.
+const DARK_CARD = [0x23, 0x23, 0x26];                                   // --card, dark themes
+// 3:1 is the floor for a graphical object that has to be made out. The drawings sit either side of
+// it by a mile, not by a hair: the three that fail measure 1.21 to 1.33 and the three that pass
+// measure 4.97 to 15.67, so nothing here turns on where exactly the line is drawn.
+const FLOOR = 3;
+const dimmest = {};
+for (const file of STATES) {
+  const state = file.replace(/^mascot-|\.png$/g, '');
+  let m = null;
+  try { m = apng.marks(path.join(ROOT, file), DARK_CARD, 20); } catch (e) { m = null; }
+  if (!m || !m.length) { ok('the marks of ' + state + ' can be measured', false); continue; }
+  dimmest[state] = Math.min(...m.map((k) => k.peak));
+}
+const measured = Object.keys(dimmest);
+ok('every drawing is measured against the dark card, not assumed to read on it',
+  measured.length === STATES.length,
+  measured.map((s) => s + ' ' + dimmest[s].toFixed(2) + ':1').join(', '));
+
+// what the page says it does, read off the element that carries it rather than out of html.js's
+// source: this is the value the webview will actually see
+const lift = ((DOC.getElementById('mascot') || { getAttribute: () => '' }).getAttribute('data-lift') || '')
+  .split(' ').filter(Boolean);
+const declined = Object.keys(require(path.join(ROOT, 'html.js')).INK_LIFT_DECLINED || {});
+
+const below = measured.filter((s) => dimmest[s] < FLOOR);
+const above = measured.filter((s) => dimmest[s] >= FLOOR);
+// ONE: nothing that reads may be lifted. This is the half that would have caught the sticker.
+const wrongly = above.filter((s) => lift.indexOf(s) >= 0 || declined.indexOf(s) >= 0);
+ok('a drawing that clears ' + FLOOR + ':1 on the dark card is left alone', wrongly.length === 0,
+  above.map((s) => s + ' ' + dimmest[s].toFixed(2)).join(', ')
+    + (wrongly.length ? '  | LIFTED ANYWAY: ' + wrongly.join(' ') : ''));
+// TWO: nothing that fails may be passed over without saying so
+const unanswered = below.filter((s) => lift.indexOf(s) < 0 && declined.indexOf(s) < 0);
+ok('and one that does not is either lifted or written down as a decision not to',
+  unanswered.length === 0,
+  below.map((s) => s + ' ' + dimmest[s].toFixed(2) + ' -> '
+    + (lift.indexOf(s) >= 0 ? 'lifted' : declined.indexOf(s) >= 0 ? 'declined' : 'unanswered')).join(', ')
+    + (unanswered.length ? '  | NEITHER: ' + unanswered.join(' ') : ''));
+ok('and the two lists do not both claim the same drawing',
+  lift.every((s) => declined.indexOf(s) < 0), lift.join(' ') + ' vs ' + declined.join(' '));
+
+// The stylesheet carries ONE rule and it names no drawing, because which pictures are lifted is a
+// measurement and belongs where the measurement is written down (html.js, INK_LIFT). A selector
+// naming .sparkle or a state would put the list in two places, which is how it came to be wrong.
+const lifted = RULES.filter((r) => /filter\s*:\s*url\(#/.test(r.body) && !r.at);
+const sels = lifted.map((r) => r.sel).join(' , ');
+ok('the lift is one rule on one class, with no drawing named in the stylesheet',
+  lifted.length === 1 && /\.ink-lift\s*$/.test(groups(lifted[0].sel)[0] || '')
+    && !STATES.some((f) => sels.indexOf(f.replace(/^mascot-|\.png$/g, '')) >= 0),
+  sels);
+// the light theme is the one that was never broken: the same ink measures 18.6:1 there
+ok('and it is guarded so the light theme is left exactly as it was',
+  groups(lifted[0] ? lifted[0].sel : '').every((g) => /:not\(\s*\.vscode-light\s*\)/.test(g)),
+  sels);
+
+// the rule names a filter; the page has to contain it, or the declaration is a no-op that no
+// string check would notice
+const ids = [...new Set(lifted.map((r) => (r.body.match(/filter\s*:\s*url\(#([A-Za-z0-9_-]+)\)/) || [])[1]).filter(Boolean))];
+ok('the filter the stylesheet names is in the page', ids.length > 0 && ids.every((id) => DOC.getElementById(id)),
+  ids.join(' '));
+
+// MEASURED, NOT GUESSED, and the reason this check exists at all: a <filter> inside a
+// display:none subtree still resolves, but Chrome computes its flood-color as the initial BLACK.
+// The edge then comes out black on a black floor and the whole rule silently does nothing. The
+// first version of this fix hid the holder with display:none, the same way games/casino.js hides
+// the symbol sprite, and that is exactly what it did.
+const fx = declOf('.cuc-fx') || {};
+ok('the element holding it is out of the way without being display:none',
+  !!DOC.querySelector('.cuc-fx') && fx.display !== 'none' && fx.position === 'absolute',
+  JSON.stringify(fx));
+
+// the edge is a theme colour and theme colours are tokens here, so a reader changing --muted
+// changes this with it rather than leaving a second grey behind
+const flood = declOf('#cucInkFlood') || {};
+ok('and its colour is one of this file’s tokens rather than a new grey',
+  /^var\(--[a-z-]+\)$/.test(flood['flood-color'] || ''), flood['flood-color']);
+
+// ---------------------------------------------------------------------------------------------
 // 2b. the activity axis: one threshold, written once
 // ---------------------------------------------------------------------------------------------
 // A source-shape check, like the freshness writer below, and for the same reason: nothing here
@@ -317,6 +414,43 @@ const art = /var MASCOT_ART = \{[\s\S]*?\n  \};/.exec(CLIENT0);
 ok('the table pairs a step with two drawings, and the top two steps pair with themselves',
   !!art && /despair: \{ busy: 'despair', quiet: 'despair' \}/.test(art[0])
   && /stunned: \{ busy: 'stunned', quiet: 'stunned' \}/.test(art[0]), art ? 'the pairing moved' : 'MASCOT_ART not found');
+
+// ---------------------------------------------------------------------------------------------
+// 2c. the crossroads: one box, two drawings, one height
+// ---------------------------------------------------------------------------------------------
+// The two doors used to give each picture the whole column and let its own ratio decide its
+// height, so the shop stood 21.5px taller than the dealer and both ran wall to wall. Now the box
+// is the column at a fixed ratio and each drawing is fitted into it, which makes the heights equal
+// and turns the width each one does not need into air (docs/shop-spec.md, section 2-2).
+//
+// THAT ONLY HOLDS WHILE BOTH DRAWINGS ARE NARROWER THAN THE BOX. A hero wider than the box ratio
+// binds on width instead, comes out shorter than its neighbour and the pair stops reading as a
+// pair. The user redraws these pictures, so the condition is checked against the files themselves
+// rather than written down: a seventh hero with a wider canvas fails here, not on screen.
+const crArt = declOf('.cr-art') || {};
+const crImg = declOf('.cr-art img') || {};
+const boxRatio = (() => {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(?:\/\s*(\d+(?:\.\d+)?))?\s*$/.exec(crArt['aspect-ratio'] || '');
+  return m ? parseFloat(m[1]) / (m[2] ? parseFloat(m[2]) : 1) : null;
+})();
+const HEROES = ['hero-games.png', 'hero-shop.png'];
+const heroRatios = HEROES.map((f) => { const s = pngSize(f); return s.w / s.h; });
+ok('the crossroads art sits in a box of its own with a fixed ratio',
+  boxRatio > 0 && crArt.width === '100%', 'aspect-ratio ' + crArt['aspect-ratio'] + ', width ' + crArt.width);
+ok('and the box has a ceiling, so a wider sidebar stops feeding the pictures',
+  /^\d+(\.\d+)?px$/.test(crArt['max-height'] || ''), crArt['max-height']);
+ok('the drawings fill that box rather than their column, fitted whole and stood on its floor',
+  crImg.width === '100%' && crImg.height === '100%' && crImg['object-fit'] === 'contain'
+  && /bottom/.test(crImg['object-position'] || ''),
+  [crImg.width, crImg.height, crImg['object-fit'], crImg['object-position']].join(' / '));
+ok('both heroes are narrower than the box, which is what makes the two come out the same height',
+  boxRatio > 0 && heroRatios.every((r) => r < boxRatio),
+  HEROES.map((f, i) => f + ' ' + heroRatios[i].toFixed(3)).join(', ') + ' vs box ' + boxRatio);
+// the heroes are smooth-scaled and the pixel art is not: these two carry 1px outlines and
+// dithering rather than a pixel grid, and nearest-neighbour at this scale drops most of them
+ok('and the crossroads art is scaled smoothly, unlike the mascot and the tiles',
+  !crImg['image-rendering'] && img['image-rendering'] === 'pixelated',
+  'hero ' + crImg['image-rendering'] + ', mascot ' + img['image-rendering']);
 
 // ---------------------------------------------------------------------------------------------
 // 3. the cut between two states

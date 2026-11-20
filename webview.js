@@ -1348,23 +1348,35 @@
   // what keeps a scene with one drawing from reading as a broken row.
   //
   // THREE KINDS OF CELL, and they have to be told apart at a glance:
-  //   a drawing that is in use or can be chosen  a picture, a word about itself, and a ring when
-  //                                             it is the one in use. A button only when choosing
-  //                                             it could change anything
-  //   a drawing that has not been bought         a picture and a price. Not a button: the control
-  //                                             row buys it, a cell does not
+  //   a drawing that is in use or can be chosen  a picture, a word about itself, and a RING when it
+  //                                             is the one in use. A button only when choosing it
+  //                                             could change anything
+  //   a drawing that has not been bought         a picture and a price, and a BAR under that price
+  //                                             when it is the one the button below would buy. A
+  //                                             button always: a price a press does nothing to is
+  //                                             what this screen was reported for
   //   an empty slot                              NO PICTURE, and the word `Soon`. Not a button and
   //                                             not in the tab order, because something that
   //                                             cannot be pressed should not be counted through by
   //                                             a reader on a keyboard
-  // The picture is the separator that matters: two of those three cannot be pressed, so what tells
-  // them apart is that one of them has a crab in it and says when that crab shows up.
+  // The picture is the separator that matters between the last two: an empty slot and a drawing in
+  // a settled scene are both unpressable, so what tells them apart is that one has a crab in it.
+  //
+  // A RING AND A BAR ARE TWO SENTENCES IN ONE COLOUR. This screen has one accent and gains no
+  // second one here, so what separates the two marks is their SHAPE and where they sit. A ring
+  // encloses the cell and says WHAT IS: this drawing is in that scene now. A bar lies on the bottom
+  // edge under the price and says WHAT THE ONE BUTTON IS AIMED AT: press Buy and that price is what
+  // is paid. The two can never land on one cell, because nothing owned is for sale and nothing for
+  // sale is worn; the one row that carries both carries them side by side, which is the only place
+  // the difference has to hold up, and a box against an underline holds up there.
   //
   // WHAT IS ON SALE SITS NEXT TO THE BUTTON THAT BUYS IT, at the bottom, and it is drawn IN THE BOX
   // IT WILL ACTUALLY BE DRAWN IN (88 x 74, contain, stood on the bottom edge: the mascot's own
   // rules, styles.js), because a preview that is not the real geometry is a promise the panel then
-  // breaks. That block and the control row leave together: a shop with nothing left to sell is a
-  // wardrobe, and a disabled button on it would be furniture.
+  // breaks. THE BLOCK AND THE AIMED CELL NAME THE SAME DRAWING, which is what makes the two point
+  // at each other: the same picture, the same name, the same figure, and a mark on the cell the
+  // block was filled from. That block and the control row leave together: a shop with nothing left
+  // to sell is a wardrobe, and a disabled button on it would be furniture.
   //
   // THE HOST JUDGES, here as everywhere. Every cell arrives with its price, whether it is owned and
   // whether choosing it could change anything, and which drawing is in which scene comes from the
@@ -1378,9 +1390,14 @@
   var SHOP_CELL = 36;          // the drawing inside a cell. The cell is 64 tall (styles.js)
   var SHOP_COL = 64;           // and 64 wide at most, which is what makes it square
   // st: the host's last view (the shelf). sig: the owned list and the worn scenes as the last push
-  // reported them. pressed: the cell a press just rebuilt, so the keyboard lands back on it
+  // reported them. pressed: the cell a press just rebuilt, so the keyboard lands back on it.
+  // aim: WHICH DRAWING THE ONE BUTTON IS POINTED AT. It is a cursor and not a preference: nothing
+  // is bought, worn or owed by moving it, and it is worked out again from the shelf on every
+  // repaint (shopOnSale), so a key that was bought in another window heals itself rather than being
+  // cleaned up. That is also why it is not stored: a saved cursor could name something already
+  // bought, and the one thing it would buy back is a press the reader is standing in front of
   var sh = {
-    st: null, busy: false, op: null, n: 0, to: null, wantFocus: false, pressed: null,
+    st: null, busy: false, op: null, n: 0, to: null, wantFocus: false, pressed: null, aim: null,
     // what the last push said, in two halves (shopFromPush), and the worn map it said it with
     sigOwned: null, sigWorn: null, worn: null, justBought: false, opKey: null
   };
@@ -1412,10 +1429,13 @@
     if (!node || node._built) return node;
     node.innerHTML = shopMarkup();
     node._built = true;
+    // TWO KINDS OF PRESS ON ONE SHELF, told apart by the cell and not by the reader: a drawing that
+    // is owned is put into its scene, and one that is not is what the button below will buy
     el('shSlots').addEventListener('click', function (e) {
       var c = e.target.closest ? e.target.closest('button.sh-cell') : null;
       if (!c) return;
-      shopWear(c.getAttribute('data-slot'), c.getAttribute('data-key'));
+      if (c.classList.contains('buy')) shopPick(c.getAttribute('data-key'));
+      else shopWear(c.getAttribute('data-slot'), c.getAttribute('data-key'));
     });
     el('shAct').addEventListener('click', shopAct);
     return node;
@@ -1432,33 +1452,72 @@
     var m = el('mascot');
     return (m && key && m.getAttribute('data-' + key)) || '';
   }
-  // The one thing that can still be bought, or null. First come, first served: with one price and
-  // one priced drawing there is nothing to order, and the day there are two the shelf's own order
-  // is the one the reader is reading
-  function shopOnSale(slots) {
-    for (var i = 0; i < slots.length; i++) {
-      for (var j = 0; j < slots[i].opts.length; j++) {
-        if (slots[i].opts[j].price && !slots[i].opts[j].owned) return slots[i].opts[j];
+  // ...and whether THAT drawing needs its near-black ink lifted off a dark floor, read from the
+  // same element and for the same reason: the list is a measured fact about the six files
+  // (html.js, INK_LIFT), so it is stated once and every place that draws one of them asks here.
+  // A drawing that does not need it must not get it: the edge grows around near-black ink, and on
+  // a drawing whose own outline is black and which reads perfectly well already, that is a grey
+  // rim around the whole crab for nothing. The stylesheet only knows the class.
+  function inkLift(key) {
+    var m = el('mascot');
+    var list = (m && m.getAttribute('data-lift')) || '';
+    return !!key && list.split(' ').indexOf(key) >= 0;
+  }
+  // Everything still for sale, in the shelf's own order, which is the order a reader is reading
+  function shopForSale(slots) {
+    var out = [], i, j;
+    for (i = 0; i < slots.length; i++) {
+      for (j = 0; j < slots[i].opts.length; j++) {
+        if (slots[i].opts[j].price && !slots[i].opts[j].owned) out.push(slots[i].opts[j]);
       }
+    }
+    return out;
+  }
+  // WHAT THE ONE BUTTON BUYS, or null when there is nothing left. The drawing the reader aimed it
+  // at while that drawing is still for sale, and the first one on the shelf otherwise.
+  // THE FALLBACK IS THE WHOLE OF THE CLEANING UP. A purchase (here or in another window) takes the
+  // aimed drawing off the sale list and this answers with the next one without anybody resetting
+  // anything, and the shop with one thing on it opens with that thing already aimed rather than
+  // with a reader who has to guess that a cell is pressable
+  function shopOnSale(slots) {
+    var sale = shopForSale(slots), i;
+    for (i = 0; i < sale.length; i++) if (sale[i].key === sh.aim) return sale[i];
+    return sale[0] || null;
+  }
+  function shopOptOf(key) {
+    var slots = (sh.st && sh.st.slots) || [], i, j;
+    for (i = 0; i < slots.length; i++) {
+      for (j = 0; j < slots[i].opts.length; j++) if (slots[i].opts[j].key === key) return slots[i].opts[j];
     }
     return null;
   }
-  // One cell. `on` is whether this drawing is the one in that scene now, and `pick` whether
-  // choosing in this scene could change anything at all
-  function shopCellHtml(slot, o, on, pick) {
+  // One cell. `on` is whether this drawing is the one in that scene now, `pick` whether choosing in
+  // this scene could change anything at all, and `aim` whether the button below is pointed here
+  function shopCellHtml(slot, o, on, pick, aim) {
     var art = shopArt(o.key);
+    var buy = !o.owned && !!o.price;
     var what = o.owned ? (on ? 'in use' : 'yours') : fmtInt(o.price) + ' credits';
     var tag = o.owned ? (o.price ? 'own' : 'free') : shopTag(o.price);
-    var body = (art ? '<img class="sh-pic" src="' + art + '" alt=""/>' : '')
+    var body = (art ? '<img class="sh-pic' + (inkLift(o.key) ? ' ink-lift' : '') + '" src="' + art + '" alt=""/>' : '')
       + '<span class="sh-tag">' + esc(tag) + '</span>';
     var cls = 'sh-cell' + (o.owned ? ' owned' : '') + (on ? ' on' : '');
-    // A BUTTON ONLY WHERE A PRESS DOES SOMETHING. A scene with one drawing is settled and a
-    // drawing that has not been bought is bought with the button below, so neither is pressable,
-    // and neither may be in the tab order
-    // ...and both kinds carry which scene and which drawing they are, because that is what the
-    // cell IS. Only an empty slot has neither, since there is nothing there to name
+    // BOTH KINDS CARRY WHICH SCENE AND WHICH DRAWING THEY ARE, because that is what the cell IS.
+    // Only an empty slot has neither, since there is nothing there to name
     var at = ' data-slot="' + esc(slot.id) + '" data-key="' + esc(o.key) + '"';
-    if (!pick || !o.owned) {
+    // A PRICE IS A BUTTON. Pressing it does not spend anything: it points the one control at this
+    // drawing, and the block above that control fills with it. One vocabulary for both kinds of
+    // press, `aria-pressed` on a button, and the LABEL says which sense this one is in: a word
+    // about the scene when the drawing is owned, the price when it is not. Not a radio: the two
+    // senses have different groups (one scene against the whole shelf), so they could not be one
+    // radiogroup, and a radiogroup that does not answer the arrow keys is worse than a button
+    if (buy) {
+      return '<button type="button" class="' + cls + ' buy' + (aim ? ' aim' : '') + '"' + at
+        + ' aria-pressed="' + (aim ? 'true' : 'false') + '"'
+        + ' aria-label="' + esc(o.name + ', ' + what) + '">' + body + '</button>';
+    }
+    // ...and a scene with one drawing of its own is settled, so its cell is not pressable and may
+    // not be in the tab order either
+    if (!pick) {
       return '<span class="' + cls + '"' + at + ' role="img" aria-label="'
         + esc(o.name + ', ' + what) + '">' + body + '</span>';
     }
@@ -1486,6 +1545,11 @@
     // shelf is a rectangle and the spare cells are where the next drawing goes
     var wide = 1;
     for (i = 0; i < slots.length; i++) wide = Math.max(wide, slots[i].opts.length);
+    // WHAT THE BUTTON BUYS IS SETTLED BEFORE THE SHELF IS DRAWN, because the cell it points at
+    // wears the mark. The answer is written back, so the cursor follows a purchase made here or in
+    // another window instead of pointing at something nobody can buy any more
+    var sale = shopOnSale(slots);
+    sh.aim = sale ? sale.key : null;
     var html = '';
     for (i = 0; i < slots.length; i++) {
       var s = slots[i], on = worn[s.id] || s.free;
@@ -1496,19 +1560,21 @@
         // without a stylesheet edit
         + '<div class="sh-opts" role="group" aria-label="' + esc(s.name) + '"'
         + ' style="grid-template-columns:repeat(' + wide + ',minmax(0,' + SHOP_COL + 'px))">';
-      for (j = 0; j < s.opts.length; j++) html += shopCellHtml(s, s.opts[j], s.opts[j].key === on, s.pick);
+      for (j = 0; j < s.opts.length; j++) {
+        html += shopCellHtml(s, s.opts[j], s.opts[j].key === on, s.pick, !!sale && s.opts[j].key === sale.key);
+      }
       for (j = s.opts.length; j < wide; j++) html += shopSoonHtml();
       html += '</div></div>';
     }
     el('shSlots').innerHTML = html;
     // what is on sale, and the one control. Both leave together when there is nothing left to buy
-    var sale = shopOnSale(slots);
     el('shTry').hidden = !sale;
     el('shCtl').hidden = !sale;
     var note = el('shNote');
     note.hidden = true;
     if (sale) {
       el('shArt').setAttribute('src', shopArt(sale.key));
+      el('shArt').classList.toggle('ink-lift', inkLift(sale.key));
       el('shName').textContent = sale.name;
       el('shPrice').innerHTML = COIN_FULL + '<b>' + fmtInt(sale.price) + '</b>';
       // what the price is measured against is the credits this screen may spend, not the header's
@@ -1545,6 +1611,33 @@
   function shopWear(slot, key) {
     if (!slot || !key) return;
     vscode.postMessage({ type: 'mascotSlot', slot: slot, key: key });
+  }
+  // Pointing the one button at a price. NOTHING IS SENT AND NOTHING IS STORED: no money moves, the
+  // host is not asked, and the next repaint would work the same answer out again. A cursor is the
+  // one thing on this screen the window may decide by itself
+  function shopPick(key) {
+    if (!key || !shopOptOf(key)) return;
+    var moved = sh.aim !== key;
+    sh.aim = key;
+    if (moved) renderShop();
+    // EVERY PRESS IS ANSWERED, including the one that lands on the drawing already aimed at. With
+    // one thing on the shelf that is the only press there is, and a press that changed nothing on
+    // the screen is what this screen was reported for. The answer is the block the price went to
+    shopPointAtSale();
+    if (moved) {
+      var o = shopOptOf(key);
+      setLive('shLive', 'Buy: ' + o.name + ', ' + fmtInt(o.price) + ' credits.');
+    }
+  }
+  // The block that holds what is on sale, told to say so again. The class is taken off and put back
+  // with a read of the layout in between, because an animation that is already on an element does
+  // not restart on its own and a second press would then be the silent one
+  function shopPointAtSale() {
+    var b = el('shTry');
+    if (!b || b.hidden) return;
+    b.classList.remove('ping');
+    void b.offsetWidth;
+    b.classList.add('ping');
   }
   function shopSend(op, key) {
     if (sh.busy) return;
@@ -1589,11 +1682,8 @@
   }
   // What a drawing is CALLED, out of the shelf the host last sent: the names are not this file's
   function shopNameOf(key) {
-    var slots = (sh.st && sh.st.slots) || [], i, j;
-    for (i = 0; i < slots.length; i++) {
-      for (j = 0; j < slots[i].opts.length; j++) if (slots[i].opts[j].key === key) return slots[i].opts[j].name;
-    }
-    return 'It';
+    var o = shopOptOf(key);
+    return o ? o.name : 'It';
   }
   function shopAnnounce(op, key) {
     if (op !== 'buy') return;
@@ -1922,6 +2012,10 @@
         _m.setAttribute('src', _want);
         if (_mascotDrawn) beatMascot(_m);
       }
+      // the lift belongs to the DRAWING, not to the slot, so it is set beside the source and on
+      // every push rather than only when the source changes: re-arming stunned puts the same
+      // picture back, and a window that opens on a lifted state has to start lifted
+      _m.classList.toggle('ink-lift', inkLift(_state));
       // the first push is the first DRAWING and not a transition, so this turns true on the first
       // push that carries a reading the steps can be measured against, which, for an account with
       // no window, is the weekly one and not the session's

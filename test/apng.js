@@ -165,4 +165,65 @@ function read(file) {
   };
 }
 
-module.exports = { read, header };
+// --- and whether the floor swallows any of it -------------------------------------------------
+//
+// THE SECOND TIME THIS TEST LOOKED AT THE RIGHT FILE AND ASKED THE WRONG QUESTION. The header
+// above is about a bubble pointing at empty canvas, caught by reading the pixels instead of the
+// IHDR. This is the same shape again one level down: the ink was found, and nobody asked what
+// COLOUR it is. mascot-coding draws the crab's keystrokes in rgb(15..25) at full alpha. On the
+// light card that is 18.6:1 and reads; on the dark card it is 1.21:1, which is not faint, it is
+// the floor. Four of the six drawings have ink like it. Every geometry check passed throughout,
+// because every one of them is about where the ink is.
+//
+// SO THIS ASKS ABOUT BRIGHTNESS, and it asks per MARK rather than per drawing. A dark outline
+// hugging a bright body is readable, since the body draws the shape; a mark that is dark ALL OVER
+// and has nothing bright touching it has nothing left to read. Those are the same pixels and
+// different facts, and the thing that tells them apart is connectedness, so the unit here is a
+// blob: 8-connected ink, and its PEAK contrast, which is the brightest the reader has to go on.
+//
+// WHAT IS LEFT OUT, on purpose: marks under `minPx` source pixels, which are dust at the size
+// these are drawn, and marks that are mostly see-through (`minPx` of ink of which less than half
+// is at least half opaque). mascot-stunned has a wisp at alpha 33..61 that measures 1.47:1 on the
+// dark card and 1.97:1 on the white one. A mark that faint on white was drawn to be faint and is
+// not what this is looking for.
+const srgb = (v) => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+const luminance = (r, g, b) => 0.2126 * srgb(r) + 0.7152 * srgb(g) + 0.0722 * srgb(b);
+function contrast(a, b) { return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); }
+
+// Every mark in every frame, with the best contrast it reaches against `bg` ([r,g,b]). Frames are
+// read as they are stored rather than composed onto one another: a mark that a frame draws is a
+// mark the screen shows, and splitting one across two frames can only make this report it smaller
+// and dimmer, which is the safe direction for a gate.
+function marks(file, bg, minPx) {
+  const { frames } = framesOf(fs.readFileSync(file));
+  const bgl = luminance(bg[0], bg[1], bg[2]);
+  const out = [];
+  for (let fi = 0; fi < frames.length; fi++) {
+    const f = frames[fi], seen = new Uint8Array(f.w * f.h), stack = [];
+    for (let i = 0; i < f.w * f.h; i++) {
+      if (seen[i] || f.px[i * 4 + 3] === 0) continue;
+      stack.length = 0; stack.push(i); seen[i] = 1;
+      let n = 0, solid = 0, peak = 1;
+      while (stack.length) {
+        const j = stack.pop(); n++;
+        const k = j * 4, a = f.px[k + 3] / 255;
+        if (f.px[k + 3] >= 128) solid++;
+        const c = contrast(luminance(f.px[k] * a + bg[0] * (1 - a), f.px[k + 1] * a + bg[1] * (1 - a), f.px[k + 2] * a + bg[2] * (1 - a)), bgl);
+        if (c > peak) peak = c;
+        const x = j % f.w, y = (j - x) / f.w;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= f.w || ny >= f.h) continue;
+            const m = ny * f.w + nx;
+            if (!seen[m] && f.px[m * 4 + 3] !== 0) { seen[m] = 1; stack.push(m); }
+          }
+        }
+      }
+      if (n >= minPx && solid * 2 >= n) out.push({ frame: fi, px: n, peak: Math.round(peak * 100) / 100 });
+    }
+  }
+  return out;
+}
+
+module.exports = { read, header, marks, luminance, contrast };

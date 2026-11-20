@@ -134,10 +134,43 @@ module.exports = `
      one floor. object-fit:contain keeps every pixel of the drawing (no crop) and
      object-position:bottom puts the crab's feet on the box's bottom edge. */
   .sparkle{width:88px;height:100%;object-fit:contain;object-position:bottom;image-rendering:pixelated;display:block;}
+  /* THE DARK THEMES GIVE THE NEARLY-BLACK INK AN EDGE, because on a dark floor it is the floor.
+     Measured off the files: mascot-coding's keystrokes are rgb(15..25) at alpha 255 and sit at
+     1.21:1 on this card, 1.08:1 on --inner and 1.18:1 on the high-contrast black, against 18.6:1
+     on the light card, where the same ink reads. The crab is bright and measures 11-17:1 either
+     way, so what is needed is an edge on the DARK ink and nothing else. The filter is html.js's
+     #cucInkEdge, and it is put here and not on the drawings because THE DRAWINGS ARE NOT OURS
+     TO EDIT.
+     ONE CLASS AND NO DRAWING NAMES. This file does not get to decide WHICH pictures are lifted,
+     because that is a measurement and not a style: html.js states it once (INK_LIFT) beside the
+     six it is about, and whatever draws one of them puts .ink-lift on the element. The first
+     version of this rule named .sparkle, .sh-pic and #shArt instead, which lifted all six, and the
+     ones that did not need it came back as stickers: the edge grows wherever near-black ink meets
+     transparency, and five of the six are drawn with a black outline, so a drawing already reading
+     at 5:1 gained a grey rim around the whole crab. It was worst in the shop's 36px cells.
+     The three places a lifted drawing can appear are three different floors, and the edge clears
+     3:1 on all of them: the Usage card (--card, 4.62:1), the shop's cells (--inner, 5.19:1), the
+     shop's preview plate (--track, 3.34:1), and the high-contrast black (6.19:1).
+     The theme half of the selector is "not light" rather than a list of dark themes, which is how
+     the rest of this file splits the two (body.vscode-light above). */
+  /* NO NEW COLOUR: --muted, the one this file already uses for everything that is present but not
+     the point. The figures above are its contrast on each of those floors; the high-contrast theme
+     does not redefine --muted, so it keeps this grey too. */
+  #cucInkFlood{flood-color:var(--muted);}
+  body:not(.vscode-light) .ink-lift{filter:url(#cucInkEdge);}
+  /* NOT display:none, which is what .sy-sprite uses two files over and what this had first.
+     A <use> resolves out of a display:none sprite; a <filter> resolves too, but its flood-color
+     does not: Chrome computes it as the initial black, so the edge comes out black on a black
+     floor and the whole rule silently does nothing. Measured, not guessed. Out of flow at zero
+     size costs the same nothing and keeps the colour. */
+  .cuc-fx{position:absolute;width:0;height:0;overflow:hidden;}
   /* the state change: one cut, one beat. The whole sprite is pressed 2 whole pixels down and let
      back up over 160ms in exactly two frames (steps(2,jump-none) renders 2px then 0px and nothing
-     between), so it reads as a thump rather than a slide. transform ONLY: a crossfade, a filter or
-     a blur on pixel art smears it, which is why opacity and filter are not in here. */
+     between), so it reads as a thump rather than a slide. transform ONLY: a crossfade, an opacity
+     ramp or a blur on pixel art smears it, which is why they are not in here.
+     The standing #cucInkEdge above is not an exception to that: it is not animated, and measured
+     against the unfiltered render every pixel it changes is a background pixel, so the art itself
+     comes out identical to the byte. */
   @keyframes mascotBeat{from{transform:translateY(2px);}to{transform:translateY(0);}}
   .sparkle.beat{animation:mascotBeat .16s steps(2,jump-none);}
   @media (prefers-reduced-motion:reduce){.sparkle.beat{animation:none;}}
@@ -508,23 +541,29 @@ module.exports = `
   /* --- the crossroads: two doors, one row ------------------------------------------------------
      The two drawings stand on the same floor (align-items:flex-end) and split the width in half,
      so neither door is the bigger offer. The picture is the thing being pressed and the word under
-     it is only its name, which is why the art takes the whole column and the caption is one of the
-     six type sizes at the bottom.
-     WIDTH IS THE COLUMN'S AND HEIGHT IS THE PICTURE'S, with max-height as a ceiling: at a 351px
-     sidebar that puts the pair at 273 x 136.88 and the card at 287.88, the shortest screen in this
-     panel, and at 420 the pictures stop growing rather than eating the extra width
-     (docs/shop-spec.md, section 2-2). A redrawn hero of any ratio therefore cannot make this row
-     taller than 120px of art.
+     it is only its name.
+     THE BOX IS THE COLUMN'S AND TWICE AS WIDE AS IT IS TALL, with max-height as a ceiling. The
+     ratio is the whole rule: both heroes are narrower than 2:1 (hero-games 592x386 = 1.534,
+     hero-shop 646x526 = 1.228), so inside a 2:1 box HEIGHT ALWAYS BINDS and the two come out the
+     same height on the same floor, each one only as wide as its own drawing needs. That is what
+     makes them read as a pair; before this they filled the column edge to edge and the shop stood
+     21.5px taller than the dealer (docs/shop-spec.md, section 2-2).
+     The width left over inside each column is the air, and it is the point: the drawings no longer
+     run wall to wall. max-height:72 is the ceiling, so a wider sidebar stops feeding the pictures
+     at about 374 instead of letting them eat the extra width.
+     A redrawn hero WIDER than 2:1 would bind on width instead and sit on the floor of the box, so
+     the row still cannot grow past the ceiling whatever picture arrives.
      NOT PIXELATED, measured: both heroes carry 1px outlines and dithering, and nearest-neighbour
-     at 0.205x drops most of them (section 2-4). The mascot and the tiles keep theirs. --- */
+     at this scale (0.126x for the shop) drops most of them (section 2-4). The mascot and the tiles
+     keep theirs. --- */
   .cr-pair{display:flex;align-items:flex-end;gap:8px;}
   .cr-door{flex:1 1 0;min-width:0;display:block;padding:0 0 8px;border:0;border-radius:12px;
     background:transparent;cursor:pointer;font-family:inherit;text-align:center;}
   .cr-door:hover{background:var(--track);}
   .cr-door:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
-  .cr-art{display:block;}
-  .cr-art img{width:100%;max-height:120px;height:auto;object-fit:contain;object-position:bottom;display:block;}
-  .cr-cap{display:block;margin-top:6px;font-size:12.5px;font-weight:700;color:var(--text);}
+  .cr-art{display:block;width:100%;aspect-ratio:2/1;max-height:72px;}
+  .cr-art img{width:100%;height:100%;object-fit:contain;object-position:bottom;display:block;}
+  .cr-cap{display:block;margin-top:8px;font-size:12.5px;font-weight:700;color:var(--text);}
   /* --- the shop. The casino's chrome is games/casino.js and every game's own CSS lives with that
      game, but the shop is not a game (docs/shop-spec.md, section 4-5), so its screen is here,
      beside the Agents tab's, and it borrows the chrome's heading, note, warning bar and button.
@@ -546,7 +585,8 @@ module.exports = `
   .sh-sw{font-size:10.5px;line-height:13px;color:var(--muted);white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis;}
   .sh-opts{display:grid;gap:4px;margin-top:5px;}
-  .sh-cell{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;
+  .sh-cell{position:relative;display:flex;flex-direction:column;align-items:center;
+    justify-content:flex-end;gap:2px;
     height:64px;padding:0 0 4px;border:0;border-radius:9px;background:var(--inner);
     box-shadow:inset 0 0 0 1px var(--iborder);font-family:inherit;font-size:inherit;}
   .sh-pic{width:100%;height:36px;object-fit:contain;object-position:bottom;
@@ -555,11 +595,23 @@ module.exports = `
      the same ember, the same tint, no new colour and no gold. The word in the cell says it too, so
      this is not the only way to see it */
   .sh-cell.on{background:rgba(232,137,90,.13);box-shadow:inset 0 0 0 1.5px #e8895a;}
-  /* ...and a cell is only pressable where a press changes something (webview.js): a scene with one
-     drawing is settled and a drawing that has not been bought is bought with the button below */
-  .sh-cell.pick{cursor:pointer;}
-  .sh-cell.pick:hover:not(.on){background:rgba(127,127,127,.09);}
-  .sh-cell.pick:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  /* WHAT THE ONE BUTTON IS AIMED AT, in the same ember and a different shape. The ring above says
+     what IS; this bar lies on the bottom edge, directly under the price, and says what Buy pays.
+     A SHAPE AND NOT A SECOND COLOUR: the screen has one accent and the two marks never land on one
+     cell, so the only place they have to hold apart is the row that shows both, where they sit side
+     by side as a box and an underline. The bar is a fill rather than an outline so it survives the
+     high-contrast theme, where --card and --inner are both black and a lifted plate would say
+     nothing. And it is not the only way to see which one it is: the block above the button is
+     filled from the same drawing and writes its name and its price out. */
+  .sh-cell.aim::after{content:'';position:absolute;left:8px;right:8px;bottom:0;height:2px;
+    border-radius:2px 2px 0 0;background:#e8895a;}
+  /* ...and a cell is pressable in two senses (webview.js): a scene with more than one drawing of
+     its own chooses between them, and a price points the button below at itself. A scene with one
+     drawing is settled and is neither */
+  .sh-cell.pick,.sh-cell.buy{cursor:pointer;}
+  .sh-cell.pick:hover:not(.on),.sh-cell.buy:hover:not(.aim){background:rgba(127,127,127,.09);}
+  .sh-cell.pick:focus-visible,.sh-cell.buy:focus-visible{outline:2px solid var(--focus);
+    outline-offset:1px;}
   /* AN EMPTY SLOT: the frame, and the word in the middle of it. NO PICTURE, which is the one thing
      that tells it from a drawing nobody can press: that one has a crab in it and says when the
      crab shows up, and this says only that something will go here */
@@ -580,6 +632,13 @@ module.exports = `
   .sh-try{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;min-height:90px;margin-top:13px;
     padding:8px 14px;box-sizing:border-box;border-radius:12px;background:var(--track);}
   .sh-try[hidden]{display:none;}
+  /* A PRESS ON A PRICE IS ANSWERED HERE. With one drawing on sale the cell it lands on is already
+     the aimed one, so the shelf has nothing to move and the only honest answer is the block the
+     price was sent to saying so. It is a step of attention and not decoration, which is the only
+     reason there is motion on this screen at all */
+  .sh-try.ping{animation:shPing .18s ease-out;}
+  @keyframes shPing{0%{transform:scale(1);}45%{transform:scale(1.02);}100%{transform:scale(1);}}
+  @media (prefers-reduced-motion:reduce){.sh-try.ping{animation:none;}}
   .sh-try img{width:88px;height:74px;object-fit:contain;object-position:bottom;
     image-rendering:pixelated;display:block;flex:none;}
   .sh-what{flex:1 1 100px;display:flex;flex-direction:column;gap:3px;min-width:0;padding-bottom:7px;}
