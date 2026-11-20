@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.36.1: Nothing is aimed until you aim it
+
+- **The shop opened with a live Buy button nobody had pressed anything to get.** It was pointed at the first thing on the shelf, on the argument that a shelf opening with nothing aimed never tells anyone a cell can be pressed. A button that will spend credits before the reader has touched the screen is worse than that, and what says a cell can be pressed is the price written on it. There is no block and no button now until a price is pressed, and after a purchase they go away again, so the second thing you buy starts with a press exactly as the first did.
+- **The random row sat below the button that buys into it.** Everything above that button is what the button acts on, which was why the row went underneath while nothing in it had a price. Something in it does now, so an unbought cell there takes the aim bar like any other, and the bar was pointing at a button above itself. The whole shelf, last row included, is above the button again.
+- That costs 120px: with the row below, the button sat at 486 on a 351px sidebar, and it is at 606 now, which is under the fold of a 600-tall one. The block that answers the press is at 502 and inside the fold, so a press is still visibly answered, and the screen opens 151px shorter than before because the block and the button are not on it yet.
+
 ## 1.36.0: Prices come off a ladder, and the rung is how much was drawn
 
 - **The two drawings that arrived yesterday were free, and they should not have been.** The sleeping crab is 1,000 credits and the black hole is 10,000. Nothing that was already free has a price put on it: every scene still falls back to a drawing that costs nothing, so a panel with nothing bought looks exactly as it did.

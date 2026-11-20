@@ -1417,6 +1417,13 @@
       // figures are all on the cells (docs/game-panels.md, section 2)
       + '<div class="bj-side"></div></div>'
       + '<div class="sh-slots" id="shSlots"></div>'
+      // ...AND THE ROW THAT HAS NO SCENE, which is part of the shelf and sits with it. It was
+      // below the button until 1.36.0, on the grounds that everything above that button is what
+      // the button acts on and nothing in this row had a price. A drawing here can be bought now
+      // (shop.js, PRICES), so an unbought cell takes the aim bar like any other, and a bar under
+      // a price with its button ABOVE it points the wrong way. The whole shelf is above the
+      // button again, which is the rule that was right in the first place
+      + '<div class="sh-rand" id="shRand"></div>'
       // what is on sale, beside the button that buys it. The art is aria-hidden and the name
       // beside it is what a reader is told, the same rule the pixel cards keep (CUC.cardWord)
       + '<div class="sh-try" id="shTry" hidden>'
@@ -1426,16 +1433,7 @@
       + '<div class="bj-sr" id="shLive" aria-live="polite"></div>'
       + '<div class="bj-note" id="shNote" hidden></div>'
       + '<div class="warnbar" id="shErr" hidden></div>'
-      + '<div class="bj-ctl" id="shCtl" hidden><button type="button" class="bj-btn primary" id="shAct">Buy</button></div>'
-      // ...AND THEN THE ROW THAT HAS NO SCENE, below the button rather than above it. Everything
-      // over that button is what the button acts on: the shelf is what a press chooses and buys
-      // into, the block is what it will buy, the button buys it. This row has no price, no button
-      // and no part in that, so it goes after the thing it has nothing to do with. Measured, it is
-      // also what keeps Buy where it was: in front of this row the control sat at 606 on a 351px
-      // sidebar, which is under the fold of a 600-tall one, and behind it the button is at 486.
-      // When there is nothing left to buy the block and the button leave together and this simply
-      // moves up under the shelf, so neither order leaves a hole
-      + '<div class="sh-rand" id="shRand"></div>';
+      + '<div class="bj-ctl" id="shCtl" hidden><button type="button" class="bj-btn primary" id="shAct">Buy</button></div>';
   }
   // Built the first time the shop is opened, like a game's panel and for the same reason: a reader
   // who never opens it pays nothing for it in the first paint
@@ -1509,16 +1507,25 @@
     }
     return out;
   }
-  // WHAT THE ONE BUTTON BUYS, or null when there is nothing left. The drawing the reader aimed it
-  // at while that drawing is still for sale, and the first one on the shelf otherwise.
-  // THE FALLBACK IS THE WHOLE OF THE CLEANING UP. A purchase (here or in another window) takes the
-  // aimed drawing off the sale list and this answers with the next one without anybody resetting
-  // anything, and the shop with one thing on it opens with that thing already aimed rather than
-  // with a reader who has to guess that a cell is pressable
+  // WHAT THE ONE BUTTON BUYS: the drawing the reader aimed it at, while that drawing is still for
+  // sale, and NOTHING OTHERWISE. The block and the button are not on the screen until a press
+  // puts something here.
+  //
+  // THERE USED TO BE A FALLBACK to the first thing on the shelf, on the argument that a shelf
+  // opening with nothing aimed never tells anybody a cell is pressable. That argument lost, and
+  // the reason it lost is worth keeping: a live Buy button on a screen the reader has not touched
+  // reads as a button that will spend something they did not choose, and what it was pointed at
+  // was a mark somewhere further up. Nothing says "press me" better than a price, and every cell
+  // that can be bought wears one.
+  //
+  // THE FALLBACK WAS ALSO THE CLEANING UP, and that job still gets done, by its absence: a
+  // purchase here or in another window takes the aimed drawing off the sale list, this answers
+  // with nothing, and renderShop writes that back as `sh.aim = null`. So the button leaves after
+  // every purchase and the next one starts with a press, the same as the first.
   function shopOnSale(slots) {
     var sale = shopForSale(slots), i;
     for (i = 0; i < sale.length; i++) if (sale[i].key === sh.aim) return sale[i];
-    return sale[0] || null;
+    return null;
   }
   function shopOptOf(key) {
     var slots = (sh.st && sh.st.slots) || [], i, j;

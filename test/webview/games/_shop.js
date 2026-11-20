@@ -45,6 +45,9 @@ module.exports = {
 
   run: function (h, MODE) {
     const { ok, advance, doc, $, showing, notShown, bodyTabs, openList, openShop, openGame, active, activeName } = h;
+    // the catalog, which every mode now reads: the two short modes price their own refusal off it
+    // rather than writing a figure that a drawing changing rung would silently falsify
+    const shop = require(h.path.join(h.EXT, 'shop.js'));
     const css = () => doc.querySelector('style').textContent;
     const scenes = () => doc.querySelectorAll('#shSlots .sh-slot');
     const cells = () => doc.querySelectorAll('#shSlots .sh-cell');
@@ -150,6 +153,11 @@ module.exports = {
       ok('a round is live and holding its stake of 1,000',
         !$('bjPlay').hidden && h.sent('bj').filter((m) => m.op === 'deal').pop().bet === 1000, bodyTabs());
       openShop(); advance(20);
+      // NOTHING IS ASKED FOR UNTIL A PRICE IS PRESSED, so the refusal is not on the screen yet
+      // either. The reader aims at something first, exactly as they would with a full purse
+      ok('the shop opens with no button and so with nothing refused yet',
+        $('shCtl').hidden && note().hidden, ($('shCtl').hidden ? 'no button' : 'button'));
+      h.mouseClick(doc.querySelectorAll('#panelShop .sh-cell.buy')[0]); advance(40);
       ok('the purchase the balance covers is still refused', btn().disabled && !$('shCtl').hidden,
         btn().textContent + (btn().disabled ? ' (off)' : ' (on)'));
       ok('and the reason given is the table holding them, not an empty purse',
@@ -162,15 +170,23 @@ module.exports = {
 
     if (MODE === 'shop-poor') {
       ok('the stored door comes back as the shop', showing('panelShop') && bodyTabs() === 'tab-games', bodyTabs());
+      // THE SHELF IS THE SCREEN, and it is all of the screen until a price is pressed: what is in
+      // each moment is the point of this place whether anything can be afforded or not
       ok('five credits: the four scenes are still drawn, because what is in them is the point',
-        scenes().length === 4 && !$('shTry').hidden, scenes().length + ' scene(s)');
+        scenes().length === 4 && $('shTry').hidden && $('shCtl').hidden,
+        scenes().length + ' scene(s), ' + ($('shCtl').hidden ? 'no button' : 'button'));
       ok('nothing says it was bought', !doc.querySelector('#shSlots .sh-cell.owned .sh-tag[data-x]')
         && cells().every((c) => c.textContent !== 'own'),
         cells().map((c) => c.textContent).join(' '));
-      ok('five credits: the one thing on sale is off and asks for its own price',
-        btn().disabled && !note().hidden && note().textContent === 'You need 1,000 credits.',
+      // AIMING IS NOT AFFORDING, so a purse of five still aims. What it cannot do is press
+      const want = doc.querySelectorAll('#panelShop .sh-cell.buy')[0];
+      const wantKey = want && (want.getAttribute('data-key') || want.getAttribute('data-pool'));
+      h.mouseClick(want); advance(40);
+      ok('five credits: a price still aims, and then the button asks for that price and is off',
+        btn().disabled && !note().hidden
+        && note().textContent === 'You need ' + shop.itemOf(wantKey).price.toLocaleString('en-US') + ' credits.',
         JSON.stringify(note().textContent));
-      ok('and the button is still on the screen, because there is still something to buy',
+      ok('and the button is on the screen, because a price was pressed',
         !$('shCtl').hidden && btn().textContent === 'Buy', btn().textContent);
       // AIMING IS NOT AFFORDING. What the button is pointed at is the reader's, what it may be
       // pressed for is the host's, and a purse that cannot reach the price takes neither away
@@ -191,7 +207,6 @@ module.exports = {
     }
 
     // ---------- 3. the shelf: four scenes ----------
-    const shop = require(h.path.join(h.EXT, 'shop.js'));
     ok('the stored door comes back as the shop, and the list is not drawn under it',
       showing('panelShop') && !showing('panelGames') && !showing('panelCross'), bodyTabs());
     ok('and it asked the host once for what it sells',
@@ -350,20 +365,67 @@ module.exports = {
       cell('idle').getAttribute('aria-label') === 'Small crab, in use'
       && cell('working').getAttribute('aria-label') === 'Busy crab, yours',
       cell('idle').getAttribute('aria-label') + ' / ' + cell('working').getAttribute('aria-label'));
-    // WHICH ONE IS READ OFF THE SHELF, not written here: what stands first for sale moved the day
+    // ---------- 5a. NOTHING IS AIMED UNTIL SOMETHING IS PRESSED ----------
+    // The screen used to open with the first thing on the shelf already aimed at, so that a cell
+    // being pressable was visible from the start. The reader threw it out, and the reason is the
+    // better one: a live Buy on a screen nobody has touched is a button that will spend something
+    // they did not choose, and what it was pointed at was a mark further up the shelf.
+    const aimed = () => doc.querySelectorAll('#panelShop .sh-cell.aim');
+    const forSale = () => doc.querySelectorAll('#panelShop .sh-cell.buy');
+    // CHOOSING IS NOT AIMING, and this is the only place it can be seen: once a price has been
+    // pressed the button is out and a choice could not be told from it. So it is checked here,
+    // before anything has been pressed, and the scene is put back the way it was found.
+    // A free cell has no price, nothing on this screen will ever charge for it, and a Buy button
+    // appearing because somebody swapped which crab is in a moment would be a button offering to
+    // sell them what they already have
+    // the cell is named by its KEY and looked up again after the press: a press rebuilds the whole
+    // shelf, so the node pressed is detached by the answer to its own press
+    const pickFrom = cells().filter((c) => c.classList.contains('pick') && !c.classList.contains('on'))[0];
+    const pickKey = pickFrom.getAttribute('data-key');
+    const backKey = cells().filter((c) => c.classList.contains('on')
+      && c.getAttribute('data-slot') === pickFrom.getAttribute('data-slot'))[0].getAttribute('data-key');
+    h.mouseClick(pickFrom); advance(40);
+    ok('pressing a drawing with no price changes the scene and brings no button out',
+      cell(pickKey).classList.contains('on') && $('shCtl').hidden && $('shTry').hidden
+      && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 0,
+      cell(pickKey).getAttribute('aria-label') + ' | '
+      + ($('shCtl').hidden ? 'no button' : 'BUTTON') + ', ' + aimed().length + ' aimed');
+    h.mouseClick(cell(backKey)); advance(40);   // put the scene back the way it was found
+    ok('the shelf opens with things for sale on it and nothing aimed at',
+      forSale().length === shop.ITEMS.filter((i) => i.price).length && aimed().length === 0,
+      forSale().length + ' for sale, ' + aimed().length + ' aimed');
+    ok('and so there is no block and no button, rather than a button nobody pointed',
+      $('shTry').hidden && $('shCtl').hidden && note().hidden,
+      ($('shTry').hidden ? 'no block' : 'block') + ', ' + ($('shCtl').hidden ? 'no button' : 'button'));
+    // WHAT SAYS A CELL CAN BE PRESSED IS THE PRICE ON IT. That is the thing the old fallback was
+    // there to replace, so it has to be on every one of them or the screen says nothing at all
+    ok('what says a cell may be pressed is the price written on it',
+      forSale().map((c) => c.textContent.trim()).every((t) => /^\d+K$/.test(t)),
+      forSale().map((c) => (c.getAttribute('data-key') || c.getAttribute('data-pool')) + ':' + c.textContent.trim()).join(' '));
+    // THE WHOLE SHELF IS ABOVE THE BUTTON, in DOM order, which is what makes a bar under a price
+    // point DOWN at the button that pays it. The last row sat below the button for one version,
+    // from when nothing in it had a price; a bar down there pointed up past the thing it meant
+    const order = $('panelShop').children.map((e) => e.getAttribute('id') || e.getAttribute('class'));
+    const at = (id) => order.indexOf(id);
+    ok('the whole shelf, last row included, comes before the button in the page',
+      at('shSlots') >= 0 && at('shRand') > at('shSlots')
+      && at('shTry') > at('shRand') && at('shCtl') > at('shTry'),
+      order.join(' > '));
+    // ---------- 5b. ...AND THEN IT IS PRESSED ----------
+    // WHICH CELL IS READ OFF THE SHELF, not written here: what stands first for sale moved the day
     // a second priced drawing went into an earlier scene (2026-11-20, the sleeping crab in quiet)
+    h.mouseClick(forSale()[0]); advance(40);
     const aim0 = doc.querySelector('#panelShop .sh-cell.aim');
     const aim0Key = aim0 && (aim0.getAttribute('data-key') || aim0.getAttribute('data-pool'));
+    ok('a press on a price is what brings the block and the button out',
+      !$('shTry').hidden && !$('shCtl').hidden && !!aim0Key, aim0Key);
     ok('what is on sale sits next to the button that buys it, at its real size',
-      !!aim0Key && !$('shTry').hidden && srcOf($('shArt')) === artOf(aim0Key)
+      !!aim0Key && srcOf($('shArt')) === artOf(aim0Key)
       && $('shName').textContent === shop.itemOf(aim0Key).name
       && $('shPrice').textContent.indexOf(shop.itemOf(aim0Key).price.toLocaleString('en-US')) >= 0,
       $('shName').textContent + ' ' + $('shPrice').textContent);
-    // THE BLOCK AND A CELL POINT AT EACH OTHER. The screen opens with the first thing for sale
-    // already aimed at, so a reader is never shown a price in two places with nothing joining them
-    // and is never left to guess that a cell is pressable at all
-    // ONE MARK ON THE WHOLE SCREEN, and that now means both rows: the last row's priced cells can
-    // be aimed at too, so counting only the scenes would miss a second bar appearing down there
+    // ONE MARK ON THE WHOLE SCREEN, and that means both rows: the last row's priced cells can be
+    // aimed at too, so counting only the scenes would miss a second bar appearing down there
     ok('and the cell it was filled from is marked, so the two point at each other',
       !!aim0 && aim0.getAttribute('aria-pressed') === 'true'
       && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 1,
@@ -385,9 +447,7 @@ module.exports = {
       && /\.sh-try img\{[^}]*object-fit:contain/.test(css())
       && /\.sh-try img\{[^}]*object-position:bottom/.test(css()),
       (/\.sh-try img\{[^}]*\}/.exec(css()) || [''])[0]);
-    ok('nothing is spent by arriving', stored() === null, JSON.stringify(stored()));
-    ok('the button takes the focus, because it is what a reader came to press',
-      active() === btn(), activeName());
+    ok('nothing is spent by arriving or by aiming', stored() === null, JSON.stringify(stored()));
 
     // ---------- 6. choosing, which is not buying ----------
     const ledger0 = JSON.stringify(h.gs.data.creditLedgerV1);
@@ -450,9 +510,9 @@ module.exports = {
     }
 
     // ---------- 7b. pressing a price, which is not buying either ----------
-    // A PRESS IS ANSWERED EVEN WHEN THE SHELF HAS NOTHING TO MOVE. One drawing is on sale, so the
-    // cell a reader presses is the one already aimed at, and without this the press would look
-    // exactly like the fault that was reported: a figure on a cell and nothing happening
+    // A PRESS IS ANSWERED EVEN WHEN THE SHELF HAS NOTHING TO MOVE: the cell pressed here is the
+    // one already aimed at, and without this that press would look exactly like the fault that
+    // was reported, a figure on a cell and nothing happening
     const ledger1 = JSON.stringify(h.gs.data.creditLedgerV1);
     const sent1a = h.sent('shop').length;
     $('shTry').classList.remove('ping');
@@ -462,7 +522,7 @@ module.exports = {
       $('shTry').getAttribute('class') || '(no class)');
     ok('and the aim stays where it was, because there is nothing else to aim at',
       cell('float').classList.contains('aim')
-      && doc.querySelectorAll('#shSlots .sh-cell.aim').length === 1, wornKeys().join(' '));
+      && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 1, wornKeys().join(' '));
     ok('nothing was spent, nothing was sent and nothing was worn by it',
       JSON.stringify(h.gs.data.creditLedgerV1) === ledger1 && stored() === null
       && h.sent('shop').length === sent1a && !h.gs.data.mascotSlotsV1.burn,
@@ -476,16 +536,19 @@ module.exports = {
       (/\.sh-try\.ping\{[^}]*\}/.exec(css()) || ['(no rule)'])[0]);
 
     // ---------- 8. the purchase ----------
-    // WHICH ITEM IS READ OFF THE SHELF, not written here. The aim falls on the first thing still
-    // for sale, and what stands first moves whenever a priced drawing joins an earlier scene
-    // (2026-11-20: the sleeping crab went into quiet, which is the first scene)
+    // EVERY PURCHASE IS TWO PRESSES: the cell, then the button. There is no aim until the first
+    // of them, so this is the whole shape of buying anything now.
+    // WHICH ITEM IS READ OFF THE SHELF, not written here. What stands first for sale moves
+    // whenever a priced drawing joins an earlier scene (2026-11-20: the sleeping crab in quiet)
+    const bal0 = h.ledgerBalance();
+    // THE AIM IS A CURSOR AND IT SURVIVES until something is bought: a press put it here a few
+    // blocks up and nothing since has taken it away, so the button is still on the screen
     const aimCell = doc.querySelector('#shSlots .sh-cell.aim');
     const aimKey = aimCell && aimCell.getAttribute('data-key');
     const aimSlot = aimCell && aimCell.getAttribute('data-slot');
-    const price = shop.itemOf(aimKey).price;
-    const bal0 = h.ledgerBalance();
-    ok('the shelf aims at something, and it is a drawing with a price on it',
-      !!aimKey && price > 0, aimKey + ' at ' + price);
+    const price = aimKey ? shop.itemOf(aimKey).price : 0;
+    ok('the press from a few blocks up is still aimed, and the button is still there for it',
+      !!aimKey && price > 0 && !$('shCtl').hidden && !$('shTry').hidden, aimKey + ' at ' + price);
     ok('it can be afforded, which is what the next few checks need', !btn().disabled, btn().textContent);
     btn().click(); advance(20);
     ok('buying charges the price exactly once',
@@ -515,23 +578,36 @@ module.exports = {
       cell(aimKey).localName + '/' + cell(aimFree).localName + ' ' + cell(aimKey).textContent);
     ok('it said so out loud, once',
       new RegExp(shop.itemOf(aimKey).name + ' bought').test($('shLive').textContent), $('shLive').textContent);
-    // THE SHOP STOPS BEING A SHOP, but only once there is nothing left, and there are three
-    // priced drawings now rather than one. Buy the rest the same way the reader would, off the
-    // button, and count the presses rather than naming the items
+    // AND THE BUTTON LEAVES AGAIN, with priced cells still on the shelf. That is the half of the
+    // new rule that cost something to get wrong: the aim is cleared by the purchase taking its
+    // drawing off the sale list, so the NEXT purchase starts from a press exactly like this one
+    ok('the button goes away again after one purchase, though there is still plenty for sale',
+      $('shTry').hidden && $('shCtl').hidden
+      && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 0
+      && doc.querySelectorAll('#panelShop .sh-cell.buy').length > 0,
+      doc.querySelectorAll('#panelShop .sh-cell.buy').length + ' still for sale, '
+      + ($('shCtl').hidden ? 'no button' : 'BUTTON STILL THERE'));
+    // THE SHOP STOPS BEING A SHOP, but only once there is nothing left. Buy the rest the way the
+    // reader has to: press a price, press the button, and count the pairs rather than the items
     let more = 0;
-    while (!$('shCtl').hidden && !btn().disabled && more < 8) { btn().click(); advance(20); more++; }
-    ok('the rest of the shelf can be bought the same way, one press each',
-      more === shop.ITEMS.filter((s) => s.price).length - 1, more + ' more press(es)');
+    while (doc.querySelectorAll('#panelShop .sh-cell.buy').length && more < 8) {
+      h.mouseClick(doc.querySelectorAll('#panelShop .sh-cell.buy')[0]); advance(40);
+      if ($('shCtl').hidden || btn().disabled) break;
+      btn().click(); advance(20);
+      more++;
+    }
+    ok('the rest of the shelf is bought the same way, a press on the cell and a press on the button',
+      more === shop.ITEMS.filter((s) => s.price).length - 1, more + ' more purchase(s)');
     ok('with nothing left to sell, the sale block and the button leave together',
       $('shTry').hidden && $('shCtl').hidden && note().hidden,
       ($('shTry').hidden ? 'no block' : 'block') + ', ' + ($('shCtl').hidden ? 'no button' : 'button'));
     // ...and the mark that pointed at the button goes with them. A bar under a price with no
     // button under it would be a cursor on a control that is not there any more
-    ok('and the mark that aimed it goes with them, on its own',
-      doc.querySelectorAll('#shSlots .sh-cell.aim').length === 0
-      && doc.querySelectorAll('#shSlots .sh-cell.buy').length === 0,
-      doc.querySelectorAll('#shSlots .sh-cell.aim,#shSlots .sh-cell.buy')
-        .map((c) => c.getAttribute('data-key')).join());
+    ok('and nothing anywhere on the screen is still a price or a mark',
+      doc.querySelectorAll('#panelShop .sh-cell.aim').length === 0
+      && doc.querySelectorAll('#panelShop .sh-cell.buy').length === 0,
+      doc.querySelectorAll('#panelShop .sh-cell.aim,#panelShop .sh-cell.buy')
+        .map((c) => c.getAttribute('data-key') || c.getAttribute('data-pool')).join());
     ok('and the stylesheet really hides a hidden sale block, which display:flex would not',
       /\.sh-try\[hidden\]\{display:none/.test(css()),
       (/\.sh-try\[hidden\][^}]*\}/.exec(css()) || ['(no rule)'])[0]);
