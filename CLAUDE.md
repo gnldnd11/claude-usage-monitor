@@ -76,6 +76,46 @@ games/<id>/panel.js   화면. 웹뷰 스크립트로 로드된다
 - 공개 미러: github `gnldnd11` (remote `usage-monitor`, subtree)
 - 상세 절차와 보안 체크리스트는 저장소 문서 참조
 
+### Open VSX (미등록, 2026-11-20 확인)
+
+Cursor·Windsurf 같은 VS Code 포크는 MS 마켓을 못 쓰고 **Open VSX** 를 본다.
+거기 없으면 그 사람들은 이 확장을 **검색으로 못 찾는다.** 코드 변경은 없고 발행만 추가하면 된다.
+
+```
+현재   https://open-vsx.org/api/saegim  ->  Namespace not found
+```
+
+**사람이 먼저 해야 하는 두 가지.** 토큰은 사용자 것이고 세션이 찾지 않는다.
+
+```
+1. open-vsx.org 에 GitHub 로 로그인
+2. Settings -> Access Tokens 에서 토큰 발급
+```
+
+그 뒤는 명령 둘이다. `vsce` 와 같이 `npx` 로 부르고 패키지를 설치하지 않는다.
+
+```
+npx ovsx create-namespace saegim -p <토큰>
+npx ovsx publish -p <토큰>
+```
+
+**순서는 MS 마켓 발행 뒤**다. 둘이 어긋나면 포크 쪽이 구버전을 받는데, 먼저 올려 두면 되돌릴 방법이 없다.
+
+## 리스팅 그림
+
+`media/` 가 README 와 마켓 첫 화면에 그대로 나간다. 둘로 갈린다.
+
+| 무엇 | 어떻게 | 왜 |
+|---|---|---|
+| 게임 5종 + 주간 시트 (라이트·다크 12장) | `node tools/shoot-panels.mjs` | 엔진이 시드로 만든 **진짜 라운드**다 |
+| `usage-panel.png`, `agents-*.png` 등 | **사람이 자기 화면을 캡처** | 사용량 수치는 지어낼 수밖에 없고, **지어낸 숫자를 리스팅에 올리지 않는다** |
+
+도구에 `usage`·`agents`·`cross`·`shop` 샷이 있지만 **`measure: true` 라 `tools/.measure/` 로만 나간다.**
+그 선은 의도된 것이다(`tools/shoot-panels.mjs` 머리말). 바꾸려면 그 판단부터 뒤집어야 한다.
+
+**그래서 사람이 안 찍으면 그 그림들은 영원히 낡는다.** 2026-11-20 에 `usage-panel.png` 가
+2026-07-28 캡처였다. 머리글도 탭 배지도 막대 수도 지금 제품과 달랐다. 화면을 크게 고치면 같이 찍는다.
+
 ## 방 테마 추가
 
 방은 **정사각형이 아니라 1.8:1 실내 비네트**다.
