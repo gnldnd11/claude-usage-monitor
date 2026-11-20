@@ -130,20 +130,32 @@ async function sync(cfg, totals, sevenDay, version) {
 //
 // rate still matters where the account % cannot be read (no reading has arrived yet): then a row's
 // $ is all there is to turn into a percent, and that path is unchanged.
-function split(summary, myPcId, rate, accountPct) {
+// THE DENOMINATOR. The division above is account% x (this PC's $ / the TABLE's $), and that is
+// this PC's share only when the table is the whole account. Where it is not, the right divisor is
+// everyone's spend and the table's is smaller, so every row comes out too big, and with one PC in
+// the table it is the entire account total wearing one person's name (reported 2026-11-20). The
+// account's spend outside the table cannot be read from here, so it is not guessed at: what IS
+// readable is how much of the week moved while nobody in the table was spending (weekly.js,
+// othersFloor), and that part is taken off the top before the rest is divided. It leaves a floor,
+// not a measurement, so the rows above it are still an upper bound and the sheet says so. It needs
+// no rate, which is what makes it safe here: a rate differs per PC and that is the 1.30.0 bug.
+function split(summary, myPcId, rate, accountPct, othersPct) {
   const pcs = (summary && summary.pcs) || [];
   const acct = accountPct != null ? accountPct : (summary ? summary.account_pct : null);
   const total = pcs.reduce((a, p) => a + (p.cost || 0), 0);
   const byAccount = acct != null && total > 0;
   const r = rate || 0;
+  // only what this PC could prove, and never more than the week itself
+  const others = byAccount ? Math.max(0, Math.min(othersPct || 0, acct)) : 0;
+  const divisible = Math.max(0, acct - others);
   const rows = pcs.map((p) => {
     const ofTeam = total > 0 ? (p.cost || 0) / total : 0;
     return {
       name: p.name, me: p.pc_id === myPcId, stale: !!p.stale, cost: p.cost || 0, tokens: p.tokens || 0,
-      pct: byAccount ? acct * ofTeam : (p.cost || 0) * r, ofTeam
+      pct: byAccount ? divisible * ofTeam : (p.cost || 0) * r, ofTeam
     };
   }).sort((a, b) => b.cost - a.cost);
-  return { rows, accountPct: acct, byAccount };
+  return { rows, accountPct: acct, byAccount, others };
 }
 
 module.exports = { sync, split, validCode, displayName, readAccountId, readAccountTier, accountKey, validAccountKey, SERVER };

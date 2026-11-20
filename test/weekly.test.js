@@ -56,6 +56,35 @@ test('the low ratio wins: intervals where others were busy only push the ratio u
   assert.ok(Math.abs(e.rate - 0.1) < 1e-9);
 });
 
+// The floor of what somebody else spent. estimateRate throws these intervals away (dc has to be
+// positive to form a ratio), which is right for a rate and is why nobody noticed the account was
+// moving on its own. No rate goes into this one: it is addition over the readings
+test('an interval where this PC spent nothing and the week moved is all somebody else', () => {
+  const r = 2e9;
+  const s = [
+    { t: 0, pct: 10, r, cost: 100 },
+    { t: HOUR, pct: 14, r, cost: 100 },        // +4 and this PC spent nothing: all theirs
+    { t: 2 * HOUR, pct: 20, r, cost: 160 },    // this PC spent too: cannot be divided, not counted
+    { t: 3 * HOUR, pct: 23, r, cost: 160 }     // +3 and nothing spent: theirs
+  ];
+  assert.equal(W.othersFloor(s, r, 23), 7);
+});
+
+test('the floor is nothing without a window, and never more than the week', () => {
+  const r = 2e9;
+  const s = [{ t: 0, pct: 10, r, cost: 5 }, { t: HOUR, pct: 90, r, cost: 5 }];
+  assert.equal(W.othersFloor(s, null, 90), 0);     // no window: readings cannot be placed
+  assert.equal(W.othersFloor(s, r, 50), 50);       // capped at what the account reports
+  assert.equal(W.othersFloor([], r, 50), 0);
+});
+
+test('a reset does not read as somebody else, and a drop is not negative use', () => {
+  const r1 = 1e9, r2 = 1e9 + 7 * 86400;
+  // the week rolling over puts the percentage back down; pairing across it would read -87
+  assert.equal(W.othersFloor([{ t: 0, pct: 90, r: r1, cost: 500 }, { t: HOUR, pct: 3, r: r2, cost: 0 },
+    { t: 2 * HOUR, pct: 9, r: r2, cost: 0 }], r2, 9), 6);
+});
+
 test('readings from different weekly windows are never paired', () => {
   const e = W.estimateRate([{ t: 0, pct: 90, r: 1e9, cost: 500 }, { t: HOUR, pct: 3, r: 1e9 + 7 * 86400, cost: 10 },
     { t: 2 * HOUR, pct: 7, r: 1e9 + 7 * 86400, cost: 50 }]);

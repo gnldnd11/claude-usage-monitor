@@ -2503,6 +2503,11 @@
     h += '</div>';
     if (!t.byAccount) {
       h += '<div class="wk-note">No reading of the account\'s weekly % yet, so each row is this PC\'s percent-per-$ on that PC\'s spend.</div>';
+    } else if (t.others > 0) {
+      // Somebody outside this table was seen spending, so the rows are the rest of the week and
+      // this says whose the remainder is. It is a floor (weekly.js, othersFloor): only what this
+      // PC was awake to watch, so the rows above it are still at most what they say
+      h += '<div class="wk-note">' + pctTxt(t.others) + '% of the week moved while no PC here was spending, so it is somebody not on this list (the web, the apps, a PC that did not share). At least that much: these rows are an upper bound.</div>';
     }
     h += '<div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
     return h;
@@ -2553,7 +2558,11 @@
       var cs = wkColors(tm.rows);
       tm.rows.forEach(function (x, k) { segs.push({ n: x.name + (x.me ? ' (you)' : ''), p: x.pct, c: cs[k], me: x.me }); });
       segs.sort(function (a, b) { return (b.me ? 1 : 0) - (a.me ? 1 : 0); });
-      // no remainder piece: the pieces are the account total, divided
+      // AND WHAT THE TABLE CANNOT ACCOUNT FOR. The rows divide the account minus this piece, so
+      // this is not a leftover of their arithmetic: it is the part of the week that moved while
+      // nobody in the table was spending (weekly.js, othersFloor), which no row may claim. It is
+      // zero on an account whose PCs all share, and that screen is unchanged
+      if (tm.others > 0) segs.push({ n: 'Not on this list', p: tm.others, c: 'var(--other)' });
     } else {
       if (me != null) segs.push({ n: 'This PC', p: me, c: '#e8895a', me: true });
       if (acc != null) segs.push({ n: 'Other PCs', p: Math.max(0, acc - (me || 0)), c: 'var(--other)' });

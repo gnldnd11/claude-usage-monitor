@@ -302,6 +302,46 @@ function windowStartOf(resetsAt, now) {
   return resetsAt ? resetsAt * 1000 - 7 * DAY : now - 7 * DAY;
 }
 
+// How much of the account's week was spent by somebody this PC cannot see, AS A FLOOR.
+//
+// Not an estimate and not a rate. Between two readings the account's % rose by dp while this PC's
+// own weighted spend rose by dc. When dc is zero and dp is not, this PC spent nothing over that
+// interval and the account's week moved anyway, so every point of that dp belongs to somebody
+// else: another PC, claude.ai, the apps. No conversion from dollars to percent takes place, which
+// is the whole point. percent-per-$ is not a constant (estimateRate above says so at length) and
+// a remainder computed from it differed on every screen, which is the bug 1.30.0 was reported for.
+// This is addition over readings both halves of the account agree on, so it comes out the same
+// wherever it is computed from the same series.
+//
+// It is a FLOOR because the series has holes: nothing is recorded while this PC is asleep, so
+// anything others spent then is invisible here. Under-counting is the right direction for a
+// number whose whole job is to say "at least this much was not yours". Readings are kept for
+// eight days and capped at 800, so a long window can lose its oldest intervals; that too can only
+// lower it.
+//
+// WHY THIS EXISTS. The team split divides the account's % by what the REGISTERED PCs spent, which
+// is right only when the registered PCs are everyone. On an account where they are not, the people
+// outside the table have their use poured into the rows of the people inside it, and with a single
+// registered PC that is the entire account landing on one person (reported 2026-11-20: 1.4B tokens
+// and $474 of API-equivalent use drawn as 75% of an Ultra week, where the same work on an account
+// whose PCs are all registered measured 15%). The split cannot see outside itself. This can.
+function othersFloor(list, resetsAt, pct) {
+  if (!resetsAt) return 0;
+  let floor = 0;
+  for (let i = 1; i < list.length; i++) {
+    const a = list[i - 1], b = list[i];
+    // one window only: a reset puts the percentage back to zero and dp would read negative
+    if (!sameWindow(a, { r: resetsAt }) || !sameWindow(b, { r: resetsAt })) continue;
+    const dp = b.pct - a.pct;
+    const dc = b.cost - a.cost;
+    // dc > 0 means this PC was spending too, and there is no way to say how the dp divides
+    // between it and anyone else WITHOUT a rate. Those intervals are not counted at all
+    if (dp > 0 && dc <= 0) floor += dp;
+  }
+  // it is a part of the week that has been spent, so it cannot exceed what the account reports
+  return pct != null ? Math.max(0, Math.min(floor, pct)) : Math.max(0, floor);
+}
+
 // A new reading of the account's weekly % arrived (usage endpoint, tap, or response header)
 function sample(pct, resetsAt) {
   if (pct == null || !resetsAt) return;
@@ -379,6 +419,10 @@ async function report(sevenDay, now, tier) {
   const rate = est.rate != null ? est.rate : REFERENCE_RATE[tk || 'max_20x'];
   let share = windowCost * rate;
   if (pct != null) share = Math.min(share, pct);
+  // What this PC can prove was not its own (othersFloor above). It bounds the estimate too: a
+  // share cannot be larger than the week minus what somebody else demonstrably spent
+  const others = othersFloor(samples, resetsAt, pct);
+  if (pct != null) share = Math.min(share, Math.max(0, pct - others));
 
   return {
     host: os.hostname(),
@@ -391,7 +435,7 @@ async function report(sevenDay, now, tier) {
     models: ranked(models, total.cost, 6),
     kinds: ranked(kinds, total.cost, 6),
     sessions: topSessions,
-    plan: { pct, resetsAt, windowStart: wStart, windowCost, share, basis, rate, tier: tk, tierKnown: !!tk, perPoint: rate > 0 ? 1 / rate : null, rough: est.rough, readings: est.n, needed: MIN_RATIOS, minStep: MIN_DP, samples: samples.length },
+    plan: { pct, resetsAt, windowStart: wStart, windowCost, share, others, basis, rate, tier: tk, tierKnown: !!tk, perPoint: rate > 0 ? 1 / rate : null, rough: est.rough, readings: est.n, needed: MIN_RATIOS, minStep: MIN_DP, samples: samples.length },
     scannedAt: lastScanAt
   };
 }
@@ -399,5 +443,5 @@ async function report(sevenDay, now, tier) {
 module.exports = {
   init, scan, sample, report, setProjectsDir, windowTotals,
   // exposed for tests
-  _internal: { tierKey, REFERENCE_RATE, costOf, priceOf, modelLabel, estimateRate, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
+  _internal: { tierKey, REFERENCE_RATE, costOf, priceOf, modelLabel, estimateRate, othersFloor, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
 };
