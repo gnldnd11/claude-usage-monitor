@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.32.4: What one PC saw of a week it did not spend
+
+- **1.32.3 took what somebody else spent off the account before dividing the rest, and on a table of two PCs that was the other PC.** The measurement is "the account's percentage moved while THIS PC spent nothing", which is exactly everybody else when one PC shares and includes a teammate who was simply working while you were not when two do. Subtracting it there removes a PC that IS in the table and draws it as one that is not, which is the phantom row 1.30.0 was reported for. It applies to a table of one now, which is the case it was measured for and the case that was broken.
+- **A lone sharing PC reads what it can prove rather than the whole account.** Its row is the week minus the part of it that moved while that PC was spending nothing: 55 points witnessed against an account at 75 leaves 20, not 75. No rate is involved, so nothing differs between screens, and the sheet says the row is an upper bound because nothing is recorded while the PC is off.
+- **The percentage one dollar buys is not a constant that could have been used instead.** On three accounts whose own rate can be read cleanly, each account's week over that whole account's spend, it came out 0.0319, 0.0364 and 0.0462 percent per dollar: a spread of 1.45x. Fixing a constant from that and multiplying each PC's spend by it would have drawn 8.7% as people who do not exist on the very account 1.30.0 was reported from. The arithmetic here has no rate in it at all.
+- **A table of two or more is unchanged.** Those rows are the account's percentage divided by what each PC spent, as they have been since 1.30.0, and that is exact when the PCs in the table are everyone. Telling a teammate's spend from an outsider's needs every PC's hourly history rather than this one's, which the sharing server already stores and this does not yet read.
+
 ## 1.32.3: A sharing PC was given the whole account to carry
 
 - **One PC sharing, other people on the account not running this, and the row with that PC's name on it read the entire account's week.** 1.4B tokens and $474 of API-equivalent use drawn as 75% of an Ultra week, where the same work on an account whose PCs all share measures about 15%. A row is the account's weekly percentage times this PC's spend over the table's spend, and with one PC in the table that fraction is one, so the division did nothing and handed over everything, other people's use included. Turning sharing ON made it worse than leaving it off, which at least drew the rest as `Other PCs`.

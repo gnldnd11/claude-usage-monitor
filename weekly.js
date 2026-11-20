@@ -327,11 +327,20 @@ function windowStartOf(resetsAt, now) {
 // whose PCs are all registered measured 15%). The split cannot see outside itself. This can.
 function othersFloor(list, resetsAt, pct) {
   if (!resetsAt) return 0;
+  // THE WINDOW'S OWN START IS A READING, and the one that matters most on a PC that was not
+  // watching when the week opened. A reset puts the account at zero, and this PC's spend since a
+  // moment it has not reached is zero too, so {pct: 0, cost: 0} is not an assumption. Without it
+  // the first reading has nothing to be compared against and everything that happened before the
+  // extension first looked belongs to nobody. A PC installed mid-week, or simply switched off
+  // when the week rolled, is exactly the PC most likely to be sharing an account with people it
+  // cannot see
+  const series = [{ t: windowStartOf(resetsAt, Date.now()), pct: 0, r: resetsAt, cost: 0 }]
+    .concat(list.filter((s) => sameWindow(s, { r: resetsAt })));
   let floor = 0;
-  for (let i = 1; i < list.length; i++) {
-    const a = list[i - 1], b = list[i];
-    // one window only: a reset puts the percentage back to zero and dp would read negative
-    if (!sameWindow(a, { r: resetsAt }) || !sameWindow(b, { r: resetsAt })) continue;
+  for (let i = 1; i < series.length; i++) {
+    // every reading here is this window's: a reset puts the percentage back to zero, and pairing
+    // across one would read dp as a large negative and then as the whole week again
+    const a = series[i - 1], b = series[i];
     const dp = b.pct - a.pct;
     const dc = b.cost - a.cost;
     // dc > 0 means this PC was spending too, and there is no way to say how the dp divides

@@ -130,23 +130,51 @@ async function sync(cfg, totals, sevenDay, version) {
 //
 // rate still matters where the account % cannot be read (no reading has arrived yet): then a row's
 // $ is all there is to turn into a percent, and that path is unchanged.
-// THE DENOMINATOR. The division above is account% x (this PC's $ / the TABLE's $), and that is
-// this PC's share only when the table is the whole account. Where it is not, the right divisor is
-// everyone's spend and the table's is smaller, so every row comes out too big, and with one PC in
-// the table it is the entire account total wearing one person's name (reported 2026-11-20). The
-// account's spend outside the table cannot be read from here, so it is not guessed at: what IS
-// readable is how much of the week moved while nobody in the table was spending (weekly.js,
-// othersFloor), and that part is taken off the top before the rest is divided. It leaves a floor,
-// not a measurement, so the rows above it are still an upper bound and the sheet says so. It needs
-// no rate, which is what makes it safe here: a rate differs per PC and that is the 1.30.0 bug.
+// THE SPLIT, AND THE ONE FACT IT RESTS ON.
+//
+// Dividing the account's % by what each PC spent is exact, needs no rate, and reads the same on
+// every screen. It is also only true when the PCs in the table are everyone who draws on the
+// account. Where somebody is not in it, the right divisor is larger than the table's and every
+// row comes out too big; with a single PC in the table the fraction is 1, the division does
+// nothing at all, and that one person is handed the entire account. Reported 2026-11-20: 1.4B
+// tokens and $474 of API-equivalent use drawn as 75% of an Ultra week.
+//
+// WHETHER THE TABLE IS EVERYONE CANNOT BE MEASURED HERE, so it is asked (claudeUsage.team.all).
+// Nothing else in this file is a question to the person, and this one is, because the usage
+// endpoint reports a total and a PC can only ever see itself. The person knows the answer in a
+// second.
+//
+// AND WHY IT IS NOT GUESSED AT WITH A RATE. The tempting answer is row = spend x percent-per-$,
+// with whatever is left over being other people. That is what 1.30.0 removed, and it cannot be
+// brought back by fixing the rate's source, which was the first thing tried here: on three
+// accounts whose own rate CAN be measured cleanly (each account's % over that whole account's
+// spend) it came out 0.0319, 0.0364 and 0.0462 %/$, a spread of 1.45x. A constant drawn from that
+// is wrong by a third on a real account, so on the 1.30.0 account, which had nobody outside the
+// table, the reference rate would have drawn 8.7% as people who do not exist. That is the bug
+// that was reported. A per-PC measurement is worse again: between two readings the account's %
+// moves for everyone while only this PC's spend is known here.
+//
+// So where the table is not everyone, a row's percentage is not computed at all. The sheet shows
+// what each PC spent, which IS separated to the person and needs nothing, and says why there is
+// no percentage. `others` carries what was witnessed rather than inferred (weekly.js,
+// othersFloor), for the one thing that can still be said: at least this much was not the table's.
 function split(summary, myPcId, rate, accountPct, othersPct) {
   const pcs = (summary && summary.pcs) || [];
   const acct = accountPct != null ? accountPct : (summary ? summary.account_pct : null);
   const total = pcs.reduce((a, p) => a + (p.cost || 0), 0);
   const byAccount = acct != null && total > 0;
   const r = rate || 0;
-  // only what this PC could prove, and never more than the week itself
-  const others = byAccount ? Math.max(0, Math.min(othersPct || 0, acct)) : 0;
+  // WITNESSED USE BY SOMEBODY NOT IN THE TABLE, and only where that is what it measures.
+  //
+  // othersPct (weekly.js, othersFloor) is percentage that moved while THIS PC was spending
+  // nothing. With one PC in the table that is everybody else on the account, which is exactly the
+  // quantity missing from the divisor. With two, a teammate working while this PC is idle lands
+  // in it too, so it would subtract a PC that IS in the table and draw it as one that is not:
+  // phantom rows, which is 1.30.0 over again. The server keeps every PC's hourly spend and could
+  // answer it for a team; it is not read here, so for a team this stays zero and the division is
+  // what it has always been.
+  const lone = pcs.length === 1;
+  const others = byAccount && lone ? Math.max(0, Math.min(othersPct || 0, acct)) : 0;
   const divisible = Math.max(0, acct - others);
   const rows = pcs.map((p) => {
     const ofTeam = total > 0 ? (p.cost || 0) / total : 0;
@@ -155,7 +183,7 @@ function split(summary, myPcId, rate, accountPct, othersPct) {
       pct: byAccount ? divisible * ofTeam : (p.cost || 0) * r, ofTeam
     };
   }).sort((a, b) => b.cost - a.cost);
-  return { rows, accountPct: acct, byAccount, others };
+  return { rows, accountPct: acct, byAccount, others, lone };
 }
 
 module.exports = { sync, split, validCode, displayName, readAccountId, readAccountTier, accountKey, validAccountKey, SERVER };

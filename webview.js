@@ -2507,7 +2507,7 @@
       // Somebody outside this table was seen spending, so the rows are the rest of the week and
       // this says whose the remainder is. It is a floor (weekly.js, othersFloor): only what this
       // PC was awake to watch, so the rows above it are still at most what they say
-      h += '<div class="wk-note">' + pctTxt(t.others) + '% of the week moved while no PC here was spending, so it is somebody not on this list (the web, the apps, a PC that did not share). At least that much: these rows are an upper bound.</div>';
+      h += '<div class="wk-note">' + pctTxt(t.others) + '% of the week was spent while this PC was not spending at all, so it belongs to somebody not on this list. The row above is the rest of the week, and it is at most that: nothing is watched while this PC is off.</div>';
     }
     h += '<div class="wk-note wk-right"><a href="#" id="wkTeamEdit">Change</a></div>';
     return h;

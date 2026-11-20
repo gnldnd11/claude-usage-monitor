@@ -131,26 +131,23 @@ test('the plan tier comes from .claude.json too (macOS keeps credentials in the 
 // use drawn as 75% of an Ultra week, where the same work on an account whose PCs all share
 // measured 15%. ofTeam is $mine / $the table's, which is 1 when the table holds one PC, so the
 // division did nothing and handed over everything, other people's use included
+// Reported 2026-11-20. One PC sharing, four other people on the account not running this at all:
+// the row named after that PC read the whole account's week. 1.4B tokens and $474 of
+// API-equivalent use drawn as 75% of an Ultra week. ofTeam is $mine / $the table's, which is 1
+// when the table holds one PC, so the division did nothing and handed over everything
 test('a lone sharing PC does not take the whole account when others were seen spending', () => {
   const s = summary(75, [474]);
-  // nothing proven: unchanged, which is the account with nobody outside it
+  // nothing witnessed: unchanged, which is also the account with nobody outside it
   assert.equal(team.split(s, 'pc0', 0.05, 75, 0).rows[0].pct, 75);
   assert.equal(team.split(s, 'pc0', 0.05, 75, 0).others, 0);
-  // 60 points moved while this PC spent nothing, so no row may claim them
-  const seen = team.split(s, 'pc0', 0.05, 75, 60);
-  assert.equal(seen.rows[0].pct, 15);
-  assert.equal(seen.others, 60);
+  // 55 points moved while this PC spent nothing. They are somebody else's and no row may take them
+  const seen = team.split(s, 'pc0', 0.05, 75, 55);
+  assert.equal(seen.rows[0].pct, 20);
+  assert.equal(seen.others, 55);
   assert.equal(round1(seen.rows[0].pct + seen.others), 75);   // still adds to the account
 });
 
-test('what others were seen spending is taken off the top, not out of one row', () => {
-  const s = summary(40, [300, 100]);   // 75 / 25 of the table's spend
-  const r = team.split(s, 'pc0', 0.05, 40, 12);
-  assert.ok(near(r.rows[0].pct, 21) && near(r.rows[1].pct, 7));   // (40 - 12) split 75/25
-  assert.ok(near(r.rows[0].pct + r.rows[1].pct + r.others, 40));
-});
-
-test('the others floor cannot exceed the week or go below zero', () => {
+test('what was witnessed cannot exceed the week or go below zero', () => {
   const s = summary(30, [100]);
   assert.equal(team.split(s, 'pc0', 0.05, 30, 999).rows[0].pct, 0);
   assert.equal(team.split(s, 'pc0', 0.05, 30, 999).others, 30);
@@ -158,13 +155,24 @@ test('the others floor cannot exceed the week or go below zero', () => {
   assert.equal(team.split(s, 'pc0', 0.05, 30).others, 0);       // not passed at all
 });
 
-// 1.30.0 again, with the new argument in play: a floor is measured per PC, so if it could move the
-// rows differently on two screens the old bug is back. It cannot, because it is subtracted before
-// the division and the division is what the rows are
-test('two PCs that measured different floors still draw the same rows from the same floor', () => {
+// The measurement is "the week moved while THIS PC spent nothing", so on a table of two a
+// teammate working while this PC is idle is inside it. Subtracting it there would take a PC that
+// IS in the table and draw it as one that is not, which is 1.30.0's phantom row again
+test('a teammate idling is not somebody outside the table', () => {
+  const s = summary(33, [690, 345]);
+  const r = team.split(s, 'pc1', 0.05, 33, 20);   // 20 points of it were the teammate
+  assert.equal(r.others, 0);
+  assert.ok(near(r.rows[0].pct, 22) && near(r.rows[1].pct, 11));
+  assert.ok(near(r.rows[0].pct + r.rows[1].pct, 33));
+});
+
+// 1.30.0 again, with the new argument in play: it is measured per PC, so if it could move the
+// rows differently on two screens the old bug is back. On a table of one there is only one screen
+// to differ from, and on a table of two it is not used at all
+test('two PCs that witnessed different amounts still draw the same rows', () => {
   const s = summary(50, [200, 300]);
   assert.deepEqual(team.split(s, 'pc0', 0.03, 50, 10).rows.map((p) => p.pct),
-    team.split(s, 'pc1', 0.09, 50, 10).rows.map((p) => p.pct));
+    team.split(s, 'pc1', 0.09, 50, 40).rows.map((p) => p.pct));
 });
 
 test('sync sends nothing without consent or an account', async () => {

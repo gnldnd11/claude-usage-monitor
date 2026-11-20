@@ -62,7 +62,8 @@ test('the low ratio wins: intervals where others were busy only push the ratio u
 test('an interval where this PC spent nothing and the week moved is all somebody else', () => {
   const r = 2e9;
   const s = [
-    { t: 0, pct: 10, r, cost: 100 },
+    { t: 0, pct: 10, r, cost: 100 },           // first reading: 10 points already gone, and this
+                                               // PC had spent 100 by then, so those 10 are not claimed
     { t: HOUR, pct: 14, r, cost: 100 },        // +4 and this PC spent nothing: all theirs
     { t: 2 * HOUR, pct: 20, r, cost: 160 },    // this PC spent too: cannot be divided, not counted
     { t: 3 * HOUR, pct: 23, r, cost: 160 }     // +3 and nothing spent: theirs
@@ -70,19 +71,34 @@ test('an interval where this PC spent nothing and the week moved is all somebody
   assert.equal(W.othersFloor(s, r, 23), 7);
 });
 
-test('the floor is nothing without a window, and never more than the week', () => {
-  const r = 2e9;
-  const s = [{ t: 0, pct: 10, r, cost: 5 }, { t: HOUR, pct: 90, r, cost: 5 }];
-  assert.equal(W.othersFloor(s, null, 90), 0);     // no window: readings cannot be placed
-  assert.equal(W.othersFloor(s, r, 50), 50);       // capped at what the account reports
-  assert.equal(W.othersFloor([], r, 50), 0);
+// A PC switched off when the week rolled, or installed mid-week, reads a percentage that is
+// already up before it has recorded anything. There is a reading to compare that against: the
+// reset itself, where the account is at zero and this PC has spent nothing since it
+test('what the week had already spent before this PC first looked is counted', () => {
+  const r = Math.floor(Date.now() / 1000) + 3 * 86400;   // a live window, 4 days in
+  // first reading: 40% gone and this PC has spent nothing at all. All of it is somebody else
+  assert.equal(W.othersFloor([{ t: Date.now(), pct: 40, r, cost: 0 }], r, 40), 40);
+  // same, but this PC had spent something by its first reading: the 40 cannot be divided
+  assert.equal(W.othersFloor([{ t: Date.now(), pct: 40, r, cost: 120 }], r, 40), 0);
+  // and nothing to say with no readings at all
+  assert.equal(W.othersFloor([], r, 40), 0);
 });
 
-test('a reset does not read as somebody else, and a drop is not negative use', () => {
-  const r1 = 1e9, r2 = 1e9 + 7 * 86400;
-  // the week rolling over puts the percentage back down; pairing across it would read -87
-  assert.equal(W.othersFloor([{ t: 0, pct: 90, r: r1, cost: 500 }, { t: HOUR, pct: 3, r: r2, cost: 0 },
-    { t: 2 * HOUR, pct: 9, r: r2, cost: 0 }], r2, 9), 6);
+test('the floor is nothing without a window, and never more than the week', () => {
+  const r = Math.floor(Date.now() / 1000) + 86400;
+  const s = [{ t: Date.now(), pct: 10, r, cost: 5 }, { t: Date.now() + HOUR, pct: 90, r, cost: 5 }];
+  assert.equal(W.othersFloor(s, null, 90), 0);     // no window: readings cannot be placed
+  assert.equal(W.othersFloor(s, r, 50), 50);       // capped at what the account reports
+});
+
+test('readings from an earlier window are not counted into this one', () => {
+  const r2 = Math.floor(Date.now() / 1000) + 86400;
+  const r1 = r2 - 7 * 86400;
+  // the week rolling over puts the percentage back down; pairing across it would read -87, and
+  // counting last week's 90 into this week would be worse
+  assert.equal(W.othersFloor([{ t: Date.now() - 8 * HOUR, pct: 90, r: r1, cost: 500 },
+    { t: Date.now() - HOUR, pct: 3, r: r2, cost: 0 },
+    { t: Date.now(), pct: 9, r: r2, cost: 0 }], r2, 9), 9);   // 0 -> 3 -> 9, all with no spend here
 });
 
 test('readings from different weekly windows are never paired', () => {
