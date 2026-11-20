@@ -86,6 +86,12 @@ function fmtCountdown(resetsAt) {
 // appeared, and that report cannot be taken back.
 const SHARE_KEY = 'teamShareByAccountV1';   // { [accountKey]: true | false }; false is "asked, no"
 const SHARE_MOVED_KEY = 'teamShareMovedV1'; // the single pre-1.29.0 answer has been moved across
+// A SECOND QUESTION, AND NOT A WIDER READING OF THE FIRST. The sharing question names one purpose,
+// that the other PCs on your own account can see your figures, and somebody who said yes to that
+// said yes to that. Counting those same figures into an aggregate that gets published is a
+// different purpose, so it is asked for separately and it defaults to no. Refusing it changes
+// nothing else: the PC stays in its own account's table exactly as before.
+const STATS_KEY = 'teamStatsByAccountV1';   // { [accountKey]: true | false }, same shape as SHARE_KEY
 
 // Rebuilt rather than read through, so only real account keys and real booleans travel and a
 // "__proto__" in a hand-edited store cannot ride along (credits.js does this with its replica ids)
@@ -115,6 +121,29 @@ function setShareConsent(key, on) {
   return true;
 }
 
+// The aggregate answer, in the same shape and read by the same rules. No migration and no
+// fallback to the sharing answer: a reader who has not been asked this question has not answered
+// it, and the only safe reading of silence is no
+function statsMap() {
+  const out = {};
+  const raw = extContext ? extContext.globalState.get(STATS_KEY) : null;
+  if (!raw || typeof raw !== 'object') return out;
+  for (const k in raw) if (team.validAccountKey(k) && typeof raw[k] === 'boolean') out[k] = raw[k];
+  return out;
+}
+function statsConsent(key) {
+  if (!team.validAccountKey(key)) return undefined;
+  const v = statsMap()[key];
+  return typeof v === 'boolean' ? v : undefined;
+}
+function setStatsConsent(key, on) {
+  if (!extContext || !team.validAccountKey(key)) return false;
+  const next = statsMap();
+  next[key] = !!on;
+  extContext.globalState.update(STATS_KEY, next);
+  return true;
+}
+
 // Team sharing (team.js). Nothing is sent until the person agrees, for this account. The PC id is
 // random and kept per install, so a renamed person is still one row; the group is the signed-in
 // Claude account
@@ -126,6 +155,8 @@ function teamCfg() {
   const key = team.accountKey(team.readAccountId(claudePaths.configJson));
   return {
     on: shareConsent(key) === true,
+    // never inferred from `on`: silence on the second question is a no (STATS_KEY above)
+    stats: statsConsent(key) === true,
     key,
     name: String(c.get('team.name', '') || (gs && gs.get('teamNameV1')) || ''),
     pcId: pcId || 'unsaved-pc-id',
@@ -1675,7 +1706,46 @@ function teamAsk() {
     // Sharing changes nothing on screen by itself, so say it is on and where the table is
     const go = await vscode.window.showInformationMessage('Claude Usage: sharing is on for this account. This PC is listed under Weekly > Details, next to the other PCs on this account that share.', 'Open Details');
     if (go) openWeeklyDetails();
+    statsAsk(key);
   }, 30000);
+}
+
+// THE SECOND QUESTION. Asked only of an account that already shares, because there is nothing to
+// count otherwise, and asked once per account like the first. Silence is no: the answer is
+// written before the dialog appears, so a dismissed window leaves the figures out of the
+// aggregate rather than leaving the question to come back.
+//
+// What it buys, and why it is worth asking for: everything this extension says about a shared
+// account's weekly limit rests on how much of the limit a dollar of use costs, and that number is
+// borrowed from the API price list rather than measured. Read cleanly on three accounts it came
+// out 0.0319, 0.0364 and 0.0462 percent per dollar, a 1.45x spread, which is why those figures
+// are bounds and not readings. Fitting a weight per token kind across many accounts replaces the
+// borrowed number with a measured one, and the same fit says when Anthropic has changed it.
+async function statsAsk(key) {
+  if (!team.validAccountKey(key)) return;
+  if (statsConsent(key) !== undefined) return;
+  if (!(vscode.env && vscode.env.isTelemetryEnabled)) return;
+  setStatsConsent(key, false);
+  const pick = await vscode.window.showInformationMessage(
+    'Claude Usage: may these same figures also be counted into published statistics? '
+    + 'They would go into one aggregate, with other accounts, to measure how much of the weekly limit a token of each kind actually costs, which Anthropic does not publish. '
+    + 'Nothing identifying is in it: no name, no account, no project, no prompt. '
+    + 'Separate from sharing, off unless you agree, and declining changes nothing else.',
+    'Count mine', 'No');
+  if (pick !== 'Count mine') return;
+  if (teamCfg().key !== key) {
+    logLine('[team] the account changed while the statistics question was open; the answer was not recorded');
+    return;
+  }
+  setStatsConsent(key, true);
+  logLine('[team] this account\'s figures may be counted into published statistics');
+}
+
+// An account that was already sharing before this question existed has answered the first one and
+// not the second, so it is asked at the next activation rather than being read as a yes
+function statsAskExisting() {
+  const cfg = teamCfg();
+  if (cfg.on && statsConsent(cfg.key) === undefined) statsAsk(cfg.key).catch(() => {});
 }
 
 // 1.21.0 shared by a typed code: those PCs already agreed, so they move to the account group as
@@ -1692,6 +1762,8 @@ function teamMigrateAndAsk(context) {
   }
   moveLegacyShareConsent(context);
   teamAsk();
+  // and the aggregate question for an account that was already sharing when it did not exist
+  setTimeout(statsAskExisting, 90000);
 }
 
 // The answer as versions before 1.29.0 stored it. In order: the choice the extension kept, then the

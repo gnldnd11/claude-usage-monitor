@@ -62,7 +62,11 @@
     timers: CUC.timers(), chip: null, conv: null, title: '', backTitle: '',
     codes: null, locked: false, wantFocus: false,
     since: 0,   // ms of this panel's own beats since the drawn state landed
-    span: MK_SPAN_DEF   // the window on screen. The host remembers it too, for the pushes nobody asked for
+    span: MK_SPAN_DEF,  // the window on screen. The host remembers it too, for the pushes nobody asked for
+    // How much of the position the Sell button is about, in ten-thousandths, and the set of parts
+    // the chips were last built from. 10000 is the whole coin, which is what every coin opens on so
+    // that one press is still the sale this screen always made
+    part: 10000, partKey: null
   };
   // The amount box: what was typed and in which unit. 'cr' is credits, 'sh' is coins (shares).
   // `typed` starts empty and is SEEDED from the purse the first time a coin is open and the balance
@@ -207,6 +211,11 @@
       +     '<button type="button" data-f="100">Max</button></div>'
       + '</div>'
       + '<div class="mk-conv" id="mkConv"></div>'
+      // HOW MUCH OF THE POSITION TO SELL. The same chips as the ratio row above, because it is the
+      // same question (a share of something this screen may not divide), and only in the layout
+      // while something is held. It opens on All, so one press is still the whole position
+      + '<div class="mk-part" id="mkPartRow" hidden>'
+      +   '<div class="mk-seg" id="mkPart" role="group" aria-label="How much to sell"></div></div>'
       + '<div class="bj-ctl" id="mkCtl" hidden>'
       +   '<button type="button" class="bj-btn primary" id="mkDeal" title="Buy (B)">Buy</button>'
       +   '<button type="button" class="bj-btn" id="mkSell" title="Sell (S)">Sell</button></div>'
@@ -449,12 +458,17 @@
   function mkPays(c) {
     var box = el('mkPays'), st = mk.st;
     if (!box || !st) return;
+    // what the coin IS, and then what today happens to be: the days are not the same size any more
+    // (market.js, section 4) and this is the only place the screen says so. Both figures are the
+    // host's; a screen that took a root of its own would be a screen doing arithmetic about money
     box.innerHTML = esc(c.name) + ' · ' + esc(c.grade) + ' · moves about ' + pct(c.volBp) + ' a day<br>'
+      + 'Today is a ' + pct(c.volTodayBp) + ' day for it<br>'
       + 'Now ' + pctSigned(c.baseBp) + ' of its ' + fmtInt(c.base) + ' base, inside a band '
       + st.bandX + '× either way<br>'
       + 'Round trip ' + pct(st.feeBp) + ', taken when you sell · stake ' + fmtInt(st.minBuy)
       + ' to ' + fmtInt(st.maxBuy) + '<br>'
-      + 'Up to ' + st.maxLots + ' buys a coin, sold together · ' + fmtInt(st.trades) + ' round trips closed, best ' + fmtInt(st.best);
+      + 'Up to ' + st.maxLots + ' buys a coin, sold whole or in parts, oldest first<br>'
+      + fmtInt(st.trades) + ' round trips closed, best ' + fmtInt(st.best);
   }
 
   // --- the line under the amount box, and the controls -------------------------------------------
@@ -567,6 +581,7 @@
     // the fold belongs to a coin, and below the control row it would otherwise stand under the list
     // with the last coin's facts still in it
     mkFold(!!c);
+    mkParts(c);               // which also puts the row away when there is nothing to sell
     if (!c) { CUC.note('mkNote', ''); mk.conv = null; mkConvLine(); return; }
     mkBuyBtn(buy, sell, st, c);
     if (hold) mkSellBtn(sell, c);
@@ -578,13 +593,64 @@
     if (why) why.hidden = !on;
     if (!on && pays) { pays.hidden = true; if (why) why.setAttribute('aria-expanded', 'false'); }
   }
+
+  // --- how much of the position to sell ----------------------------------------------------------
+
+  // The parts the host priced, as chips (market.js's `partsOf`). The chip carries the SHARE and the
+  // button carries what that share fetches, and both figures are the host's: this screen cannot
+  // divide a position any more than it can price a minute, because every slice is paid by its own
+  // lot's entry price and the fee is taken on each (market.js, section 6).
+  //
+  // A SHARE AND NOT A TYPED FIGURE. A quarter is still a quarter when another window adds to the
+  // coin; `300 credits` would quietly become a different share of it. And the chips cost no round
+  // trip: four parts arrive priced with every reply, where a typed amount would have to be sent to
+  // the host and waited for before the button could say what it pays
+  function partsKey(ps) { return ps.map(function (p) { return p.bp; }).join(','); }
+  function partWord(bp) { return bp >= 10000 ? 'All' : (bp / 100) + '%'; }
+  function heldParts(c) { return (c && c.position && c.position.parts) || []; }
+  // The part on screen. Never a part the host did not price: a position that shrank under this
+  // screen falls back to All, which is the one answer that is always there
+  function partNow(c) {
+    var ps = heldParts(c);
+    for (var i = 0; i < ps.length; i++) if (ps[i].bp === mk.part) return ps[i];
+    for (var k = ps.length - 1; k >= 0; k--) if (ps[k].bp >= 10000) return ps[k];
+    return ps.length ? ps[ps.length - 1] : null;
+  }
+  function mkParts(c) {
+    var row = el('mkPartRow'), box = el('mkPart');
+    if (!row || !box) return;
+    var ps = heldParts(c);
+    if (!ps.length) mk.part = 10000;      // nothing held: the next position opens on All
+    // one part is no choice at all. A position of a few credits has only the whole of itself to
+    // sell, and the Sell button is already that answer
+    row.hidden = ps.length < 2;
+    var key = partsKey(ps);
+    if (key !== mk.partKey) {
+      box.innerHTML = ps.map(function (p) {
+        return '<button type="button" data-p="' + p.bp + '">' + esc(partWord(p.bp)) + '</button>';
+      }).join('');
+      mk.partKey = key;
+    }
+    var on = partNow(c), bs = box.children;
+    for (var i = 0; i < bs.length; i++) {
+      var mine = Number(bs[i].getAttribute('data-p')) === (on ? on.bp : 10000);
+      bs[i].classList.toggle('on', mine);
+      bs[i].setAttribute('aria-pressed', mine ? 'true' : 'false');
+      bs[i].disabled = !!mk.locked;
+    }
+  }
   // What the purse would be paid, which already has the fee in it (market.js's payoutOf). The price
   // rides on the button the way the forge's fee does, so the question the button asks is answered on
-  // the button, and the fee is not said twice
+  // the button, and the fee is not said twice.
+  // The figure is the CHOSEN part's, so the chips above and the button are one reading
   function mkSellBtn(sell, c) {
-    sell.textContent = 'Sell ' + fmtInt(c.position.payout);
+    var p = partNow(c);
+    sell.textContent = 'Sell ' + fmtInt(p ? p.payout : c.position.payout);
     sell.disabled = !!mk.locked || !c.can.sell;
-    sell.title = c.can.sell ? 'Sell (S)' : (c.why.sell || 'Sell');
+    sell.title = !c.can.sell ? (c.why.sell || 'Sell')
+      : (p && p.bp < 10000
+        ? 'Sell ' + fmtInt(p.amount) + ' of ' + fmtInt(c.position.amount) + ' (S)'
+        : 'Sell (S)');
   }
   // The amount, the unit, the shortcuts and the Buy button, from what is typed and what the purse holds.
   // The host still checks all of it; this only keeps a button lit that the host would refuse dark
@@ -656,6 +722,7 @@
     mkShow();
     var ctl = el('mkCtl'); if (ctl) ctl.hidden = true;
     var row = el('mkAmtRow'); if (row) row.hidden = true;
+    var part = el('mkPartRow'); if (part) part.hidden = true;
     mkFold(false);
   }
   // The cards of this game are drawn as bare divs, and the figure that matters is a colour and a
@@ -665,7 +732,10 @@
     var c = coinOf(mk.st, last.ticker), nm = c ? c.name : last.ticker;
     var what = last.op === 'buy'
       ? 'Bought ' + fmtInt(last.amount) + ' credits of ' + nm + ' at ' + credFix(c, last.entryTicks)
-      : 'Sold ' + nm + ' for ' + fmtInt(last.payout) + ', ' + signed(last.pl) + ' on the trip';
+      // what a PART of a position left behind is said here and nowhere else: the profit block above
+      // shows the rest of it, but a reader is told a position closed only if it did
+      : 'Sold ' + nm + ' for ' + fmtInt(last.payout) + ', ' + signed(last.pl) + ' on the trip'
+        + (last.left > 0 ? ', ' + fmtInt(last.left) + ' still held' : '');
     CUC.live('mkLive', what + '. ' + signed(mk.st.net || 0) + '. Balance ' + fmtInt(CUC.balance() || 0) + '.');
   }
 
@@ -788,7 +858,9 @@
   // --- the two depths ----------------------------------------------------------------------------
 
   function mkOpenCoin(code) {
-    mk.coin = code; mk.chip = null; mk.wantFocus = true;
+    // every coin opens on the whole position: a share chosen on one coin is not an answer about
+    // another one, and the sale this screen makes by default has not changed
+    mk.coin = code; mk.chip = null; mk.wantFocus = true; mk.part = 10000;
     mkPaint();
     mkFocusAfter();
   }
@@ -858,6 +930,13 @@
         mkSetAmount(c, Math.floor(room() * Number(b.getAttribute('data-f')) / 100));
         mkButtons();
       });
+      el('mkPart').addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('button[data-p]') : null;
+        if (!b || b.disabled) return;
+        mk.part = Number(b.getAttribute('data-p'));
+        mk.chip = null;              // a newer answer about the sale than the trade that just landed
+        mkButtons();
+      });
       el('mkList').addEventListener('click', function (e) {
         var row = e.target.closest ? e.target.closest('.mk-row') : null;
         if (!row) return;
@@ -877,7 +956,11 @@
       });
       el('mkSell').addEventListener('click', function () {
         if (this.disabled || this.hidden || !mk.coin) return;
-        mkSend('sell', { ticker: mk.coin });
+        var p = partNow(coinOf(mk.st, mk.coin));
+        // ALL GOES OUT AS THE MESSAGE THIS PANEL ALWAYS SENT: no amount at all, which the engine
+        // reads as the whole coin whatever another window has done to it since (market.js, section
+        // 6). A share sends the credits the host itself priced, never a figure worked out here
+        mkSend('sell', (p && p.bp < 10000) ? { ticker: mk.coin, amount: p.amount } : { ticker: mk.coin });
       });
     },
     enter: function () {

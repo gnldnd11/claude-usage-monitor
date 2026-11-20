@@ -158,9 +158,13 @@ module.exports = {
         if (m.op === 'open') return reply(null, now);
         if (engine.OPS.indexOf(m.op) < 0) return reply('unknown action', now);
         // Only the fields named here are read, and `nowMs` is not one of them. A buy carries the
-        // coin and the stake; a sale carries the coin, and `amount` is ignored by the engine's own
-        // check for it. The window's key is not here either: pickSpan took it above, and it is a
-        // way of looking rather than part of a move
+        // coin and the stake; a sale carries the coin and, since 1.34.0, how much of the position to
+        // take, in credits of stake. An amount that is not a safe integer lands here as 0, which the
+        // engine reads as the whole coin (market.js, section 6): that is the move the Sell button
+        // makes anyway, so a garbled figure falls to the honest sale rather than to a refusal
+        // nobody can act on. Everything else about it the engine still judges, the size included.
+        // The window's key is not here either: pickSpan took it above, and it is a way of looking
+        // rather than part of a move
         const op = {
           op: m.op,
           ticker: typeof m.ticker === 'string' ? m.ticker : '',
@@ -349,6 +353,22 @@ module.exports = {
   .mk-ax{display:flex;justify-content:space-between;gap:8px;margin-top:6px;
     font-size:10.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;}
   .mk-ax b{font-weight:700;color:var(--text);}
+  /* --- how much of the position to sell. The same chips as the ratio row over the amount box
+     (.mk-seg), because it is the same question, and in the layout only while something is held: on a
+     coin nobody holds this row is not there at all.
+     IT SITS UNDER .mk-conv AND NOT BESIDE #mkPick. Two segmented rows touching is what moved the
+     period chips above the chart in the first place (docs/game-panels.md, section 5-10), and the
+     conversion line between them is the 14px that keeps these two from reading as one control.
+     Beside #mkPick it would not fit either. Measured (tools/shoot-panels.mjs --probe): these four
+     chips are 140.56px and #mkPick's three are 112.95px, so the pair plus the 6px gap is 259.51px
+     against the 202px the design width leaves and the 172px a sidebar dragged to 250 leaves.
+     .mk-amt's own wrap would stack them, and this row would be the third identical rounded box the
+     1.31.0 field was collapsed to avoid. Its own cost is 36px (30 plus the margin) and only while
+     something is held, which is also when .mk-plbox is on screen.
+     The wrapper is what carries the margin and the hiding: .mk-seg is a flex box with flex:none, so
+     inside this row it shrink-wraps its chips instead of stretching the ground across the panel */
+  .mk-part{display:flex;align-items:center;gap:6px;margin-top:6px;}
+  .mk-part[hidden]{display:none;}
   /* The fold sits BELOW the control row on this screen, which is the one place it differs from the
      other four, and 12px clears the 34px buttons the way 10px clears a felt. Above them it stood
      between the chart and the button that acts on it, and the fee sentence it now holds was a

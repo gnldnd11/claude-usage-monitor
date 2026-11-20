@@ -65,6 +65,9 @@ function atClock(nowMs, fn) {
 
 const buyOp = (ticker, amount, nowMs) => ({ op: 'buy', ticker, amount, nowMs });
 const sellOp = (ticker, nowMs) => ({ op: 'sell', ticker, nowMs });
+// ...and a sale that names how much of the position it takes, in credits of stake (market.js,
+// section 6). `sellOp` above is the same move with no figure on it, which is the whole coin
+const sellPart = (ticker, amount, nowMs) => ({ op: 'sell', ticker, amount, nowMs });
 
 // --- the coins ----------------------------------------------------------------------------------
 
@@ -126,20 +129,46 @@ test('the fee is a 0.5% round trip, which is the one figure this game does not s
 // claim is to compare against prices the OLD engine produced. test/market-grid.js holds them,
 // frozen, taken off 1.30.1 before a line of this engine changed.
 
+// 1.34.0 ADDED A PER-DAY VARIANCE SCHEDULE, which is a change to the price function, so the claim
+// above is now made in two halves and neither of them is weaker than it was:
+//
+//  - THE LATTICE IS UNCHANGED. The frozen table is compared against the lattice itself
+//    (_test.beforeSchedule), which is the function the 1.30.1 figures were taken from and the one
+//    the engine still uses for every node before the cutover. All 40,000 readings, as before.
+//  - THE SHIPPED PRICE IS UNCHANGED WHERE ANYBODY HAS SEEN IT. The schedule starts at a cutover day
+//    that was in the future when it was written, and for every sampled minute before it the shipped
+//    priceAt is held to the frozen figure too. That is the promise the stored `entryTicks` needs:
+//    no price that has already been traded at can move.
+// After the cutover the two part company on purpose and there is nothing frozen to compare against;
+// what holds the new regime instead is the schedule's own test below ('a day of the week...'), the
+// exactness of the week's mean, and the Monte Carlo at the end of this file.
+const preOf = (code, m) => M._test.beforeSchedule(M._test.rowOf(code), at(m));
+const preNode = (m) => m * M.SUB <= M.SCHED_NODE;
+
 test('every price the minute lattice gave, the node lattice gives back, to the bit', () => {
   const sweeps = [
     ['20,000 consecutive minutes from day ' + (GRID.DENSE_FROM / DAY), GRID.denseMinutes(), GRID.EXPECT.dense],
     ['20,000 minutes spread over the whole grid (0 to 6e7)', GRID.wideMinutes(), GRID.EXPECT.wide],
     ['every power-of-two block edge and its neighbours', GRID.edgeMinutes(), GRID.EXPECT.edge]
   ];
-  let compared = 0, differ = 0;
+  let compared = 0, differ = 0, shipped = 0;
   for (const [name, mins, want] of sweeps) {
     for (const code of CODES) {
-      const got = GRID.digest(mins.map((m) => M.priceAt(code, at(m))));
+      const got = GRID.digest(mins.map((m) => preOf(code, m)));
       compared += mins.length;
       if (got !== want[code]) {
         differ += 1;
         console.log('    ' + code + ': ' + name + ' folds to ' + got + ', the minute lattice folded to ' + want[code]);
+      }
+      // ...and before the cutover the engine's own price IS that lattice, which is the half of this
+      // that a stored position depends on
+      for (const m of mins) {
+        if (!preNode(m)) continue;
+        shipped += 1;
+        if (M.priceAt(code, at(m)) !== preOf(code, m)) {
+          differ += 1;
+          console.log('    ' + code + ' at minute ' + num(m) + ' moved before the cutover');
+        }
       }
     }
   }
@@ -147,16 +176,52 @@ test('every price the minute lattice gave, the node lattice gives back, to the b
   // here needs to be readable at all
   for (const code of CODES) {
     for (const [m, p] of GRID.EXPECT.spot[code]) {
-      const got = M.priceAt(code, at(m));
+      const got = preOf(code, m);
       compared += 1;
       if (got !== p) {
         differ += 1;
         console.log('    ' + code + ' at minute ' + num(m) + ': ' + num(got) + ', was ' + num(p));
       }
+      if (preNode(m) && M.priceAt(code, at(m)) !== p) {
+        differ += 1;
+        console.log('    ' + code + ' at minute ' + num(m) + ' is ' + num(M.priceAt(code, at(m))) + ' and the table says ' + num(p));
+      }
     }
   }
-  console.log('  ' + num(compared) + ' prices against the 1.30.1 table: ' + differ + ' differ');
+  // The frozen table is THIN before the cutover: 440 of its 160,712 readings, because it was swept
+  // over day 500 and over 114 years while the cutover is day 336, and it cannot be re-swept (there
+  // is no 1.30.1 engine left to sweep). So the claim about the SHIPPED function is made densely
+  // here instead, against the lattice: 20,000 consecutive minutes well inside the old regime, and
+  // every node for an hour up to the cutover, which is where the two regimes meet
+  let dense = 0;
+  for (const code of CODES) {
+    const row = M._test.rowOf(code);
+    for (let m = DAY * 200; m < DAY * 200 + 20000; m++) {
+      dense += 1;
+      if (M.priceAt(code, at(m)) !== M._test.beforeSchedule(row, at(m))) {
+        differ += 1;
+        console.log('    ' + code + ' at minute ' + num(m) + ' is not the lattice\'s own price');
+      }
+    }
+    for (let n = M.SCHED_NODE - 4000; n <= M.SCHED_NODE; n++) {
+      dense += 1;
+      const ms = M._test.msOfNode(n);
+      if (M._test.priceOn(row, ms) !== M._test.beforeSchedule(row, ms)) {
+        differ += 1;
+        console.log('    ' + code + ' at node ' + num(n) + ', ' + (M.SCHED_NODE - n) + ' nodes before the cutover, moved');
+      }
+    }
+    // and the schedule has no weight at all up to there: the variance accumulated is the node count
+    assert.equal(M._test.varAt(row, M.SCHED_NODE), M.SCHED_NODE, code + ' carries a multiplier before the cutover');
+    assert.equal(M._test.walkAt(row, M.SCHED_NODE), M._test.sumAt(row, M.SCHED_NODE), code);
+  }
+  console.log('  ' + num(compared) + ' prices against the 1.30.1 table (' + num(shipped)
+    + ' of them the engine\'s own), and ' + num(dense)
+    + ' of the engine against the lattice before the cutover: ' + differ + ' differ');
   assert.equal(differ, 0, differ + ' of the frozen readings moved: stored positions have been redrawn');
+  // and the sweeps really do reach before the cutover, or the lines above proved nothing
+  assert.ok(shipped > 400, 'only ' + shipped + ' frozen readings fall before the cutover');
+  assert.ok(dense > 90000, 'only ' + dense + ' dense readings');
 });
 
 test('a node is a 64th of a minute, which is why the old grid is still inside this one', () => {
@@ -206,18 +271,29 @@ test('the candles sit on a grid of their own step, and only the newest one is pa
     const want = GRID.EXPECT.closes[code];
     assert.equal(rows.length, count);
     for (let i = 0; i < count - 1; i++) {
-      // a fixed candle opens and closes on the grid, at the minute the minute lattice priced
-      if (rows[i].o !== want[i] || rows[i].c !== want[i + 1]) {
+      // A FIXED CANDLE OPENS AND CLOSES ON THE GRID, which is this test's own claim and is about
+      // buildCandles' arithmetic rather than about the price function: the open of candle i is the
+      // price of edge i and its close is the price of edge i+1.
+      // This window sits at day 500, past the 1.34.0 cutover, so the frozen 1.30.1 closes are held
+      // against the lattice they came from (below) and the grid is held against the engine's own
+      // price at those same minutes. Both halves are checked; neither is checked against itself
+      if (rows[i].o !== M.priceAt(code, at(edges[i])) || rows[i].c !== M.priceAt(code, at(edges[i + 1]))) {
         differ += 1;
         console.log('    ' + code + ' candle ' + i + ': ' + rows[i].o + '/' + rows[i].c
-          + ', the minute lattice said ' + want[i] + '/' + want[i + 1]);
+          + ' is not the price of minute ' + edges[i] + '/' + edges[i + 1]);
+      }
+      if (preOf(code, edges[i]) !== want[i]) {
+        differ += 1;
+        console.log('    ' + code + ' grid minute ' + edges[i] + ': the lattice gives '
+          + preOf(code, edges[i]) + ', the minute lattice gave ' + want[i]);
       }
       assert.equal(rows[i].t, at(edges[i + 1]), code + ' candle ' + i + ' does not end on the grid');
     }
+    assert.equal(preOf(code, edges[count - 1]), want[count - 1], code + ': the last grid minute moved');
     // the newest one opens on the grid and closes at the node the clock is in: a part candle, which
     // is what makes it the only one that moves between grid steps
     const last = rows[count - 1];
-    assert.equal(last.o, want[count - 1], code + ': the part candle does not open on the grid');
+    assert.equal(last.o, M.priceAt(code, at(edges[count - 1])), code + ': the part candle does not open on the grid');
     assert.equal(last.c, M.priceAt(code, at(endMin)), code + ': the part candle does not close at the price traded at');
     assert.equal(last.t, M._test.msOfNode(M._test.nodeOf(at(endMin))));
     assert.ok(last.t < at(edges[count - 1] + stepMin), code + ': the part candle is not short');
@@ -238,6 +314,210 @@ test('the candles sit on a grid of their own step, and only the newest one is pa
     }
     assert.ok(closes.size > 8, code + ': the newest close took only ' + closes.size + ' values over a minute');
   }
+});
+
+// --- the per-day variance schedule --------------------------------------------------------------
+//
+// What has to hold for this to be a market that heaves rather than a coin whose table was retuned
+// behind the player's back (market.js, section 4): the week's mean is exactly one, a day's draws
+// belong to that day alone, nothing a window can touch decides a day, and a day that is over is a
+// number that cannot be revised.
+
+test('a day of the week decides how rough it is, and the week averages exactly one', () => {
+  assert.equal(M.VAR_WEEK.length, M.VAR_DAYS);
+  // EXACTLY one, in binary, which is why they are sixteenths. A mean of 1 plus an epsilon is a coin
+  // that no longer realises the volatility its own row claims, and every figure solved off `volBp`
+  // (the 412bp ceiling, the half-lives, liveliness) goes with it
+  assert.equal(M.VAR_WEEK.reduce((a, b) => a + b, 0), M.VAR_DAYS, 'the schedule does not average one');
+  assert.equal(M.VAR_MAX, Math.max(...M.VAR_WEEK));
+  assert.equal(M.SCHED_DAY % M.VAR_DAYS, 0, 'the schedule has to start on a week boundary');
+  assert.equal(M.SCHED_NODE, M.SCHED_DAY * M.NODES_PER_DAY);
+  console.log('  the week, as sizes: ' + M.VAR_WEEK.map((m) => Math.sqrt(m).toFixed(2) + 'x').join('  '));
+  console.log('  which on CRAB (400bp) is: '
+    + M.VAR_WEEK.map((m) => Math.round(400 * Math.sqrt(m)) + 'bp').join('  '));
+  // Every week since the cutover is a PERMUTATION of that multiset and never anything else, so the
+  // variance of any aligned week is the variance it always was. 400 weeks a coin, which is eight
+  // years of them
+  const want = M.VAR_WEEK.slice().sort((a, b) => a - b).join();
+  for (const code of CODES) {
+    const row = M._test.rowOf(code);
+    const seen = new Set();
+    for (let w = 0; w < 400; w++) {
+      const day = M.SCHED_DAY + w * M.VAR_DAYS;
+      const week = [];
+      for (let k = 0; k < M.VAR_DAYS; k++) week.push(M._test.varOfDay(row, day + k));
+      assert.equal(week.slice().sort((a, b) => a - b).join(), want, code + ' week ' + w + ' is not the schedule');
+      seen.add(week.join());
+    }
+    // ...and the order moves, or the wild day is always the same weekday
+    assert.ok(seen.size > 200, code + ' used only ' + seen.size + ' orderings over 400 weeks');
+    // before the cutover there is no schedule at all
+    for (const day of [0, 1, 100, M.SCHED_DAY - 1]) assert.equal(M._test.varOfDay(row, day), 1, code + ' day ' + day);
+  }
+  // THE LEHMER CODE IS A PERMUTATION FOR EVERY DRAW, not only for the ones the coins happen to hit
+  const ranks = new Set();
+  for (let h = 0; h < 5040; h++) {
+    const o = M._test.weekOrder(h * 0 + 7, h);     // any seed: what is being walked is the unranking
+    assert.equal(o.slice().sort((a, b) => a - b).join(), '0,1,2,3,4,5,6', 'order ' + h + ' is not a permutation');
+    ranks.add(o.join());
+  }
+  console.log('  ' + ranks.size + ' distinct orderings reached out of ' + 5040);
+  // NOTHING A PLAYER CAN TOUCH IS IN IT. The multiplier is a function of the coin and the day, so
+  // asking twice gives the same answer and two coins differ
+  const a = M._test.rowOf('CRAB'), b = M._test.rowOf('TIDE');
+  for (const day of [M.SCHED_DAY, M.SCHED_DAY + 3, M.SCHED_DAY + 900]) {
+    assert.equal(M._test.varOfDay(a, day), M._test.varOfDay(a, day));
+  }
+  let differ = 0;
+  for (let day = M.SCHED_DAY; day < M.SCHED_DAY + 70; day++) if (M._test.varOfDay(a, day) !== M._test.varOfDay(b, day)) differ += 1;
+  assert.ok(differ > 30, 'two coins shared ' + (70 - differ) + ' of 70 days: the schedule is not the coin\'s own');
+});
+
+test('the variance accumulated over a whole week is the week`s own node count, to the bit', () => {
+  // This is the long-run claim as an EQUALITY rather than as a measurement. The drift is taken
+  // against the variance accumulated (market.js's varAt), so if whole weeks did not come back to
+  // exactly their node count, the coin would drift and the half-lives printed elsewhere in this file
+  // would be wrong by however much the schedule leaned
+  for (const code of CODES) {
+    const row = M._test.rowOf(code);
+    for (const weeks of [0, 1, 2, 13, 52, 520]) {
+      const n = M.SCHED_NODE + weeks * M.VAR_DAYS * M.NODES_PER_DAY;
+      assert.equal(M._test.varAt(row, n), n, code + ': ' + weeks + ' weeks out the variance is not the node count');
+    }
+    // inside a week it leans, which is the whole point: a calm day carries less and a rough day more
+    const mid = M.SCHED_NODE + 3 * M.NODES_PER_DAY;
+    assert.notEqual(M._test.varAt(row, mid), mid, code + ': three days in, nothing is leaning');
+    // and a day's own weight is its multiplier, exactly
+    for (let d = 0; d < 7; d++) {
+      const lo = M.SCHED_NODE + d * M.NODES_PER_DAY, hi = lo + M.NODES_PER_DAY;
+      const w = (M._test.varAt(row, hi) - M._test.varAt(row, lo)) / M.NODES_PER_DAY;
+      assert.ok(Math.abs(w - M._test.varOfDay(row, M.SCHED_DAY + d)) < 1e-9, code + ' day ' + d + ' weighs ' + w);
+    }
+  }
+});
+
+test('the drag a day carries is that day`s own variance, which is what keeps a rough day fair', () => {
+  // THIS IS THE EXPLOIT THE SCHEDULE HAD TO BE BUILT AROUND (market.js, section 4), and it is the
+  // one thing here that nothing else in this file would have caught. A geometric price is fair only
+  // when the drift taken out of a step is DRIFT times THAT step's variance. Take DRIFT*v*n instead
+  // and a 1.75x day carries a 1.00x day's drag, which is a day that pays: measured, that mistake
+  // leaves every other test in this file green, because the quadrature above integrates the algebra
+  // rather than the engine and the Monte Carlo below plays rules that do not know which day it is.
+  // A player who held only on the rough days would have been printing credits.
+  //
+  // Read through the engine, inside the band where squash is the identity, so
+  //   walk(n) - logDev(n) = DRIFT * v * (the variance accumulated by n)
+  // and the difference of that across a day is the drag that day charged. Over a whole day rather
+  // than over one node because the two sides are differences of numbers of order one and the answer
+  // is of order 1e-8: a day's worth of it is 1e-3, which a double holds to thirteen digits
+  let checked = 0;
+  for (const code of CODES) {
+    const row = M._test.rowOf(code);
+    for (let d = M.SCHED_DAY; d < M.SCHED_DAY + M.VAR_DAYS; d++) {
+      const lo = d * M.NODES_PER_DAY, hi = lo + M.NODES_PER_DAY;
+      const dev = [M._test.logDevAt(row, lo), M._test.logDevAt(row, hi)];
+      assert.ok(Math.abs(dev[0]) < M.BAND && Math.abs(dev[1]) < M.BAND,
+        code + ' day ' + d + ' is outside the band, where squash is not the identity and this reads nothing');
+      const drag = (M._test.walkAt(row, hi) - dev[1]) - (M._test.walkAt(row, lo) - dev[0]);
+      const want = M.DRIFT * row.v * M.NODES_PER_DAY * M._test.varOfDay(row, d);
+      assert.ok(Math.abs(drag / want - 1) < 1e-9,
+        code + ' day ' + d + ' at ' + Math.sqrt(M._test.varOfDay(row, d)).toFixed(2) + 'x charges '
+        + drag.toExponential(6) + ' and its own variance asks for ' + want.toExponential(6));
+      checked += 1;
+    }
+  }
+  // and the whole week comes back to the drag a week always carried, which is the other half of the
+  // mean being exactly one: the median's fall is still DRIFT*sigma^2 a day and the half-lives
+  // printed elsewhere in this file are still the half-lives
+  for (const code of CODES) {
+    const row = M._test.rowOf(code);
+    const lo = M.SCHED_NODE, hi = M.SCHED_NODE + M.VAR_DAYS * M.NODES_PER_DAY;
+    const drag = (M._test.walkAt(row, hi) - M._test.logDevAt(row, hi))
+      - (M._test.walkAt(row, lo) - M._test.logDevAt(row, lo));
+    const want = M.DRIFT * row.v * M.VAR_DAYS * M.NODES_PER_DAY;
+    assert.ok(Math.abs(drag / want - 1) < 1e-9, code + ': a week charges ' + drag.toExponential(6) + ' and not ' + want.toExponential(6));
+  }
+  console.log('  ' + checked + ' days of drag, each one its own variance, and every week back to the table');
+});
+
+test('a day that is over is one fixed number, so no later day can move its candles', () => {
+  // THE LATTICE IS CUT ON DAY BOUNDARIES (market.js, section 4). The whole of a day's contribution
+  // to the walk is that day's own total, which is drawn once from the day's own address: so today's
+  // multiplier, however rough it makes today, cannot reach yesterday's candles or the entry marker
+  // drawn on them. That is the exploit this schedule had to be built around
+  for (const code of CODES) {
+    const row = M._test.rowOf(code);
+    for (const d of [M.SCHED_DAY, M.SCHED_DAY + 1, M.SCHED_DAY + 6, M.SCHED_DAY + 400]) {
+      const lo = d * M.NODES_PER_DAY, hi = lo + M.NODES_PER_DAY;
+      const tot = M._test.dayTotal(row, d);
+      // The inside of the day starts at nothing and ends at the whole of its own total, and THAT is
+      // exact: it is the number the bridge was given. Read through the running total it is not, and
+      // the difference is the cancellation in the subtraction rather than anything leaning: the two
+      // walks are both a sum over hundreds of days and the day being asked about is one term of it
+      assert.equal(M._test.dayWalk(row, d, 0), 0);
+      assert.equal(M._test.dayWalk(row, d, M.NODES_PER_DAY), tot, code + ' day ' + d + ' does not end on its own total');
+      const step = M._test.walkAt(row, hi) - M._test.walkAt(row, lo);
+      assert.ok(Math.abs(step - tot) <= 1e-12 * Math.abs(tot) + 1e-15,
+        code + ' day ' + d + ' displaces ' + step + ' and not its own ' + tot);
+    }
+  }
+  // AND A PRICE ALREADY DRAWN STAYS DRAWN. 200 prices across one day, read again after ninety days
+  // of future have been priced (which is what extends the running totals and refills every cache),
+  // and then again from cold
+  const day = M.SCHED_DAY + 11;
+  const marks = [];
+  for (const code of CODES) {
+    const row = M._test.rowOf(code);
+    for (let i = 0; i < 200; i++) {
+      const n = day * M.NODES_PER_DAY + Math.floor((i * M.NODES_PER_DAY) / 200);
+      marks.push([code, n, M._test.priceOn(row, M._test.msOfNode(n))]);
+    }
+  }
+  for (const code of CODES) for (let k = 1; k <= 90; k++) M.priceAt(code, at((day + k) * DAY));
+  let moved = 0;
+  for (const [code, n, p] of marks) {
+    if (M._test.priceOn(M._test.rowOf(code), M._test.msOfNode(n)) !== p) moved += 1;
+  }
+  assert.equal(moved, 0, moved + ' of ' + marks.length + ' prices in a day that is over moved when later days were priced');
+  for (const code of CODES) M._test.chill(M._test.rowOf(code));
+  for (const [code, n, p] of marks) {
+    if (M._test.priceOn(M._test.rowOf(code), M._test.msOfNode(n)) !== p) moved += 1;
+  }
+  assert.equal(moved, 0, moved + ' of them moved once the caches were thrown away');
+  console.log('  ' + num(marks.length) + ' prices in a finished day, unmoved by ninety days of future and by a cold start');
+});
+
+test('a within-day descent gives the very bits a cold one gives, not merely the same price', () => {
+  // The day lattice keeps frames the way the old one does, and for the same reason: a chart walks a
+  // day in order. The hazard is also the same (see the note over keepFrame in market.js): a frame
+  // whose right edge is exactly the node asked for answers (acc + left) + (total - left), where a
+  // cold descent answers acc + total, and those are one number in arithmetic and two in doubles.
+  // A day is 45 * 2^11 nodes, so the blocks are not all even and the edges are not all powers of two
+  let checked = 0;
+  const day = M.SCHED_DAY + 5;
+  for (const code of CODES) {
+    const row = M._test.rowOf(code);
+    const swept = [];
+    for (let r = 1; r <= 2500; r++) swept[r] = M._test.dayWalk(row, day, r);
+    for (let r = 1; r <= 2500; r++) {
+      M._test.chillDay(row);
+      assert.equal(swept[r], M._test.dayWalk(row, day, r), code + ' at node ' + r + ' of its day');
+      checked += 1;
+    }
+    // and the block edges a day really has: halving 92,160 lands on 45 and then on 22 and 23
+    const edges = [1, 2, 45, 90, 180, 360, 720, 1440, 2880, 5760, 11520, 23040, 46080, 46081, 69120, 92159];
+    for (const e of edges) {
+      for (const r of [e - 1, e, e + 1]) {
+        if (r < 1 || r >= M.NODES_PER_DAY) continue;
+        M._test.chillDay(row);
+        const cold = M._test.dayWalk(row, day, r);
+        for (let m = Math.max(1, r - 3); m < r; m++) M._test.dayWalk(row, day, m);
+        assert.equal(M._test.dayWalk(row, day, r), cold, code + ' at node ' + r + ' of its day, warm');
+        checked += 1;
+      }
+    }
+  }
+  console.log('  ' + num(checked) + ' within-day nodes compared warm against cold, to the bit');
 });
 
 test('no single node clears the fee, which is what a finer grid had to be checked against', () => {
@@ -268,6 +548,43 @@ test('no single node clears the fee, which is what a finer grid had to be checke
     assert.ok(worst < (1 - FEE) / 4,
       t.code + ': the wildest node moved ' + pct4(worst) + ' against a fee of ' + pct(1 - FEE));
   }
+  // THE SWEEP ABOVE IS TWO DAYS LONG (200,000 nodes is 2.17 of them), so under the per-day schedule
+  // it is two of the seven and not the rough one. The wildest day a coin can have is swept whole
+  // here, and the figure the load-time check SOLVES for is printed beside it: the hash caps a draw
+  // at Z_CAP sigma, so Z_CAP * sqrt(VAR_MAX * v) is the largest move one node can make on any day
+  // for the life of the lattice, which is a bound rather than a sample (market.js's checkCoins)
+  console.log('  the wildest day each coin can have, swept whole (' + num(M.NODES_PER_DAY) + ' nodes)');
+  console.log('  coin      median node        p99      worst of the day      the 8-sigma bound');
+  for (const t of M.TICKERS) {
+    const row = M._test.rowOf(t.code);
+    let wild = -1;
+    for (let d = M.SCHED_DAY; d < M.SCHED_DAY + 7 * 60; d++) {
+      if (M._test.varOfDay(row, d) === M.VAR_MAX) { wild = d; break; }
+    }
+    assert.ok(wild > 0, t.code + ' never has its wildest day inside sixty weeks');
+    const from = wild * M.NODES_PER_DAY;
+    let prev = M._test.priceOn(row, M._test.msOfNode(from));
+    let worst = 0, over = 0;
+    const abs = [];
+    for (let i = 1; i <= M.NODES_PER_DAY; i++) {
+      const p = M._test.priceOn(row, M._test.msOfNode(from + i));
+      const r = Math.abs(p / prev - 1);
+      if (r > worst) worst = r;
+      if (r > 1 - FEE) over += 1;
+      abs.push(r);
+      prev = p;
+    }
+    abs.sort((x, y) => x - y);
+    const bound = Math.exp(8 * Math.sqrt(M.VAR_MAX * (t.volBp / 10000) * (t.volBp / 10000) / M.NODES_PER_DAY)) - 1;
+    console.log('  ' + t.code.padEnd(8) + pct4(abs[abs.length >> 1]).padStart(14)
+      + pct4(abs[Math.floor(abs.length * 0.99)]).padStart(14)
+      + pct4(worst).padStart(20) + pct4(bound).padStart(24));
+    assert.equal(over, 0, t.code + ': ' + over + ' nodes of its wildest day moved more than the fee');
+    assert.ok(worst <= bound, t.code + ': a node moved ' + pct4(worst) + ', past the bound of ' + pct4(bound));
+    // and the bound itself is clear of the fee, which is the load-time refusal said again here
+    assert.ok(bound < (1 - FEE) / 2,
+      t.code + ': the wildest node the schedule allows is ' + pct4(bound) + ' against a fee of ' + pct(1 - FEE));
+  }
 });
 
 test('the realised daily volatility is the table’s, and the grid is not what sets it', () => {
@@ -295,6 +612,81 @@ test('the realised daily volatility is the table’s, and the grid is not what s
       t.code + ' realises ' + pct(ten) + ' a day against a table that says ' + pct(vol));
     assert.ok(one > vol * 0.7 && one < vol * 1.3,
       t.code + ' realises ' + pct(one) + ' over its first year against ' + pct(vol));
+  }
+  // AND THE SCHEDULE IS WHAT THE DAYS DIFFER BY (1.34.0). The long run above is the table's, which
+  // is the point of the mean being exactly one; what has changed is that one day is not the next.
+  // Measured over the nodes INSIDE a day, because a day's own sigma is what the schedule sets and a
+  // sweep of day closes would be measuring the days against each other
+  console.log('  coin     calmest day      roughest day      the ratio      the schedule asks for');
+  const asked = Math.sqrt(M.VAR_MAX / Math.min(...M.VAR_WEEK));
+  for (const t of M.TICKERS) {
+    const row = M._test.rowOf(t.code);
+    const sig = (day) => {
+      const base = day * M.NODES_PER_DAY;
+      let s1 = 0, s2 = 0, prev = M._test.walkAt(row, base);
+      const n = 40000;
+      for (let k = 1; k <= n; k++) {
+        const cur = M._test.walkAt(row, base + k);
+        s1 += cur - prev; s2 += (cur - prev) * (cur - prev);
+        prev = cur;
+      }
+      // scaled up to a day, so the figure reads in the same units as the table
+      return Math.sqrt(Math.max(0, s2 / n - (s1 / n) * (s1 / n)) * M.NODES_PER_DAY);
+    };
+    let calm = -1, wild = -1;
+    for (let d = M.SCHED_DAY; d < M.SCHED_DAY + 7; d++) {
+      if (M._test.varOfDay(row, d) === Math.min(...M.VAR_WEEK)) calm = d;
+      if (M._test.varOfDay(row, d) === M.VAR_MAX) wild = d;
+    }
+    const vol = t.volBp / 10000;
+    const sc = sig(calm), sw = sig(wild);
+    console.log('  ' + t.code.padEnd(8) + pct(sc).padStart(12) + pct(sw).padStart(18)
+      + (sw / sc).toFixed(2).padStart(15) + 'x' + asked.toFixed(2).padStart(23) + 'x');
+    assert.ok(Math.abs(sw / sc - asked) < 0.25,
+      t.code + ': its roughest day is ' + (sw / sc).toFixed(2) + 'x its calmest, not ' + asked.toFixed(2) + 'x');
+    // and a rough day really is rough against the coin's own table figure, which is what makes this
+    // visible on a screen rather than only in a test
+    assert.ok(sw > vol * 1.5, t.code + ': its roughest day is only ' + pct(sw) + ' against a table of ' + pct(vol));
+  }
+});
+
+test('no part of this engine is on the webview side, which is the whole safety of this game', () => {
+  // market.js, section 5: this game alone has no secret to keep, so a screen that could compute a
+  // price could compute the NEXT one and buy a result. The rule is therefore that the engine never
+  // reaches the webview, and until 1.34.0 that was a paragraph rather than a check. It is cheap to
+  // make it a check, and the per-day schedule is exactly the kind of addition that invites a copy:
+  // "how big is today" is one square root, and a panel that took it would be a panel doing
+  // arithmetic about money (games/README.md, section 6)
+  const fs = require('fs');
+  const ROOT = path.join(__dirname, '..');
+  const bare = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  // the files the page really loads as scripts: the floor and one panel a game
+  const scripts = ['webview.js'].concat(fs.readdirSync(path.join(ROOT, 'games'))
+    .filter((d) => fs.existsSync(path.join(ROOT, 'games', d, 'panel.js')))
+    .map((d) => 'games/' + d + '/panel.js'));
+  // ...and the two node-side files that WRITE the page, because engine code inlined there would
+  // reach the webview just as surely
+  const faces = scripts.concat(['html.js', 'styles.js']);
+  // the engine's own names. Not `view` or `payout`, which are what the reply is MADE of: these are
+  // the pieces that turn a time into a price, plus the schedule's own table
+  const engine = ['nodeHash', 'probit', 'nodeZ', 'squash', 'sumAt', 'logDevAt', 'priceOn', 'priceAt',
+    'payoutOf', 'grossOf', 'cutLots', 'dayWalk', 'dayTotal', 'daySeed', 'varOfDay', 'varAt', 'walkAt',
+    'weekOrder', 'VAR_WEEK', 'SCHED_NODE', 'SCHED_DAY', 'FEE_NUM', 'BEND_GUARD', 'EPOCH_MS'];
+  const bad = [];
+  for (const f of faces) {
+    const src = bare(fs.readFileSync(path.join(ROOT, f), 'utf8'));
+    if (scripts.indexOf(f) >= 0 && /require\s*\(/.test(src)) {
+      bad.push(f + ' requires something: a webview script has no module loader, so a require is a copy waiting to happen');
+    }
+    for (const name of engine) if (new RegExp('\\b' + name + '\\b').test(src)) bad.push(f + ' names ' + name);
+  }
+  console.log('  ' + scripts.length + ' webview scripts and ' + (faces.length - scripts.length)
+    + ' files that write the page, scanned for ' + engine.length + ' engine names');
+  assert.deepEqual(bad, [], bad.join('; '));
+  // and the engine is not in the page's script tags either, which is the other way it could arrive
+  const html = fs.readFileSync(path.join(ROOT, 'html.js'), 'utf8');
+  for (const name of ['market.js', 'blackjack.js', 'cards.js', 'credits.js', 'highlow.js', 'slots.js', 'wheel.js', 'shop.js']) {
+    assert.ok(html.indexOf(name) < 0, 'html.js names the engine ' + name);
   }
 });
 
@@ -518,6 +910,46 @@ test('the walk is made of independent draws with the variance the table says', (
     assert.ok(Math.abs(r1) < 4 / Math.sqrt(N), t.code + ': consecutive steps are correlated, r = ' + r1.toFixed(4));
     assert.equal(xs.length, N);
   }
+  // AND THE SAME, ONE DAY AT A TIME, UNDER THE SCHEDULE. The sweep above is node 1 onwards, which is
+  // the old lattice; past the cutover a day's steps have to be independent draws of that day's own
+  // size, or the schedule is not a variance schedule but a shape in the price
+  console.log('  the same, inside one day of the schedule');
+  console.log('  coin      day      size wanted      var/expected      kurtosis      lag-1 r');
+  const seen = {};
+  for (const t of M.TICKERS) {
+    const row = M._test.rowOf(t.code);
+    const v0 = (t.volBp / 10000) * (t.volBp / 10000) / M.NODES_PER_DAY;
+    for (const day of [M.SCHED_DAY, M.SCHED_DAY + 1, M.SCHED_DAY + 2, M.SCHED_DAY + 3]) {
+      const m = M._test.varOfDay(row, day);
+      const v = m * v0;
+      const base = day * M.NODES_PER_DAY;
+      const n = 60000;
+      let s1 = 0, s2 = 0, s4 = 0, cross = 0, prev = null;
+      let last = M._test.walkAt(row, base);
+      for (let k = 1; k <= n; k++) {
+        const cur = M._test.walkAt(row, base + k);
+        const x = cur - last;
+        last = cur;
+        s1 += x; s2 += x * x; s4 += x * x * x * x;
+        if (prev !== null) cross += prev * x;
+        prev = x;
+      }
+      const mean = s1 / n, varr = s2 / n - (s1 / n) * (s1 / n);
+      const kurt = (s4 / n) / (varr * varr), r1 = (cross / (n - 1)) / varr;
+      const seVar = v * Math.sqrt(2 / n);
+      seen[Math.sqrt(m).toFixed(2)] = true;
+      console.log('  ' + t.code.padEnd(8) + String(day).padStart(6)
+        + (Math.sqrt(m).toFixed(2) + 'x').padStart(15)
+        + (varr / v).toFixed(4).padStart(17) + kurt.toFixed(3).padStart(14) + r1.toFixed(4).padStart(13));
+      assert.ok(Math.abs(varr - v) < 5 * seVar,
+        t.code + ' day ' + day + ' realises ' + (varr / v).toFixed(3) + 'x the size its multiplier asks for');
+      assert.ok(Math.abs(mean) < 5 * Math.sqrt(v / n), t.code + ' day ' + day + ': the day has a drift of its own');
+      assert.ok(Math.abs(kurt - 3) < 5 * Math.sqrt(24 / n), t.code + ' day ' + day + ': not normal, kurtosis ' + kurt.toFixed(2));
+      assert.ok(Math.abs(r1) < 5 / Math.sqrt(n), t.code + ' day ' + day + ': consecutive steps correlate, r = ' + r1.toFixed(4));
+    }
+  }
+  // and the days above were not all the same size, or none of that measured the schedule
+  assert.ok(Object.keys(seen).length >= 4, 'only ' + Object.keys(seen).length + ' distinct day sizes were measured');
 });
 
 test('the band is the identity in the middle, so inside it the price does not know where it is', () => {
@@ -563,25 +995,35 @@ test('every level of every coin is a step the player cannot win, which is the wh
     const w = Math.exp(-0.5 * z * z);
     zs.push(z); ws.push(w); wsum += w;
   }
-  console.log('  coin     worst step edge     worst over a day     at level      a day of the guard');
+  // AND THE STEP IS INTEGRATED AT THE SCHEDULE'S OWN SIZES TOO (1.34.0). A step is fair against its
+  // OWN variance, so the quadrature has to be run at the variance a step really has: a wild day's
+  // step is VAR_MAX times the nominal one, and the drift it carries is DRIFT times that same
+  // variance (market.js's varAt). The wildest day is the case that matters, because the gap between
+  // the discrete step and the continuum inequality the guard was solved from grows with the step
+  console.log('  coin      day size     worst step edge     worst over a day     at level      a day of the guard');
   for (const t of M.TICKERS) {
     const vol = t.volBp / 10000;
-    const v = vol * vol / M.NODES_PER_DAY;
-    const sd = Math.sqrt(v);
-    let worst = -Infinity, worstAt = 0;
-    // d is the walk before the band, so it has to be swept well past the band's own edge
-    for (let d = -14; d <= 14; d += 0.02) {
-      const g0 = M.squash(d);
-      let e = 0;
-      for (let i = 0; i < zs.length; i++) e += ws[i] * Math.exp(M.squash(d + zs[i] * sd - M.DRIFT * v) - g0);
-      e /= wsum;
-      if (e - 1 > worst) { worst = e - 1; worstAt = d; }
+    const v0 = vol * vol / M.NODES_PER_DAY;
+    for (const m of [1, M.VAR_MAX]) {
+      const v = m * v0;
+      const sd = Math.sqrt(v);
+      let worst = -Infinity, worstAt = 0;
+      // d is the walk before the band, so it has to be swept well past the band's own edge
+      for (let d = -14; d <= 14; d += 0.02) {
+        const g0 = M.squash(d);
+        let e = 0;
+        for (let i = 0; i < zs.length; i++) e += ws[i] * Math.exp(M.squash(d + zs[i] * sd - M.DRIFT * v) - g0);
+        e /= wsum;
+        if (e - 1 > worst) { worst = e - 1; worstAt = d; }
+      }
+      console.log('  ' + t.code.padEnd(8) + (Math.sqrt(m).toFixed(2) + 'x').padStart(10)
+        + worst.toExponential(2).padStart(20)
+        + (worst * M.NODES_PER_DAY * 100).toFixed(4).padStart(20) + '%'
+        + ('d = ' + worstAt.toFixed(2)).padStart(14)
+        + (M.BEND_GUARD * v * M.NODES_PER_DAY * 100).toFixed(4).padStart(20) + '%');
+      assert.ok(worst <= 1e-12, t.code + ' at ' + Math.sqrt(m).toFixed(2) + 'x: a step at d = '
+        + worstAt.toFixed(2) + ' pays ' + worst.toExponential(2) + ' over fair');
     }
-    console.log('  ' + t.code.padEnd(8) + worst.toExponential(2).padStart(14)
-      + (worst * M.NODES_PER_DAY * 100).toFixed(4).padStart(20) + '%'
-      + ('d = ' + worstAt.toFixed(2)).padStart(14)
-      + (M.BEND_GUARD * v * M.NODES_PER_DAY * 100).toFixed(4).padStart(20) + '%');
-    assert.ok(worst <= 1e-12, t.code + ': a step at d = ' + worstAt.toFixed(2) + ' pays ' + worst.toExponential(2) + ' over fair');
   }
 });
 
@@ -760,6 +1202,211 @@ test('a held coin can be bought again: each buy is its own lot, and the sale pay
   });
 });
 
+// --- a sale that takes part of a position -------------------------------------------------------
+//
+// The thing being proved here is not a feature, it is that credits are neither made nor lost by
+// cutting a position up. Every case below weighs the stake on both sides of the cut or weighs one
+// sale against the same sale made in pieces; none of them asserts what a price is going to be.
+
+test('a part of a position comes off the oldest lots, and the stake adds back up to the credit', () => {
+  // The three buys are MINUTES apart, not milliseconds, and the prices they got are then asserted
+  // to differ. Spaced by less than a node they would all be the same price, and every case below
+  // that is about a slice keeping its own lot's entry would agree with an averaged one by accident:
+  // measured, a cut priced at the position's average passed this test when the buys were 900ms apart
+  const t1 = at(DAY * 40), t2 = at(DAY * 40 + 17 * MIN), t3 = at(DAY * 40 + 290 * MIN), t4 = at(DAY * 40 + 1100 * MIN);
+  let st = atClock(t1, () => M.act(wallet(), buyOp('CRAB', 400, t1)));
+  st = atClock(t2, () => M.act(st, buyOp('CRAB', 600, t2)));
+  st = atClock(t3, () => M.act(st, buyOp('CRAB', 1000, t3)));
+  const [l1, l2, l3] = st.pos.CRAB.map((l) => Object.assign({}, l));
+  assert.equal(new Set([l1.entryTicks, l2.entryTicks, l3.entryTicks]).size, 3,
+    'three lots at one price prove nothing about which price a slice is paid at');
+  assert.equal(M.sellTake(st.pos.CRAB, 0), 2000, '0 is the whole coin, which is the sale this game always made');
+  assert.equal(M.sellTake(st.pos.CRAB, undefined), 2000);
+  assert.equal(M.sellTake(st.pos.CRAB, 700), 700);
+  // THE CUT LOSES NOTHING, at every size there is. 2,000 takes is every part of this position
+  for (let take = 1; take <= 2000; take++) {
+    const cut = M.cutLots(st.pos.CRAB, take);
+    const sold = cut.sold.reduce((a, l) => a + l.amount, 0);
+    const kept = cut.kept.reduce((a, l) => a + l.amount, 0);
+    assert.equal(sold, take, 'a cut of ' + take + ' sold ' + sold);
+    assert.equal(sold + kept, 2000, 'a cut of ' + take + ' left ' + (sold + kept) + ' credits in the world');
+    // the lot COUNT only ever falls, so no sale can walk a position past MAX_LOTS
+    assert.ok(cut.kept.length <= 3, 'a cut of ' + take + ' made ' + cut.kept.length + ' lots out of 3');
+    // and the oldest go first: every slice sold is at or before every lot kept
+    for (const s of cut.sold) for (const k of cut.kept) assert.ok(s.at <= k.at, 'a cut of ' + take + ' sold out of order');
+    for (const l of cut.sold.concat(cut.kept)) {
+      assert.ok(Number.isSafeInteger(l.amount) && l.amount >= 1, 'a cut of ' + take + ' made a slice of ' + l.amount);
+      // a slice keeps its own lot's entry price. An averaged one would be nobody's real price
+      assert.ok([l1, l2, l3].some((o) => o.entryTicks === l.entryTicks && o.at === l.at));
+    }
+  }
+  // 700 takes the whole of the first lot and 300 of the second, which is the boundary case the
+  // arithmetic is about: the lot is cut, and what is left of it keeps the price it was bought at
+  const cut = M.cutLots(st.pos.CRAB, 700);
+  assert.deepEqual(cut.sold, [l1, { amount: 300, entryTicks: l2.entryTicks, at: l2.at }]);
+  assert.deepEqual(cut.kept, [{ amount: 300, entryTicks: l2.entryTicks, at: l2.at }, l3]);
+  atClock(t4, () => {
+    const exit = M.priceAt('CRAB', t4);
+    const out = M.act(st, sellPart('CRAB', 700, t4));
+    assert.equal(out.net, M.payoutOf(400, l1.entryTicks, exit) + M.payoutOf(300, l2.entryTicks, exit),
+      'the payout is the slices by their own prices, added');
+    assert.equal(out.earned, out.net, 'the money the market paid has to be in the record');
+    assert.equal(out.staked, 2000, 'a sale takes nothing more in: the stake is what went in');
+    assert.equal(out.last.amount, 700);
+    assert.equal(out.last.left, 1300);
+    assert.equal(out.last.pl, out.net - 700);
+    assert.equal(out.last.heldMs, t4 - l1.at, 'the age is the oldest lot sold, which is the first one');
+    assert.equal(out.pos.CRAB.length, 2, 'two lots left, not three and not four');
+    assert.equal(out.pos.CRAB.reduce((a, l) => a + l.amount, 0), 1300);
+    assert.equal(out.trades, 0, 'a position still open is not a round trip closed');
+    assert.equal(out.moves, 4, 'a partial sale is one accepted move, like any other');
+    // the view agrees with the wallet, and the screen is handed the figure rather than the division
+    const v = M.view(out, 0, t4).coins.find((c) => c.code === 'CRAB');
+    assert.equal(v.position.amount, 1300);
+    assert.equal(v.position.lots, 2);
+    assert.equal(v.position.at, l2.at, 'the age on screen is the oldest lot still held');
+    // and the rest of it closes the trip
+    const gone = M.act(out, sellPart('CRAB', 1300, t4));
+    assert.equal(gone.pos.CRAB, undefined);
+    assert.equal(gone.trades, 1, 'the sale that empties the coin is the one that closes the trip');
+    assert.equal(gone.last.left, 0);
+    assert.equal(gone.staked, 2000);
+  });
+});
+
+test('selling in pieces never pays more than selling in one go, so the size is free of strategy', () => {
+  // This is the whole reason the amount can be anything the player likes. payoutOf floors, and a sum
+  // of floors is at most the floor of the sum, so the slicing is a cost to the player and never a
+  // gain: there is no number of pieces that beats one sale, and no credits appear out of the cut
+  const t1 = at(DAY * 55);
+  const t2 = at(DAY * 55 + 7777);
+  let st = atClock(t1, () => {
+    let s = M.act(wallet(), buyOp('SHEL', 3000, t1));
+    return M.act(s, buyOp('SHEL', 7000, t1 + 1));
+  });
+  let worst = 0, cases = 0;
+  atClock(t2, () => {
+    const whole = M.act(st, sellPart('SHEL', 0, t2)).net;
+    for (const pieces of [2, 3, 5, 7, 10, 97, 1000]) {
+      let s = st, paid = 0;
+      const each = Math.floor(10000 / pieces);
+      for (let i = 0; i < pieces; i++) {
+        const take = i === pieces - 1 ? 10000 - each * (pieces - 1) : each;
+        s = M.act(s, sellPart('SHEL', take, t2));
+        paid += s.net;
+      }
+      cases += 1;
+      assert.equal(s.pos.SHEL, undefined, pieces + ' pieces did not empty the coin');
+      assert.equal(s.earned, paid, 'the record has to hold every payout it made');
+      assert.equal(s.trades, 1, pieces + ' pieces closed ' + s.trades + ' round trips');
+      assert.equal(s.moves, 2 + pieces);
+      assert.ok(paid <= whole, pieces + ' pieces paid ' + paid + ' against ' + whole + ' in one go');
+      // and it is only the rounding: a piece can lose at most the one credit its own floor dropped
+      assert.ok(whole - paid <= pieces, pieces + ' pieces lost ' + (whole - paid) + ' credits');
+      if (whole - paid > worst) worst = whole - paid;
+    }
+    console.log('  ' + cases + ' ways of slicing a 10,000 position: at most ' + worst + ' credits lost to the floors');
+  });
+});
+
+test('a part of a position is judged the way a stake is, and the whole coin needs no figure', () => {
+  const now = at(DAY * 60);
+  atClock(now, () => {
+    const st = M.act(wallet(), buyOp('KELP', 500, now));
+    for (const bad of [-1, 0.5, 1.5, NaN, Infinity, '100', 501, 1e15]) {
+      const why = M.whyNot(st, sellPart('KELP', bad, now), Infinity);
+      assert.ok(why, 'a sale of ' + bad + ' was allowed');
+      assert.equal(M.act(st, sellPart('KELP', bad, now)), st, 'a refused sale returns the very same wallet');
+    }
+    assert.equal(M.whyNot(st, sellPart('KELP', 501, now), Infinity), 'only 500 is held in KELP');
+    assert.equal(M.whyNot(st, sellPart('KELP', 1.5, now), Infinity), 'a sale takes a whole number of credits');
+    // 0 and no amount at all are the whole coin, which is the move this game had before 1.34.0
+    assert.equal(M.whyNot(st, sellPart('KELP', 0, now), Infinity), null);
+    assert.equal(M.whyNot(st, sellOp('KELP', now), Infinity), null);
+    assert.equal(M.act(st, sellPart('KELP', 0, now)).net, M.act(st, sellOp('KELP', now)).net);
+    // ONE CREDIT IS A SALE. There is no MIN_BUY here on purpose: that is the smallest bet this
+    // casino takes and a sale is not a bet, and the case above says slicing cannot pay
+    assert.equal(M.whyNot(st, sellPart('KELP', 1, now), Infinity), null);
+    assert.equal(M.whyNot(st, sellPart('KELP', 500, now), 0), null, 'a sale is not a stake: an empty purse cannot stop one');
+    const one = M.act(st, sellPart('KELP', 1, now));
+    assert.equal(one.pos.KELP[0].amount, 499, 'a sale of one credit leaves 499 of them');
+    // ...and that 499 survives the storage boundary, which the MIN_BUY floor on a lot would not have
+    const tiny = M.act(st, sellPart('KELP', 495, now));
+    assert.equal(tiny.pos.KELP[0].amount, 5);
+    assert.deepEqual(M.load(JSON.parse(JSON.stringify(M.save(tiny)))).pos.KELP, tiny.pos.KELP,
+      'a lot cut below the minimum bet was dropped on the way through storage');
+    assert.equal(M.whyNot(tiny, sellPart('KELP', 5, now), Infinity), null);
+  });
+});
+
+test('the parts the screen is offered are the parts the engine sells, priced the same way', () => {
+  // two lots at two prices, far enough apart to be two prices (see the FIFO case above)
+  const t1 = at(DAY * 70), t2 = at(DAY * 70 + 700 * MIN);
+  let st = atClock(t1, () => M.act(wallet(), buyOp('TIDE', 1234, t1)));
+  st = atClock(at(DAY * 70 + 61 * MIN), () => M.act(st, buyOp('TIDE', 766, at(DAY * 70 + 61 * MIN))));
+  const e1 = st.pos.TIDE[0].entryTicks, e2 = st.pos.TIDE[1].entryTicks;
+  assert.notEqual(e1, e2, 'two lots at one price cannot tell a per-lot payout from an averaged one');
+  atClock(t2, () => {
+    const exit = M.priceAt('TIDE', t2);
+    const v = M.view(st, 0, t2).coins.find((c) => c.code === 'TIDE');
+    const parts = v.position.parts;
+    assert.deepEqual(parts.map((p) => p.bp), [2500, 5000, 7500, 10000], 'four parts, quarters, the last one the whole coin');
+    assert.deepEqual(parts.map((p) => p.amount), [500, 1000, 1500, 2000]);
+    // the figures, worked out here from the two lots rather than taken off the engine: 500 and 1,000
+    // come out of the first lot alone, 1,500 takes all of it and 266 of the second
+    assert.equal(parts[0].payout, M.payoutOf(500, e1, exit));
+    assert.equal(parts[1].payout, M.payoutOf(1000, e1, exit));
+    assert.equal(parts[2].payout, M.payoutOf(1234, e1, exit) + M.payoutOf(266, e2, exit));
+    assert.equal(parts[3].payout, M.payoutOf(1234, e1, exit) + M.payoutOf(766, e2, exit));
+    for (const p of parts) {
+      // the payout on the chip is the payout the sale makes, to the credit: one function prices both
+      assert.equal(p.payout, M.act(st, sellPart('TIDE', p.amount, t2)).net,
+        'the chip for ' + p.bp + 'bp promised ' + p.payout);
+      assert.ok(Number.isSafeInteger(p.payout) && p.payout >= 0);
+    }
+    assert.equal(parts[3].payout, v.position.payout, 'the whole part is the position`s own payout');
+    // the parts rise with the share, which is what makes the chips readable as an order
+    for (let i = 1; i < parts.length; i++) assert.ok(parts[i].payout >= parts[i - 1].payout);
+    // A POSITION TOO SMALL TO CUT OFFERS ONE PART, not four chips that sell the same thing
+    const tiny = M.act(wallet(), buyOp('TIDE', M.MIN_BUY, t2));
+    const tv = M.view(tiny, 0, t2).coins.find((c) => c.code === 'TIDE');
+    assert.deepEqual(tv.position.parts.map((p) => p.amount), [2, 5, 7, 10], 'quarters of ten credits');
+    const two = M.act(M.load({ pos: { TIDE: { amount: 2, entryTicks: M.priceAt('TIDE', t1), at: t1 } }, moves: 1, staked: 2, at: t1 }), { op: 'buy', ticker: 'NOPE' });
+    const twov = M.view(two, 0, t2).coins.find((c) => c.code === 'TIDE');
+    assert.deepEqual(twov.position.parts.map((p) => p.amount), [1, 2],
+      'a two credit position has one quarter worth offering and itself');
+    // and nothing in any of that is a seed or a time the screen could use
+    assert.deepEqual(Object.keys(parts[0]).sort(), ['amount', 'bp', 'payout']);
+  });
+});
+
+test('two windows selling the same part of one position are not paid for it twice', () => {
+  const now = at(DAY * 620);
+  const base = atClock(now, () => M.act(wallet({ by: '1111111111111111' }), buyOp('CRAB', 1000, now)));
+  // both windows read the same wallet and both take a quarter out of it
+  const a = atClock(now, () => Object.assign(M.act(base, sellPart('CRAB', 250, now)), { by: 'aaaaaaaaaaaaaaaa' }));
+  const b = atClock(now, () => Object.assign(M.act(base, sellPart('CRAB', 250, now)), { by: 'bbbbbbbbbbbbbbbb' }));
+  const ra = M.save(a), rb = M.save(b);
+  assert.equal(ra.moves, rb.moves, 'the collision this is about is two records at the same move count');
+  assert.ok(ra.earned > 0 && ra.earned === rb.earned);
+  const m1 = M.merge(ra, rb), m2 = M.merge(rb, ra);
+  assert.deepEqual(m1, m2, 'the merge has to be order-free');
+  assert.deepEqual(M.merge(m1, ra), m1, 'and idempotent');
+  // ONE QUARTER WAS SOLD, NOT TWO. The payout rode inside the record that won, so the balance holds
+  // one of them, and the position the winner kept is three quarters and not a half
+  assert.equal(M.netOf(m1), ra.earned - ra.staked);
+  assert.equal(M.netOf(m1), M.netOf(rb));
+  assert.notEqual(M.netOf(m1), 2 * ra.earned - ra.staked);
+  assert.equal(M.load(m1).pos.CRAB.reduce((s, l) => s + l.amount, 0), 750,
+    'the dropped sale took its credits out of the position as well as out of the balance');
+  assert.equal(M.kept(rb, m1), true);
+  assert.equal(M.kept(ra, m1), false, 'the losing window must not pay itself');
+  // and the window that lost sees the wallet the other one left, with three quarters still in it
+  const dropped = M.load(M.merge(ra, rb));
+  assert.equal(dropped.trades, 0, 'neither of those sales closed the position');
+  assert.equal(dropped.earned, ra.earned);
+});
+
 test('a stake is a whole number between the minimum and the cap, and inside the purse', () => {
   const now = at(DAY * 9);
   atClock(now, () => {
@@ -898,12 +1545,17 @@ test('a record from somewhere else is read at the boundary, never trusted', () =
   const huge = M.clean({ moves: 1e15, trades: 1e12, staked: Number.MAX_SAFE_INTEGER, earned: 1e16, best: 1e16, at: 1e18 });
   for (const k of M.REC_FIELDS) assert.equal(huge[k], 0, k + ' was believed at ' + k);
   assert.equal(M.newer(huge, M.clean({ moves: 1, by: 'abcdef0123456789' })), false);
-  // a position has to be a position: a stake under the minimum, a price of zero, a coin that does
-  // not exist, a prototype smuggled in through the stored JSON
+  // a position has to be a position: a lot holding nothing, a price of zero, a coin that does
+  // not exist, a prototype smuggled in through the stored JSON.
+  // THE FLOOR ON A LOT IS ONE CREDIT AND NOT MIN_BUY (1.34.0): a partial sale cuts the lot the
+  // boundary falls inside, so a lot of five credits is a record `save` really produces, and held to
+  // the minimum BET it would be dropped on the next read with part of a position inside it. What is
+  // refused is a lot with nothing in it. The case that proves the other half is the partial sale's
+  // own, above ('a part of a position is judged the way a stake is')
   const bad = M.load({
     moves: 4, trades: 4, staked: 10, earned: 0, best: 0, at: 5, by: 'abcdef0123456789',
     pos: {
-      CRAB: { amount: 1, entryTicks: 160000 },            // under the minimum stake
+      CRAB: { amount: 0, entryTicks: 160000 },            // a lot holding nothing
       KELP: { amount: 100, entryTicks: 0 },               // no price
       SHEL: { amount: 100, entryTicks: 1e18 },            // a price no coin can reach
       TIDE: { amount: 100, entryTicks: 120000, at: 99, extra: 'dropped' },
@@ -916,7 +1568,7 @@ test('a record from somewhere else is read at the boundary, never trusted', () =
   assert.deepEqual(M.clean({ pos: { TIDE: { amount: 100, entryTicks: 120000, at: 99 } } }).pos.TIDE, { amount: 100, entryTicks: 120000, at: 99 }, 'a single lot is stored the way a position always was');
   // extra lots are held to the same rule one by one, and to the ceiling on lots
   const many = M.load({ pos: { TIDE: { amount: 100, entryTicks: 120000, at: 9, more: [
-    { amount: 1, entryTicks: 120000 }, { amount: 200, entryTicks: 120000, at: 10 }, 'junk', null,
+    { amount: 0, entryTicks: 120000 }, { amount: 200, entryTicks: 120000, at: 10 }, 'junk', null,
     ...Array.from({ length: 40 }, () => ({ amount: 10, entryTicks: 120000, at: 11 }))
   ] } } });
   assert.equal(many.pos.TIDE.length, M.MAX_LOTS - 3, 'the three bad entries inside the first ' + M.MAX_LOTS + ' were dropped');
@@ -1050,6 +1702,11 @@ function viewChecks(now) {
   assert.equal(v.coins.length, 4);
   for (const c of v.coins) {
     assert.equal(c.ticks, M.priceAt(c.code, now));
+    // how big TODAY is, which is the schedule's one appearance on the screen. The nominal figure is
+    // the coin's identity and this is what the day it is being looked at happens to be
+    const day = Math.floor(M._test.nodeOf(now) / M.NODES_PER_DAY);
+    assert.equal(c.volTodayBp, Math.round(c.volBp * Math.sqrt(M._test.varOfDay(M._test.rowOf(c.code), day))));
+    assert.ok(Number.isSafeInteger(c.volTodayBp) && c.volTodayBp > 0);
     assert.equal(c.candles.length, 36);
     assert.equal(c.candles[c.candles.length - 1].c, c.ticks);
     assert.equal(c.openTicks, c.candles[0].o);
@@ -1061,6 +1718,8 @@ function viewChecks(now) {
     assert.equal(c.can.buy, !M.whyNot(st, buyOp(c.code, M.MIN_BUY, now), 100000));
     assert.equal(c.can.sell, !M.whyNot(st, sellOp(c.code, now), 100000));
   }
+  // and the day really is a day of its own size, or the line above compared two equal figures
+  assert.ok(v.coins.some((c) => c.volTodayBp !== c.volBp), 'not one of the four had a day of its own size');
   const crab = v.coins.find((c) => c.code === 'CRAB');
   assert.equal(crab.can.buy, true, 'a held coin can be bought again');
   assert.equal(crab.can.sell, true);

@@ -312,6 +312,14 @@ module.exports = {
       && $('mkPays').innerHTML.indexOf(c0.grade) >= 0
       && $('mkPays').innerHTML.indexOf(market.BAND_X + '×') >= 0,
       $('mkPays').innerHTML);
+    // HOW BIG TODAY IS. The days are not the same size any more (market.js, section 4), and the
+    // figure is the host's: the screen prints `volTodayBp` and takes no root of its own. This state
+    // was priced before the schedule's cutover day, so today is the coin's nominal size, which is
+    // still the host's answer rather than a string this panel wrote
+    ok('and it says how big today is for this coin, off the reply',
+      $('mkPays').innerHTML.indexOf('Today is a ' + pctAbs(c0.volTodayBp) + ' day for it') >= 0
+      && c0.volTodayBp === c0.volBp && T0 < market.EPOCH_MS + market.SCHED_DAY * 1440 * market.MS_PER_MIN,
+      'today ' + c0.volTodayBp + ' | nominal ' + c0.volBp);
     // THE FEE IS INSIDE THAT FOLD, not a sentence under the button. It is the same fact at every
     // depth and in every state, so on screen it was a permanent line of self-explanation: 19px at the
     // design width and 32px at a sidebar of 250, where it takes two lines. The figure is still the
@@ -594,6 +602,82 @@ module.exports = {
       doc.dispatchKey('s'); advance(420);    // and out again, so what follows starts from no position
       ok('the keys closed the trip they opened: nothing is held and the buy is back',
         $('mkPlBox').hidden && offered() === 'mkDeal', offered());
+      // --- a part of the position. The chips are the parts the HOST priced (market.js's partsOf)
+      // and the Sell button carries what the chosen one fetches: this screen divides a position no
+      // more than it prices a minute, so every figure here arrived on the reply.
+      // Nothing below asserts what a price will be. The amounts are shares of a stake the test chose
+      // (200, so a half is 100), the payouts are weighed against each other, and what the purse was
+      // paid is read out of the purse the way the full sale above reads it
+      const partBtns = () => doc.querySelectorAll('#mkPart button').map((b) => b.getAttribute('data-p')).join();
+      const partWords = () => doc.querySelectorAll('#mkPart button').map((b) => b.textContent).join();
+      const onPart = () => doc.querySelectorAll('#mkPart button.on').map((b) => b.getAttribute('data-p')).join();
+      const partChip = (bp) => doc.querySelector('#mkPart button[data-p="' + bp + '"]');
+      const asks = () => Number(txt('mkSell').replace(/[^\d]/g, ''));
+      ok('with nothing held there is nothing to divide, so the part row is not on the screen',
+        $('mkPartRow').hidden && partBtns() === '', partBtns());
+      typeAmt('200');
+      $('mkDeal').click(); advance(2); advance(400);
+      ok('holding it, the chips are the host’s own parts and the whole coin is the one lit',
+        !$('mkPartRow').hidden && partBtns() === '2500,5000,7500,10000'
+        && partWords() === '25%,50%,75%,All' && onPart() === '10000',
+        partBtns() + ' | ' + partWords() + ' | lit ' + onPart());
+      // ...and it opens on All, so the sale this screen has always made is still one press
+      const forAll = asks();
+      ok('and the button on that chip asks for the whole position, as it always did',
+        forAll > 0 && /^Sell [\d,]+$/.test(txt('mkSell')), txt('mkSell'));
+      partChip(5000).click(); advance(2);
+      const forHalf = asks();
+      ok('a chip changes the figure on the button to what that share fetches',
+        onPart() === '5000' && forHalf < forAll && forAll - 2 * forHalf >= 0 && forAll - 2 * forHalf <= 2,
+        'half ' + forHalf + ' against all ' + forAll);
+      // the title says the division, because the button itself can only carry one figure
+      ok('and the button says which part of the position it is about',
+        $('mkSell').title === 'Sell 100 of 200 (S)', $('mkSell').title);
+      // --- the partial sale itself
+      const bal2 = ledgerBalance();
+      const n6 = sentMk.length;
+      $('mkSell').click();
+      // before a single tick: under reduced motion the reply has landed and unlocked by then
+      ok('the part chips go out the moment the sale leaves, like the period and the stake chips',
+        doc.querySelectorAll('#mkPart button').every((b) => b.disabled),
+        doc.querySelectorAll('#mkPart button').map((b) => b.disabled).join());
+      advance(2); advance(400);
+      const part = ledgerBalance() - bal2;
+      ok('the sale names the credits the host priced, and still names no time',
+        trades(n6) === 'sell' && sentMk[n6].amount === 100 && sentMk[n6].ticker === code
+        && sentMk[n6].nowMs === undefined, JSON.stringify(sentMk[n6]));
+      ok('the purse was paid what the chip promised, to the credit',
+        part === forHalf, 'purse ' + part + ' | chip ' + forHalf);
+      ok('the chip says what the half fetched and what the half made',
+        chip() === 'bj-chip ' + (part > 100 ? 'win' : part < 100 ? 'lose' : '') + ' Sold '
+        + signed(part - 100) + ' · paid ' + money(part), chip() + ' | purse ' + part);
+      // THE POSITION IS STILL OPEN, which is the whole difference from the sale above: half the
+      // stake is still in, the block is still the biggest thing on the screen and the row still
+      // carries the figure that is the reason to come back
+      ok('half the stake is still in, and the screen still says so',
+        !$('mkPlBox').hidden && /^100 in · /.test(txt('mkPlSub')) && marks().length === 1
+        && offered() === 'mkDeal,mkSell' && figOf(code) !== 'none',
+        txt('mkPlSub') + ' | ' + offered() + ' | ' + figOf(code));
+      ok('and the read-out says a part was sold rather than a position closed',
+        live().indexOf(money(part)) > 0 && /, 100 still held\./.test(live()), live());
+      // the chips re-price against what is left, and the share stays chosen: a quarter is still a
+      // quarter of a position another window may have changed underneath it
+      ok('the chips are the parts of what is left now',
+        onPart() === '5000' && partBtns() === '2500,5000,7500,10000' && asks() < forHalf,
+        onPart() + ' | asks ' + asks() + ' | was ' + forHalf);
+      // --- and All closes it, with the message this panel has always sent
+      partChip(10000).click(); advance(2);
+      const n7 = sentMk.length;
+      $('mkSell').click(); advance(2); advance(400);
+      ok('All sells the rest with no amount on the wire at all: the whole coin, whatever it now is',
+        trades(n7) === 'sell' && sentMk[n7].amount === undefined
+        && Object.keys(sentMk[n7]).sort().join() === 'n,op,ticker,type',
+        JSON.stringify(sentMk[n7]));
+      ok('and the position is gone, so the part row goes with it',
+        $('mkPlBox').hidden && $('mkPartRow').hidden && offered() === 'mkDeal'
+        && figOf(code) === 'none' && /^Buy /.test(txt('mkDeal')),
+        offered() + ' | part row hidden ' + $('mkPartRow').hidden);
+
       doc.pressKey('Escape', { target: doc.body }); advance(2);
       ok('Escape goes back up to the coins, and the row it came from has the focus',
         !$('mkList').hidden && $('mkCoin').hidden && activeName() === 'mkRow-' + code,

@@ -82,9 +82,10 @@
 // integrates the real
 // one-step expectation for every coin, so the proof is of this code and not of this paragraph.
 //
-// --- 4. my own activity moves the SPREAD, not the direction. it moves neither, here -------------
-// The idea was to feed the day's token burn in as `heat` and let a busy day be a rough sea. It is not
-// wired, on purpose, and the reason is worth keeping:
+// --- 4. calm days and rough days, decided by the calendar and by nothing else -------------------
+// The ask was for a market that heaves rather than hums, and the first idea for it was to feed the
+// day's token burn in as `heat`. THAT IS STILL REFUSED, and the reasons are the shape of what IS
+// here:
 //  - heat on the DIRECTION is a credit printer. Buy, then burn tokens to push the price up. Never.
 //  - heat on the per-step SIZE changes the past. The walk accumulates, so raising today's step size
 //    moves every price after it, which means today's earlier candles, and the entry marker drawn on
@@ -95,10 +96,41 @@
 //  - heat on the candle WICK only (open and close untouched) is safe, because money never touches a
 //    wick, but then it is decoration and the honest way to show the day's heat is to show the day's
 //    heat, next to the chart, as itself.
-// So volatility is fixed per coin and the door is shut. There is a safe version of this: a per-DAY
-// variance schedule, stored once a day is over and never revised, with the lattice cut on day
-// boundaries so a day's steps only ever scale that day's own draws. It is a different lattice and it
-// needs a stored schedule, so it is not in this file.
+// And raising `volBp` is not the answer either: it is refused at load past 412bp (checkCoins), for
+// the reason section 2 gives, and the chart autoscales to its own window, so a louder coin is not
+// even a different picture (the median drawn body is 10.1% of the well at 150bp and 8.9% at 400bp).
+//
+// WHAT IS HERE INSTEAD (1.34.0) is the safe version this note used to describe and defer: a per-DAY
+// variance schedule. Each coin's day gets a multiplier on its per-node variance, so a week holds a
+// day that moves at 0.43x its coin's nominal size and a day that moves at 1.75x, which is volatility
+// clustering and is the thing "more of a market" actually looks like. Every rule above survives it,
+// and each one is survived by a different piece of the construction:
+//  - THE MULTIPLIER IS A FUNCTION OF THE DAY AND THE COIN, and of nothing else. Not of usage, not of
+//    the hour, not of the wallet, not of anything a window can write. There is nothing for a player
+//    to push on, and two windows cannot disagree about today. This note once said the schedule would
+//    have to be STORED; a pure function of the day is the stronger form of "stored once the day is
+//    over and never revised", because there is no record to merge, corrupt or hand-edit
+//  - THE LATTICE IS CUT ON DAY BOUNDARIES, so a day's multiplier scales that day's own draws and
+//    nothing else. The walk is the old lattice up to a cutover node, then a sum of per-day walks: a
+//    day's whole displacement is one draw scaled by its own day, and the inside of a day is a
+//    Brownian bridge on that day's draw. Once a day is over its contribution is a fixed number, so
+//    yesterday's candles cannot move, whatever today's multiplier is
+//  - THE DRIFT FOLLOWS THE VARIANCE. logDevAt subtracts DRIFT times the variance ACCUMULATED, not
+//    DRIFT*v*n. A step is fair only against its own variance (section 2), so a wild day with a calm
+//    day's drag would be a day that pays, and that is the one way this could have become a printer
+//  - THE LONG RUN IS UNTOUCHED. The seven multipliers are a fixed multiset whose mean is exactly 1,
+//    and each week is a permutation of it drawn from the week's own index. So every aligned week
+//    carries exactly the variance it carried before, the realised sigma is the table's, the median's
+//    fall is still DRIFT*sigma^2 a day, and the 412bp ceiling and the liveliness check hold as they
+//    stood. checkCoins refuses a schedule whose mean is not 1, so this is a load-time rule
+//  - NO PRICE THAT ANYBODY HAS SEEN MOVED. The schedule starts at a cutover day that was in the
+//    future when it was written, and before that node the walk is the old lattice, bit for bit:
+//    test/market-grid.js still holds the 1.30.1 prices and still compares against them. That is the
+//    same promise 1.31.0 made and for the same reason, `entryTicks` being a stored field
+//  - AND A WILD DAY STILL CANNOT CLEAR THE FEE IN ONE NODE. checkCoins solves that rather than
+//    sampling it: the hash caps a draw at Z_CAP sigma, so the largest move one node can ever make is
+//    Z_CAP * sqrt(VAR_MAX * v), and the round trip has to be clear of it for the wildest coin on the
+//    wildest day. It is, by 2.7x, and a schedule that broke it would not load
 //
 // --- 5. nothing here may ever be sent to the webview -------------------------------------------
 // This is a host-side module. It must not be loaded into webview.js, listed in the webview's script
@@ -136,7 +168,34 @@
 // own entry price, and the sale pays every lot by its own ratio and adds the payouts. Folding the
 // buys into one averaged entry would mean a division, which means a rounded entry price that is
 // nobody's real price; a list of exact lots keeps every figure on the money path an integer. The
-// average the screen shows is computed for the screen only (coinView). A sale sells the whole coin.
+// average the screen shows is computed for the screen only (coinView).
+//
+// A SALE NAMES HOW MUCH OF THE POSITION IT TAKES, in credits of stake (1.34.0). It used to take the
+// whole coin and nothing else, which is a buy that chooses its size and a sale that does not. The
+// rules that come with it, in the order they bite:
+//  - the unit is CREDITS OF STAKE, the unit a position is held in. Not units of the coin, for the
+//    reason the whole position is not held in them: a fraction of a coin is a fraction on the money
+//    path. Not credits of PAYOUT either, because the payout is what is being solved for
+//  - THE OLDEST LOT GOES FIRST. The lots have different entry prices, so a sale of 300 credits
+//    fetches a different number depending on which 300 it is, and that makes the order a rule rather
+//    than an implementation detail. First in, first out is the one order a player can predict
+//    without being shown the lot list, and it is the order the screen is already drawn in: the age
+//    under the profit is the OLDEST lot's (coinView), so selling the oldest first is the only order
+//    under which that age moves forward instead of jumping about as lots are taken out of the middle.
+//    Cheapest-first and most-profitable-first were not chosen: either is a rule the player has to be
+//    told, and "sell the winners" is a decision this toy has no business having an opinion on
+//  - THE LOT THE BOUNDARY FALLS INSIDE IS CUT, NOT AVERAGED. payoutOf(part, that lot's own
+//    entryTicks, exit), and what is left of it is amount - part at the same entry price. So every
+//    figure on this path is still an integer, and the LOT COUNT only ever falls: a cut lot is still
+//    one lot and a consumed one is gone, so no sale can walk past MAX_LOTS
+//  - slicing a sale cannot pay more than making it in one go, and that is arithmetic rather than a
+//    hope: payoutOf floors, and a sum of floors is at most the floor of the sum. So there is no
+//    strategy in the slicing, which is what lets the amount be free
+//  - a sale of 0, or of no amount at all, is the WHOLE coin. That is the move this game had before
+//    1.34.0 and it is still the move most sales are, so it is the one that needs no figure on the
+//    wire: the panel's own "All" sends exactly the message it always sent
+//  - `trades` counts a sale that EMPTIES the coin, because a round trip is a position that has been
+//    closed. Counting every partial would print ten round trips for one position sold in ten pieces
 //
 // Fractional shares need nothing here: a stake is credits, so 0.7 of a coin is simply a stake of
 // 0.7 times its price, and the screen is told how many thousandths of a coin a position holds.
@@ -324,6 +383,43 @@ const COINS = [
 const ALIVE_DAYS = 3650;
 const ALIVE_FRACTION = 0.5;
 
+// --- the per-day variance schedule --------------------------------------------------------------
+//
+// Seven multipliers on a day's per-node variance, one a day, so a coin has calm days and rough ones
+// and the week is the cycle (the note, section 4). Written as sixteenths because the sum has to be
+// exactly VAR_DAYS in binary and not nearly: a mean of 1.0000001 is a coin that no longer realises
+// the volatility its own row claims, and checkCoins refuses the file over it.
+//
+// They are VARIANCE multipliers, so what the screen sees is the square root of them: a week runs
+//   0.43x  0.50x  0.61x  0.79x  1.00x  1.22x  1.75x
+// of the coin's nominal daily size. On CRAB (400bp) that is a 173bp day and a 700bp day in the same
+// week. The spread is as wide as a mean of exactly 1 allows it to be with one clearly wild day:
+// pushing the top higher pushes four days further down, and a market where most days are dead is not
+// a livelier market, it is a quieter one with a storm in it.
+//
+// The ORDER inside a week is a permutation drawn from the week's own index, which is what stops the
+// wild day from always being a Thursday. 7! is 5,040, so one 32-bit draw indexes every ordering
+const VAR_DAYS = 7;
+const VAR_WEEK = Object.freeze([3 / 16, 4 / 16, 6 / 16, 10 / 16, 16 / 16, 24 / 16, 49 / 16]);
+const VAR_MAX = 49 / 16;
+const VAR_ORDERS = 5040;             // VAR_DAYS factorial
+
+// WHERE THE SCHEDULE STARTS, and why it starts anywhere at all. Before this node the walk is the
+// lattice this file has always had, bit for bit, and `entryTicks` is a stored field in 639 installs:
+// a schedule that reached back would redraw the price a position was opened at, which is the thing
+// 1.31.0 was built around not doing. The divergence at the cutover is exactly zero and grows from
+// there, so nothing anybody has already seen moves, and an install that updates late sees only the
+// days since the cutover redraw, by a fraction of what those days moved anyway.
+// It is a multiple of VAR_DAYS so the weeks are aligned, which is what makes "every aligned week
+// carries the table's variance" an exact statement rather than an average
+const SCHED_DAY = 336;               // 2026-12-03 UTC, day 336 after EPOCH_MS, and 48 whole weeks
+const SCHED_NODE = SCHED_DAY * NODES_PER_DAY;
+
+// Hash addresses for the new draws, kept clear of the old lattice's. That one addresses levels
+// -5..27 (sumAt, and the root one above it), so these two cannot collide with a price anybody has
+const WEEK_LEVEL = 40;               // the week's permutation
+const DAY_SEED_LEVEL = 41;           // a day's own sub-seed, which its bridge is drawn from
+
 // --- the node hash ------------------------------------------------------------------------------
 //
 // cards.js owns the one seeded stream in this repo, and the rule that comes with it is that a game
@@ -390,10 +486,133 @@ function probit(p) {
 // mean; what it does is stop one absurd draw (probability about 1e-15) from carrying a price
 const Z_CAP = 8;
 
-function nodeZ(row, level, index) {
-  const u = (nodeHash(row.seed, level, index) + 0.5) / 4294967296;
+function zOf(seed, level, index) {
+  const u = (nodeHash(seed, level, index) + 0.5) / 4294967296;
   const z = probit(u);
   return z > Z_CAP ? Z_CAP : (z < -Z_CAP ? -Z_CAP : z);
+}
+
+function nodeZ(row, level, index) {
+  return zOf(row.seed, level, index);
+}
+
+// --- the day schedule's own draws ---------------------------------------------------------------
+
+// The order of one week's multipliers, unranked from a single draw (Lehmer code). Deterministic in
+// the week's index and the coin's seed, which is the whole of the safety: there is nothing in here
+// that a window, a clock reading or a token burn can reach (the note, section 4)
+function weekOrder(seed, week) {
+  let h = nodeHash(seed, WEEK_LEVEL, week) % VAR_ORDERS;
+  const pool = [0, 1, 2, 3, 4, 5, 6];
+  const out = [];
+  for (let k = VAR_DAYS; k > 0; k--) {
+    const i = h % k;
+    h = (h - i) / k;
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
+
+// What multiplies a day's per-node variance. One before the cutover, so every price the old lattice
+// gave is the price it gave. The week is cached because a chart asks about one day many times over
+function varOfDay(row, day) {
+  if (day < SCHED_DAY) return 1;
+  const week = Math.floor(day / VAR_DAYS);
+  if (row.wkIdx !== week) { row.wkOrd = weekOrder(row.seed, week); row.wkIdx = week; }
+  return VAR_WEEK[row.wkOrd[day - week * VAR_DAYS]];
+}
+
+// A day's own seed, which everything inside that day is drawn from. Giving the day a seed rather
+// than folding (day, block) into one address is what keeps the within-day addresses small: a day is
+// 92,160 nodes, so a block index fits in 17 bits, where (day, index) pairs would run out of 32
+function daySeed(row, day) {
+  return nodeHash(row.seed, DAY_SEED_LEVEL, day);
+}
+
+// What a whole day displaces: one draw, scaled by that day's own variance. Once the day is over this
+// number never changes again, which is what "the past cannot move" means here
+function dayTotal(row, day) {
+  return zOf(daySeed(row, day), 0, 0) * Math.sqrt(varOfDay(row, day) * row.v * NODES_PER_DAY);
+}
+
+// The running totals over whole days since the cutover: the walk, and the variance. Both are prefix
+// sums, extended as far as they are asked for and never recomputed, so a price costs one lookup
+// however far out it is. A day's entry is one hash for the sub-seed, one draw for the total and a
+// seventh of a hash for the week's order
+function ensureDays(row, upto) {
+  const W = row.dayW, V = row.dayV;
+  if (!W.length) { W.push(0); V.push(0); }
+  for (let k = W.length; k <= upto; k++) {
+    const d = SCHED_DAY + k - 1;
+    W[k] = W[k - 1] + dayTotal(row, d);
+    V[k] = V[k - 1] + varOfDay(row, d);
+  }
+}
+
+// The frames of a within-day descent, kept the way sumAt keeps its own (see the note over keepFrame)
+function keepDay(path, i, acc, lo, size, level, index, total) {
+  const f = path[i];
+  if (f) { f.acc = acc; f.lo = lo; f.size = size; f.level = level; f.index = index; f.total = total; }
+  else path[i] = { acc, lo, size, level, index, total };
+}
+
+// Sum of ONE DAY's steps over its first `r` nodes.
+//
+// A Brownian bridge on that day's total: a block of `size` nodes carrying `total` splits into sL and
+// sR nodes, and the left part is Normal(total * sL/size, vv * sL*sR/size). That is the general form
+// of the split sumAt does at the top of the file, and it has to be the general form here because a
+// day is 92,160 nodes, which is 45 * 2^11 and so cannot be halved all the way down. Where the halves
+// ARE equal it reduces to sumAt's own line: mean total/2, sd sqrt(vv * size/4).
+//
+// The day's variance is in `vv` and in the total, and in nothing else, so this day's multiplier
+// scales this day's draws and reaches no other day (the note, section 4).
+// The cache is sumAt's, with the day as its key: a chart walks a day in order, so the frames it
+// keeps are the frames the next price wants. It is thrown away when the day changes rather than
+// grown, because two days share no frame at all
+function dayWalk(row, day, r) {
+  if (r <= 0) return 0;
+  if (row.dDay !== day) {
+    row.dDay = day; row.dDepth = 0;
+    row.dSeed = daySeed(row, day);
+    row.dVv = varOfDay(row, day) * row.v;
+    row.dTot = dayTotal(row, day);
+  }
+  if (r >= NODES_PER_DAY) return row.dTot;
+  const path = row.dPath;
+  // the deepest kept frame whose block STRICTLY contains r, which is the deepest a cold descent
+  // would have entered. The reasoning is keepFrame's: a frame whose right edge is exactly r answers
+  // (acc + left) + (total - left) where a cold descent answers acc + total, which is the same number
+  // in arithmetic and a different one in doubles
+  let k = row.dDepth - 1;
+  while (k >= 0) {
+    const f = path[k];
+    if (r > f.lo && r < f.lo + f.size) break;
+    k -= 1;
+  }
+  let acc, lo, size, level, index, total;
+  if (k < 0) {
+    acc = 0; lo = 0; size = NODES_PER_DAY; level = 0; index = 0; total = row.dTot;
+    k = 0;
+    keepDay(path, 0, acc, lo, size, level, index, total);
+  } else {
+    const f = path[k];
+    acc = f.acc; lo = f.lo; size = f.size; level = f.level; index = f.index; total = f.total;
+  }
+  let depth = k + 1;
+  for (;;) {
+    // r outside the block one way or the other, which a one-node block always is for a whole r
+    if (r >= lo + size || r <= lo) {
+      row.dDepth = depth;
+      return r >= lo + size ? acc + total : acc;
+    }
+    const sL = size >> 1, sR = size - sL;
+    const left = total * (sL / size) + zOf(row.dSeed, level + 1, index) * Math.sqrt((row.dVv * sL * sR) / size);
+    if (r <= lo + sL) { total = left; size = sL; index = index * 2; }
+    else { acc += left; total -= left; lo += sL; size = sR; index = index * 2 + 1; }
+    level += 1;
+    keepDay(path, depth, acc, lo, size, level, index, total);
+    depth += 1;
+  }
 }
 
 // --- a coin's row -------------------------------------------------------------------------------
@@ -420,7 +639,14 @@ function buildRow(code, name, grade, base, volBp, seedKey) {
     rootSd: Math.sqrt(v * Math.pow(2, LEVELS)),
     floorTicks: Math.max(1, Math.floor(baseTicks / (BAND_X * BAND_X))),
     capTicks: baseTicks * BAND_X * BAND_X,
-    path: [], depth: 0
+    path: [], depth: 0,
+    // the day schedule's own caches (the note, section 4). `cutSum` is the walk at the cutover node,
+    // which is one number per coin and the point the per-day walk continues from; `dayW` and `dayV`
+    // are the prefix sums over whole days; `dPath` is the within-day descent's frames and the four
+    // `d*` fields beside it are the day those frames belong to
+    cutSum: null, dayW: [], dayV: [],
+    dPath: [], dDepth: 0, dDay: -1, dSeed: 0, dVv: 0, dTot: 0,
+    wkIdx: -1, wkOrd: null
   };
 }
 
@@ -466,6 +692,33 @@ const MAX_BUY = Math.min(2500000, BUY_LIMIT);
         + 'x of its own size within ' + ALIVE_DAYS + ' days, which is a coin that stops moving');
     }
     if (r.floorTicks < 1000) throw new Error('market: ' + r.code + ' rounds too coarsely at the floor of its band');
+  }
+  // --- the day schedule (the note, section 4). Three refusals, and each one is a way the schedule
+  // could have changed what the coins ARE rather than when they are rough
+  if (VAR_WEEK.length !== VAR_DAYS) throw new Error('market: the variance schedule is not a week long');
+  let vsum = 0;
+  for (const m of VAR_WEEK) {
+    if (!(m > 0) || !Number.isFinite(m)) throw new Error('market: a day of the schedule has no variance');
+    vsum += m;
+  }
+  // EXACTLY, not nearly: the mean being 1 is what keeps every coin realising the volatility its own
+  // row claims, and with it the 412bp ceiling, the half-lives and the liveliness check above
+  if (vsum !== VAR_DAYS) {
+    throw new Error('market: the variance schedule averages ' + (vsum / VAR_DAYS)
+      + ' and not 1, so the coins no longer realise the table');
+  }
+  if (SCHED_DAY % VAR_DAYS !== 0) throw new Error('market: the schedule has to start on a week boundary');
+  if (VAR_ORDERS !== [1, 2, 3, 4, 5, 6, 7].reduce((a, b) => a * b, 1)) throw new Error('market: VAR_ORDERS is not VAR_DAYS factorial');
+  for (const r of ROWS) {
+    // The wildest day the schedule can hand out, against the round trip. SOLVED, not sampled: the
+    // hash caps a draw at Z_CAP sigma, so this is the largest move one node can ever make, on any
+    // day, for the life of the lattice. A step that could clear the fee would make the panel a thing
+    // to sit in front of one node at a time (see FEE_NUM)
+    const worstNode = Z_CAP * Math.sqrt(VAR_MAX * r.v);
+    if (!(worstNode < Math.log(FEE_DEN / FEE_NUM))) {
+      throw new Error('market: ' + r.code + ' can move ' + (worstNode * 100).toFixed(3)
+        + '% in one node on its wildest day, which the ' + ((1 - FEE_NUM / FEE_DEN) * 100) + '% round trip does not cover');
+    }
   }
   // the bend's guard has to cover the edge the bend hands over (the note, section 3)
   if (BEND_GUARD <= 1 / (2 * SPAN * SPAN)) throw new Error('market: the bend guard is too small for the band');
@@ -584,9 +837,35 @@ function liveliness(vol, days) {
   return c * c;
 }
 
+// --- the walk, in two regimes -------------------------------------------------------------------
+
+// The walk's sum over [0, n). Up to the cutover node it is sumAt and nothing else, which is how
+// every price anybody has already seen is the price they saw; past it, the old lattice's sum AT the
+// cutover plus whole days plus the part day the node is in (the note, section 4)
+function walkAt(row, n) {
+  if (n <= SCHED_NODE) return sumAt(row, n);
+  if (row.cutSum === null) row.cutSum = sumAt(row, SCHED_NODE);
+  const day = Math.floor(n / NODES_PER_DAY);
+  const i = day - SCHED_DAY;
+  ensureDays(row, i);
+  return row.cutSum + row.dayW[i] + dayWalk(row, day, n - day * NODES_PER_DAY);
+}
+
+// The VARIANCE accumulated over [0, n), counted in nodes of the coin's own per-node variance. Before
+// the cutover every node is worth one, so this is n; after it, a node is worth its day's multiplier.
+// The drift is taken against THIS and not against n, because a step is only fair against its own
+// variance (section 2): a wild day carrying a calm day's drag would be a day that pays
+function varAt(row, n) {
+  if (n <= SCHED_NODE) return n;
+  const day = Math.floor(n / NODES_PER_DAY);
+  const i = day - SCHED_DAY;
+  ensureDays(row, i);
+  return SCHED_NODE + NODES_PER_DAY * row.dayV[i] + varOfDay(row, day) * (n - day * NODES_PER_DAY);
+}
+
 // log(price / base) at a node: the walk, less the drift, through the band
 function logDevAt(row, n) {
-  return squash(sumAt(row, n) - DRIFT * row.v * n);
+  return squash(walkAt(row, n) - DRIFT * row.v * varAt(row, n));
 }
 
 // A price, in whole ticks. The clamp is belt and braces: squash already bounds the exponent, and
@@ -718,6 +997,70 @@ function grossOf(amount, entryTicks, exitTicks) {
   return Math.floor(top / entryTicks);
 }
 
+// --- a partial sale: which lots it takes ---------------------------------------------------------
+
+// How much of a position a move asks for. 0, and an amount that is not there at all, mean the whole
+// coin: that is the sale this game had before 1.34.0 and the one the panel's "All" still sends
+// (the note, section 6). Anything else is read as it stands and judged by cannotSell
+function sellTake(lots, amount) {
+  return (amount === undefined || amount === null || amount === 0) ? lotsAmount(lots) : amount;
+}
+
+// `take` credits of stake, cut off the FRONT of the lot list, as two lists: what is being sold and
+// what is left behind. The oldest lot goes first and the lot the boundary falls inside is cut rather
+// than averaged (the note, section 6).
+//
+// Both halves are returned because both are needed and they have to agree to the credit: the sold
+// slices are what the payout is summed over and the kept ones are the position that remains, and
+// amount by amount they add back up to what went in. A function that returned only the payout would
+// leave the remainder to be worked out a second time somewhere else, which is the shape a lost
+// credit comes in.
+// `kept` carries the untouched lots by reference: act() has already cloned the wallet, so these are
+// its own objects and not storage's
+function cutLots(lots, take) {
+  const sold = [], kept = [];
+  let left = take;
+  for (const l of lots) {
+    const part = left >= l.amount ? l.amount : (left > 0 ? left : 0);
+    if (part > 0) sold.push({ amount: part, entryTicks: l.entryTicks, at: l.at });
+    if (part < l.amount) {
+      kept.push(part > 0 ? { amount: l.amount - part, entryTicks: l.entryTicks, at: l.at } : l);
+    }
+    left -= part;
+  }
+  return { sold, kept };
+}
+
+// What a list of slices fetches: every one by its own entry price, added. The same function prices
+// the sale and the figure the screen shows for it, so the button and the payout cannot disagree
+function paidFor(slices, exitTicks) {
+  let paid = 0;
+  for (const l of slices) paid += payoutOf(l.amount, l.entryTicks, exitTicks);
+  return paid;
+}
+
+// The parts of a position the screen may offer, priced by the host. Quarters rather than a typed
+// figure because a FRACTION survives the position changing underneath it: another window adding to
+// the coin leaves "a quarter" meaning a quarter, where a credit figure would mean something else.
+// The last one is the whole coin, which is what the screen opens on
+const SELL_PARTS = Object.freeze([2500, 5000, 7500, 10000]);
+
+function partsOf(lots, exitTicks) {
+  const whole = lotsAmount(lots);
+  const out = [];
+  for (const bp of SELL_PARTS) {
+    const amount = bp >= 10000 ? whole : Math.floor((whole * bp) / 10000);
+    // a part that rounds away to nothing, or up to the whole position, is not a part: the whole
+    // coin is already the last chip, and a chip that sells what the chip beside it sells says
+    // nothing. A position of a few credits therefore offers one chip, not four
+    if (amount < 1 || (bp < 10000 && amount >= whole)) continue;
+    if (out.some((p) => p.amount === amount)) continue;
+    const cut = cutLots(lots, amount);
+    out.push({ bp, amount, payout: paidFor(cut.sold, exitTicks) });
+  }
+  return out;
+}
+
 // --- the wallet ---------------------------------------------------------------------------------
 //
 //   pos      code -> [{ amount, entryTicks, at }, ...], the lots of that coin in the order they were
@@ -826,9 +1169,20 @@ function cannotBuy(st, code, amount, budget) {
   return null;
 }
 
-function cannotSell(st, code) {
+// Why a sale of `amount` credits of stake cannot be made. `amount` left out asks the weaker question
+// the screen asks of every row ("is there anything to sell at all"), because 0 and nothing are the
+// whole coin (the note, section 6).
+// There is no floor of MIN_BUY here and that is deliberate: MIN_BUY is the smallest BET this casino
+// takes, and a sale is not a bet. Slicing a sale into ones cannot pay more than selling in one go
+// (payoutOf floors), so a small sale is only a small sale
+function cannotSell(st, code, amount) {
   if (!rowOf(code)) return 'no such coin';
-  if (!st.pos[code]) return 'nothing is held in ' + code;
+  const lots = st.pos[code];
+  if (!lots) return 'nothing is held in ' + code;
+  const want = sellTake(lots, amount);
+  if (!Number.isSafeInteger(want) || !(want >= 1)) return 'a sale takes a whole number of credits';
+  const whole = lotsAmount(lots);
+  if (!(want <= whole)) return 'only ' + whole + ' is held in ' + code;
   return null;
 }
 
@@ -838,7 +1192,9 @@ function whyNot(st, op, budget) {
   const name = op && typeof op === 'object' ? op.op : null;
   if (!OPS.includes(name)) return 'unknown action';
   if (!st) return 'there is no wallet';
-  const no = name === 'buy' ? cannotBuy(st, op.ticker, op.amount, budget) : cannotSell(st, op.ticker);
+  const no = name === 'buy'
+    ? cannotBuy(st, op.ticker, op.amount, budget)
+    : cannotSell(st, op.ticker, op.amount);
   if (no) return no;
   return badTime(st, op.nowMs);
 }
@@ -853,19 +1209,31 @@ function buy(st, code, amount, nowMs) {
   st.staked += amount;
   st.at = nowMs;
   st.net = -amount;
-  st.last = { op: 'buy', ticker: code, amount, ticks, entryTicks: ticks, payout: 0, pl: 0, heldMs: 0, at: nowMs };
+  // `left` is what is staked in this coin once the move is over, which a buy and a sale both have
+  // an answer to: the screen says what a partial sale left behind without working it out
+  st.last = {
+    op: 'buy', ticker: code, amount, ticks, entryTicks: ticks,
+    payout: 0, pl: 0, left: lotsAmount(st.pos[code]), heldMs: 0, at: nowMs
+  };
 }
 
-function sell(st, code, nowMs) {
+function sell(st, code, want, nowMs) {
   const lots = st.pos[code];
   const ticks = priceAt(code, nowMs);
-  // every lot by its own ratio, then added: no averaged entry on the money path (the note, section 6)
-  let paid = 0;
-  for (const l of lots) paid += payoutOf(l.amount, l.entryTicks, ticks);
-  const p = { amount: lotsAmount(lots), entryTicks: lots.length === 1 ? lots[0].entryTicks : avgEntry(lots), at: lots[0].at };
-  delete st.pos[code];
+  // the oldest lots first, the lot the boundary falls inside cut, and every slice paid by its own
+  // ratio: no averaged entry on the money path (the note, section 6)
+  const cut = cutLots(lots, sellTake(lots, want));
+  const paid = paidFor(cut.sold, ticks);
+  const took = lotsAmount(cut.sold);
+  const entry = cut.sold.length === 1 ? cut.sold[0].entryTicks : avgEntry(cut.sold);
+  const from = cut.sold[0].at;
+  const left = lotsAmount(cut.kept);
+  if (cut.kept.length) st.pos[code] = cut.kept;
+  else delete st.pos[code];
   st.moves += 1;
-  st.trades += 1;
+  // a round trip is a position CLOSED, so a sale that leaves something behind is not one yet: a
+  // position sold in ten pieces is one trip, not ten (the note, section 6)
+  if (!cut.kept.length) st.trades += 1;
   // the money the market hands over goes in the wallet's own record, which is where the balance
   // reads it from: a sale the merge drops takes its payout with it (the note, section 7)
   st.earned += paid;
@@ -873,8 +1241,8 @@ function sell(st, code, nowMs) {
   st.at = nowMs;
   st.net = paid;
   st.last = {
-    op: 'sell', ticker: code, amount: p.amount, ticks, entryTicks: p.entryTicks,
-    payout: paid, pl: paid - p.amount, heldMs: nowMs - p.at, at: nowMs
+    op: 'sell', ticker: code, amount: took, ticks, entryTicks: entry,
+    payout: paid, pl: paid - took, left, heldMs: nowMs - from, at: nowMs
   };
 }
 
@@ -884,7 +1252,7 @@ function act(st, op) {
   if (whyNot(st, op)) return st;
   const next = clone(st);
   if (op.op === 'buy') buy(next, op.ticker, op.amount, op.nowMs);
-  else sell(next, op.ticker, op.nowMs);
+  else sell(next, op.ticker, op.amount, op.nowMs);
   return next;
 }
 
@@ -935,7 +1303,13 @@ function clean(rec) {
     for (const l of raw) {
       if (!l || typeof l !== 'object') continue;
       const amount = l.amount, entryTicks = l.entryTicks, at = l.at;
-      if (!Number.isSafeInteger(amount) || amount < MIN_BUY || amount > MAX_BUY) continue;
+      // The floor is one credit and not MIN_BUY, and that moved with the partial sale (1.34.0). A
+      // lot under the minimum BET is a record `save` can now produce: a sale cuts the lot the
+      // boundary falls inside, so a position of two hundred sold down by a hundred and ninety-five
+      // leaves five credits in its first lot. Held to MIN_BUY, that lot would be dropped on the next
+      // read and the player would find part of their position gone for having sold the rest of it.
+      // Nothing is bought below MIN_BUY: cannotBuy is still the door, and this is the shelf
+      if (!Number.isSafeInteger(amount) || amount < 1 || amount > MAX_BUY) continue;
       // the price has to be one THIS coin can reach, not one some coin can: a lot bought at a tick
       // outside its own band is a lot the market never sold, and its sale would pay a ratio the
       // band says is impossible
@@ -1072,8 +1446,14 @@ function coinView(st, row, nowMs, shape, budget, late) {
   const ticks = priceOn(row, nowMs);
   const first = rows[0];
   const held = st ? st.pos[row.code] : null;
+  // HOW BIG TODAY IS, which is the one thing the schedule adds to the screen (the note, section 4).
+  // The coin's own figure is what it IS (the `grade` axis and the list's tooltip), and this is what
+  // today happens to be: a day at 0.43x or at 1.75x of it. It is worked out here because the screen
+  // may not work anything out, and it leaks nothing a chart does not already show: a variance is
+  // not a direction, and the day it belongs to is the day the player is looking at
+  const todayBp = Math.round(row.volBp * Math.sqrt(varOfDay(row, Math.floor(nodeOf(nowMs) / NODES_PER_DAY))));
   const out = {
-    code: row.code, name: row.name, grade: row.grade, volBp: row.volBp,
+    code: row.code, name: row.name, grade: row.grade, volBp: row.volBp, volTodayBp: todayBp,
     base: row.base, baseTicks: row.baseTicks,
     floorTicks: row.floorTicks, capTicks: row.capTicks,
     ticks,
@@ -1106,7 +1486,11 @@ function coinView(st, row, nowMs, shape, budget, late) {
       payout,
       pl: payout - amount,
       plBp: bpOf(payout, amount),
-      moveBp: bpOf(ticks, entry)
+      moveBp: bpOf(ticks, entry),
+      // What the screen may sell, each part priced HERE. The screen holds no arithmetic of its own
+      // (games/README.md, section 6), so a chip that sells a quarter has to arrive with the quarter
+      // and with what the quarter fetches, and the figure on the Sell button is one of these
+      parts: partsOf(held, ticks)
     };
   }
   // `can.buy` is about the smallest buy there is: the screen greys the coin out when even the
@@ -1171,13 +1555,17 @@ module.exports = {
   priceAt, candles, TICKERS, CODES,
   // the game
   newWallet, act, whyNot, view, idleView, payoutOf, grossOf,
+  // the partial sale's own arithmetic, exported for the same reason payoutOf is: the suite has to
+  // weigh the money with the function that moves it, not with a second copy of it
+  cutLots, paidFor, partsOf, sellTake,
   // storage
   save, load, clean, newer, merge, same, kept, netOf, REC_FIELDS, MAX_FIELDS,
   // constants a host or a test reads
-  OPS, MIN_BUY, MAX_BUY, MAX_LOTS, TICKS_PER_CREDIT, FEE_NUM, FEE_DEN,
+  OPS, MIN_BUY, MAX_BUY, MAX_LOTS, SELL_PARTS, TICKS_PER_CREDIT, FEE_NUM, FEE_DEN,
   EPOCH_MS, MS_PER_MIN, MIN_PER_DAY, LEVELS, MAX_MINUTE,
   SUB, SUB_LEVELS, MS_PER_NODE, NODES_PER_DAY, MAX_NODE, WICK_SAMPLES,
   BAND, SPAN, HARD, BAND_X, DRIFT, FAIR_DRIFT, BEND_GUARD, ALIVE_DAYS, ALIVE_FRACTION,
+  VAR_DAYS, VAR_WEEK, VAR_MAX, SCHED_DAY, SCHED_NODE,
   squash, liveliness,
   // Test only, and nothing outside test/market.test.js may reach in here. `setClock` is in it
   // because it can switch off the refusal that keeps the future out of reach, and `lane` because a
@@ -1189,8 +1577,25 @@ module.exports = {
       if (!r) throw new RangeError('no such coin: ' + code);
       return buildRow(r.code, r.name, r.grade, r.base, r.volBp, r.code + '#' + k);
     },
-    // throws the descent cache away, so the next price is computed the cold way
-    chill(row) { row.path.length = 0; row.depth = 0; },
-    setClock, priceOn, logDevAt, nodeOf, msOfNode, sumAt, nodeZ, probit, rowOf
+    // throws every descent cache away, so the next price is computed the cold way. Both lattices
+    // and the cutover sum, because a post-cutover price leans on all three
+    chill(row) {
+      row.path.length = 0; row.depth = 0;
+      row.dPath.length = 0; row.dDepth = 0; row.dDay = -1;
+      row.cutSum = null;
+    },
+    // ...and the day caches alone, which is how a sweep over one day is made to miss every frame
+    chillDay(row) { row.dPath.length = 0; row.dDepth = 0; row.dDay = -1; },
+    setClock, priceOn, logDevAt, nodeOf, msOfNode, sumAt, nodeZ, probit, rowOf,
+    // the day schedule (the note, section 4). `beforeSchedule` is the price the lattice gave before
+    // the schedule existed, which is what test/market-grid.js's frozen 1.30.1 table is compared
+    // against: the claim that cut is still exactly the claim it was
+    walkAt, varAt, varOfDay, dayWalk, dayTotal, weekOrder, ensureDays,
+    beforeSchedule(row, tMs) {
+      const n = nodeOf(tMs);
+      const t = Math.round(row.baseTicks * Math.exp(squash(sumAt(row, n) - DRIFT * row.v * n)));
+      if (t < row.floorTicks) return row.floorTicks;
+      return t > row.capTicks ? row.capTicks : t;
+    }
   }
 };

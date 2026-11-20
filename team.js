@@ -96,10 +96,24 @@ async function sync(cfg, totals, sevenDay, version) {
   const byModel = {};
   for (const k of Object.keys(totals.byModel || {}).slice(0, 12)) {
     const v = totals.byModel[k];
-    byModel[k.slice(0, 32)] = { tokens: Math.round(v.tokens), cost: Math.round(v.cost * 100) / 100 };
+    // kinds travels only where the second consent was given (`cfg.stats`). It is the figure the
+    // aggregate is built from, and `cost` has already folded the four kinds together with a price
+    // list the weekly limit does not follow, so without it a PC is in the table and out of the
+    // sample. Where consent is absent the field is simply not sent and the server defaults it
+    const kinds = Array.isArray(v.kinds) ? v.kinds.map((n) => Math.round(n)) : null;
+    byModel[k.slice(0, 32)] = Object.assign(
+      { tokens: Math.round(v.tokens), cost: Math.round(v.cost * 100) / 100 },
+      cfg.stats && kinds && kinds.length === 4 ? { kinds } : null
+    );
   }
   const post = await request('POST', '/report', {
     team, pc_id: cfg.pcId, name: displayName(cfg.name), window_reset: sevenDay.resets_at,
+    // A SECOND, SEPARATE ANSWER (extension.js). The first one puts this PC in its own account's
+    // table; this one says these figures may also be counted into aggregate statistics that get
+    // published. The first does not imply the second: it names one purpose, and a reader who
+    // agreed to it agreed to that purpose. Absent or refused, the row is still stored and still
+    // shown to that account's own PCs, and simply is not in the aggregate
+    stats: cfg.stats === true,
     account_pct: sevenDay.used_percentage == null ? null : Math.max(0, Math.min(100, sevenDay.used_percentage)),
     cost: Math.round(totals.cost * 100) / 100, tokens: Math.round(totals.tokens), by_model: byModel, version: String(version || '').slice(0, 16),
     plan: PLANS.indexOf(cfg.plan) >= 0 ? cfg.plan : null
