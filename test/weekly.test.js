@@ -146,6 +146,22 @@ test('a reading carries the raw token counts, four kinds per model', async () =>
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// Reported 2026-11-20. A five-person account read 45% after the witnessed subtraction, which is
+// $10.7 per point where every clean reading is $21.6 to $31.4. Both other bounds overstate when
+// the series is short or the PC is never alone, and a ceiling is the one thing that catches it
+test('no PC may claim to burn the week faster than any account ever has', () => {
+  const C = W.CEILING_RATE;
+  assert.ok(C.max_20x >= 0.0462, 'below the fastest ever measured: ' + C.max_20x);
+  assert.ok(C.max_20x <= 0.06, 'so loose it binds on nothing: ' + C.max_20x);
+  // the reported case: $483 of use, and the subtraction had left 45 of the account's 76
+  assert.ok(483 * C.max_20x < 45, 'the ceiling has to bind here');
+  assert.ok(Math.abs(483 * C.max_20x - 24) < 2, 'at: ' + (483 * C.max_20x).toFixed(1));
+  // the 1.30.0 account, which had nobody outside its table: the ceiling must not touch it
+  assert.ok(886.77 * C.max_20x > 41, 'it would invent people on an account that has none');
+  // the tiers keep the reference rates' own ratios, so a Max 5x is not held to a Max 20x limit
+  assert.ok(Math.abs(C.max_5x / C.max_20x - W.REFERENCE_RATE.max_5x / W.REFERENCE_RATE.max_20x) < 0.01);
+});
+
 test('the series holds a week at the poll cadence', () => {
   // 800 was a reading every ten minutes. At sixty seconds that is thirteen hours
   assert.ok(W.MAX_SAMPLES >= 10000, 'cap: ' + W.MAX_SAMPLES);

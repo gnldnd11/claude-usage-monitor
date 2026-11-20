@@ -39,6 +39,25 @@ const MAX_SAMPLES = 10000;
 // The other tiers scale by their limit relative to Max 20x. Rough on purpose, and labelled as such
 // on screen; a measured rate replaces it as soon as one exists
 const REFERENCE_RATE = { max_20x: 0.0364, max_5x: 0.1456, pro: 0.728 };
+
+// THE FASTEST ANY ACCOUNT HAS BEEN SEEN TO BURN, per weighted dollar. A ceiling, never an
+// estimate: no figure this file produces may claim a PC spent the week quicker than any whole
+// account has ever been measured spending it.
+//
+// Measured the only way it can be measured without a guess, on accounts where every PC shares so
+// the account's own percentage can be divided by that whole account's own spend: 0.0319 (user
+// account, 2026-11-20), 0.0364 (calibration, 2026-11-12) and 0.0462 %/$ (the 1.30.0 report). The
+// highest of the three, with room above it, is the ceiling for Max 20x; the other tiers scale by
+// their limit as REFERENCE_RATE does.
+//
+// WHY IT IS SAFE WHERE A REFERENCE RATE IS NOT. Multiplying each PC's spend BY a constant invents
+// people: on the 1.30.0 account, which had nobody outside its table, the reference rate would
+// have drawn 8.7% as PCs that do not exist. A ceiling only ever takes a number down, so it cannot
+// put anybody on the screen who is not there, and on that same account it binds at exactly the
+// account's own measured rate and changes nothing. Reported 2026-11-20: a five-person account
+// still read 45% after the witnessed subtraction, which is $10.7 per point against $21.6 to
+// $31.4 everywhere it has been read cleanly.
+const CEILING_RATE = { max_20x: 0.05, max_5x: 0.2, pro: 1.0 };
 function tierKey(tier) {
   const t = String(tier || '').toLowerCase();
   if (/20x/.test(t)) return 'max_20x';
@@ -490,6 +509,10 @@ async function report(sevenDay, now, tier) {
   // share cannot be larger than the week minus what somebody else demonstrably spent
   const others = othersFloor(samples, resetsAt, pct);
   if (pct != null) share = Math.min(share, Math.max(0, pct - others));
+  // ...and the ceiling (CEILING_RATE above), which binds where the other two are loose: a short
+  // or coarse series leaves little witnessed, and a PC that is never alone measures a rate that
+  // is not its own. Both of those overstate, and both are overstatements this can see
+  share = Math.min(share, windowCost * CEILING_RATE[tk || 'max_20x']);
 
   return {
     host: os.hostname(),
@@ -510,5 +533,5 @@ async function report(sevenDay, now, tier) {
 module.exports = {
   init, scan, sample, report, setProjectsDir, windowTotals,
   // exposed for tests
-  _internal: { tierKey, REFERENCE_RATE, MAX_SAMPLES, costOf, priceOf, modelLabel, estimateRate, othersFloor, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
+  _internal: { tierKey, REFERENCE_RATE, CEILING_RATE, MAX_SAMPLES, costOf, priceOf, modelLabel, estimateRate, othersFloor, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
 };

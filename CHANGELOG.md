@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.33.1: Nobody burns the week faster than any account ever has
+
+- **A five-person account still read 45% of the week for one PC after everything 1.32.4 took off it.** That is $10.7 of use per point of the limit, where every reading taken on an account with nothing hidden from it has been between $21.6 and $31.4. The subtraction had caught 31 points and stopped: it only sees stretches this PC sat out whole, and a series recorded ten minutes apart, on a machine that is rarely the only one working, has few of those.
+- **There is now a ceiling, and it is the only honest kind of constant here.** No figure may say a PC spent the week quicker than any whole account has ever been measured spending it, which on three accounts where every PC shares came to 0.0319, 0.0364 and 0.0462 percent per dollar. A ceiling only takes a number down, so it cannot put anyone on the screen who is not there, which is exactly what multiplying by a constant rate would do: on the account 1.30.0 was reported from, that would have drawn 8.7% as PCs that do not exist, and this ceiling leaves that same account untouched.
+- Accounts where every PC shares are unaffected in every case: those rows are the account's own percentage divided by what each PC spent, which is exact and needs no bound.
+
 ## 1.33.0: The raw token counts, kept apart from the price list
 
 - **Everything this extension says about a shared account's weekly limit goes through one number, how much of the limit a dollar of use costs, and that number is borrowed rather than measured.** The dollars are API list prices; the weekly limit is not spent in proportion to them. On three accounts whose own rate can be read cleanly, each account's week over that whole account's spend, it came out 0.0319, 0.0364 and 0.0462 percent per dollar: a spread of 1.45x, which is why a single constant cannot be used and every figure built on one is a bound rather than a reading.
