@@ -101,6 +101,31 @@ test('readings from an earlier window are not counted into this one', () => {
     { t: Date.now(), pct: 9, r: r2, cost: 0 }], r2, 9), 9);   // 0 -> 3 -> 9, all with no spend here
 });
 
+// Both bounds are read off intervals, and an interval is only usable where one side of it is
+// still, so a long interval says less than two short ones. The poll is every 60s; a reading is
+// kept whenever anything moved, and a run where nothing did is one row with its clock pushed on
+test('a reading is kept whenever anything moved, and a quiet run stays one row', async () => {
+  const r = Math.floor(Date.now() / 1000) + 86400;
+  const kept = [];
+  weekly.init({ load: () => [], save: (a) => { kept.length = 0; kept.push(...a); } });
+  weekly.setProjectsDir(path.join(TMP, 'none'));       // no transcripts: cost stays 0 throughout
+  await weekly.sample(40, r); await new Promise((f) => setTimeout(f, 40));
+  await weekly.sample(40, r); await new Promise((f) => setTimeout(f, 40));   // nothing moved: folded
+  await weekly.sample(41, r); await new Promise((f) => setTimeout(f, 40));   // the week moved: kept
+  const s = W.getSamples();
+  assert.equal(s.length, 2, 'rows: ' + s.length);
+  assert.deepEqual(s.map((x) => x.pct), [40, 41]);
+  assert.ok(kept.length === 2, 'the series was saved');
+  // and the folded row carries the LATER clock, so the interval it closes is described exactly
+  assert.ok(s[0].t <= s[1].t);
+  W.setSamples([]);
+});
+
+test('the series holds a week at the poll cadence', () => {
+  // 800 was a reading every ten minutes. At sixty seconds that is thirteen hours
+  assert.ok(W.MAX_SAMPLES >= 10000, 'cap: ' + W.MAX_SAMPLES);
+});
+
 test('readings from different weekly windows are never paired', () => {
   const e = W.estimateRate([{ t: 0, pct: 90, r: 1e9, cost: 500 }, { t: HOUR, pct: 3, r: 1e9 + 7 * 86400, cost: 10 },
     { t: 2 * HOUR, pct: 7, r: 1e9 + 7 * 86400, cost: 50 }]);

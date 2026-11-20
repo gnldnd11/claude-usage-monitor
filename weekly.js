@@ -26,7 +26,11 @@ const KEEP_MS = 8 * DAY;          // a weekly window starts at most 7 days back;
 const CHUNK = 8 * 1024 * 1024;    // read size per await; keeps each slice of work short
 const MIN_DP = 3;                 // percent points between two readings before a ratio is trusted
 const MIN_RATIOS = 3;
-const MAX_SAMPLES = 800;
+// A week of readings at the poll's own cadence, with runs of no change folded into one row each
+// (sample() below). 800 was sized for a reading every ten minutes and is 13 hours at sixty
+// seconds; the series is four numbers a row, so ten thousand of them is a few hundred KB at the
+// very worst and in practice far less, since only activity adds rows
+const MAX_SAMPLES = 10000;
 
 // Percent of the weekly limit per API-equivalent dollar, before this PC has measured its own.
 // Max 20x: 2026-11-12 on a one-person account used from two PCs, both counted over the same weekly
@@ -352,15 +356,28 @@ function othersFloor(list, resetsAt, pct) {
 }
 
 // A new reading of the account's weekly % arrived (usage endpoint, tap, or response header)
+// RESOLUTION IS THE WHOLE GAME HERE, so a reading is kept whenever anything moved.
+//
+// Both bounds this file computes are read off INTERVALS between readings, and an interval is
+// usable only where one side of it is still: othersFloor wants intervals this PC sat out whole,
+// estimateRate wants intervals nobody else was in. A ten minute interval is long enough for both
+// to have happened inside it, and then it says nothing and is dropped. Halving the interval
+// roughly halves the chance of an overlap, so the series gets finer rather than longer: the
+// percentage is polled every 60s anyway and this now keeps what that poll saw.
+//
+// RUNS OF NOTHING ARE FOLDED instead of appended. Where neither the percentage nor this PC's
+// spend has moved, the last reading's clock is pushed forward and no row is added: the interval
+// from the row before it is still exactly described, and an hour of an idle machine costs one
+// row rather than sixty. So the series grows with ACTIVITY, and a week of it is far below the cap.
 function sample(pct, resetsAt) {
   if (pct == null || !resetsAt) return;
   scan().then(() => {
     const now = Date.now();
     const cost = costSince(windowStartOf(resetsAt, now));
     const last = samples[samples.length - 1];
-    // Keep the series small: a reading that changed nothing within ten minutes adds nothing
-    if (last && sameWindow(last, { r: resetsAt }) && last.pct === pct && now - last.t < 10 * 60 * 1000) return;
-    samples.push({ t: now, pct, r: resetsAt, cost });
+    const still = last && sameWindow(last, { r: resetsAt }) && last.pct === pct && last.cost === cost;
+    if (still) last.t = now;                    // extend the quiet stretch, do not split it
+    else samples.push({ t: now, pct, r: resetsAt, cost });
     samples = samples.filter((s) => now - s.t < KEEP_MS).slice(-MAX_SAMPLES);
     try { if (store && store.save) store.save(samples); } catch (e) { /* ignore */ }
   }).catch(() => {});
@@ -452,5 +469,5 @@ async function report(sevenDay, now, tier) {
 module.exports = {
   init, scan, sample, report, setProjectsDir, windowTotals,
   // exposed for tests
-  _internal: { tierKey, REFERENCE_RATE, costOf, priceOf, modelLabel, estimateRate, othersFloor, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
+  _internal: { tierKey, REFERENCE_RATE, MAX_SAMPLES, costOf, priceOf, modelLabel, estimateRate, othersFloor, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
 };

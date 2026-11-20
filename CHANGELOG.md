@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.32.6: A reading every time something moved, instead of one every ten minutes
+
+- **The two bounds behind a shared account's figures are read off the gaps between readings, and the gaps were ten minutes wide.** One of them wants a gap this PC sat out whole; the other wants a gap nobody else was in. Ten minutes is long enough for both to have happened inside one, and a gap like that says nothing and is thrown away. The percentage is polled every sixty seconds anyway, and a reading is now kept whenever anything moved, so roughly a tenth as many gaps have something in them from both sides.
+- **A quiet stretch is still one row.** Where neither the account's percentage nor this PC's spend has moved, the last reading's clock is pushed forward instead of a row being added: the gap it closes is described exactly as before, and an hour of an idle machine costs one row rather than sixty. The series grows with activity rather than with time.
+- The cap went from 800 readings to 10,000. 800 was sized for one every ten minutes and is thirteen hours at sixty seconds, which would have thrown away most of a week.
+
 ## 1.32.5: Turning sharing on no longer changes what this PC did
 
 - **A lone sharing PC read one number with sharing off and another with it on.** Sharing adds PCs to a table; it does not change what this PC spent, so the two have to agree. The sheet with sharing off already showed the tighter of two bounds, and the table ignored it and worked from one of them. The row is now that same figure, whichever way the switch is set.

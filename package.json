@@ -2,7 +2,7 @@
   "name": "claude-usage-crab",
   "displayName": "Claude Usage Crab",
   "description": "Claude Code usage in the status bar and sidebar: live session and weekly rate limits, context window, tokens and cost. Plus the subagents that are running, as pixel characters. Local, read-only.",
-  "version": "1.32.5",
+  "version": "1.32.6",
   "publisher": "saegim",
   "license": "MIT",
   "icon": "marketplace-icon.png",
