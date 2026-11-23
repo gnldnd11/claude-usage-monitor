@@ -1042,7 +1042,7 @@ test('shop: open answers with the catalog, nothing owned and nothing held', () =
   assert.equal(r.n, 11, 'the reply echoes the request number');
   assert.equal(r.error, undefined);
   assert.deepEqual(r.state.owned, [], 'a fresh install owns nothing');
-  // the shelf is the four scenes, each with what may go in it and what that costs. The screen is
+  // the shelf is the scenes, each with what may go in it and what that costs. The screen is
   // handed those figures and prices nothing itself
   assert.deepEqual(r.state.slots.map((s) => s.id), shop.SLOTS.map((s) => s.id));
   assert.deepEqual(r.state.slots.map((s) => s.opts.map((o) => o.price)),
@@ -1051,6 +1051,7 @@ test('shop: open answers with the catalog, nothing owned and nothing held', () =
   const row = (slot, key) => r.state.slots.filter((s) => s.id === slot)[0].opts.filter((o) => o.key === key)[0];
   assert.equal(row('quiet', 'idle').owned, true);
   assert.equal(row('typing', 'working').owned, true);
+  assert.equal(row('work', 'coding').owned, true, 'the shared free drawing is not had in both scenes');
   assert.equal(row('burn', 'despair').owned, true);
   assert.equal(row('burn', 'float').owned, false);
   assert.equal(row('quiet', 'sleep').owned, false, 'a priced drawing was had for nothing');
@@ -1066,13 +1067,13 @@ test('shop: open answers with the catalog, nothing owned and nothing held', () =
   // is why quiet is settled here and not after the purchase a few tests down
   assert.deepEqual(r.state.slots.map((s) => s.pick),
     shop.SLOTS.map((s) => s.opts.filter((k) => !shop.itemOf(k).price).length > 1));
-  assert.deepEqual(r.state.slots.map((s) => s.pick), [false, true, false, false]);
+  assert.deepEqual(r.state.slots.map((s) => s.pick), [false, true, true, false, false]);
   assert.equal(r.free, r.balance, 'nothing is riding, so the whole balance may be spent');
   assert.equal(shopRec(), null, 'opening the shop wrote a record');
 });
 
-// The last row of the shelf, which is not a fifth scene: a set of drawings that belong to no
-// moment at all. The reply carries what the cells ARE and not which of them are in play, exactly
+// The last row of the shelf, which is not one of the scenes and is not the next one either: a set
+// of drawings that belong to no moment at all. The reply carries what the cells ARE and not which of them are in play, exactly
 // as it carries the scenes' drawings and not which one is worn: that half rides the data push, and
 // a second copy here could disagree with it between two messages.
 //
@@ -1245,10 +1246,11 @@ test('shop: what every push carries is what was bought and what is worn', () => 
   assert.deepEqual(d.shop.owned, shop.view(shopRec()).owned);
   assert.deepEqual(d.shop.owned, [shop.slotOf('float')], 'the purchase above is not on the push');
   assert.equal('spent' in d.shop, false, 'the push carries money it has no use for');
-  // and the four scenes, worked out by shop.js out of the record and the stored choice. The one
+  // and the scenes, worked out by shop.js out of the record and the stored choice. The one
   // just bought is worn without a second press: a purchase that showed nothing would read as
   // nothing having happened
-  assert.deepEqual(d.shop.slots, { quiet: 'idle', typing: 'coding', burn: 'float', spent: 'stunned' });
+  assert.deepEqual(d.shop.slots,
+    { quiet: 'idle', typing: 'coding', work: 'working', burn: 'float', spent: 'stunned' });
   // ...and what is in play with no scene at all. EVERYTHING OWNED, which for a reader who has
   // bought only the floating crab is nothing: the pool's default is "everything owned", and
   // ownership is the same question `owns` answers everywhere else. A priced drawing showing up
@@ -1268,6 +1270,15 @@ test('shop: a scene takes only a drawing that goes in it and has been bought', (
   wear('typing', 'working');
   assert.equal(worn().typing, 'working');
   assert.equal(gs.data.mascotSlotsV1.typing, 'working', 'the choice is not in globalState');
+  // ...and the same in the scene that governs the working step's busy cell, which is the press the
+  // reader did not have (docs/shop-spec.md, 3-1b). ONE PRESS MOVES ONE CELL: the typing scene keeps
+  // what it was just given, so the two cells that both mean "a reply is landing" answer separately
+  wear('work', 'coding');
+  assert.equal(worn().work, 'coding');
+  assert.equal(worn().typing, 'working', 'one scene\'s choice reached another scene');
+  assert.equal(gs.data.mascotSlotsV1.work, 'coding');
+  wear('work', 'working');
+  assert.equal(worn().work, 'working', 'the drawing that cell always had could not be put back');
   // and back again, by name, which is what keeps an explicit choice of the free drawing
   wear('burn', 'despair');
   assert.equal(worn().burn, 'despair', 'the bought drawing could not be taken back out');
@@ -1291,9 +1302,10 @@ test('shop: a drawing nobody bought cannot be worn, whatever is stored', () => {
   // the stored choice is read against what the reader owns on EVERY push, so a record that loses a
   // merge in another window (or a store edited by hand) cannot leave a drawing on screen that was
   // never paid for
-  assert.deepEqual(shop.wornSlots([], { burn: 'float' }), { quiet: 'idle', typing: 'coding', burn: 'despair', spent: 'stunned' });
+  const FREE = { quiet: 'idle', typing: 'coding', work: 'working', burn: 'despair', spent: 'stunned' };
+  assert.deepEqual(shop.wornSlots([], { burn: 'float' }), FREE);
   assert.deepEqual(shop.wornSlots([], { burn: 'nothing', typing: 'idle', quiet: 'float', bogus: 'x' }),
-    { quiet: 'idle', typing: 'coding', burn: 'despair', spent: 'stunned' }, 'a stored choice was believed');
+    FREE, 'a stored choice was believed');
   assert.equal(shop.whyNotWear([], 'burn', 'float'), 'that has not been bought');
   assert.equal(shop.whyNotWear([shop.slotOf('float')], 'burn', 'float'), null);
   assert.equal(shop.whyNotWear([], 'burn', 'coding'), 'that does not go there');

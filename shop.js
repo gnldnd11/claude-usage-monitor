@@ -97,7 +97,7 @@ const REPLICA_RE = /^[0-9a-f]{16}$/;
 const PRICES = Object.freeze([1000, 10000, 100000, 1000000]);
 
 // The prefix every record key carries (`mascot:float`). It names the KIND of thing bought, not the
-// scene it is worn in, so the four scenes below did not move a single stored key when they arrived:
+// scene it is worn in, so the scenes below did not move a single stored key when they arrived:
 // everything here is a drawing of the crab. A shop that one day sells something that is not is a
 // second prefix, not a migration.
 const SLOT = 'mascot';
@@ -129,29 +129,41 @@ const ITEMS = Object.freeze([
 // its place in every record and is not drawn on the shelf, because the shelf is built from ITEMS.
 const RETIRED = Object.freeze([]);
 
-// --- THE FOUR SCENES ----------------------------------------------------------------------------
+// --- THE FIVE SCENES ----------------------------------------------------------------------------
 //
-// What the reader actually sees is four moments, and these are the four they named: quiet, typing,
-// burning through the limit, and out of it. Each one is a SLOT holding one drawing, with the free
-// drawing it has always held and whatever else may go in it.
+// What the reader sees is five moments, and these are the ones they named: quiet, typing, working
+// while the limit fills, burning through it, and out of it. Each one is a SLOT holding one drawing,
+// with the free drawing it has always held and whatever else may go in it.
+//
+// THE ORDER IS THE LADDER. The shelf draws them in this order (two abreast where there is room,
+// then the next row) and `when` says how much of the limit is gone, so reading it runs from
+// "nothing answered" to "limit used up". Quiet stands first because it is the one scene that is not
+// on that ladder: it crosses two steps and what it answers is the activity.
 //
 // A slot is NOT a cell of MASCOT_ART. That table is four steps by two columns and it is not
 // touched: webview.js keeps it as the drawing every cell uses by default and reads a slot only
-// where one governs the cell (MASCOT_SLOT there). The mapping, and the one judgement in it:
+// where one governs the cell (MASCOT_SLOT there). The mapping:
 //
 //   idle step,    quiet  ->  quiet      working step, quiet  ->  quiet
-//   idle step,    busy   ->  typing     working step, busy   ->  NO SLOT, always `working`
+//   idle step,    busy   ->  typing     working step, busy   ->  work
 //   despair step, both   ->  burn       stunned step, both   ->  spent
 //
-// THE WORKING STEP'S BUSY CELL IS LEFT ALONE, and that is a decision rather than an omission. It is
-// the one picture that says the limit is filling up WHILE you work, and a slot over it would let
-// the typing choice flatten 5% and 65% into the same drawing: the step axis would then say nothing
-// at all in the busy column until despair. The reader asked for four scenes and this is not one of
-// them, so it keeps what it had. `working` is still choosable, in the typing slot, where it is an
-// alternative rather than the only answer.
-// `when` is SHORT because of where it is drawn: two scenes sit side by side at the sidebar width
-// this panel is built for, which leaves about 90px of 10.5px text, and a line that ellipsizes
-// explains nothing (measured, docs/game-panels.md section 2)
+// THE WORKING STEP'S BUSY CELL IS A SCENE OF ITS OWN (2026-11-24), and the judgement that kept it
+// out of the typing scene is why it is its own rather than typing's. That cell is the one picture
+// which says the limit is filling up WHILE you work, and letting the typing choice reach it would
+// flatten 5% and 65% of the limit into one drawing: the step axis would then say nothing at all in
+// the busy column until despair. It was left with NO scene instead, and what that cost came back
+// as a fault report: a reader who had put the laptop crab in a scene labelled `Replies landing` was
+// shown the busy one while replies were landing, which is the drawing they did not choose. So the
+// cell is named now, its fallback is the drawing it always had, and the step axis is kept by that
+// fallback rather than by the cell being unreachable (docs/shop-spec.md, 3-1b and 5-1a).
+//
+// `when` IS A RUNG OF THE LADDER rather than a description of the activity. Typing and working are
+// both "a reply is landing" and what tells them apart is the limit, so stating the activity twice
+// would leave one of the two rows with nothing to say. It is SHORT because of where it is drawn,
+// under the scene's name in one cell of a two-column grid: 132.5px of 10.5px text at the sidebar
+// width this panel is built for, and a line that ellipsizes explains nothing (measured 2026-11-24,
+// docs/shop-spec.md section 3-1b; the earlier "about 90px" here predated the two-line heading)
 //
 // QUIET HOLDS TWO AND ITS FALLBACK DID NOT MOVE. The sleeping crab (2026-11-20) went in beside the
 // small one rather than over it. `free` is what a reader who has pressed nothing sees, and the
@@ -160,9 +172,19 @@ const RETIRED = Object.freeze([]);
 // anything, which is precisely what this fallback exists to make impossible. It is also what turns
 // the one scene that could not be chosen in (`pick` was false with a single drawing) into a row
 // with something to press. Making the sleeping crab the default is one word here if that is wanted.
+//
+// THE WORK SCENE SELLS NOTHING, and its second cell is a drawing another scene also holds. Both of
+// those are conditions rather than conveniences. Every drawing in the catalog already belongs to a
+// scene or to the pool, so a new cell can only hold a key some other scene has, and `shopForSale`
+// walks the whole shelf without de-duplicating: a PRICED key standing in two scenes would put the
+// one aiming bar on two cells at once. Only the free drawings may be shared, and `coding` is the one
+// which says the thing this cell shares with typing, that a reply is landing. Its id is `work` and
+// not `working`, because `working` is already a step's name and a drawing's key and a third meaning
+// would make a typo in MASCOT_SLOT invisible (docs/shop-spec.md, 3-1b).
 const SLOTS = Object.freeze([
   { id: 'quiet', name: 'Quiet', when: 'Nothing answered', free: 'idle', opts: ['idle', 'sleep'] },
-  { id: 'typing', name: 'Typing', when: 'Replies landing', free: 'coding', opts: ['coding', 'working'] },
+  { id: 'typing', name: 'Typing', when: 'Limit has room', free: 'coding', opts: ['coding', 'working'] },
+  { id: 'work', name: 'Working', when: 'Limit half gone', free: 'working', opts: ['working', 'coding'] },
   { id: 'burn', name: 'Burning', when: 'Limit mostly gone', free: 'despair', opts: ['despair', 'float'] },
   { id: 'spent', name: 'Spent', when: 'Limit used up', free: 'stunned', opts: ['stunned'] }
 ].map((s) => Object.freeze(Object.assign({}, s, { opts: Object.freeze(s.opts) }))));
@@ -218,12 +240,24 @@ for (const s of ITEMS.concat(RETIRED)) {
   // ...and a slot's options have to be rows, its default has to be one of its own options, and
   // that default has to be free: a slot whose fallback had a price would be a slot a reader who
   // bought nothing could not fill at all
+  // ...and a drawing that stands in MORE THAN ONE scene has to be free, which is the condition the
+  // fifth scene arrived under (docs/shop-spec.md, 3-1b). `shopForSale` in webview.js walks the whole
+  // shelf without de-duplicating and the one aiming bar is chosen by KEY alone, so a priced key
+  // standing in two scenes would put that bar on two cells at once and break "there is one mark on
+  // the whole screen". Free keys may be shared and one is: `coding` stands in typing and in work.
+  // It throws here rather than only being tested because every other rule in this block does, and a
+  // rule that lives in a test is a comment with a test beside it.
+  const inScenes = new Map();
   for (const s of SLOTS) {
     if (s.opts.indexOf(s.free) < 0) throw new Error('shop: ' + s.id + ' falls back to something it does not hold');
     for (const k of s.opts) {
       const it = itemOf(k);
       if (!it) throw new Error('shop: ' + s.id + ' holds ' + k + ', which is not a row');
       if (k === s.free && it.price) throw new Error('shop: ' + s.id + ' falls back to something priced');
+      if (inScenes.has(k) && it.price) {
+        throw new Error('shop: ' + k + ' is priced and stands in both ' + inScenes.get(k) + ' and ' + s.id);
+      }
+      inScenes.set(k, s.id);
     }
   }
   // ...and the pool: its key may not collide with a scene's (they share one preference object), it
@@ -503,7 +537,7 @@ function act(rec, op) {
 // Everything the screen needs and nothing more. There is nothing face down in a shop, so nothing is
 // withheld either; what is NOT here is a verdict per row, and that is deliberate.
 //
-// The shelf is the four scenes, each with what may go in it: a cell is four facts (what it is,
+// The shelf is the scenes, each with what may go in it: a cell is four facts (what it is,
 // what it costs, is it mine, can choosing it change anything) and the screen draws them.
 // What the screen may not do is work out a PRICE, and it does not: the only comparison it makes is
 // the stake chips' own, the price against what this screen may spend (webview.js, freeFor), and the
@@ -633,7 +667,7 @@ function createHandler(deps) {
 }
 
 module.exports = {
-  // the catalog, the four scenes, and the pool that is not one
+  // the catalog, the scenes, and the pool that is not one
   ITEMS, SLOTS, RETIRED, PRICES, SLOT, OPS, slotOf, itemOf, owns, heldIn,
   POOL, POOL_ID, POOL_NAME, POOL_WHEN, POOL_CELLS,
   // what the preference and the record mean together. The host's, and nobody else's

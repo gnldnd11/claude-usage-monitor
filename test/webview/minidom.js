@@ -1,7 +1,8 @@
 // A small DOM for tests: HTML parser, selectors and serializer, so the webview code runs without jsdom
 // (no dependencies). Supports tags, attributes, text, comments, void and self-closing elements, raw
 // style/script, selectors (tag #id .class [a] [a="v"] :not(...), descendant, comma), classList, hidden,
-// disabled, title, textContent, innerHTML, children, closest, contains, bubbling events, click(), and a
+// disabled, title, textContent, innerHTML, children, closest, contains, bubbling events, click(),
+// scrollIntoView (which moves nothing and records the ask in doc.scrollLog), and a
 // minimal focus model: activeElement, focus()/blur(), hasFocus() (whether the document itself holds
 // the editor's focus, which a test moves with doc.winFocused), keys dispatched from the focused element with
 // Enter's default action pressing a focused button (as Chromium does).
@@ -112,6 +113,14 @@ class Element {
     (this.ownerDocument.focusLog = this.ownerDocument.focusLog || []).push(this.id || this.localName);
   }
   blur() { if (this.ownerDocument && this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = this.ownerDocument.body; }
+  // Nothing here scrolls, so this only RECORDS that it was asked to, which is all a test can check:
+  // what matters about a scroll is who asks for one and when (a press, not a repaint somebody else's
+  // window caused), and that is the same question whether or not pixels move
+  scrollIntoView(opts) {
+    if (!this.ownerDocument) return;
+    (this.ownerDocument.scrollLog = this.ownerDocument.scrollLog || [])
+      .push({ id: this.id || this.localName, block: opts && opts.block, behavior: opts && opts.behavior });
+  }
   contains(n) { for (let c = n; c; c = c.parentNode) if (c === this) return true; return false; }
   getBoundingClientRect() { return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
 }

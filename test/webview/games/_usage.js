@@ -18,11 +18,13 @@
 //      answered in the last three minutes says which column, so the same step is two drawings.
 //      The threshold is a clock and not a reading, so it has no deadband to walk (webview.js) and
 //      what is walked here instead is the edge itself, in both directions, on two steps.
-//   7. AND WHICH DRAWING IS IN WHICH SCENE. The shop sells drawings into four scenes (shop.js,
+//   7. AND WHICH DRAWING IS IN WHICH SCENE. The shop sells drawings into five scenes (shop.js,
 //      SLOTS) and the host puts the answer on every push, so a choice made anywhere changes the
 //      picture with no reading having moved. Which CELL each scene governs is the thing to get
-//      wrong: the working step's busy cell is governed by none of them, because it is the only
-//      picture that says the limit is filling up while you work.
+//      wrong, and EVERY ONE OF THE EIGHT IS GOVERNED (2026-11-24): the working step's busy cell
+//      used to be governed by none of them, so nothing anybody chose could reach it, and it has a
+//      scene of its own now whose default is the drawing it always had. What is walked below is
+//      which cell each scene reaches and, just as much, which cells it does NOT.
 //
 // THE SECOND MODE, `usage-nosession`, is the account that has no five-hour window at all: an
 // authenticated Ultra, where the host pushes five_hour: null for ever (2026-10-30). Half of this
@@ -64,7 +66,7 @@ function withWindow(h) {
     // THE HOST WORKED THAT OUT, not the page: it reads the reader's stored choice against what
     // they own, in one place (shop.js, wornSlots), and what arrives here is the answer. So this
     // helper pushes answers and never a choice, which is what the page actually gets
-    const WORN = { quiet: 'idle', typing: 'coding', burn: 'despair', spent: 'stunned' };
+    const WORN = { quiet: 'idle', typing: 'coding', work: 'working', burn: 'despair', spent: 'stunned' };
     const push = (sess, wk, hidden, quietFor, slots) => {
       toWebview({
         type: 'data',
@@ -199,8 +201,11 @@ function withWindow(h) {
         + ' the crab is ' + step.want + (step.why ? ' (' + step.why + ')' : ''), shown() === step.want, 'drew ' + shown());
       advance(400);
     }
-    // 7. THE FOUR SCENES, over that same table. Each row says which drawing is in which scene and
-    //    which cell of the table that reaches, and the one that reaches NOTHING is the point
+    // 7. THE SCENES, over that same table. Each row says which drawing is in which scene and which
+    //    cell of the table that reaches. EVERY CELL IS REACHABLE NOW (2026-11-24): the working
+    //    step's busy cell had no scene, so nothing anybody chose reached it. The rows at 55% are
+    //    that cell: its own scene's default, the choice that now reaches it, and the two steps and
+    //    columns beside it that the choice may NOT reach
     const SCENES = [
       { pct: 75, quiet: 0, slots: { burn: 'float' }, want: 'float', why: 'the burning scene, bought and worn' },
       { pct: 75, quiet: 600000, slots: { burn: 'float' }, want: 'float', why: 'both sides of that step, which has one picture' },
@@ -209,8 +214,11 @@ function withWindow(h) {
       { pct: 4, quiet: 0, slots: { burn: 'float' }, want: 'coding', why: 'nor a busy one' },
       { pct: 4, quiet: 0, slots: { typing: 'working' }, want: 'working', why: 'the typing scene IS the idle step\'s busy cell' },
       { pct: 4, quiet: 600000, slots: { typing: 'working' }, want: 'idle', why: 'and not its quiet one' },
-      { pct: 55, quiet: 0, slots: { typing: 'working' }, want: 'working', why: 'the working step keeps its own busy picture:' },
-      { pct: 55, quiet: 0, slots: { typing: 'coding' }, want: 'working', why: 'no scene governs that cell, so nothing chosen reaches it' },
+      { pct: 55, quiet: 0, slots: { typing: 'working' }, want: 'working', why: 'the typing scene stops at the idle step:' },
+      { pct: 55, quiet: 0, slots: { typing: 'coding' }, want: 'working', why: 'the working step has its own scene, whose default is the busy crab' },
+      { pct: 55, quiet: 0, slots: { work: 'coding' }, want: 'coding', why: 'and THAT scene is what puts the laptop crab in this cell, which is what was asked for twice' },
+      { pct: 55, quiet: 600000, slots: { work: 'coding' }, want: 'idle', why: 'and it reaches that cell only: the quiet side of the same step is the quiet scene' },
+      { pct: 4, quiet: 0, slots: { work: 'coding', typing: 'working' }, want: 'working', why: 'nor the step below it, which is the typing scene and answers with what IT holds' },
       { pct: 55, quiet: 600000, slots: { quiet: 'idle' }, want: 'idle', why: 'its quiet cell is the quiet scene' },
       { pct: 95, quiet: 0, slots: { burn: 'float', typing: 'working' }, want: 'stunned', why: 'and the spent step is its own scene' }
     ];
@@ -496,8 +504,12 @@ function noSession(h) {
     // the column is a clock, so the two cannot be reading each other
     push(at(0.5), 4.4, { last: null }); advance(400);
     ok('a quiet week on a quiet day is the small crab', shown() === 'idle', shown());
-    // and the four scenes reach this account exactly as they reach the other one: the pace is what
-    // picks the step and the step is what a scene hangs off
+    // and the scenes reach this account exactly as they reach the other one: the pace is what picks
+    // the step and the step is what a scene hangs off.
+    // THE PUSH NAMES FOUR OF THEM, which is this run's AN OLDER HOST: a window updated before the
+    // fifth scene existed is pushed a set with no `work` in it, and every cell a scene is missing
+    // for falls back to the table (webview.js, MASCOT_ART). Nothing read here is in that cell, so
+    // the four are what this account needs and the fifth's absence is part of what is being checked
     push(at(1.4), 4.4, { shop: { owned: ['mascot:float'], slots: { quiet: 'idle', typing: 'coding', burn: 'float', spent: 'stunned' } } }); advance(400);
     ok('and the floating crab where the burning scene reaches, on this account too', shown() === 'float', shown());
     push(at(0.5), 4.4); advance(400);
@@ -572,7 +584,7 @@ function noSession(h) {
 // chance is a test that fails on some runs. Always-wins and never-wins are both run.
 function cameo(h) {
   const { ok, advance, doc, $, toWebview, setRandom } = h;
-  const WORN = { quiet: 'idle', typing: 'coding', burn: 'despair', spent: 'stunned' };
+  const WORN = { quiet: 'idle', typing: 'coding', work: 'working', burn: 'despair', spent: 'stunned' };
   const DRAWINGS = ['idle', 'working', 'despair', 'stunned', 'coding', 'float', 'sleep', 'blackhole'];
   const mascot = () => $('mascot');
   const shown = () => {

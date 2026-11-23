@@ -238,10 +238,11 @@ function renderHtml(vars) {
              every ratio from 0.84 to 1.78, so a width with height:auto rendered them 49.5 to 104.5
              tall: every state change shoved the stat tiles below down or up, and a session reset
              (90%+ to single digits) did it in one 55px jump.
-             EIGHT DRAWINGS, TWO AXES, FOUR SCENES AND ONE POOL. The limit's step picks the row
+             EIGHT DRAWINGS, TWO AXES, FIVE SCENES AND ONE POOL. The limit's step picks the row
              (idle, working, despair, stunned) and whether anything has been answered lately picks
-             the column, and then the reader's own choice picks the picture wherever that cell is
-             one of the four scenes the shop sells into (webview.js, MASCOT_ART and MASCOT_SLOT).
+             the column, and then the reader's own choice picks the picture: every one of those
+             eight cells is governed by a scene now, though only two of the five scenes have
+             anything on sale in them (webview.js, MASCOT_ART and MASCOT_SLOT).
              The eighth belongs to no cell at all: it is in the pool, and it covers whatever is
              there for four seconds now and then (webview.js, the cameo). All eight are named here
              so the script only ever swaps the source for one of them.

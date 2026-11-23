@@ -576,15 +576,19 @@ module.exports = `
      It adds no colour and no type size: 12.5 for a scene's name, 11 for the price, 10.5 for when
      that scene shows and for a cell's word, which is three of the six (docs/game-panels.md,
      section 2). The one accent is the ember the roster's picked card already uses. --- */
-  /* THE FOUR SCENES. Each is a line saying which moment it is and a row of cells saying what may
+  /* THE SCENES. Each is a line saying which moment it is and a row of cells saying what may
      be in it. The cells are a grid with the column count set from the DATA (webview.js), so a
-     third drawing in any scene widens every row without a rule here changing */
+     third drawing in any scene widens every row without a rule here changing, and a fifth scene
+     (2026-11-24) added a row to the grid without one changing either */
   /* TWO SCENES ABREAST where there is room for two. A scene is as wide as its cells (two of 64 and
-     the gap between them = 132), so the track is that and the fourth of them cannot be half a
-     scene; at a 250px sidebar one track fits and the four stack instead, which is what every other
-     part of this panel does when the sidebar is narrow. Measured: the card is 541 at a 351px
-     sidebar with the four of them two-by-two, against 703 in one column, and the difference is
-     whether the button that buys something is above the fold on a 600px-tall sidebar. */
+     the gap between them = 132), so the track is that and none of them can be half a scene; at a
+     250px sidebar one track fits and they stack instead, which is what every other part of this
+     panel does when the sidebar is narrow. WHAT THE TWO TRACKS ARE WORTH was measured on the
+     version where the block and the button were always on screen: four scenes, the card 541 at a
+     351px sidebar two-by-two against 703 in one column, and the difference is whether the button
+     that buys something is above the fold on a 600px-tall sidebar. Neither figure is this version's,
+     since nothing is on screen here until a price is pressed; the current ones are in
+     docs/shop-spec.md section 3-1b, where the card opens at 616 with five scenes and 900 at 250. */
   .sh-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:11px 8px;}
   .sh-shead{display:flex;flex-direction:column;min-width:0;}
   .sh-sn{font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;}
@@ -622,15 +626,15 @@ module.exports = `
   .sh-cell.pick:hover:not(.on),.sh-cell.buy:hover:not(.aim){background:rgba(127,127,127,.09);}
   .sh-cell.pick:focus-visible,.sh-cell.buy:focus-visible{outline:2px solid var(--focus);
     outline-offset:1px;}
-  /* --- THE LAST ROW, which is not a fifth scene and is not drawn as one.
+  /* --- THE LAST ROW, which is not one of the scenes and is not drawn as one.
      WHY IT IS NOT IN THE GRID ABOVE, in two parts. Mechanically: that grid is a RECTANGLE, every
      scene given as many cells as the widest one has (webview.js), so a four-cell row among them
-     would make all four of them four wide, eleven of the twenty empty, and the shelf drop from two
+     would make all five of them four wide, eleven of the twenty empty, and the shelf drop from two
      columns to one. And in meaning: a scene holds exactly one drawing and always holds one, while
      this holds a SET that may be empty, and empty is the useful state in it. Two shapes, two
      places. So it sits under them, across the whole width, with a hairline between.
      THE HAIRLINE IS THE DIVIDER, not a card and not a second accent: a box around it would make it
-     the loudest thing on a screen whose subject is the four scenes above. */
+     the loudest thing on a screen whose subject is the scenes above. */
   .sh-rand{margin-top:11px;padding-top:11px;border-top:1px solid var(--iborder);}
   /* FOUR ACROSS WHERE THERE IS ROOM, two by two where there is not, by the same auto-fit the shelf
      above uses and with the same 64px cell. Four of them plus the gaps come to 268 against the 273

@@ -1344,14 +1344,14 @@
   // ===========================================================================
   // THE SHOP. Not a game, so it is not a panel: no round, no stake, no pacing, and nothing in
   // games/registry.js knows it exists (docs/shop-spec.md, section 4-5). It is drawn here for the
-  // same reason the Agents tab is: what is on it is DATA (what the four scenes hold, what the rest
+  // same reason the Agents tab is: what is on it is DATA (what the scenes hold, what the rest
   // costs), and a screen built out of data cannot sit in html.js as markup.
   //
-  // THE SHELF IS THE FOUR SCENES the reader named: quiet, typing, burning through the limit, out of
-  // it (shop.js, SLOTS). Each one shows what is in it now and what else may go in it, and every
-  // scene shows the same number of cells, so the shelf is a rectangle: the cells a scene has
-  // nothing for yet are EMPTY SLOTS, which is also exactly where a new drawing would go. That is
-  // what keeps a scene with one drawing from reading as a broken row.
+  // THE SHELF IS THE SCENES the reader named: quiet, typing, working while the limit fills, burning
+  // through it, out of it (shop.js, SLOTS). Each one shows what is in it now and what else may go
+  // in it, and every scene shows the same number of cells, so the shelf is a rectangle: the cells a
+  // scene has nothing for yet are EMPTY SLOTS, which is also exactly where a new drawing would go.
+  // That is what keeps a scene with one drawing from reading as a broken row.
   //
   // THREE KINDS OF CELL, and they have to be told apart at a glance:
   //   a drawing that is in use or can be chosen  a picture, a word about itself, and a RING when it
@@ -1734,6 +1734,27 @@
       var o = shopOptOf(key);
       setLive('shLive', 'Buy: ' + o.name + ', ' + fmtInt(o.price) + ' credits.');
     }
+    shopShowSale();
+  }
+  // ...AND THE BLOCK IS BROUGHT TO WHERE IT CAN BE SEEN. The shelf grew a row with the fifth scene
+  // (shop.js, SLOTS), which puts this block below the fold of a 600px-tall sidebar: the contract in
+  // docs/shop-spec.md section 3-3 is that pressing a price is what makes the block and the button
+  // appear, and a block appearing where nobody can see it does not keep it.
+  //
+  // ONLY ON A PRESS, which is why it is here and not in renderShop: that repaint also runs for
+  // another window's purchase and for credits landing, and scrolling there would move what somebody
+  // is reading while they did nothing. `nearest` does nothing at all when the block is already in
+  // view, so a second press is silent, and the default behaviour is a jump rather than a glide, so
+  // there is no motion for a reader who asked for none. The focus is not touched: it is on the cell
+  // that was pressed, handed back by renderShop above, and this runs after that.
+  //
+  // It is also the ONE call to it in this product, and it is asked for rather than assumed: a DOM
+  // that does not have it (a shim, an older webview) must do nothing here rather than throw inside
+  // a press handler and take the rest of the press with it
+  function shopShowSale() {
+    var b = el('shTry');
+    if (!b || b.hidden || typeof b.scrollIntoView !== 'function') return;
+    b.scrollIntoView({ block: 'nearest' });
   }
   // The block that holds what is on sale, told to say so again. The class is taken off and put back
   // with a read of the layout in between, because an animation that is already on an element does
@@ -2000,29 +2021,32 @@
     despair: { busy: 'despair', quiet: 'despair' },
     stunned: { busy: 'stunned', quiet: 'stunned' }
   };
-  // --- AND WHICH OF THE FOUR SCENES each of those cells is, where the reader has a say.
+  // --- AND WHICH OF THE SCENES each of those cells is, where the reader has a say.
   //
-  // The shop sells drawings into four scenes the reader named: quiet, typing, burning through the
-  // limit, and out of it (shop.js, SLOTS). Those are not the same shape as the table above, which
-  // is four steps by two columns, so this says which cell belongs to which scene and the table is
-  // left exactly as it was: a cell with no entry here keeps the drawing above it whatever anybody
-  // chooses, and a cell with one reads the scene's drawing out of the push and falls back to the
-  // table when there is nothing to read (a window that has not had a push yet, or a host that is
-  // older than this file).
+  // The shop sells drawings into five scenes the reader named: quiet, typing, working while the
+  // limit fills, burning through it, and out of it (shop.js, SLOTS). Those are not the same shape
+  // as the table above, which is four steps by two columns, so this says which cell belongs to
+  // which scene and the table is left exactly as it was: a cell reads its scene's drawing out of
+  // the push and falls back to the table when there is nothing to read (a window that has not had
+  // a push yet, or a host that is older than this file and does not know this scene).
   //
-  // THE WORKING STEP'S BUSY CELL IS THE ONE WITH NO ENTRY, and that is a decision. It is the only
-  // picture that says the limit is filling up WHILE you work, and putting the typing scene over it
-  // would let one choice flatten 5% and 65% of the limit into the same drawing: the step axis would
-  // then say nothing at all in the busy column until despair. `working` is still choosable, in the
-  // typing scene, where it is an alternative rather than the only answer.
+  // EVERY CELL IS NAMED NOW (2026-11-24). The working step's busy cell used to be the one with no
+  // entry, so that nothing the reader chose could reach it, and the reason for that was sound: it
+  // is the only picture which says the limit is filling up WHILE you work, and putting the typing
+  // scene over it would let one choice flatten 5% and 65% of the limit into the same drawing. What
+  // it cost was that a scene labelled "replies landing" did not govern a cell the replies land in,
+  // so a reader who chose the laptop crab there was shown the busy one while they were typing. The
+  // cell now has a scene of ITS OWN (`work`), and the step axis is kept by that scene's fallback
+  // being the drawing the cell always had rather than by the cell being unreachable: with nothing
+  // pressed, 5% and 65% are still two different pictures (docs/shop-spec.md, 5-1a).
   var MASCOT_SLOT = {
     idle: { busy: 'typing', quiet: 'quiet' },
-    working: { quiet: 'quiet' },
+    working: { busy: 'work', quiet: 'quiet' },
     despair: { busy: 'burn', quiet: 'burn' },
     stunned: { busy: 'spent', quiet: 'spent' }
   };
   // WHICH DRAWING: the step picks the row, the clock picks the column, and the reader's own choice
-  // picks the picture wherever that cell is one of the four scenes
+  // picks the picture of the scene that cell is
   function mascotArt(step, d) {
     var col = mascotQuiet(d) ? 'quiet' : 'busy';
     var scene = MASCOT_SLOT[step][col];

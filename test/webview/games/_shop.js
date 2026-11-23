@@ -9,7 +9,7 @@
 //   1. the coin opens a CHOICE, not a screen: two doors, no numbers, no arrow, and leaving forgets
 //      which door was taken, because what the reader asked for is the two ways in.
 //   2. ONE ARROW IS ONE STEP, from four depths: a game's own depth, a game, the list, the shop.
-//   3. the shelf is the FOUR SCENES, every one of them showing the same number of cells, and the
+//   3. the shelf is THE SCENES, every one of them showing the same number of cells, and the
 //      shop prices nothing: each cell arrives with its price, whether it is owned and whether a
 //      press on it could change anything.
 //   4. THREE KINDS OF CELL ARE TOLD APART. A drawing that can be chosen is a button; a PRICE is a
@@ -52,6 +52,11 @@ module.exports = {
     const scenes = () => doc.querySelectorAll('#shSlots .sh-slot');
     const cells = () => doc.querySelectorAll('#shSlots .sh-cell');
     const cell = (key) => doc.querySelector('#shSlots .sh-cell[data-key="' + key + '"]');
+    // ...and the same cell named by its SCENE as well, which two scenes sharing a free drawing made
+    // necessary: `working` stands in typing and in work, so a lookup by key alone finds whichever
+    // comes first and cannot say which of the two it read (shop.js, SLOTS)
+    const inScene = (slot, key) => doc.querySelector('#shSlots .sh-cell[data-slot="' + slot
+      + '"][data-key="' + key + '"]');
     const soon = () => doc.querySelectorAll('#shSlots .sh-cell.soon');
     // the last row, which is NOT in #shSlots: a set rather than a scene, so it is its own block
     const rand = () => $('shRand');
@@ -172,8 +177,8 @@ module.exports = {
       ok('the stored door comes back as the shop', showing('panelShop') && bodyTabs() === 'tab-games', bodyTabs());
       // THE SHELF IS THE SCREEN, and it is all of the screen until a price is pressed: what is in
       // each moment is the point of this place whether anything can be afforded or not
-      ok('five credits: the four scenes are still drawn, because what is in them is the point',
-        scenes().length === 4 && $('shTry').hidden && $('shCtl').hidden,
+      ok('five credits: the scenes are still drawn, because what is in them is the point',
+        scenes().length === shop.SLOTS.length && $('shTry').hidden && $('shCtl').hidden,
         scenes().length + ' scene(s), ' + ($('shCtl').hidden ? 'no button' : 'button'));
       ok('nothing says it was bought', !doc.querySelector('#shSlots .sh-cell.owned .sh-tag[data-x]')
         && cells().every((c) => c.textContent !== 'own'),
@@ -206,7 +211,7 @@ module.exports = {
       return;
     }
 
-    // ---------- 3. the shelf: four scenes ----------
+    // ---------- 3. the shelf: the scenes ----------
     ok('the stored door comes back as the shop, and the list is not drawn under it',
       showing('panelShop') && !showing('panelGames') && !showing('panelCross'), bodyTabs());
     ok('and it asked the host once for what it sells',
@@ -222,10 +227,15 @@ module.exports = {
       && doc.querySelector('#panelShop .bj-ttl').textContent === 'Mascot shop'
       && doc.querySelector('#panelShop .bj-side').textContent === '',
       doc.querySelector('#panelShop .ihead').textContent.trim());
-    ok('the shelf is the four scenes, named, each saying which moment it is',
+    // ...AND WHAT IT SAYS IS THE CATALOG'S OWN LINE, not merely something. This used to check that
+    // the second line was not empty, which a line saying the wrong thing passes, and a line saying
+    // the wrong thing is what was reported about this screen. The five lines themselves are pinned
+    // where they are decided (test/credits.test.js); what is pinned here is that the screen prints
+    // them rather than wording its own
+    ok('the shelf is the scenes, named, each saying which moment it is',
       scenes().length === shop.SLOTS.length
       && scenes().map((s) => s.querySelector('.sh-sn').textContent).join() === shop.SLOTS.map((s) => s.name).join()
-      && scenes().every((s) => !!s.querySelector('.sh-sw').textContent),
+      && scenes().map((s) => s.querySelector('.sh-sw').textContent).join() === shop.SLOTS.map((s) => s.when).join(),
       scenes().map((s) => s.querySelector('.sh-sn').textContent + '/' + s.querySelector('.sh-sw').textContent).join(' '));
     // A RECTANGLE: every scene shows as many cells as the widest one has, so a scene with one
     // drawing is not a short row that reads as broken
@@ -239,15 +249,25 @@ module.exports = {
 
     // ---------- 4. three kinds of cell ----------
     // a drawing with a picture: its own, out of the ones the panel itself points at
-    // every drawing the shelf shows anywhere: the four scenes, and the row under them that has no
-    // scene. Both kinds take their picture from the ones the panel itself points at, so a cell can
-    // never show something the crab box never draws
-    const shelfItems = shop.ITEMS.filter((i) => shop.POOL.indexOf(i.key) < 0);
+    // every drawing the shelf shows anywhere: the scenes, and the row under them that has no scene.
+    // Both kinds take their picture from the ones the panel itself points at, so a cell can never
+    // show something the crab box never draws.
+    // WALKED CELL BY CELL AND NOT KEY BY KEY. A key may stand in two scenes (shop.js, SLOTS), so a
+    // lookup by key alone reads one of its two cells twice and the other one never
+    const shelfCells = shop.SLOTS.reduce((a, sc) => a.concat(sc.opts.map((k) => [sc.id, k])), []);
+    const picOk = ([id, k]) => picOf(inScene(id, k)) === artOf(k);
     ok('every drawing on the shelf is the picture the panel would draw',
-      shelfItems.every((i) => picOf(cell(i.key)) === artOf(i.key))
-      && shop.POOL.every((k) => picOf(poolCell(k)) === artOf(k)),
-      shelfItems.concat(shop.POOL.map((k) => ({ key: k })))
-        .map((i) => i.key + ((picOf(cell(i.key)) || picOf(poolCell(i.key))) === artOf(i.key) ? ' ok' : ' MISMATCH')).join(' '));
+      shelfCells.every(picOk) && shop.POOL.every((k) => picOf(poolCell(k)) === artOf(k)),
+      shelfCells.map(([id, k]) => id + '/' + k + (picOk([id, k]) ? ' ok' : ' MISMATCH'))
+        .concat(shop.POOL.map((k) => k + (picOf(poolCell(k)) === artOf(k) ? ' ok' : ' MISMATCH'))).join(' '));
+    // ...and nothing in the catalog is MISSING from it, which walking the cells no longer says by
+    // itself: every drawing is in a scene or in the pool, and a row in neither would be bought and
+    // then be nowhere (shop.js states that as the condition the fifth scene arrived under)
+    ok('and every drawing in the catalog stands somewhere on the shelf',
+      shop.ITEMS.every((i) => shop.POOL.indexOf(i.key) >= 0
+        || shop.SLOTS.some((sc) => sc.opts.indexOf(i.key) >= 0)),
+      shop.ITEMS.map((i) => i.key + ':' + (shop.SLOTS.filter((sc) => sc.opts.indexOf(i.key) >= 0)
+        .map((sc) => sc.id).join('+') || (shop.POOL.indexOf(i.key) >= 0 ? 'pool' : 'NOWHERE'))).join(' '));
     // AN EMPTY SLOT HAS NO PICTURE. That is the separator that matters: it and the laptop crab are
     // both unpressable, so what tells them apart is that one of them has a crab in it
     ok('an empty slot carries no picture, no price and no name for what might go in it',
@@ -274,18 +294,23 @@ module.exports = {
     // its having two cells. Quiet shows the small crab beside a sleeping one that costs 1K, and
     // until that is bought there is still only one drawing to put in that moment, so its cell is
     // not a choosing button. Read off the catalog rather than named here, so a drawing changing
-    // rung or scene moves this with it
+    // rung or scene moves this with it.
+    // BY SCENE AND KEY, NOT BY KEY: `choosable` is two scenes now and they SHARE both their
+    // drawings, so a lookup by key alone would read the typing row twice and never look at the work
+    // row at all (shop.js, SLOTS)
     const settled = shop.SLOTS.filter((sc) => sc.opts.filter((k) => !shop.itemOf(k).price).length < 2);
     const choosable = shop.SLOTS.filter((sc) => sc.opts.filter((k) => !shop.itemOf(k).price).length > 1);
     ok('and nor is a drawing in a scene with nothing to choose between YET',
       settled.length > 0
-      && settled.every((sc) => sc.opts.every((k) => cell(k).localName !== 'button' || cell(k).classList.contains('buy'))),
-      settled.map((sc) => sc.id + ':' + sc.opts.map((k) => k + '=' + cell(k).localName
-        + (cell(k).classList.contains('buy') ? '(buy)' : '')).join('/')).join(' '));
+      && settled.every((sc) => sc.opts.every((k) => inScene(sc.id, k).localName !== 'button'
+        || inScene(sc.id, k).classList.contains('buy'))),
+      settled.map((sc) => sc.id + ':' + sc.opts.map((k) => k + '=' + inScene(sc.id, k).localName
+        + (inScene(sc.id, k).classList.contains('buy') ? '(buy)' : '')).join('/')).join(' '));
     // ...while a scene that HAS two free ones is pressable on both of them
     ok('a scene with two drawings of their own is pressable on both',
-      choosable.length > 0 && choosable.every((sc) => sc.opts.every((k) => cell(k).localName === 'button')),
-      choosable.map((sc) => sc.id + ':' + sc.opts.map((k) => k + '=' + cell(k).localName).join('/')).join(' '));
+      choosable.length > 0
+      && choosable.every((sc) => sc.opts.every((k) => inScene(sc.id, k).localName === 'button')),
+      choosable.map((sc) => sc.id + ':' + sc.opts.map((k) => k + '=' + inScene(sc.id, k).localName).join('/')).join(' '));
     // EVERY PRICE ON THE SHELF IS A RUNG OF THE LADDER and is written the way the stake chips
     // write a figure. Walked over the catalog so a new drawing on a higher rung is covered here
     // the day it lands, rather than the one priced drawing this used to name
@@ -305,12 +330,12 @@ module.exports = {
       cells().map((c) => JSON.stringify(c.getAttribute('aria-label'))).join(' '));
 
     // ---------- 4a. the row that has no scene ----------
-    // THE FIFTH ROW IS NOT A FIFTH SCENE, and the two reasons it is drawn apart are both checked
-    // here. In meaning: it has no moment to belong to, so what it says under its name is the only
-    // honest answer there is. Mechanically: the four above are a RECTANGLE sized by the widest
-    // scene, so a four-cell row inside it would make all four of them four wide and eleven of the
-    // twenty empty. It is out of that grid, under a hairline, in its own block.
-    ok('the last row is outside the shelf’s rectangle, so the four scenes keep their two cells',
+    // THE LAST ROW IS NOT A SCENE, and the two reasons it is drawn apart are both checked here.
+    // In meaning: it has no moment to belong to, so what it says under its name is the only honest
+    // answer there is. Mechanically: the scenes above are a RECTANGLE sized by the widest of them,
+    // so a four-cell row inside it would make all five of them four wide and eleven of the twenty
+    // empty. It is out of that grid, under a hairline, in its own block.
+    ok('the last row is outside the shelf’s rectangle, so the scenes keep their two cells',
       !!rand() && !doc.querySelector('#shSlots [data-pool]')
       && scenes().every((s) => s.querySelectorAll('.sh-cell').length === widest),
       scenes().map((s) => s.querySelectorAll('.sh-cell').length).join(','));
@@ -322,7 +347,7 @@ module.exports = {
       rand().querySelector('.sh-sn').textContent === 'Random'
       && rand().querySelector('.sh-sw').textContent === 'Now and then',
       rand().querySelector('.sh-sn').textContent + '/' + rand().querySelector('.sh-sw').textContent);
-    ok('it holds four cells, the spare ones empty, as the scenes’ spare ones are',
+    ok('the last row holds four cells, the spare ones empty, as the scenes’ spare ones are',
       randCells().length === 4 && randSoon().length === 4 - shop.POOL.length,
       randCells().length + ' cells, ' + randSoon().length + ' empty');
     // A CELL ON THIS ROW HAS TWO LIVES AND BOTH ARE PINNED. Unbought it is a price like every
@@ -358,13 +383,22 @@ module.exports = {
       priced.every((k) => !poolCell(k).classList.contains('on')),
       priced.map((k) => k + ':' + (poolCell(k).getAttribute('class') || '')).join(' '));
     // ---------- 5. what is worn, and what is on sale ----------
-    ok('one drawing is in use in every scene, and it is the four that come with the extension',
-      worn().length === 4 && ['idle', 'coding', 'despair', 'stunned'].every((k) => cell(k).classList.contains('on')),
+    // ONE RING PER SCENE AND IT IS ON THE FREE DRAWING, read off the catalog rather than listed
+    // here: a scene whose fallback moved would otherwise pass this while redrawing every installed
+    // copy. By scene and not by key, because two scenes share a free drawing (shop.js, SLOTS)
+    ok('one drawing is in use in every scene, and it is the one that comes with the extension',
+      worn().length === shop.SLOTS.length
+      && shop.SLOTS.every((sc) => inScene(sc.id, sc.free).classList.contains('on')),
       cells().filter((c) => c.classList.contains('on')).map((c) => c.getAttribute('aria-label')).join(' | '));
+    // ...and the shared drawing says which of its two cells is which, which is the whole of what a
+    // reader could not tell before: the busy crab is IN USE in the working step's own scene and
+    // merely THEIRS in the typing scene
     ok('and the one in use says so in words too, not only with a ring',
-      cell('idle').getAttribute('aria-label') === 'Small crab, in use'
-      && cell('working').getAttribute('aria-label') === 'Busy crab, yours',
-      cell('idle').getAttribute('aria-label') + ' / ' + cell('working').getAttribute('aria-label'));
+      inScene('quiet', 'idle').getAttribute('aria-label') === 'Small crab, in use'
+      && inScene('typing', 'working').getAttribute('aria-label') === 'Busy crab, yours'
+      && inScene('work', 'working').getAttribute('aria-label') === 'Busy crab, in use',
+      inScene('typing', 'working').getAttribute('aria-label') + ' / '
+      + inScene('work', 'working').getAttribute('aria-label'));
     // ---------- 5a. NOTHING IS AIMED UNTIL SOMETHING IS PRESSED ----------
     // The screen used to open with the first thing on the shelf already aimed at, so that a cell
     // being pressable was visible from the start. The reader threw it out, and the reason is the
@@ -378,19 +412,24 @@ module.exports = {
     // A free cell has no price, nothing on this screen will ever charge for it, and a Buy button
     // appearing because somebody swapped which crab is in a moment would be a button offering to
     // sell them what they already have
-    // the cell is named by its KEY and looked up again after the press: a press rebuilds the whole
-    // shelf, so the node pressed is detached by the answer to its own press
+    // the cell is named by its SCENE AND ITS KEY and looked up again after the press: a press
+    // rebuilds the whole shelf, so the node pressed is detached by the answer to its own press, and
+    // the key on its own no longer names one cell (two scenes share both of their drawings). By key
+    // alone this reads correctly today only because of the order the scenes happen to be listed in,
+    // and would turn into a test that presses one scene and puts ANOTHER one back the day that
+    // order or `work.opts` moved
     const pickFrom = cells().filter((c) => c.classList.contains('pick') && !c.classList.contains('on'))[0];
+    const pickSlot = pickFrom.getAttribute('data-slot');
     const pickKey = pickFrom.getAttribute('data-key');
     const backKey = cells().filter((c) => c.classList.contains('on')
-      && c.getAttribute('data-slot') === pickFrom.getAttribute('data-slot'))[0].getAttribute('data-key');
+      && c.getAttribute('data-slot') === pickSlot)[0].getAttribute('data-key');
     h.mouseClick(pickFrom); advance(40);
     ok('pressing a drawing with no price changes the scene and brings no button out',
-      cell(pickKey).classList.contains('on') && $('shCtl').hidden && $('shTry').hidden
+      inScene(pickSlot, pickKey).classList.contains('on') && $('shCtl').hidden && $('shTry').hidden
       && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 0,
-      cell(pickKey).getAttribute('aria-label') + ' | '
+      pickSlot + ': ' + inScene(pickSlot, pickKey).getAttribute('aria-label') + ' | '
       + ($('shCtl').hidden ? 'no button' : 'BUTTON') + ', ' + aimed().length + ' aimed');
-    h.mouseClick(cell(backKey)); advance(40);   // put the scene back the way it was found
+    h.mouseClick(inScene(pickSlot, backKey)); advance(40);   // put that scene back as it was found
     ok('the shelf opens with things for sale on it and nothing aimed at',
       forSale().length === shop.ITEMS.filter((i) => i.price).length && aimed().length === 0,
       forSale().length + ' for sale, ' + aimed().length + ' aimed');
@@ -448,6 +487,55 @@ module.exports = {
       && /\.sh-try img\{[^}]*object-position:bottom/.test(css()),
       (/\.sh-try img\{[^}]*\}/.exec(css()) || [''])[0]);
     ok('nothing is spent by arriving or by aiming', stored() === null, JSON.stringify(stored()));
+    // ---------- 5c. AND THE BLOCK IS BROUGHT TO WHERE IT CAN BE SEEN ----------
+    // The shelf grew a row with the fifth scene, which puts this block below the fold of a 600px
+    // sidebar, and a block that appears where nobody can see it does not keep the contract above
+    // (docs/shop-spec.md, 3-3a). The fake DOM scrolls nothing and records the ask, which is the
+    // part worth pinning: WHO asks and WHEN
+    // THE ASK IS ALSO THE FIRST ONE ON THIS SCREEN, which is what says the press on a free cell a
+    // few blocks up asked for nothing: a choice brings no block out, so there is nothing to bring
+    // into view
+    const scrolls = () => doc.scrollLog || [];
+    ok('the press brought the block into view, and it is the only thing asked to move',
+      scrolls().length === 1 && scrolls()[0].id === 'shTry' && scrolls()[0].block === 'nearest',
+      JSON.stringify(scrolls()));
+    // AND IT IS A JUMP, not a glide: there is no `behavior`, so this is outside the one piece of
+    // motion this screen has and a reader who asked for no motion gets none.
+    // READ THROUGH AN EMPTY OBJECT, so that a log with nothing in it is ONE failed check rather
+    // than a TypeError thrown out of the middle of this run: a throw here took the whole file down
+    // and the sixty-five checks below it were never reached
+    ok('and it is not an animation, so reduced motion has nothing to turn off',
+      !(scrolls()[0] || {}).behavior, JSON.stringify(scrolls()[0]));
+    // NOT ON A REPAINT. The same repaint runs for another window's purchase and for credits
+    // landing, and scrolling there would move what somebody is reading while they did nothing
+    h.hostSend({ type: 'shop', op: 'open', n: 9050 }); advance(20);
+    ok('a repaint nobody asked for leaves the view where it is',
+      scrolls().length === 1 && !$('shTry').hidden, scrolls().length + ' ask(s)');
+    // ---------- 5d. A DOM THAT CANNOT SCROLL ITSELF ----------
+    // The product asks for the scroll rather than assuming it, for a webview old enough not to have
+    // it, and that guard is now the one line on this screen no run reaches: this DOM has the method.
+    // So the method is taken OFF the block for one press and the press is run again. What is checked
+    // is that the press still does everything else it does, because the guard exists to stop a
+    // missing method taking the whole press down with it, and that nothing was logged while it was
+    // gone (webview.js, shopShowSale)
+    const tryBlock = $('shTry');
+    const realScroll = tryBlock.scrollIntoView;
+    tryBlock.scrollIntoView = undefined;
+    $('shTry').classList.remove('ping');
+    // THE PRESS IS CAUGHT RATHER THAN LET THROW, which is this block's own subject turned on itself:
+    // a press that throws is exactly what the guard prevents, and letting that throw out of here
+    // would end the run and take every check below it with it. So the throw IS the failure, said in
+    // one line, and the rest of the file still runs
+    let threw = null;
+    try { h.mouseClick(forSale()[0]); advance(40); } catch (e) { threw = (e && e.message) || String(e); }
+    ok('a block with no scrollIntoView on it takes the press without throwing, and asks for nothing',
+      !threw && scrolls().length === 1 && !$('shTry').hidden && !$('shCtl').hidden
+      && $('shTry').classList.contains('ping')
+      && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 1,
+      (threw ? 'THREW: ' + threw + ', ' : '') + scrolls().length + ' ask(s), '
+      + ($('shTry').hidden ? 'no block' : 'block')
+      + ', ' + doc.querySelectorAll('#panelShop .sh-cell.aim').length + ' aimed');
+    tryBlock.scrollIntoView = realScroll;
 
     // ---------- 6. choosing, which is not buying ----------
     const ledger0 = JSON.stringify(h.gs.data.creditLedgerV1);
@@ -471,12 +559,22 @@ module.exports = {
       stored() === null && h.sent('shop').length === sent0, JSON.stringify(stored()));
     // ...and the aim goes back where it was, so the rest of this run reads the shelf as it found it
     h.mouseClick(cells().filter((c) => c.classList.contains('buy'))[0]); advance(40);
-    h.mouseClick(cell('working')); advance(20);   // a real press focuses the button it presses
+    // NAMED BY SCENE, for the reason block 5a gives: the two drawings pressed here stand in the
+    // typing scene AND in the work scene, so this says which of the two rows is being pressed
+    h.mouseClick(inScene('typing', 'working')); advance(20);   // a real press focuses what it presses
     ok('a choice swaps the drawing in that scene',
-      cell('working').classList.contains('on') && !cell('coding').classList.contains('on')
-      && cell('working').getAttribute('aria-pressed') === 'true'
-      && cell('coding').getAttribute('aria-pressed') === 'false',
+      inScene('typing', 'working').classList.contains('on')
+      && !inScene('typing', 'coding').classList.contains('on')
+      && inScene('typing', 'working').getAttribute('aria-pressed') === 'true'
+      && inScene('typing', 'coding').getAttribute('aria-pressed') === 'false',
       wornKeys().join(' '));
+    // ...AND IT SWAPPED ONE CELL. The other scene holding those same two drawings is untouched,
+    // which is the trade 3-1b made in place of one choice covering both cells
+    ok('and the other scene holding the same two drawings did not move with it',
+      inScene('work', 'working').classList.contains('on')
+      && !inScene('work', 'coding').classList.contains('on')
+      && !h.gs.data.mascotSlotsV1.work,
+      JSON.stringify(h.gs.data.mascotSlotsV1));
     ok('and it is stored where the nicknames are, not in the ledger',
       h.gs.data.mascotSlotsV1 && h.gs.data.mascotSlotsV1.typing === 'working',
       JSON.stringify(h.gs.data.mascotSlotsV1));
@@ -491,12 +589,14 @@ module.exports = {
     // node afterwards: what is read here is that the focus came back to the new one and not that
     // it was merely left on something with the same name
     ok('the keyboard lands back on the cell that was pressed, which is a new node',
-      active() === cell('working') && $('shSlots').contains(active()),
-      'on ' + (active() && active().getAttribute('data-key'))
+      active() === inScene('typing', 'working') && $('shSlots').contains(active()),
+      'on ' + (active() && active().getAttribute('data-slot'))
+      + '/' + (active() && active().getAttribute('data-key'))
       + (active() && $('shSlots').contains(active()) ? ', attached' : ', DETACHED'));
-    cell('coding').click(); advance(20);
+    inScene('typing', 'coding').click(); advance(20);
     ok('and choosing the other one back is the same move the other way',
-      cell('coding').classList.contains('on') && !cell('working').classList.contains('on')
+      inScene('typing', 'coding').classList.contains('on')
+      && !inScene('typing', 'working').classList.contains('on')
       && h.gs.data.mascotSlotsV1.typing === 'coding', wornKeys().join(' '));
     // 7. REFUSED BY THE HOST, not by the screen: a drawing that does not belong to the scene, one
     // nobody bought, and a scene that does not exist
@@ -570,12 +670,14 @@ module.exports = {
     // nothing having happened
     const aimFree = shop.SLOTS.filter((s) => s.id === aimSlot).map((s) => s.free)[0];
     ok('what was bought is in its scene without a second press',
-      cell(aimKey).classList.contains('on') && !cell(aimFree).classList.contains('on'),
+      inScene(aimSlot, aimKey).classList.contains('on')
+      && !inScene(aimSlot, aimFree).classList.contains('on'),
       wornKeys().join(' '));
     ok('and the scene it went into can now be pressed, because there are two of their own in it',
-      cell(aimKey).localName === 'button' && cell(aimFree).localName === 'button'
-      && cell(aimKey).textContent.trim() === 'own',
-      cell(aimKey).localName + '/' + cell(aimFree).localName + ' ' + cell(aimKey).textContent);
+      inScene(aimSlot, aimKey).localName === 'button' && inScene(aimSlot, aimFree).localName === 'button'
+      && inScene(aimSlot, aimKey).textContent.trim() === 'own',
+      inScene(aimSlot, aimKey).localName + '/' + inScene(aimSlot, aimFree).localName
+      + ' ' + inScene(aimSlot, aimKey).textContent);
     ok('it said so out loud, once',
       new RegExp(shop.itemOf(aimKey).name + ' bought').test($('shLive').textContent), $('shLive').textContent);
     // AND THE BUTTON LEAVES AGAIN, with priced cells still on the shelf. That is the half of the
@@ -656,14 +758,15 @@ module.exports = {
     // ...and a bought drawing can be taken back out of its scene, by name, which is what keeps an
     // explicit choice of the free drawing from being overruled by the purchase. Which scene that
     // is comes off the aim the run started with rather than a name written here
-    cell(aimFree).click(); advance(20);
+    inScene(aimSlot, aimFree).click(); advance(20);
     ok('the bought drawing can be taken back out of its scene',
-      cell(aimFree).classList.contains('on') && !cell(aimKey).classList.contains('on')
+      inScene(aimSlot, aimFree).classList.contains('on')
+      && !inScene(aimSlot, aimKey).classList.contains('on')
       && h.gs.data.mascotSlotsV1[aimSlot] === aimFree, wornKeys().join(' '));
     ok('and that did not refund anything',
       stored().spent === spentAll && h.ledgerBalance() === bal0 - spentAll, JSON.stringify(stored()));
-    cell(aimKey).click(); advance(20);
-    ok('and put back in', cell(aimKey).classList.contains('on'), wornKeys().join(' '));
+    inScene(aimSlot, aimKey).click(); advance(20);
+    ok('and put back in', inScene(aimSlot, aimKey).classList.contains('on'), wornKeys().join(' '));
     // the same press again is refused BY THE HOST, and the shelf does not move
     const ownedSig = Object.keys(stored().owned).sort().join();
     h.hostSend({ type: 'shop', op: 'buy', key: aimKey, n: 9001 }); advance(20);
@@ -685,8 +788,8 @@ module.exports = {
     // ---------- the choice survives leaving the screen ----------
     openList(); advance(20); openShop(); advance(20);
     ok('coming back to the shop shows the same drawings in the same scenes',
-      cell('float').classList.contains('on') && cell('coding').classList.contains('on')
-      && worn().length === 4, wornKeys().join(' '));
+      cell('float').classList.contains('on') && inScene('typing', 'coding').classList.contains('on')
+      && worn().length === shop.SLOTS.length, wornKeys().join(' '));
 
     // ---------- the keyboard: this screen repaints on other windows' purchases ----------
     // The market's reported bug in this screen's shape. It re-asks the host whenever a push says

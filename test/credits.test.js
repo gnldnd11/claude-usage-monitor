@@ -563,10 +563,54 @@ test('shop: prices come off a ladder, and the rung is the drawing\'s frame count
   assert.equal(shopMod.itemOf('sleep').price, FLOAT);
   assert.equal(shopMod.itemOf('blackhole').price, 10000);
   assert.equal(shopMod.slotOf('float'), 'mascot:float');
-  // THE FOUR SCENES, each falling back to a drawing that is free: a scene whose fallback had a
-  // price would be a scene a reader who bought nothing could not fill at all
-  assert.deepEqual(shopMod.SLOTS.map((s) => s.id), ['quiet', 'typing', 'burn', 'spent']);
-  assert.deepEqual(shopMod.SLOTS.map((s) => s.free), ['idle', 'coding', 'despair', 'stunned']);
+  // THE SCENES, each falling back to a drawing that is free: a scene whose fallback had a price
+  // would be a scene a reader who bought nothing could not fill at all.
+  // THE ORDER IS THE SHELF'S and the shelf's is the limit ladder (shop.js), so it is pinned here
+  // rather than taken as whatever the file happens to list: a row out of order would still pass
+  // every other check in this file and would say the wrong thing on the screen
+  assert.deepEqual(shopMod.SLOTS.map((s) => s.id), ['quiet', 'typing', 'work', 'burn', 'spent']);
+  assert.deepEqual(shopMod.SLOTS.map((s) => s.free), ['idle', 'coding', 'working', 'despair', 'stunned']);
+  // ...AND WHAT IS WRITTEN UNDER EACH NAME, word for word. The reported fault in this shop was a
+  // line of text that lied: typing said `Replies landing` while the drawing chosen under that line
+  // was not the one the panel drew in the cell replies land in. These five were not checked
+  // anywhere, so putting that sentence back passed every test in this repository.
+  //
+  // THE EXACT STRINGS AND NOT A SHAPE, because a shape cannot say this. `when` was unified onto the
+  // limit ladder as a decision (docs/shop-spec.md, 3-1b): the NAME carries the activity and `when`
+  // carries how much of the limit is gone, since typing and working are both "a reply is landing"
+  // and stating that twice would leave one of the two rows with nothing to say. A rule like "it
+  // mentions the limit" would pass `Limit mostly gone` in the typing row, which is the same class of
+  // lie as the one that was reported. The ladder itself is checked under them, as the property the
+  // five strings are supposed to have
+  assert.deepEqual(shopMod.SLOTS.map((s) => s.name), ['Quiet', 'Typing', 'Working', 'Burning', 'Spent']);
+  assert.deepEqual(shopMod.SLOTS.map((s) => s.when),
+    ['Nothing answered', 'Limit has room', 'Limit half gone', 'Limit mostly gone', 'Limit used up']);
+  // the property: no two scenes say the same thing (two rows a reader cannot tell apart is the
+  // fault itself), and QUIET IS THE ONLY ONE OFF THE LADDER, because it is the only scene that
+  // crosses two steps and what it answers is the activity rather than the limit
+  {
+    const whens = shopMod.SLOTS.map((s) => s.when);
+    assert.equal(new Set(whens).size, whens.length, 'two scenes say the same thing: ' + whens.join(' / '));
+    for (const s of shopMod.SLOTS) {
+      assert.equal(/^Limit /.test(s.when), s.id !== 'quiet',
+        s.id + ' says "' + s.when + '", which is the wrong axis for that row');
+    }
+  }
+  // ...and a drawing shared by two scenes has to be FREE, because shopForSale walks the shelf
+  // without de-duplicating: a priced key in two scenes puts the one aiming bar on two cells
+  // (docs/shop-spec.md, 3-1b)
+  {
+    const seen = new Map();
+    for (const s of shopMod.SLOTS) {
+      for (const k of s.opts) {
+        if (seen.has(k)) {
+          assert.equal(shopMod.itemOf(k).price, 0,
+            k + ' is priced and stands in both ' + seen.get(k) + ' and ' + s.id);
+        }
+        seen.set(k, s.id);
+      }
+    }
+  }
   for (const s of shopMod.SLOTS) {
     assert.equal(shopMod.itemOf(s.free).price, 0, s.id + ' falls back to something priced');
     assert.ok(s.opts.indexOf(s.free) >= 0);
@@ -700,13 +744,23 @@ test('shop: the scenes are what the choice and the record mean together', () => 
   // choice naming a scene this build dropped, a drawing that scene does not hold, a drawing this
   // build has no row for, a purchase whose record lost a merge, and a first launch with nothing
   // stored at all. The answer is the drawing the scene has always had
-  const FREE_SET = { quiet: 'idle', typing: 'coding', burn: 'despair', spent: 'stunned' };
-  assert.deepEqual(shopMod.wornSlots([], null), FREE_SET, 'a fresh install is not the four defaults');
+  const FREE_SET = { quiet: 'idle', typing: 'coding', work: 'working', burn: 'despair', spent: 'stunned' };
+  assert.deepEqual(shopMod.wornSlots([], null), FREE_SET, 'a fresh install is not the defaults');
+  // THE WORKING STEP'S BUSY CELL IS STILL THE BUSY CRAB with nothing pressed, which is the whole
+  // of why the fifth scene could be added without redrawing anybody's panel (docs/shop-spec.md,
+  // 3-1b: "the default does not move a pixel")
+  assert.equal(shopMod.wornSlots([], null).work, 'working');
   assert.deepEqual(shopMod.wornSlots([], {}), FREE_SET);
   assert.deepEqual(shopMod.wornSlots([], { burn: 'float' }), FREE_SET, 'a drawing nobody bought is worn');
   assert.deepEqual(shopMod.wornSlots([], { burn: 'coding', typing: 'float', quiet: 'nothing', bogus: 'idle' }), FREE_SET);
   assert.deepEqual(shopMod.wornSlots([], { typing: 'working' }),
     Object.assign({}, FREE_SET, { typing: 'working' }), 'a free alternative needs no purchase');
+  // ...and the same move in the scene that was added for it: the laptop crab goes into the working
+  // step's busy cell, which is the thing a reader asked for twice and could not do (3-1b). One
+  // press moves ONE cell: choosing it here leaves the typing scene exactly where it was
+  assert.deepEqual(shopMod.wornSlots([], { work: 'coding' }),
+    Object.assign({}, FREE_SET, { work: 'coding' }), 'the laptop crab could not be put in the work scene');
+  assert.equal(shopMod.whyNotWear([], 'work', 'coding'), null, 'a free alternative was refused');
   // ...and what WAS bought is worn without a second press, because a purchase that showed nothing
   // would read as nothing having happened. An explicit choice of the free drawing still holds
   const paid = [shopMod.slotOf('float')];
