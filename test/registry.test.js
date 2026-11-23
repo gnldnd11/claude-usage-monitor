@@ -163,9 +163,12 @@ test('the directory is read once per activation, not once per reader', () => {
 });
 
 test('reading the directory costs a fraction of a millisecond', () => {
-  // The figure is printed rather than asserted: a wall-clock bound in a test is a test that fails
-  // on a busy machine. What matters is the shape, which is one readdirSync plus one stat per
-  // directory, and that is what this measures
+  // The figure is PRINTED and the bound below is a ceiling rather than the figure: a wall-clock
+  // bound set near what a quiet machine gives is a test that fails on a busy one. What matters is
+  // the shape, which is one readdirSync plus one stat per directory, and that is what this measures.
+  // 5ms is about 170 times the warm figure here (0.029ms) and 70 times what twelve busy cores made
+  // of it (0.065 to 0.072ms, measured 2026-11-24), so what it catches is a scan that started
+  // reading files or walking the tree, not a loaded machine
   const dir = path.join(ROOT, 'games');
   const scan = () => {
     let n = 0;
