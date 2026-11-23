@@ -54,6 +54,35 @@ games/<id>/panel.js   화면. 웹뷰 스크립트로 로드된다
 
 훅이 없다는 건 **에이전트 실행을 방해할 방법이 구조적으로 없다**는 뜻이기도 하다. 이 성질을 깨지 않는다.
 
+### 공유 서버는 이 저장소가 아니다
+
+`team.js` 가 치는 `https://saegimai.up.railway.app/api/v1/usage-share` 는 **다른 저장소에서 배포된다.**
+
+```
+모노레포   projects/saegim-ai/backend        작업본. 여기 커밋해도 안 올라간다
+배포 레포   gnldnd11/saegim-backend          Railway 가 보는 곳. 루트에 Dockerfile
+```
+
+Railway 가 모노레포 서브디렉터리의 Dockerfile 을 못 잡아서 떼어 놨다.
+**`git push saegimAI main` 으로는 백엔드가 배포되지 않는다.** 배포 레포를 클론해서
+바뀐 파일을 복사하고 `git push origin HEAD:main` 해야 Railway 가 돈다.
+
+**확인은 라우터로 한다.** 서버가 살아 있어도 그 문만 없을 수 있다.
+
+```
+/health                      200  서버는 뜸
+/api/v1/weather              422  v1 라우터는 붙음
+/api/v1/usage-share/summary  404  이 문이 없음   <- 404 면 라우터 미등록
+                             422  있으면 쿼리 누락으로 422
+```
+
+*** 왜 여기 적나 ***
+`/api/v1/usage-share` 를 2026-11-11 에 모노레포에 냈는데 배포 레포로 싱크를 안 했다.
+배포 레포의 마지막 모노레포 싱크는 09-17 이었다. 그래서 **12일 동안 그 문이 없었고**,
+확장은 404 를 「Sharing server not reachable」 로 그려 왔다. 그 사이 서버가 필요 없는
+로컬 계산(`othersFloor`)만 돌아서 화면이 그럴듯했고, 11-23 에 사용자가 그 줄을 보고 물었다.
+**백엔드를 고쳤으면 배포 레포에 올렸는지 위 404 로 확인한다.**
+
 ---
 
 ## 발행 절차 (순서 중요)
