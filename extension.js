@@ -7,9 +7,10 @@ const crypto = require('crypto');
 const { AuthManager } = require('./auth');
 const { buildNpcCatalog } = require('./sprites');
 const spriteData = require('./sprite-data'); // character sprites as base64 (not shipped as raw png)
-const { lineUsage, usageKey, usageVec, addUsageOnce, localDayKey } = require('./usage');
+const { USAGE_FIELDS, zeroTokens, lineUsage, usageKey, usageVec, addUsageOnce, localDayKey } = require('./usage');
 const credits = require('./credits');
 const weekly = require('./weekly'); // this PC's 7 days + its share of the account's week
+const drive = require('./drive');   // how hard this machine is being worked right now (the crab's axis)
 const team = require('./team');     // opt-in: the same account's PCs side by side
 const IC = require('./icons');
 const registry = require('./games/registry');
@@ -160,7 +161,7 @@ function teamCfg() {
     key,
     name: String(c.get('team.name', '') || (gs && gs.get('teamNameV1')) || ''),
     pcId: pcId || 'unsaved-pc-id',
-    plan: weekly._internal.tierKey(readPlanTier()) || null
+    plan: planTier() || null
   };
 }
 
@@ -208,6 +209,25 @@ function readPlanTier() {
     if (o.rateLimitTier || o.subscriptionType) return o.rateLimitTier || o.subscriptionType;
   } catch (e) { /* not there: try .claude.json */ }
   return team.readAccountTier(claudePaths.configJson);
+}
+
+// ...and the same thing as a key, cached, for the reader that wants it on every push.
+//
+// The crab's drive is a RATIO against the plan's weekly allowance (drive.js), so every ten-second
+// push needs the tier. readPlanTier parses .claude.json, which holds Claude Code's whole project
+// history and is routinely 200KB on a machine that has been used for a while: parsing it six times
+// a minute to answer a question whose answer changes when somebody changes their subscription is
+// work for nothing. A minute old is as good as now for that.
+let planTierAt = 0;
+let planTierKey = '';
+function planTier() {
+  const now = Date.now();
+  // a clock that went backwards must not freeze the answer for a minute of wall time it never had
+  if (!planTierAt || now < planTierAt || now - planTierAt >= 60000) {
+    planTierKey = weekly._internal.tierKey(readPlanTier()) || '';
+    planTierAt = now;
+  }
+  return planTierKey;
 }
 
 function readRate() {
@@ -329,13 +349,75 @@ function freshAcc() {
     calls: [],          // {agent, id, t, today, desc}: Agent/Task invocations back to AGENT_RUN_WINDOW_MS before midnight
     callIds: {},        // every Agent/Task tool_use id seen (any day) — results are only kept for these
     results: {},        // tool_use_id -> {t, tokens?, tools?, durMs?}
-    peaks: []           // skyline of {t, total, prompt}: each entry's total beats everything after it
+    peaks: [],          // skyline of {t, total, prompt}: each entry's total beats everything after it
+    // THE DRIVE RING (drive.js): this file's share of the last hour of work, as API-equivalent
+    // dollars in ten-second cells, and the per-response maxima that de-duplicate it.
+    //
+    // It is its OWN accumulator rather than a reading taken off `today` above, for three reasons
+    // that each one would be enough: its window reaches back across midnight while `today` is
+    // rebuilt there; it is priced per model, because an hour of Sonnet and an hour of Opus are not
+    // the same work; and it is trimmed to the hour, so a session running all day holds 360 numbers
+    recent: drive.emptyRing(),
+    rseen: new Map()    // response key -> { b: cell, v: per-field max } for the ring's window only
   };
 }
 
-// callsSince is the (earlier) cutoff for agent invocations; startOfToday still gates the
-// token/request sums and the per-call `today` flag.
-function parseLinesInto(s, chunk, startOfToday, callsSince) {
+// One usage line into the drive ring, de-duplicated and priced.
+//
+// WHY A SECOND DE-DUPLICATION rather than `addUsageOnce`'s. One response is written as one line per
+// content block, and only output grows between them (usage.js), so a response has to be counted
+// once at its per-field maximum or the ring reads about twice the work. `s.seen` already does that
+// for `today`, but it holds TODAY's keys and is thrown away when the day rolls, and this window
+// reaches an hour back across that roll. So the rule is shared and the bookkeeping is not.
+//
+// Only the INCREASE is priced, so a later line of a response adds the cost of what it added and
+// nothing more, and twenty incremental reads of a file come to what one pass over it does (the one
+// exception is a response whose lines straddle the window's own edge, where a full re-read files the
+// whole of it inside and an incremental read files only the tail). It is charged to the line's own
+// cell rather than to the response's first, so a reply that streamed for a minute is a minute of
+// work and not a spike at its start.
+function accrueDrive(s, o, u, t, nowMs) {
+  const v = usageVec(u);
+  const key = usageKey(o);
+  const prev = key ? s.rseen.get(key) : null;
+  const delta = zeroTokens();
+  let grew = false;
+  for (const [k] of USAGE_FIELDS) {
+    const d = prev ? v[k] - prev.v[k] : v[k];
+    if (d > 0) { delta[k] = d; grew = true; }
+  }
+  // A line with no message.id cannot be recognised again, so it is counted as it stands: the same
+  // concession usage.js makes, and for the same reason
+  if (grew) drive.add(s.recent, t, weekly.costOf(o.message && o.message.model, delta), nowMs);
+  if (!key) return;
+  // `b` is the LATEST cell this response has written into, not its first, so the key is always at
+  // least as young as every cell it is answering for: a key cut while one of its cells was still in
+  // the ring would let that response be counted a second time
+  const b = drive.cellOf(t, nowMs);
+  if (prev) {
+    for (const [k] of USAGE_FIELDS) { if (v[k] > prev.v[k]) prev.v[k] = v[k]; }
+    if (b > prev.b) prev.b = b;
+  } else s.rseen.set(key, { b: b, v: Object.assign({}, v) });
+}
+
+// The ring and its de-duplication keys, cut back to the hour, on the same cut. Both have to be cut
+// together: keys kept for cells that are gone are memory nothing can ever read again, and cells
+// kept for keys that are gone would be counted twice if that response were somehow re-read
+function trimDrive(s, nowMs) {
+  drive.trim(s.recent, nowMs);
+  const cut = drive.oldestKept(nowMs);
+  for (const [key, e] of s.rseen) { if (e.b < cut) s.rseen.delete(key); }
+}
+
+// callsSince is the (earlier) cutoff for agent invocations and startOfToday still gates the
+// token/request sums and the per-call `today` flag. nowMs is the clock the DRIVE RING is measured
+// from, at both ends (drive.js): it is the one window here that moves with the clock rather than
+// with midnight. Leaving nowMs out leaves the ring EMPTY rather than filling it with the whole
+// file, which is the safe direction of the two: an empty ring reads as a quiet machine.
+function parseLinesInto(s, chunk, startOfToday, callsSince, nowMs) {
+  // the exact instant the oldest cell the ring may hold begins, so the cut here and the cut in
+  // drive.trim are one line and not two that differ by a cell
+  const recentSince = drive.oldestKept(nowMs) * drive.BUCKET_MS;
   for (const line of chunk) {
     if (!line) continue;
     let o;
@@ -390,6 +472,13 @@ function parseLinesInto(s, chunk, startOfToday, callsSince) {
     // count only on first sight (usage.js). maxCtx, lastMsg and peaks below only look at maxima
     // and the latest line, so the repeated lines do not change them
     if (t >= startOfToday && addUsageOnce(s.today, s.seen, usageKey(o), usageVec(u))) s.count += 1;
+    // ...AND THE SAME LINE INTO THE DRIVE RING, which is the crab's whole axis now (drive.js).
+    //
+    // The cutoff is checked FIRST and that is the load-bearing part: a transcript is re-read from
+    // byte zero when the day rolls or the file shrinks, the real ones run to hundreds of MB, and
+    // pouring all of it in would both cost memory and make a crab that reads last night's shift.
+    // A line older than the hour costs one comparison here and nothing else.
+    if (t >= recentSince) accrueDrive(s, o, u, t, nowMs);
     const ctxUsed = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
     if (ctxUsed > s.maxCtx) s.maxCtx = ctxUsed;
     // today's first, which with lastMsg's t is the only span of real activity this extension can
@@ -420,6 +509,9 @@ function readTokens(wsPaths) {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const callsSince = startOfToday - AGENT_RUN_WINDOW_MS;
+  // the clock the drive ring is measured from, read ONCE for the whole pass: a tick that asked the
+  // clock twice could file a line on one side of the window and trim it on the other
+  const nowMs = now.getTime();
 
   const files = [];
   const stack = [claudePaths.projects];
@@ -463,7 +555,7 @@ function readTokens(wsPaths) {
       } finally { fs.closeSync(fd); }
       const lines = text.split('\n');
       c.carry = lines.pop() || ''; // partial trailing line waits for the next append
-      parseLinesInto(c.s, lines, startOfToday, callsSince);
+      parseLinesInto(c.s, lines, startOfToday, callsSince, nowMs);
       c.mtimeMs = st.mtimeMs; c.size = st.size;
     } catch (e) { delete fileCache[p]; }
   }
@@ -476,6 +568,7 @@ function readTokens(wsPaths) {
   let lastProj = null;  // latest message from this workspace's transcripts — drives Context %
   let firstT = 0;       // earliest message of today, any session: with last.t it is today's span
   let count = 0;
+  const recent = drive.emptyRing();   // every live transcript's last hour, summed (drive.js)
   const agentCalls = [];
   const agentResults = {};
   let peak = null; // largest request newer than lastSeenT (survives other sessions' replies)
@@ -490,6 +583,12 @@ function readTokens(wsPaths) {
     today.input += s.today.input; today.output += s.today.output;
     today.cache_creation += s.today.cache_creation; today.cache_read += s.today.cache_read;
     count += s.count;
+    // the drive ring is NOT scoped to the workspace, unlike the room and the Context gauge: the
+    // question it answers is how hard this machine is working, and a second window's agents are
+    // working it just as hard. Trimmed here, which is also where a file that was not re-read this
+    // tick gets its cells aged out
+    trimDrive(s, nowMs);
+    drive.merge(recent, s.recent);
     if (s.lastMsg) {
       const msg = Object.assign({ sessMax: s.maxCtx }, s.lastMsg);
       if (!last || msg.t > last.t) last = msg;
@@ -511,7 +610,7 @@ function readTokens(wsPaths) {
   // dayStart: which day `today` sums. If the caller read the clock again, a tick straddling
   // midnight would file yesterday's total under today (the ledger is a max merge, so a wrong
   // entry can never be taken back)
-  return { today, dayStart: startOfToday, last, lastProj, firstT, count, peak, agentCalls, agentResults };
+  return { today, dayStart: startOfToday, last, lastProj, firstT, count, peak, recent, agentCalls, agentResults };
 }
 
 // Derive each agent's live state from its invocations (M2 MVP, hook-free — read
@@ -1382,6 +1481,11 @@ function collect() {
     usageAt: (usageCache ? lastUsageAt : 0),
     avg: (tokens.count > 0) ? (((tokens.today.input || 0) + (tokens.today.output || 0) + (tokens.today.cache_creation || 0) + (tokens.today.cache_read || 0)) / tokens.count) : 0,
     peak: tokens.peak,
+    // HOW HARD THIS MACHINE IS BEING WORKED RIGHT NOW, and the only thing the crab reads (drive.js).
+    // 1.0 is working at exactly the pace the week allows. It is a figure about the last hour of
+    // replies, not about a limit: every limit on this panel keeps the place it already had, and the
+    // crab is the one reader that stopped being about them
+    drive: drive.of(tokens.recent, Date.now(), planTier()),
     agents: readAgents().map((a) => ({ name: a.name, model: a.model, description: a.description })),
     agentActivity: activity,
     nicknames: agentNicknames,

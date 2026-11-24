@@ -1976,156 +1976,151 @@
     if (showReset && el(pfx + '_sub')) { var r = cd(obj.resets_at); el(pfx + '_sub').textContent = r ? r + ' left' : ''; }
   }
 
-  // --- the mascot's four states, with a DEADBAND.
-  // The steps used to be hard lines at 50 / 70 / 90 against the raw percentage the host pushes, so
-  // a window sitting on 49.8 that ticked to 50.1 and back changed the drawing on every push. A step
-  // is ENTERED at its line and LEFT three points below it, which is wider than any jitter in a
-  // reading and narrower than any real move.
-  var MASCOT_STEPS = [
-    { name: 'working', up: 50, down: 47 },
-    { name: 'despair', up: 70, down: 67 },
-    { name: 'stunned', up: 90, down: 87 }
+  // --- THE CRAB'S ONE AXIS: HOW HARD THE MACHINE IS BEING WORKED RIGHT NOW --------------------
+  //
+  // WHAT IT USED TO BE, and why that was the wrong question. There were TWO axes multiplied
+  // together: how much of a LIMIT was gone (the five-hour window's percentage, or, on an account
+  // with no window, the pace the week was being spent at) picked the row of a table, and whether a
+  // reply had landed in the last three minutes picked the column. The product of those two is not
+  // something a reader can name. Somebody on 72% of a window that resets in four hours got a crab
+  // in despair with nothing running at all, and somebody who had just signed in got an idle crab
+  // with eight agents going. The owner asked twice why the crab kept collapsing while the weekly bar
+  // read 19% and then 24%, and then said what the crab was for:
+  //
+  //     "not doing much is quiet. something is actually running and being worked on is typing.
+  //      a good deal of it is working / going harder than that is burning / really flat out is spent"
+  //
+  // THAT IS ONE AXIS WITH FIVE RUNGS, and the rung is picked by `drive` (drive.js): the
+  // API-equivalent cost of the last hour of replies, weighted towards the last few minutes, over the
+  // rate that would spend the week evenly. 1.0 is working at exactly the pace the week allows.
+  //
+  // NOTHING HERE READS A LIMIT. No `fh`, no `sd`, no `used_percentage`, and no branch on whether the
+  // account has a five-hour window: the two account shapes that used to walk different ladders walk
+  // this one, because the transcripts are the same on both. Every place that shows a limit keeps it
+  // (the ring, .rtext, #s_sub, the weekly bar, #w_sub, Fable, Context, the status bar, the burn-rate
+  // banner, the room HUD, the weekly sheet). The crab is the ONE reader that stopped being about
+  // them, and test/panel-css.test.js section 2b holds the two apart in the source itself.
+  //
+  // THE RUNGS, as multiples of an even week's pace:
+  //
+  //     drive       quiet          typing      working     burning     spent
+  //                 (no replies)   < 2.0       >= 2.0      >= 3.3      >= 5.0
+  //     comes off                              1.6         2.64        4.0
+  //
+  // The second line is not three more dials: a rung is ENTERED at its figure and LEFT at 0.8 of it.
+  // A fixed number of points, which is what the old steps used, has no meaning on a ratio -- three
+  // points below 50 is 6% of the reading and three below 90 is 3.3%. Measured over this reader's own
+  // transcripts, in changes of drawing per hour of real work: x1.0 gives 12.5, x0.9 gives 7.95, x0.8
+  // gives 7.31 and x0.7 gives 7.07. Below 0.8 it has stopped buying quiet and only makes a rung
+  // sticky, so 0.8 is where the two meet.
+  var DRIVE_HYST = 0.8;
+  var DRIVE_STEPS = [
+    { name: 'work', up: 2.0 },
+    { name: 'burn', up: 3.3 },
+    { name: 'spent', up: 5.0 }
   ];
-  var _mascotStep = 0;        // 0 = idle, otherwise the step's index plus one
+  // AND A FLOOR ON HOW LONG A DRAWING STAYS, which the hysteresis above does not give on its own:
+  // replayed over the same transcripts it still left 26 of 268 changes under a minute, and a crab
+  // that changes twice inside a minute reads as a fault rather than as a state. With the floor laid
+  // down that is 0. The transition OUT of quiet is exempt, which is the asymmetry the product has
+  // always wanted and the same one mascotQuiet below is built on: typing shows at once, stopping is
+  // noticed slowly.
+  var DWELL_MS = 60000;
+  // THERE IS ONE MEMORY AND IT IS THE RUNG ON SCREEN, which is the only thing a reader can see.
+  //
+  // The deadband wants to know which rung is being held; there used to be a second variable
+  // remembering that, written on every push whether the floor let the change through or not. One
+  // dip the floor hid therefore took the deadband's memory down a rung and the drawing followed it a
+  // minute later, with the drive sitting on one figure the whole time: 3.5, then 2.5 for one push,
+  // then 2.8 held, drew burning for a minute and then working, although 2.8 is above burning's own
+  // lower edge of 2.64. The floor had not suppressed that dip, it had postponed it, which is the
+  // exact thing it exists to stop. So the deadband reads its rung off the screen, and the only
+  // writer of that is mascotState below.
+  var _mascotStepNow = 'quiet';    // the rung on screen, for the tick and the cameo to read
+  var _mascotStepAt = 0;           // when that rung went up, which is what the floor is measured from
+  // the rung's place on the ladder, for the deadband. The bottom two share a place because the
+  // deadband is about the DRIVE and the bottom rung is not a drive at all: it is the clock
+  var RUNG_AT = { quiet: 0, typing: 0, work: 1, burn: 2, spent: 3 };
   // The first reading is not a transition, it is the first drawing, and a panel that has only just
-  // opened has no reading at all (the usage call is still out). So this turns true on the first
-  // push that CARRIES a session percentage, not on the first push.
+  // opened has no reading at all. So this turns true on the first push that CARRIES a drive, and a
+  // drive is read off the transcripts rather than off the usage endpoint: the crab used to sit on
+  // its first drawing until the network answered, and now it does not wait for anything.
   var _mascotDrawn = false;
-  function mascotState(sess, weekly) {
+  // WHICH RUNG A READING STANDS ON, given the rung it is standing on now. A function of its two
+  // arguments and nothing else, so a reading the floor refuses leaves nothing behind.
+  function driveStep(v, from) {
     var step = 0;
-    for (var i = 0; i < MASCOT_STEPS.length; i++) {
-      // standing on this step already? then the lower edge is what holds it here
-      var edge = _mascotStep > i ? MASCOT_STEPS[i].down : MASCOT_STEPS[i].up;
-      if (sess >= edge) step = i + 1; else break;
+    for (var i = 0; i < DRIVE_STEPS.length; i++) {
+      // standing on this rung already? then 0.8 of its line is what holds it here
+      var edge = from > i ? DRIVE_STEPS[i].up * DRIVE_HYST : DRIVE_STEPS[i].up;
+      if (v >= edge) step = i + 1; else break;
     }
-    // What is REMEMBERED is where the session stands, and only that. A spent week stuns on top of
-    // it, and writing that down as the session's own step would make the session leave the top
-    // step at 87 without ever having reached 90: a window at 88% that was stunned by the week
-    // would stay stunned after the week turned over.
-    _mascotStep = step;
-    if (weekly >= 100) step = MASCOT_STEPS.length;
-    return step ? MASCOT_STEPS[step - 1].name : 'idle';
+    return step ? DRIVE_STEPS[step - 1].name : 'typing';
   }
-  // WHAT THE STEPS ARE MEASURED AGAINST, as one number on the 0..100 scale they were drawn for.
+  // --- IS ANYTHING BEING ANSWERED AT ALL, which is the bottom rung and not a second axis any more.
   //
-  // The steps and the deadband above are not touched by any of this, and that is the whole design:
-  // an account with a five-hour window gets exactly the number it got before, so the picture a Pro
-  // or Max reader sees cannot move. Only the input differs, and only for the account that has no
-  // window to read (webview.js, noSessionWindow).
+  // THE THRESHOLD IS COUNTED, NOT CHOSEN, and it was counted again when it became a rung of this
+  // ladder instead of a column beside it (2026-11-24). The old figure was argued from a p99 of 67.5s
+  // over three days, and that p99 is not what this reader's transcripts say now. Same rule, 12,169
+  // gaps between replies over 7.11 days: median 4.5s, p90 22.9s, p95 41.6s, p99 133.1s, p99.5 252.7s.
+  // At 180s, 87 gaps cross the line and 48 of them land within a quarter of it; at 300s, 52 and 24.
+  // A threshold on the shoulder of the distribution is a drawing that comes and goes during one
+  // piece of work, and 180 is now on that shoulder.
   //
-  // For that account the weekly percentage may NOT go in raw. A week fills over seven days, so 50%
-  // of it on day four is on course and 50% of a five-hour window is halfway through the afternoon:
-  // feeding the raw figure in would leave the crab idle through almost every week. What a reader
-  // actually wants to know is whether today's rate runs out before the reset does, which is a PACE:
-  // 1.0 is spending the week exactly evenly, and 1.0 stands on the working line (50).
-  //
-  // HOW STEEPLY IT CLIMBS ABOVE AN EVEN PACE IS A SEPARATE QUESTION, and the first answer to it was
-  // wrong (2026-11-24). It was one multiplication, pace x 50, which put despair at 1.4 and stunned
-  // at 1.8 and ran into the 100 ceiling at 2.0. Replayed over this reader's own 1,105 stored
-  // samples, six days of them: the crab was flat on its back 22.3% of the time and stood at the
-  // working step 2.8%. The hardest state was the commonest and the ordinary one was invisible, and
-  // the owner asked twice why the crab kept collapsing while the weekly bar read 19% and then 24%.
-  //
-  // So above an even pace the climb is stretched, and there is ONE dial rather than three: 1.0 is
-  // still the working line and PACE_TOP is the pace that stands on the top step. Despair is not a
-  // second dial, it falls out halfway between them, at 1.75 while the top is 2.5. At that top the
-  // same six days come out idle 53.6%, working 22.8%, despair 23.6%, stunned 0%. Zero is
-  // the right answer there and not a hole: the hardest pace those six days reached was 2.10, and
-  // what still stuns this account is `weekly >= 100` in mascotState, a week that is actually gone.
-  // That is what the top step is for and what the shelf calls it. 3.0 was measured too and drains
-  // despair to 14.8%; 3.5 empties it altogether.
-  //
-  // BELOW AN EVEN PACE NOTHING CHANGED, and an account with a five-hour window is not touched by
-  // any of this: it still gets the window's own percentage, unmapped.
-  //
-  // THE SECOND AXIS ARRIVED, AND IT IS NOT IN HERE. "Is anyone working right now" picks WHICH
-  // DRAWING is shown and this function still answers WHICH STEP, so the two sit side by side
-  // (mascotQuiet and MASCOT_ART below) rather than one inside the other. Nothing about this
-  // function's inputs or its output moved, which is what keeps a Pro or Max reader's picture
-  // exactly where it was (docs/shop-spec.md, section 8).
-  // The pace that stands on the top step (90). Measured, not chosen: see the paragraph above.
-  // Despair falls out of it at halfway, 1.75, and is not a dial of its own.
-  var PACE_TOP = 2.5;
-  function mascotStrain(d, noSession) {
-    if (!noSession) return (d.fh && d.fh.used_percentage) || 0;
-    if (!d.sd || d.sd.used_percentage == null) return 0;
-    var W = 7 * 86400;
-    // how far INTO the weekly window we are, from its reset time. A null reset reads as a full
-    // week elapsed, which makes the pace the raw percentage halved rather than a division by zero
-    var e = Math.min(1, Math.max(0, 1 - (d.sd.resets_at - Date.now() / 1000) / W));
-    // the percentage an even spender would have reached by now. The floor matters: for the first
-    // 8.4 hours of a week `e * 100` is under 5 and any real use divided by it explodes
-    var expected = Math.max(5, e * 100);
-    var pace = d.sd.used_percentage / expected;
-    // an even pace IS the working line, so below it the scale is the pace itself and 0 is 0
-    if (pace <= 1) return Math.round(pace * 50);
-    // ...and above it, 40 points of scale are spread over the stretch from an even pace to the one
-    // that stands on the top step, so moving PACE_TOP moves despair with it and keeps the two in
-    // the same relation. 100 is still the ceiling: it is reached at a pace of 2.875
-    return Math.min(100, Math.round(50 + (pace - 1) * (40 / (PACE_TOP - 1))));
-  }
-  // --- WHICH DRAWING, the second axis: is anything being answered right now.
-  //
-  // The step above is how much of the limit is gone. This is whether the account is being used at
-  // all, and it changes the picture without changing the step: the same idle step is a crab at a
-  // laptop while the replies are landing and a crab floating in the water when they stop.
-  //
-  // THE THRESHOLD IS COUNTED, NOT CHOSEN. Three days of this reader's own transcripts, 4,309
-  // assistant replies, put the gap between two replies at a median of 2.3s and a 99th percentile of
-  // 67.5s. 180s is 2.7 times that p99, and it is what leaves the fewest gaps sitting ON it: 15 gaps
-  // in three days cross it and 4 land within a quarter of it, against 55 and 62 at a minute
-  // (docs/shop-spec.md, section 5-2). A threshold on the shoulder of the distribution is a drawing
-  // that comes and goes during one piece of work.
-  var QUIET_MS = 180000;
-  // The two axes as one table: the step picks the row, `mascotQuiet` picks the column. Despair and
-  // stunned read the same either way, and deliberately: there the LIMIT is the news, and whether a
-  // reply landed ten seconds ago does not change it. Stunned also cannot really have two columns,
-  // because a blocked limit stops the replies that would keep it busy.
-  var MASCOT_ART = {
-    idle: { busy: 'coding', quiet: 'idle' },
-    working: { busy: 'working', quiet: 'idle' },
-    despair: { busy: 'despair', quiet: 'despair' },
-    stunned: { busy: 'stunned', quiet: 'stunned' }
-  };
-  // --- AND WHICH OF THE SCENES each of those cells is, where the reader has a say.
-  //
-  // The shop sells drawings into five scenes the reader named: quiet, typing, working while the
-  // limit fills, burning through it, and out of it (shop.js, SLOTS). Those are not the same shape
-  // as the table above, which is four steps by two columns, so this says which cell belongs to
-  // which scene and the table is left exactly as it was: a cell reads its scene's drawing out of
-  // the push and falls back to the table when there is nothing to read (a window that has not had
-  // a push yet, or a host that is older than this file and does not know this scene).
-  //
-  // EVERY CELL IS NAMED NOW (2026-11-24). The working step's busy cell used to be the one with no
-  // entry, so that nothing the reader chose could reach it, and the reason for that was sound: it
-  // is the only picture which says the limit is filling up WHILE you work, and putting the typing
-  // scene over it would let one choice flatten 5% and 65% of the limit into the same drawing. What
-  // it cost was that a scene labelled "replies landing" did not govern a cell the replies land in,
-  // so a reader who chose the laptop crab there was shown the busy one while they were typing. The
-  // cell now has a scene of ITS OWN (`work`), and the step axis is kept by that scene's fallback
-  // being the drawing the cell always had rather than by the cell being unreachable: with nothing
-  // pressed, 5% and 65% are still two different pictures (docs/shop-spec.md, 5-1a).
-  var MASCOT_SLOT = {
-    idle: { busy: 'typing', quiet: 'quiet' },
-    working: { busy: 'work', quiet: 'quiet' },
-    despair: { busy: 'burn', quiet: 'burn' },
-    stunned: { busy: 'spent', quiet: 'spent' }
-  };
-  // WHICH DRAWING: the step picks the row, the clock picks the column, and the reader's own choice
-  // picks the picture of the scene that cell is
-  function mascotArt(step, d) {
-    var col = mascotQuiet(d) ? 'quiet' : 'busy';
-    var scene = MASCOT_SLOT[step][col];
-    return (scene && mascotWorn()[scene]) || MASCOT_ART[step][col];
-  }
-  // NO DEADBAND HERE, and that is not an oversight: the steps have one because they cut a noisy
+  // AND 180 WOULD HAVE TURNED INTO A FAULT HERE that it was not before. The old table drew the same
+  // picture on both sides of its top two rows, so three minutes of thinking in the middle of heavy
+  // work changed nothing. On one axis those same three minutes drop a burning crab to quiet. 300s is
+  // what makes that 103 times a week rather than 165.
+  var QUIET_MS = 300000;
+  // NO DEADBAND HERE, and that is not an oversight: the rungs have one because they cut a noisy
   // scalar, and this cuts a clock. One side of it is an EVENT (a message landed, and the host's
   // fs.watch pushes within 200ms) and the other is TIME (the threshold passed, and the host's own
-  // 10s loop is what notices), so there is no pair of edges to write. The asymmetry is the one the
-  // product wants: typing shows at once, stopping is noticed slowly.
+  // 10s loop is what notices), so there is no pair of edges to write.
   function mascotQuiet(d) {
     var t = d && d.last && d.last.t;   // today's last assistant message. None at all is quiet
     return !t || (Date.now() - t) >= QUIET_MS;
+  }
+  // THE RUNG THE CRAB IS ON: the one answer this file works out about the account, and the one
+  // writer of both variables above. Called once per push (render) and never on the tick, because
+  // the deadband and the floor are memories and a tick is not a reading.
+  function mascotState(d) {
+    // A HOST OLDER THAN THIS FILE PUSHES NO DRIVE. Zero is the quiet answer and the right one: with
+    // no figure to stand on, the crab says what the clock says and nothing more
+    var want = mascotQuiet(d) ? 'quiet' : driveStep(d && d.drive != null ? d.drive : 0, RUNG_AT[_mascotStepNow] || 0);
+    if (want !== _mascotStepNow) {
+      var now = Date.now();
+      // The floor, and the three ways through it: the rung on screen is the bottom one (leaving
+      // quiet is exempt), the floor is already out, or the clock has gone backwards -- which would
+      // otherwise freeze the drawing for however far it jumped, and a frozen crab is the fault the
+      // floor was laid down against rather than a stricter version of it
+      var held = _mascotStepAt && now >= _mascotStepAt && (now - _mascotStepAt) < DWELL_MS;
+      if (_mascotStepNow !== 'quiet' && held) return _mascotStepNow;
+      _mascotStepNow = want;
+      _mascotStepAt = now;
+    }
+    return _mascotStepNow;
+  }
+  // --- AND WHICH DRAWING EACH RUNG IS.
+  //
+  // THE RUNGS ARE THE SHOP'S SCENES, exactly. The shop sells drawings into five scenes the reader
+  // named (shop.js, SLOTS) and this ladder has five rungs, so the two carry the same five names and
+  // the map between them is the identity -- which is why there is no map. There used to be a table
+  // of four steps by two columns and a SECOND table saying which of those eight cells belonged to
+  // which of the five scenes, and that join is where a cell went unreachable for a release.
+  //
+  // What is left is the FALLBACK: the drawing a rung has when the reader has chosen nothing, or when
+  // there is nothing to read (a window that has not had a push yet, or a host older than this file).
+  // It is each scene's own free drawing, so a fresh install and an old host draw the crab the shop
+  // would have handed them anyway.
+  var MASCOT_ART = {
+    quiet: 'idle',
+    typing: 'coding',
+    work: 'working',
+    burn: 'despair',
+    spent: 'stunned'
+  };
+  function mascotArt(step) {
+    return mascotWorn()[step] || MASCOT_ART[step];
   }
 
   // --- A DRAWING WITH NO SCENE ----------------------------------------------------------------
@@ -2160,13 +2155,18 @@
   // already running is left alone, because its end condition is its own (below).
   //
   // HOW RARE, in two numbers, because one would not do it.
-  //   CAMEO_FLOOR  Nothing twice inside four minutes. "No pattern" has to stop short of "it keeps
-  //                doing it": two showings thirty seconds apart read as a beat and four minutes
-  //                apart do not. It MUST stay longer than the quiet threshold above (180s), so a
+  //   CAMEO_FLOOR  Nothing twice inside six minutes. "No pattern" has to stop short of "it keeps
+  //                doing it": two showings thirty seconds apart read as a beat and six minutes
+  //                apart do not. It MUST stay longer than the quiet threshold above (300s), so a
   //                cameo can never be the SECOND thing that changes the crab inside one quiet
-  //                transition: that is the floor on the floor, and 240 is the smallest round number
-  //                above it. It is counted from a panel OPENING too, so the first thing a reader
-  //                sees is never this.
+  //                transition: that is the floor on the floor, and 360 is the smallest round number
+  //                above it. IT HAS NO REASON OF ITS OWN, so it is the one number that threshold is
+  //                allowed to drag along: it was 240 while that threshold was three minutes, and
+  //                moved when the threshold was recounted. The price is paid in rarity -- a floor
+  //                half again as long is about 19% fewer showings -- and CAMEO_ODDS is deliberately
+  //                NOT adjusted to win that back, because the odds were counted for themselves.
+  //                It is counted from a panel OPENING too, so the first thing a reader sees is
+  //                never this.
   //   CAMEO_ODDS   One in 400 ticks above that floor, which is memoryless, so there is no rhythm
   //                left to learn: every tick carries the same chance. Mean gap 10.7 minutes, median
   //                8.6, nine in ten under 19.4.
@@ -2176,27 +2176,33 @@
   // measured). The file loops for ever, so the panel is what ends it: one loop would be a flicker
   // nobody could name, and much longer would start to compete with the state it borrowed.
   //
-  // WHERE IT MAY NOT GO, and this is the part that is not taste. Not in stunned: there the drawing
-  // IS the message, and a vortex over a crab knocked out replaces a warning with a joke. Despair
-  // used to be shut for the same reason and IS NOT ANY MORE (2026-11-24): the step is reached at a
-  // load of 70, and a load is not a limit. For an account with no five-hour window that is 1.4
-  // times the pace the week is being spent at, which can be true at 19% of the week, so the reading
-  // under the drawing was never "nearly out" there and the news it was protecting was not news. The
-  // top step keeps the block because the one case that IS the limit being gone arrives in it (a
-  // week at 100%, mascotState). And not while the burn-rate bubble is up, because that bubble's
+  // WHERE IT MAY NOT GO, and this is the part that is not taste.
+  //
+  // NOT AT THE TOP RUNG, and the reason for that was REWRITTEN when the axis changed (2026-11-24).
+  // It used to be "the one case that IS the limit being gone arrives there" (a week at 100%), and
+  // that case does not exist any more: the crab reads work and not allowance, so the top rung is a
+  // machine flat out and never a limit that is spent. What is left is the reason it should have been
+  // all along. The top rung is the one state the reader cannot have missed noticing -- it is where
+  // the fans are up and eight agents are running -- and dropping a joke over it is a joke at the
+  // worst moment to make one. A reader flat out is not looking for a decoration.
+  //
+  // The rung below it is open and has been since 2026-11-24, which was argued from a load of 70 not
+  // being a limit. On this axis it is a reader working hard, which is not an emergency either, so
+  // the conclusion survived the argument that reached it.
+  //
+  // AND NOT WHILE THE BURN-RATE BUBBLE IS UP, which is geometry rather than taste: that bubble's
   // tail is placed against the top of the INK of whatever is under it (styles.js, .mwarn), so
   // swapping the picture under a raised bubble moves the head out from under the tail. It also ENDS
   // the instant either becomes true, so a cameo can never be what delayed bad news.
   var CAMEO_SECS = 4;
-  var CAMEO_FLOOR = 240;
+  var CAMEO_FLOOR = 360;
   var CAMEO_ODDS = 400;
-  // the steps a cameo may cover, as an allow list: a step this does not name blocks one, so the
-  // question is asked about the step rather than about the three that are open
-  var CAMEO_STEPS = { idle: 1, working: 1, despair: 1 };
+  // the rungs a cameo may cover, as an allow list: a rung this does not name blocks one, so the
+  // question is asked about the rung rather than about the four that are open
+  var CAMEO_STEPS = { quiet: 1, typing: 1, work: 1, burn: 1 };
   // `left` is the ticks a showing has to run, `since` the ticks of visible panel since the last
   // one ended. `since` starts at zero, so the floor covers a panel that has just been opened.
   var cameo = { key: null, left: 0, since: 0 };
-  var _mascotStepNow = 'idle';       // the step the last paint worked out, for the tick to read
   function cameoHolds(step) {
     if (!CAMEO_STEPS[step]) return false;
     var w = el('mwarn');
@@ -2234,14 +2240,14 @@
   }
 
   // THE ONE PLACE THE CRAB IS DRAWN, called by the push and by the tick. It decides nothing about
-  // the account: the step is worked out once per push (render) and handed here, and which drawing
-  // that step means is the table's and the reader's (mascotArt). The only thing it settles is
-  // whether a cameo is covering the answer at this instant
+  // the account: the rung is worked out once per push (render) and handed here, and which drawing
+  // that rung means is the fallback table's and the reader's (mascotArt). The only thing it settles
+  // is whether a cameo is covering the answer at this instant
   function paintMascot() {
     var d = lastData, m = el('mascot');
     if (!d || !m) return;
     if (cameo.key && !cameoHolds(_mascotStepNow)) cameoEnd();
-    var state = cameo.key || mascotArt(_mascotStepNow, d);
+    var state = cameo.key || mascotArt(_mascotStepNow);
     var want = m.getAttribute('data-' + state);
     if (want && m.getAttribute('src') !== want) {
       m.setAttribute('src', want);
@@ -2252,9 +2258,11 @@
     // picture back, and a window that opens on a lifted state has to start lifted
     m.classList.toggle('ink-lift', inkLift(state));
     // the first push is the first DRAWING and not a transition, so this turns true on the first
-    // push that carries a reading the steps can be measured against, which, for an account with
-    // no window, is the weekly one and not the session's
-    if (d.fh ? d.fh.used_percentage != null : noSessionWindow(d)) _mascotDrawn = true;
+    // push that carries the reading the rungs are measured against. THAT READING NO LONGER WAITS
+    // ON THE NETWORK: it used to be the five-hour window's percentage, or the week's on an account
+    // with no window, which meant the crab sat on its first drawing until the usage endpoint
+    // answered and for ever on a 429 or an expired token. `drive` is read off the transcripts
+    if (d.drive != null) _mascotDrawn = true;
     // the box is one height and the drawing inside it is not, so the burn-rate bubble has to
     // know which picture it is pointing at (styles.js, .mascot-wrap[data-state])
     var box = el('pm_mascot');
@@ -2354,11 +2362,16 @@
       for (var _pi = 0; _pi < _pmc.length; _pi++) { _pmc[_pi].checked = _ph.indexOf(_pmc[_pi].getAttribute('data-k')) < 0; }
       var _cb0 = el('cfgBurn'); if (_cb0) _cb0.checked = !(d.cfg && d.cfg.burnRate === false);
     }
-    // the step is worked out HERE, once per push, because mascotState carries the deadband and
-    // that is a thing with a memory: feeding it on the 1s tick as well would be the same reading
-    // written into it a hundred times between two pushes. The paint below is called by the tick
-    // too (the cameo), so it reads the answer rather than asking again
-    _mascotStepNow = mascotState(mascotStrain(d, noSession), (d.sd && d.sd.used_percentage) || 0);
+    // the rung is settled HERE, once per push, because mascotState carries the deadband and the
+    // floor and both of those are memories: asking it on the 1s tick as well would be the same
+    // reading written into them a hundred times between two pushes, and the floor would then be
+    // measured from a second that nothing happened in. It settles `_mascotStepNow` itself, and the
+    // paint below is called by the tick too (the cameo), so both of them read that answer rather
+    // than asking again.
+    // NO LIMIT GOES IN. `noSession` above is still what the ring, the HUD and the wording read, and
+    // the crab is not one of its readers any more (the axis block above, and section 2b of
+    // test/panel-css.test.js, which reads this file's source to hold that true)
+    mascotState(d);
     paintMascot();
 
     // the session has no bar: the ring below is its one showing, and meter() is called for the
@@ -3046,7 +3059,7 @@
   //
   // 2. ONE THRESHOLD IS NOT A THRESHOLD. The value that turns a class on and the value that turns
   //    it off were the same number, so any jitter at all on the input flips the class back and
-  //    forth; the crab's four steps have had a deadband for exactly this reason (MASCOT_STEPS
+  //    forth; the crab's rungs have had a deadband for exactly this reason (DRIVE_STEPS
   //    above). The pair here is sticky in the direction the narrow layout is entered: the class
   //    goes on below the threshold and comes off only a band above it.
   //

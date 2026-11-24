@@ -532,6 +532,15 @@ async function report(sevenDay, now, tier) {
 
 module.exports = {
   init, scan, sample, report, setProjectsDir, windowTotals,
+  // WHAT A REPLY COST, which is not only this file's business any more. The crab's drive ring
+  // (drive.js) prices each reply as it is parsed, and it has to price it the way the weekly share
+  // does or the panel would hold two answers to "what did that cost". It is a real export rather
+  // than an `_internal` reach-through because extension.js is a reader of it in production, not a
+  // test looking in: credits.js's fixed weights are the other answer, and the one that is wrong for
+  // somebody who only ever runs Sonnet.
+  // `priceOf` stays inside, because nothing outside this file has a use for the per-million rates
+  // on their own and an export with no reader is a promise nobody asked for
+  costOf,
   // exposed for tests
   _internal: { tierKey, REFERENCE_RATE, CEILING_RATE, MAX_SAMPLES, costOf, priceOf, modelLabel, estimateRate, othersFloor, costSince, files, getSamples: () => samples, setSamples: (s) => { samples = s; } }
 };

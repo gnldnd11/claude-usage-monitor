@@ -247,12 +247,11 @@ function renderHtml(vars) {
              every ratio from 0.84 to 1.78, so a width with height:auto rendered them 49.5 to 104.5
              tall: every state change shoved the stat tiles below down or up, and a session reset
              (90%+ to single digits) did it in one 55px jump.
-             EIGHT DRAWINGS, TWO AXES, FIVE SCENES AND ONE POOL. The limit's step picks the row
-             (idle, working, despair, stunned) and whether anything has been answered lately picks
-             the column, and then the reader's own choice picks the picture: every one of those
-             eight cells is governed by a scene now, though only two of the five scenes have
-             anything on sale in them (webview.js, MASCOT_ART and MASCOT_SLOT).
-             The eighth belongs to no cell at all: it is in the pool, and it covers whatever is
+             EIGHT DRAWINGS, ONE AXIS OF FIVE RUNGS, AND ONE POOL. How hard the machine is being
+             worked right now picks the rung (drive.js), the rungs are the shop's five scenes
+             exactly, and the reader's own choice picks the picture a rung draws; with nothing
+             chosen a rung draws its scene's free drawing (webview.js, MASCOT_ART).
+             The eighth belongs to no rung at all: it is in the pool, and it covers whatever is
              there for four seconds now and then (webview.js, the cameo). All eight are named here
              so the script only ever swaps the source for one of them.
              data-lift is beside them because it is a fact ABOUT those files: which of them carry

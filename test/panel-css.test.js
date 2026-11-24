@@ -399,24 +399,61 @@ ok('and its colour is one of this file’s tokens rather than a new grey',
   /^var\(--[a-z-]+\)$/.test(flood['flood-color'] || ''), flood['flood-color']);
 
 // ---------------------------------------------------------------------------------------------
-// 2b. the activity axis: one threshold, written once
+// 2b. the crab's axis: one ladder, and no limit anywhere near it
 // ---------------------------------------------------------------------------------------------
 // A source-shape check, like the freshness writer below, and for the same reason: nothing here
-// renders a page, and what went wrong twice in this file's history is a number that got a second
-// copy. The threshold is counted off three days of transcripts (docs/shop-spec.md, section 5-2),
-// so a second copy of it is a second answer to "when is the reader idle".
+// renders a page, and two of the three things below are properties of the SOURCE rather than of
+// any one rendering.
+//
+// WHAT THIS IS FOR NOW (2026-11-24). The crab used to be measured against a limit, and the whole
+// of the change is that it is measured against WORK instead: `drive`, which is the last hour of
+// replies priced and decayed (drive.js), and nothing else. The limits all stayed exactly where
+// they were, which means the only thing keeping the two apart is that nobody wires them back
+// together. That is not a thing a rendering can check, so it is checked here, on the source: the
+// functions that decide which crab is drawn may not mention a limit at all.
 const CLIENT0 = fs.readFileSync(path.join(ROOT, 'webview.js'), 'utf8');
+// the body of a top-level function in webview.js's one IIFE: two-space indent, so the closing
+// brace is the first line that is exactly '  }'
+const bodyOf = (name) => {
+  const re = new RegExp('function ' + name + '\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}');
+  const m = re.exec(CLIENT0);
+  return m && m[0];
+};
+// the threshold is counted off this reader's own transcripts (docs/shop-spec.md, section 5-2), so a
+// second copy of it is a second answer to "is anything being answered at all"
 ok('the quiet threshold is defined once and read once',
   (CLIENT0.match(/QUIET_MS/g) || []).length === 2, (CLIENT0.match(/QUIET_MS/g) || []).length + ' mention(s)');
-// the two axes stay apart: the step's own function may not learn about the clock
-const strain = /function mascotStrain\(d, noSession\) \{[\s\S]*?\n  \}/.exec(CLIENT0);
-ok('and the step still answers without it, so a Pro reader’s picture cannot move',
-  !!strain && !/QUIET_MS|last\.t/.test(strain[0]), strain ? 'the clock is in mascotStrain' : 'mascotStrain not found');
-// despair and stunned read the same on both sides of the threshold: there the limit is the news
+// NO LIMIT REACHES THE CRAB. Every function on the path from a push to a drawing, each read whole:
+// a limit named in any of them is the old two-axis product coming back. `paintMascot` is on the
+// list because it is where the last one was found (it decided whether the crab had been drawn yet
+// from whether a usage reading had arrived, which is what made the crab wait on the network)
+const AXIS_FNS = ['mascotState', 'driveStep', 'mascotQuiet', 'mascotArt', 'paintMascot'];
+for (const name of AXIS_FNS) {
+  const body = bodyOf(name);
+  const found = body && (body.match(/\bfh\b|\bsd\b|used_percentage/g) || []);
+  ok(name + ' decides the crab without reading a limit',
+    !!body && found.length === 0, body ? 'it reads ' + (found || []).join(' ') : name + ' not found');
+}
+// ...and the one place a rung is turned into a reading, for the same reason: `drive` and the clock
+// are the only two inputs the crab has
+const state = bodyOf('mascotState');
+ok('and the rung is picked by the drive and the clock, which are the only two inputs it has',
+  !!state && /\bdrive\b/.test(state) && /mascotQuiet/.test(state), state || 'mascotState not found');
+// the ladder is FIVE RUNGS WITH ONE DRAWING EACH, not four steps with two columns. The second
+// column was the activity axis, and it is the bottom rung now
 const art = /var MASCOT_ART = \{[\s\S]*?\n  \};/.exec(CLIENT0);
-ok('the table pairs a step with two drawings, and the top two steps pair with themselves',
-  !!art && /despair: \{ busy: 'despair', quiet: 'despair' \}/.test(art[0])
-  && /stunned: \{ busy: 'stunned', quiet: 'stunned' \}/.test(art[0]), art ? 'the pairing moved' : 'MASCOT_ART not found');
+const RUNGS = { quiet: 'idle', typing: 'coding', work: 'working', burn: 'despair', spent: 'stunned' };
+ok('the fallback table is five rungs, each with one drawing',
+  !!art && Object.keys(RUNGS).every((k) => new RegExp('\\b' + k + ": '" + RUNGS[k] + "'").test(art[0]))
+  && !/busy:|quiet: \{/.test(art[0]), art ? art[0].replace(/\s+/g, ' ') : 'MASCOT_ART not found');
+// AND THOSE FIVE NAMES ARE THE SHOP'S FIVE SCENES, which is what makes the map between them the
+// identity and is the whole reason the second table could go. A sixth scene, or a renamed one,
+// has to fail here rather than silently stop reaching a rung (webview.js, mascotArt)
+const SHOP_SLOTS = require(path.join(ROOT, 'shop.js')).SLOTS;
+ok('and they are the shop’s own scenes, in the same order, with the same free drawings',
+  SHOP_SLOTS.map((s) => s.id).join(' ') === Object.keys(RUNGS).join(' ')
+  && SHOP_SLOTS.every((s) => s.free === RUNGS[s.id]),
+  SHOP_SLOTS.map((s) => s.id + '=' + s.free).join(' '));
 
 // ---------------------------------------------------------------------------------------------
 // 2c. the crossroads: one box, two drawings, one height

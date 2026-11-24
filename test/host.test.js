@@ -1360,6 +1360,177 @@ test('shop: a drawing in that row is bought first and is a switch after', () => 
   assert.equal(JSON.stringify(shopRec().owned), owned, 'switching a drawing changed what is owned');
 });
 
+// --- the drive ring: what the crab is measured by -----------------------------------------------
+//
+// The arithmetic is test/drive.test.js's. What is pinned HERE is the plumbing between a transcript
+// on disk and the `drive` field on a push, which is where every expensive mistake in this file's
+// history has been:
+//   1. the field on the push is the kernel over the ring, at the plan's own allowance.
+//   2. ONE RESPONSE IS COUNTED ONCE. Claude Code writes one line per content block and only output
+//      grows between them, so counting each line would read about twice the work.
+//   3. ...INCLUDING ACROSS AN INCREMENTAL READ. Only appended bytes are parsed and a response's
+//      later snapshot lands in a different read than its first, so the de-duplication has to
+//      survive the boundary. This is the repository's core regression point (CLAUDE.md).
+//   4. A FULL RE-READ MAY NOT POUR A WHOLE TRANSCRIPT IN. A file that shrank, or a day that rolled,
+//      re-reads from byte zero, and the real transcripts run to hundreds of MB.
+//   5. the ring is the MACHINE's, not this window's: the drive is how hard the machine is working.
+const driveMod = require(path.join(ROOT, 'drive.js'));
+const DRIVE_PROJ = path.join(HOME, '.claude', 'projects', 'drive-lane');
+const MINUTE = 60000;
+// Prices are weekly.js's (PRICES there), used here through round numbers: a million input tokens of
+// Sonnet 5.5 is $2 and of Opus 5.5 is $4, so every figure below can be checked by hand
+const SONNET = 'claude-sonnet-5-5-20260101';
+const OPUS = 'claude-opus-5-5-20260101';
+function usageLine(id, t, model, u) {
+  return JSON.stringify({
+    type: 'assistant', requestId: id + '-req', timestamp: new Date(t).toISOString(), cwd: '/drive-lane',
+    message: {
+      id, model,
+      usage: Object.assign({ input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }, u)
+    }
+  });
+}
+// EVERY OTHER TRANSCRIPT IS TAKEN AWAY FIRST, because the ring is the machine's: the lanes above
+// this one leave their own files behind and a sum over all of them is not a figure anyone can check
+// by hand. Deleting them also drops their cache entries on the next pass (readTokens, `live`).
+//
+// THIS BLOCK HAS TO STAY LAST IN THE FILE. Every lane above writes the transcript it reads, so none
+// of them is hurt by this, but a lane added AFTER this one that reads a file an earlier lane wrote
+// would be emptied without being told. The guard is the temp HOME: this cannot reach a real ~/.claude
+function onlyTranscript(name, lines) {
+  assert.match(HOME, /cuc-host-/, 'this only ever empties the lane’s own temp HOME');
+  const stack = [path.join(HOME, '.claude', 'projects')];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) stack.push(p);
+      else if (e.name.endsWith('.jsonl')) fs.unlinkSync(p);
+    }
+  }
+  fs.mkdirSync(DRIVE_PROJ, { recursive: true });
+  const p = path.join(DRIVE_PROJ, name);
+  fs.writeFileSync(p, lines.join('\n') + '\n');
+  return p;
+}
+const ringOf = () => ext._test.readTokens([]).recent;
+const cells = (ring) => Object.keys(ring).map(Number).sort((a, b) => a - b);
+function near(a, b, eps, why) {
+  assert.ok(Math.abs(a - b) <= eps, (why || '') + ' got ' + a + ', wanted ' + b);
+}
+
+test('drive: the push carries the kernel over the last hour, at this plan’s own allowance', () => {
+  const NOW = Date.now();
+  const T_NEW = NOW - 2000;            // a reply that has just landed
+  const T_OLD = NOW - 20 * MINUTE;     // ...and one two taus back
+  onlyTranscript('drive.jsonl', [
+    usageLine('m-old', T_OLD, OPUS, { input_tokens: 1000000 }),      // $4.00
+    usageLine('m-new', T_NEW, SONNET, { input_tokens: 1000000 })     // $2.00
+  ]);
+  // THE RING, BY HAND: two cells, one cost each, nothing else on the machine
+  const want = driveMod.emptyRing();
+  driveMod.add(want, T_OLD, 4, NOW);
+  driveMod.add(want, T_NEW, 2, NOW);
+  assert.deepEqual(cells(ringOf()), cells(want), 'the cells the two replies fall in');
+  for (const b of cells(want)) near(ringOf()[b], want[b], 1e-9, 'cell ' + b);
+
+  // ...and the figure on the push. The kernel decays with the clock, so it is bracketed between the
+  // same arithmetic a moment before the push and a moment after: a decaying figure can only be
+  // inside that pair, and that is exact where comparing to one instant would be a race
+  const before = driveMod.of(want, Date.now(), 'max_20x');
+  onMessage({ type: 'ready' });
+  const got = lastPush().drive;
+  const after = driveMod.of(want, Date.now(), 'max_20x');
+  assert.equal(typeof got, 'number');
+  assert.ok(got <= before + 1e-12 && got >= after - 1e-12,
+    'the push is not the kernel: ' + got + ' outside [' + after + ', ' + before + ']');
+  // and the figure itself, written down: (2 + 4*e^-2)/10 dollars a minute over an even week's rate
+  near(got, 0.9326, 0.02, 'the two replies');
+  // THE TIER THIS LANE HAS IS NONE (no credentials file, and a .claude.json with no tier), so the
+  // allowance above is the fallback. It is the largest one on purpose, which is the calm answer
+  assert.equal(ext._test.teamCfg().plan, null, 'this lane reads no tier');
+});
+
+test('drive: one response written as several lines is one response', () => {
+  const T = Date.now() - 5000;
+  // three streaming snapshots of ONE response: the same id and requestId, only output growing
+  onlyTranscript('stream.jsonl', [
+    usageLine('m-s', T, SONNET, { input_tokens: 1000000, output_tokens: 10000 }),
+    usageLine('m-s', T, SONNET, { input_tokens: 1000000, output_tokens: 50000 }),
+    usageLine('m-s', T, SONNET, { input_tokens: 1000000, output_tokens: 100000 })
+  ]);
+  const ring = ringOf();
+  assert.equal(cells(ring).length, 1);
+  // $2 of input plus 100k of output at $10/M = $1. The maximum, not the sum of the three
+  near(ring[cells(ring)[0]], 3, 1e-9, 'the response');
+});
+
+test('drive: ...and it is still one response when the snapshots land in different reads', () => {
+  const T = Date.now() - 5000;
+  // THE CORE REGRESSION POINT. Only appended bytes are parsed (CLAUDE.md), so the second snapshot
+  // of a response is read in a later pass than the first, with nothing of the first left to compare
+  // it against except the accumulator's own memory
+  const p = onlyTranscript('incr.jsonl', [usageLine('m-i', T, SONNET, { input_tokens: 1000000, output_tokens: 10000 })]);
+  const first = ringOf();
+  near(first[cells(first)[0]], 2.1, 1e-9, 'the first snapshot alone');
+  // append the rest of that response, and then a second response
+  fs.appendFileSync(p, [
+    usageLine('m-i', T, SONNET, { input_tokens: 1000000, output_tokens: 100000 }),
+    usageLine('m-j', T, SONNET, { input_tokens: 500000 })
+  ].join('\n') + '\n');
+  const ring = ringOf();
+  assert.equal(cells(ring).length, 1, 'all three lines are in the same ten seconds');
+  // $3 for the first response at its maximum, $1 for the second. 5.1 would be the first one counted
+  // twice, which is exactly what reading the appended line with no memory of the earlier one does
+  near(ring[cells(ring)[0]], 4, 1e-9, 'the two responses');
+  // and a partial trailing line waits for its own append rather than being parsed in half
+  fs.appendFileSync(p, usageLine('m-k', T, SONNET, { input_tokens: 1000000 }).slice(0, 40));
+  near(ringOf()[cells(ring)[0]], 4, 1e-9, 'half a line counted as a reply');
+});
+
+test('drive: a transcript that is re-read from byte zero does not count twice', () => {
+  const T = Date.now() - 5000;
+  const lines = [
+    usageLine('m-a', T, SONNET, { input_tokens: 1000000 }),
+    usageLine('m-b', T, OPUS, { input_tokens: 1000000 })
+  ];
+  const p = onlyTranscript('reparse.jsonl', lines);
+  const b = cells(ringOf())[0];
+  near(ringOf()[b], 6, 1e-9, '$2 and $4');
+  // A FILE THAT SHRANK is the full re-parse this can force (readTokens, `fullParse`); the day
+  // rolling takes the same branch and cannot be forced without moving the clock. The accumulator is
+  // thrown away with the ring inside it, so the re-read has to rebuild the same figure and not add
+  // to the old one
+  fs.writeFileSync(p, lines[0] + '\n');
+  near(ringOf()[b], 2, 1e-9, 'the file after it shrank');
+  fs.writeFileSync(p, lines.join('\n') + '\n');
+  near(ringOf()[b], 6, 1e-9, 'and grown again');
+});
+
+test('drive: a full re-read of an old transcript puts none of it in the ring', () => {
+  const NOW = Date.now();
+  // THE FAULT THIS WINDOW EXISTS FOR, at the scale it really happens: a day of replies in one file,
+  // re-read from byte zero. Without the cutoff the crab would read last night's shift, and the ring
+  // would hold a day of cells instead of an hour's
+  const lines = [];
+  for (let i = 1; i <= 24; i++) lines.push(usageLine('m-h' + i, NOW - i * 60 * MINUTE, OPUS, { input_tokens: 1000000 }));
+  lines.push(usageLine('m-now', NOW - 3000, SONNET, { input_tokens: 1000000 }));
+  onlyTranscript('long.jsonl', lines);
+  const ring = ringOf();
+  // exactly one cell: every hourly reply is an hour or more back, and the hour is exclusive at 3600s
+  assert.equal(cells(ring).length, 1, 'the ring holds ' + cells(ring).length + ' cells of the day');
+  near(ring[cells(ring)[0]], 2, 1e-9, 'only the reply from this minute');
+  // and the accumulator does not carry keys for what it refused, which is the other half of the cost
+  assert.ok(driveMod.of(ring, Date.now(), 'max_20x') < 1, 'a day of work read as the last hour');
+});
+
+test('drive: an empty machine reads zero rather than nothing', () => {
+  onlyTranscript('quiet.jsonl', [JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), message: { content: 'hello' } })]);
+  assert.deepEqual(ringOf(), {}, 'a transcript with no reply in it opens no cell');
+  onMessage({ type: 'ready' });
+  assert.equal(lastPush().drive, 0, 'and the push says zero, which the crab reads as quiet');
+});
+
 function closeRounds() {
   try {
     ext._test.setHlSeeds(null);

@@ -149,6 +149,22 @@ try {
   // mode may replace, and until a mode replaces it this is the real one, bit for bit.
   sandbox.__cucRand = Math.random;
   vm.runInContext('Math.random = function () { return __cucRand(); };', sandbox);
+  // A WALL CLOCK THAT CAN BE STEPPED OVER, which is not the fake timer clock above.
+  //
+  // advance() runs the page's timers and does NOT move Date.now, deliberately: every mode in this
+  // harness is written against a Date.now that stands still while its timers run, and a mode that
+  // stamps "a reply landed just now" and then advances a timer means both of those at once. One
+  // thing on this page is measured in wall-clock MINUTES rather than in timers (the floor on how
+  // long one of the crab's drawings stays, webview.js DWELL_MS), and a mode that wants to get past
+  // it would otherwise have to sit through a real minute.
+  //
+  // So the page's Date.now gets a skew a mode can be handed (h.skipAhead), and h.pageNow is that
+  // same clock for a mode stamping a time INTO a push: a stamp taken from the harness's own clock
+  // would read as a minute old the moment a mode skipped ahead. A mode that never asks sees the
+  // clock it always saw, which is why this is a skew and not advance() moving both.
+  let dateSkew = 0;
+  sandbox.__cucSkew = () => dateSkew;
+  vm.runInContext('(function () { var _n = Date.now; Date.now = function () { return _n() + __cucSkew(); }; })();', sandbox);
   // Every script the page carries, in the order the HTML lists them: webview.js first, then one
   // panel per registered game. Taken from the rendered HTML rather than listed here, so a game
   // added to games/registry.js is loaded by this harness without touching it
@@ -283,6 +299,9 @@ try {
     // the page's coin, for the one mode whose subject is chance. Called with nothing, it is the
     // real Math.random again
     setRandom: (f) => { sandbox.__cucRand = typeof f === 'function' ? f : Math.random; },
+    // the page's wall clock: step it forward, and read it when stamping a time into a push
+    skipAhead: (ms) => { dateSkew += Math.max(0, ms || 0); },
+    pageNow: () => Date.now() + dateSkew,
     toWebview: (m) => toWebview(m),
     hostSend: (m) => hostOnMessage(m),
     ext, bj, credits, registry, gs, config
