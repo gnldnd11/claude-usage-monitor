@@ -59,9 +59,10 @@ module.exports = `
   .mascot-wrap{position:relative;display:inline-flex;align-items:flex-end;height:74px;margin-top:2px;}
   /* The bubble has a tail and the tail points down at the crab's head, so it is placed against the
      DRAWING and not against the box. The box is a fixed 74px and the drawing is fitted into it
-     bottom-first, so where its top edge sits depends on the picture: working (320x268) and despair
-     (480x570) fill the box to within half a pixel, while idle and stunned (160x90) come out 49.5px
-     tall and start 24.5px down. With one offset for all four the warning hung 24.5px above an idle
+     bottom-first, so where its top edge sits depends on the picture: working (424x286) and despair
+     (423x298) are wider than they are tall and come out 59.4px and 62.0px tall, while idle and
+     stunned (160x90) come out 49.5px tall and start 24.5px down. With one offset for all four the
+     warning hung 24.5px above an idle
      crab with its tail on nothing. test/panel-css.test.js recomputes both numbers from the four
      PNGs' own headers, so a new drawing with a new ratio fails there rather than on screen. */
   .mwarn{position:absolute;top:-15px;left:50%;transform:translateX(-50%);background:#fff;border-radius:10px;padding:3px 5px 4px;box-shadow:0 3px 9px rgba(0,0,0,.25);cursor:pointer;z-index:6;}
@@ -79,13 +80,15 @@ module.exports = `
      what the box uses before any state has been drawn.
      test/panel-css.test.js recomputes all eight by DECODING THE FRAMES (test/apng.js) and fails if
      a rule and a drawing disagree by a pixel, so the next redraw breaks a test and not a screen.
-     The two newest were cropped to their own ink before they came in (tools/fit-mascot.mjs), which
-     is why sleep's offset is the base value: with no transparent border left, the drawing starts
-     where the canvas does. Written out anyway rather than left to the fallback, so the list is
+     Four of the eight were cropped to their own ink before they came in (tools/fit-mascot.mjs):
+     sleep and blackhole, and working and despair when they were redrawn (2026-11-24). That is why
+     sleep's offset is the base value: with no transparent border left, the drawing starts where the
+     canvas does, and the other three differ from the base only by how much shorter than the box
+     their canvas comes out. Written out anyway rather than left to the fallback, so the list is
      eight long and a reader does not have to work out which one is missing and why. */
   .mascot-wrap[data-state="idle"] .mwarn{top:20.5px;}
-  .mascot-wrap[data-state="working"] .mwarn{top:-13.1px;}
-  .mascot-wrap[data-state="despair"] .mwarn{top:-9.3px;}
+  .mascot-wrap[data-state="working"] .mwarn{top:-0.4px;}
+  .mascot-wrap[data-state="despair"] .mwarn{top:-3px;}
   .mascot-wrap[data-state="stunned"] .mwarn{top:12.8px;}
   .mascot-wrap[data-state="coding"] .mwarn{top:25.6px;}
   .mascot-wrap[data-state="float"] .mwarn{top:7.2px;}

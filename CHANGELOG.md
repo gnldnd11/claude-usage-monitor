@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.38.1: Two new drawings for the desk
+
+- **The crab at the desk and the one the coffee goes over are redrawn.** Both are the owner's own art, eight frames each where they had four and two, and nothing in them was recoloured, resampled or recomposed on the way in: `tools/fit-mascot.mjs` cut the transparent border off every frame with one rectangle, which is the only operation this repository performs on a drawing. They are what Typing's second cell and Burning's first cell offer, and what Working and Burning fall back to.
+- The speech bubble that warns about a token spike points at the top of the ink of whatever is under it, so both of its offsets were recomputed from the new files rather than carried over, and the test that checks them decodes the frames instead of trusting this note. The two canvases are wider than they are tall where the old ones were not, so the drawing stands 59px and 62px into a 74px box rather than filling it.
+- Neither is given the dark-theme ink edge, and that is written down rather than left to silence. Four of the new desk crab's twelve marks fall under 3:1 on a dark card and they carry a fifth of a percent of its ink, the least of the eight drawings; the rest of it reads up to 15.66:1. Rimming a whole crab, desk, lamp and chair to rescue that is the grey sticker that rule exists to prevent.
+
 ## 1.38.0: The shelf says how hard you are driving it, not how much is left
 
 - **`Limit used up` was printed under a weekly bar reading 19%.** The four lines under the scene names were rewritten in 1.37.0 to say how much of the limit was gone, and the limit is not what picks a drawing. There is one set of thresholds and two different quantities go through it: an account with a five-hour window is measured on that window's own percentage, and an account with no window is measured on the pace its week is being spent at, where the middle of the scale is spending the week exactly evenly and the top of it is 1.8 times that. Both of those are real readings and neither is the other, so they can only share a scale in order to pick one set of drawings from one set of thresholds. Any line naming a percentage of the limit is therefore false for one of the two accounts, whatever the wording: the second kind can stand on the top step having spent a fifth of its week.

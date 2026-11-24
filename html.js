@@ -77,7 +77,16 @@ const INK_LIFT = ['coding'];
 // test/panel-css.test.js can tell a decision from an oversight. A drawing under 3:1 that is in
 // neither list fails there.
 const INK_LIFT_DECLINED = {
-  despair: 'only 32% of the edge lands on the broken marks; the rest outlines a desk that reads',
+  // 2026-11-24, both desk drawings replaced by the user. Measured again rather than carried over,
+  // because the figures in here are only worth having if they came off the files that shipped.
+  // Both are the same construction as the six before them: pixel art with a black line round it,
+  // on a desk, so what the dark card swallows is outline rather than anything the picture says.
+  // working is the least dim of the eight: 4 of its 12 marks fall under 3:1 and they carry 0.2% of
+  // its ink, against coding's 1.8%, which is the one that is lifted. The rest of it reads to
+  // 15.66:1. Rimming the whole crab, the desk, the lamp and the chair to rescue a fiftieth of a
+  // percent is the sticker the paragraph above is about.
+  working: '4 of 12 marks and 0.2% of the ink, the least of the eight; the rest reads to 15.66:1',
+  despair: '18 of 27 marks but 1.0% of the ink; the crab and the desk under them read to 15.52:1',
   float: 'only 12%; the rest outlines an astronaut at 15.4:1 to rescue two 2.75px bubbles',
   // 39% of the edge, which is between despair's 32% and coding's 57%, so the share alone does not
   // settle it and the drawing does. This is the only one of the eight that is LIT rather than
