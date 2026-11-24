@@ -13,6 +13,10 @@ const market = require('./market');
 // purse, so both halves of it (what was bought and what it cost) have to be adopted and dropped
 // together. shop.js requires nothing at all either, so this cannot be a cycle
 const shop = require('./shop');
+// ...and the mine the same way again. It is the one record here whose game reads the ledger BACK
+// (`weightedTotal` below is its ruler), so the direction of the require matters: mine.js requires
+// nothing at all, takes the token count as an argument, and this cannot be a cycle either
+const mine = require('./mine');
 
 // Credits are weighted like API list prices: input 1, output 5, cache write 1.25, cache read 0.1.
 // Every current model prices output at 5x input; a cache write is 1.25x at the 5-minute TTL (the
@@ -46,7 +50,8 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 //          bank: { [replicaId]: { won, lost, hands } },
 //          forge: { by, level, moves, tries, spent, heat, best, broke, earned },
 //          market: { by, pos: { CODE: {amount, entryTicks, at} }, moves, trades, staked, earned, best, at },
-//          shop: { by, owned: { 'mascot:float': 1 }, moves, spent } }
+//          shop: { by, owned: { 'mascot:float': 1 }, moves, spent },
+//          mine: { by, moves, pick, anchorTok, anchorDepth, claimedTo, bonus, spent, earned, best, finds } }
 // Raw tokens per day are stored, not credits, so a changed rate or weighting also re-prices the past.
 // `days` is not per Claude account, and cannot be: a day's cell is the largest figure any reader has
 // seen for that day, which is what lets several windows count the same day without crediting it
@@ -205,7 +210,7 @@ function normalizeLedger(raw) {
   return Object.assign({}, src, {
     days, backfilled: src.backfilled === true, sweptAt,
     bank: cleanBank(src.bank), forge: cleanForge(src.forge), market: market.clean(src.market),
-    shop: shop.clean(src.shop)
+    shop: shop.clean(src.shop), mine: mine.clean(src.mine)
   });
 }
 
@@ -255,6 +260,15 @@ function mergeLedger(stored, patch) {
     const next = shop.merge(out.shop, pShop);
     if (!shop.same(next, out.shop)) { out.shop = next; changed = true; }
   }
+  // and once more for the drift, with mine.js's own rules doing the work. This record carries BOTH
+  // halves too (what the wall paid and what the picks cost), and its merge maxes nothing: a claim
+  // the merge drops has to take its `earned` and its `claimedTo` back together or the same ground
+  // would be paid for twice (mine.js, MAX_FIELDS)
+  const pMine = mine.clean(patch && patch.mine);
+  if (pMine) {
+    const next = mine.merge(out.mine, pMine);
+    if (!mine.same(next, out.mine)) { out.mine = next; changed = true; }
+  }
   if (patch && patch.backfilled === true && !out.backfilled) { out.backfilled = true; changed = true; }
   if (patch && typeof patch.sweptAt === 'number' && patch.sweptAt > out.sweptAt) { out.sweptAt = patch.sweptAt; changed = true; }
   return { ledger: out, changed };
@@ -265,6 +279,32 @@ function weightedScaled(t) {
   let w = 0;
   for (const [k] of U.USAGE_FIELDS) w += t[k] * WEIGHT_NUM[k];
   return w;
+}
+
+// Every day of the ledger, weighted, times WEIGHT_DEN (an exact integer). `creditSummary` walked
+// this itself until the mine needed the same sum
+function scaledTotal(ledger) {
+  let total = 0;
+  for (const d in ledger.days) total += weightedScaled(ledger.days[d]);
+  return total;
+}
+
+// THE MINE'S RULER: how many weighted tokens this ledger has ever counted. Lifted out of
+// creditSummary rather than written a second time, because a depth and a balance computed from two
+// different sums would be two answers to one question.
+//
+// WEIGHTED and not raw, and that is the whole reason this function exists rather than the mine
+// adding up `days` itself. 97.2% of this reader's lifetime tokens are cache reads, which the weights
+// price at a tenth, so a mine dug on the raw count would measure how long the conversations were
+// instead of how much work was done.
+//
+// It only ever GROWS, which is what mine.js's depth derivation rests on: a day's cell is merged with
+// max and no cell can fall, so adding days in any order, or merging the same day any number of
+// times, gives a sum that is the same or larger. test/credits.test.js is where that is held.
+// The scaled sum is divided down here so the mine's unit is a plain weighted token; the fraction
+// thrown away is a twentieth of one token
+function weightedTotal(ledger) {
+  return Math.floor(scaledTotal(ledger) / WEIGHT_DEN);
 }
 
 // Net game result over every replica: sum of won minus sum of lost
@@ -298,19 +338,22 @@ function forgeEarned(forge) {
 //   shop.netOf   what the shop has been paid, as a negative: the one source here that can only
 //                subtract. Both halves are in that record too (what was bought and what it cost),
 //                so a purchase the merge drops neither charges nor hands anything over
+//   mine.netOf   what the wall has paid minus what the picks cost, read out of the one surviving
+//                drift. Both halves are in that record as well. It is the only source whose own
+//                input is this ledger (weightedTotal above), and it is capped against it: the mine
+//                may add at most 15% of what the same tokens earn here (mine.js, EARN_CAP)
 // The last three can go DOWN, once, when a collision drops a move: that is the move not having
 // happened, and the sword or the position is back in the player's hands to prove it. Writing either
 // of them into the bank's counters instead is the bug that mints money, and it has been written
 // once already: a sale banked per window paid 372,000 credits for one sword
 function creditSummary(ledger, todayKey, counting) {
   const unit = CREDIT_UNIT * WEIGHT_DEN;
-  let total = 0;
-  for (const d in ledger.days) total += weightedScaled(ledger.days[d]);
+  const total = scaledTotal(ledger);
   const todayW = ledger.days[todayKey] ? weightedScaled(ledger.days[todayKey]) : 0;
   const earned = Math.floor(total / unit);
   return {
     balance: earned + bankNet(ledger.bank || {}) + forgeEarned(ledger.forge)
-      + market.netOf(ledger.market) + shop.netOf(ledger.shop),
+      + market.netOf(ledger.market) + shop.netOf(ledger.shop) + mine.netOf(ledger.mine),
     today: earned - Math.floor((total - todayW) / unit),
     frac: (total % unit) / unit,
     perCredit: CREDIT_UNIT,
@@ -516,6 +559,8 @@ module.exports = {
   CREDIT_UNIT, WEIGHT_NUM, WEIGHT_DEN, LEDGER_KEY, SWEEP_CHUNK_BYTES,
   normalizeLedger, mergeLedger, creditSummary, catchUpSince, createLedgerStore,
   createSweep, runSweep,
+  // the mine's ruler. Exported because the mine's depth is a function of it and of nothing else
+  weightedTotal,
   // The sword's storage rules. Nothing in the extension calls these now that the forge is gone
   // (1.25.0): the only caller left is test/credits.test.js, which is what keeps the merge honest
   // for the stored records that are still out there. They are exported rather than made private

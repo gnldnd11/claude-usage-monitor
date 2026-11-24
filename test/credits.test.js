@@ -1204,6 +1204,146 @@ test('forge: two windows forging the same sword converge, and a stale copy heals
   assert.equal(credits.creditSummary(credits.normalizeLedger(va.value), 'x', false).balance, 50 - 510 - 400);
 });
 
+// --- the mine: the one record whose game reads this ledger back ---------------------------------
+//
+// Everything else in this file spends out of the ledger. The mine's DEPTH is a function of it, so
+// `weightedTotal` is a load-bearing export rather than a convenience, and claim (d) of mine.js is
+// about this file: the sequence the drift is dug along has to be monotone, or ground that was paid
+// for would come back unpaid.
+//
+// The record's own rules are mine.js's and are called rather than copied, the same as the market's
+// and the shop's above. What is measured here is the three lines of wiring.
+const mineMod = require(path.join(ROOT, 'mine.js'));
+const mineDay = (i, o, cc, cr) => ({ input: i, output: o, cache_creation: cc, cache_read: cr });
+const mineLedger = (led) => credits.normalizeLedger(led);
+const mineBalance = (led) => credits.creditSummary(mineLedger(led), 'x', false).balance;
+// a mine record with `moves` already on it, which is what makes it the later copy
+const mineRec = (by, over) => Object.assign(mineMod.save(mineMod.fresh(by, 0)), { by: by }, over || {});
+
+test('(d) weightedTotal is the weighted sum, and creditSummary reads the very same one', () => {
+  const led = mineLedger({ days: { '2026-03-01': mineDay(1000, 200, 300, 40000), '2026-03-02': mineDay(5, 5, 5, 5) } });
+  // the weights are credits.js's, and the sum is in WHOLE WEIGHTED TOKENS
+  const W = credits.WEIGHT_NUM, D = credits.WEIGHT_DEN;
+  let want = 0;
+  for (const k in led.days) {
+    const d = led.days[k];
+    want += (d.input * W.input + d.output * W.output + d.cache_creation * W.cache_creation + d.cache_read * W.cache_read) / D;
+  }
+  assert.equal(credits.weightedTotal(led), Math.floor(want), 'weightedTotal is not the weighted sum');
+  // ...and it is the SAME sum the balance is priced off, which is the whole reason it was lifted out
+  // of creditSummary rather than written a second time: a depth and a balance from two different
+  // sums would be two answers to one question
+  const sum = credits.creditSummary(led, 'x', false);
+  assert.equal(Math.floor(credits.weightedTotal(led) / credits.CREDIT_UNIT), sum.balance, 'the depth and the balance read different sums');
+  // the shape that goes over the wire is untouched by any of this
+  assert.deepEqual(Object.keys(sum).sort(), ['balance', 'counting', 'frac', 'perCredit', 'today']);
+  assert.equal(credits.weightedTotal(mineLedger(null)), 0, 'an empty ledger has dug something');
+  // RAW IS NOT WEIGHTED, and the difference is the whole reason the mine takes this number. A day
+  // that is all cache reads is priced at a tenth, so the two counts are far apart
+  const cacheOnly = mineLedger({ days: { '2026-03-01': mineDay(0, 0, 0, 1000000) } });
+  assert.equal(credits.weightedTotal(cacheOnly), 100000, 'a cache read was not priced at a tenth');
+});
+
+test('(d) the ground is monotone: any order, any number of merges, the sum never falls', () => {
+  const DAYS = [
+    ['2026-04-01', mineDay(900, 120, 400, 70000)],
+    ['2026-04-02', mineDay(50, 900, 0, 120000)],
+    ['2026-04-03', mineDay(7, 7, 7, 7)],
+    ['2026-04-04', mineDay(0, 0, 90000, 0)]
+  ];
+  // EVERY ORDER OF ARRIVAL GIVES ONE SUM. The days arrive from several windows and from a catch-up
+  // sweep, in whatever order the file system handed the transcripts over
+  const sums = new Set();
+  const perm = (left, led) => {
+    if (!left.length) { sums.add(credits.weightedTotal(led)); return; }
+    for (let i = 0; i < left.length; i++) {
+      const rest = left.slice(0, i).concat(left.slice(i + 1));
+      perm(rest, credits.mergeLedger(led, { days: { [left[i][0]]: left[i][1] } }).ledger);
+    }
+  };
+  perm(DAYS, mineLedger(null));
+  assert.equal(sums.size, 1, 'the order the days arrived in changed the depth: ' + [...sums].join(', '));
+  const whole = [...sums][0];
+  assert.ok(whole > 0);
+
+  // ...AND IT ONLY EVER GROWS. One day at a time, in order, never falling
+  let led = mineLedger(null), last = 0;
+  for (const [day, t] of DAYS) {
+    led = credits.mergeLedger(led, { days: { [day]: t } }).ledger;
+    const now = credits.weightedTotal(led);
+    assert.ok(now >= last, 'adding ' + day + ' made the mine shallower');
+    last = now;
+  }
+  assert.equal(last, whole);
+  // merging the same patch again changes nothing: a day's cell is a max, so this is idempotent and
+  // a window that re-reads the same transcripts does not dig the same ground twice
+  for (let i = 0; i < 3; i++) {
+    const r = credits.mergeLedger(led, { days: Object.fromEntries(DAYS) });
+    assert.equal(r.changed, false, 'the same days merged again reported a write to make');
+    assert.equal(credits.weightedTotal(r.ledger), whole, 'the same days merged again moved the face');
+  }
+  // a SMALLER figure for a day it already holds cannot pull the sum back, which is the property the
+  // derivation rests on: another window's older copy of a day may not un-dig the drift
+  const stale = credits.mergeLedger(led, { days: { '2026-04-02': mineDay(1, 1, 0, 1) } }).ledger;
+  assert.equal(credits.weightedTotal(stale), whole, 'a stale day pulled the face back');
+  // ...and a bigger one moves it forward
+  const busier = credits.mergeLedger(led, { days: { '2026-04-02': mineDay(50, 900, 0, 220000) } }).ledger;
+  assert.ok(credits.weightedTotal(busier) > whole, 'a busier day did not deepen the mine');
+});
+
+test('the ledger is wired to mine.js\'s own rules, at all three places', () => {
+  // 1. normalizeLedger cleans the key at the storage boundary
+  assert.equal(mineLedger(null).mine, null, 'a reader who has never dug has a drift');
+  const bad = mineLedger({ mine: { by: 'nope', moves: 1e30, earned: -5, pick: 99, claimedTo: 1.5 } });
+  assert.equal(bad.mine.by, '');
+  assert.equal(bad.mine.moves, 0, 'a hand-edited moves survived the boundary');
+  assert.equal(bad.mine.earned, 0);
+  assert.equal(bad.mine.pick, 0);
+  assert.equal(bad.mine.claimedTo, 0);
+  // 2. mergeLedger merges it and asks same() whether there is a write to make
+  const A = 'a'.repeat(16), Z = 'f'.repeat(16);
+  const one = mineRec(A, { moves: 4, claimedTo: 600, earned: 710, spent: 100, finds: 9, best: 360, pick: 1 });
+  const first = credits.mergeLedger(null, { mine: one });
+  assert.equal(first.changed, true);
+  assert.deepEqual(first.ledger.mine, mineMod.clean(one));
+  assert.equal(credits.mergeLedger(first.ledger, { mine: one }).changed, false, 'the same drift again wanted a write');
+  // 3. creditSummary adds its netOf, and that is earned MINUS what the picks cost
+  assert.equal(mineBalance({ mine: one }), one.earned - one.spent);
+  assert.equal(mineBalance({ mine: null }), 0);
+  // the four other sources are untouched by it, and the mine is simply one more term
+  const together = { mine: one, bank: { [A]: { won: 50, lost: 10, hands: 3 } } };
+  assert.equal(mineBalance(together), one.earned - one.spent + 40);
+});
+
+test('two windows claiming at once: the loser\'s money and boundary go together', () => {
+  // The collision this record's shape exists for. A claim banked per window would pay twice, which
+  // is the bug that minted 372,000 credits for one sword; here both halves are in the record, so
+  // the dropped claim costs nothing and pays nothing
+  const A = '1'.repeat(16), Z = 'e'.repeat(16);
+  let store = null;
+  // A has claimed to 600 and B, from the same start, has claimed further
+  const a = mineRec(A, { moves: 3, claimedTo: 600, earned: 710, finds: 9, best: 360 });
+  const b = mineRec(Z, { moves: 5, claimedTo: 1200, earned: 1480, finds: 17, best: 360 });
+  const landedA = credits.mergeLedger(store, { mine: a }).ledger;
+  store = landedA;
+  const landedB = credits.mergeLedger(store, { mine: b }).ledger;
+  // B wrote later and wins WHOLE: its boundary and its money arrive together, and A's claim is
+  // simply not in the record any more
+  assert.equal(mineMod.kept(mineMod.clean(b), landedB.mine), true, 'the later claim was dropped');
+  assert.equal(mineMod.kept(mineMod.clean(a), landedB.mine), false, 'the earlier claim was reported as kept');
+  assert.equal(landedB.mine.earned, b.earned);
+  assert.equal(landedB.mine.claimedTo, b.claimedTo);
+  assert.equal(mineBalance(landedB), b.earned);
+  // ...and A's older copy written back cannot pull either half out of it. This is what MAX_FIELDS
+  // being empty buys: nothing is lifted out of the loser, so A's 710 cannot ride in beside B's
+  // boundary and be paid for ground B already paid for
+  store = landedB;
+  const again = credits.mergeLedger(store, { mine: a }).ledger;
+  assert.equal(again.mine.earned, b.earned, 'the dropped claim\'s money came back');
+  assert.equal(again.mine.claimedTo, b.claimedTo, 'the dropped claim\'s boundary came back');
+  assert.deepEqual(mineMod.MAX_FIELDS.slice(), [], 'MAX_FIELDS is not empty: see mine.js');
+});
+
 // --- run --------------------------------------------------------------------------------
 let failed = 0;
 for (const t of tests) {

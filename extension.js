@@ -889,6 +889,13 @@ const gameHandlers = registry.createHandlers({
   replica: () => gameReplica,
   record: recordGameResult,
   storedMarket: () => (creditStore ? creditStore.read().market : null),
+  storedMine: () => (creditStore ? creditStore.read().mine : null),
+  // The mine's own ruler, and the one dep that hands a game something read OUT of the ledger rather
+  // than a door to write through. Its depth is this count and nothing else (mine.js), so it is taken
+  // here, from the same merged ledger a reply's balance is read from, and never off the wire.
+  // Weighted, because 97.2% of this reader's tokens are cache reads and a raw count would measure
+  // the length of the conversations instead of the work (credits.weightedTotal)
+  tokens: () => (creditStore ? credits.weightedTotal(creditStore.read()) : 0),
   push: () => push(),
   log: logLine,
   live: () => !!(provider && provider.view)
