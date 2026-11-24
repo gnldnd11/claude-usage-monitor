@@ -472,9 +472,11 @@ function noSession(h) {
     // 4. THE CRAB, all four states.
     //
     // The expectations are written as the PACE a reader is on, not as the numbers in the code: a
-    // pace of 1.0 spends the week exactly evenly and is the working line, 1.4 is despair and 1.8 is
-    // stunned. With 4.4 days left of seven, an even spender would be at 37.14%, so each row below
-    // is that times its pace. Nothing here knows what x50 is.
+    // pace of 1.0 spends the week exactly evenly and is the working line, 1.75 is despair and 2.5
+    // is stunned. With 4.4 days left of seven, an even spender would be at 37.14%, so each row
+    // below is that times its pace. Nothing here knows how the pace is mapped onto the scale, which
+    // is why moving that mapping (2026-11-24, despair 1.4 to 1.75 and stunned 1.8 to 2.5) changed
+    // the numbers in this list and not one line of its shape.
     const expected = (1 - 4.4 / 7) * 100;              // 37.1428…
     const at = (pace) => Math.round(expected * pace * 100) / 100;
     // This account is being used while it is read (the push above stamps the last message a minute
@@ -483,11 +485,12 @@ function noSession(h) {
     const walk = [
       { wk: at(0.97), want: 'coding', why: 'just under an even pace' },
       { wk: at(1.0), want: 'working', why: 'spending the week exactly evenly' },
-      { wk: at(1.4), want: 'despair', why: 'on course to run out two days early' },
-      { wk: at(1.8), want: 'stunned' },
-      { wk: at(1.37), want: 'despair', why: 'the stun does not hold below its own edge' },
-      { wk: at(1.35), want: 'despair', why: 'and despair holds inside its deadband' },
-      { wk: at(1.31), want: 'working', why: 'three points below it does let go' },
+      { wk: at(1.75), want: 'despair', why: 'on course to run out four days early' },
+      { wk: at(2.5), want: 'stunned' },
+      { wk: at(2.4), want: 'stunned', why: 'the stun holds inside its own edge' },
+      { wk: at(2.35), want: 'despair', why: 'and lets go just under it' },
+      { wk: at(1.66), want: 'despair', why: 'despair holds inside its deadband' },
+      { wk: at(1.60), want: 'working', why: 'three points below it does let go' },
       { wk: at(0.5), want: 'coding' }
     ];
     let drawn = [];
@@ -510,16 +513,16 @@ function noSession(h) {
     // fifth scene existed is pushed a set with no `work` in it, and every cell a scene is missing
     // for falls back to the table (webview.js, MASCOT_ART). Nothing read here is in that cell, so
     // the four are what this account needs and the fifth's absence is part of what is being checked
-    push(at(1.4), 4.4, { shop: { owned: ['mascot:float'], slots: { quiet: 'idle', typing: 'coding', burn: 'float', spent: 'stunned' } } }); advance(400);
+    push(at(1.75), 4.4, { shop: { owned: ['mascot:float'], slots: { quiet: 'idle', typing: 'coding', burn: 'float', spent: 'stunned' } } }); advance(400);
     ok('and the floating crab where the burning scene reaches, on this account too', shown() === 'float', shown());
     push(at(0.5), 4.4); advance(400);
     ok('and a reply landing brings the laptop back', shown() === 'coding', shown());
     // the same reading is a different picture depending on where in the week it is read, which is
     // the whole reason the raw percentage may not go in
-    push(at(1.4), 4.4); advance(400);
-    ok('52% four days from the reset is despair', shown() === 'despair', shown());
-    push(at(1.4), 2.0); advance(400);
-    ok('and the same 52% two days from it is the idle step, because that pace lands inside the week',
+    push(at(1.75), 4.4); advance(400);
+    ok('65% four days from the reset is despair', shown() === 'despair', shown());
+    push(at(1.75), 2.0); advance(400);
+    ok('and the same 65% two days from it is the idle step, because that pace lands inside the week',
       shown() === 'coding', shown());
     // the first hours of a week: an even spender is at nearly 0%, so a pace has almost nothing to
     // divide by. Without the floor in mascotStrain this is a division blow-up and a stunned crab

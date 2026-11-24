@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.38.2: The crab was flat on its back a fifth of the time
+
+- **An account with no five-hour window is measured on the pace its week is being spent at, and that pace climbed onto the top step far too early.** One multiplication, pace times fifty, put despair at 1.4 times an even pace and the collapse at 1.8, and ran into the ceiling at 2.0. Replayed over 1,105 of this reader's own stored samples, six days of them: flat on its back 22.3% of the time, standing at the working step 2.8%. The hardest state was the commonest, the ordinary one was invisible, and a weekly bar reading 19% sat under a crab that had given up. An account with a five-hour window never had this: it is measured on that window's own percentage, where 90 means ninety percent and nothing was wrong.
+- **The climb above an even pace is stretched, and the thresholds did not move.** They could not: the same 50, 70 and 90 are what a five-hour window is read against, where they are correct. What changed is only how a pace is laid onto that scale. Despair is 1.75 times an even pace now and the collapse is 2.5, which over the same six days comes out idle 53.6%, working 22.8%, despair 23.6% and collapsed none at all.
+- **None at all is the answer, not a gap.** The hardest pace those six days reached was 2.10 times even. What still lays that account's crab out is a week that is genuinely spent, which is the one case the top step was named for and the one the shelf calls `Overloaded`. Stretching further was measured too and drains the step below it: at 3.0 times, despair falls to 14.8%, and at 3.5 it empties.
+
 ## 1.38.1: Two new drawings for the desk
 
 - **The crab at the desk and the one the coffee goes over are redrawn.** Both are the owner's own art, eight frames each where they had four and two, and nothing in them was recoloured, resampled or recomposed on the way in: `tools/fit-mascot.mjs` cut the transparent border off every frame with one rectangle, which is the only operation this repository performs on a drawing. They are what Typing's second cell and Burning's first cell offer, and what Working and Burning fall back to.

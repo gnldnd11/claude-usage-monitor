@@ -2017,14 +2017,35 @@
   // of it on day four is on course and 50% of a five-hour window is halfway through the afternoon:
   // feeding the raw figure in would leave the crab idle through almost every week. What a reader
   // actually wants to know is whether today's rate runs out before the reset does, which is a PACE:
-  // 1.0 is spending the week exactly evenly, and the x50 puts 1.0 on the working line (50), 1.4 on
-  // despair (70) and 1.8 on stunned (90) without moving a single threshold.
+  // 1.0 is spending the week exactly evenly, and 1.0 stands on the working line (50).
+  //
+  // HOW STEEPLY IT CLIMBS ABOVE AN EVEN PACE IS A SEPARATE QUESTION, and the first answer to it was
+  // wrong (2026-11-24). It was one multiplication, pace x 50, which put despair at 1.4 and stunned
+  // at 1.8 and ran into the 100 ceiling at 2.0. Replayed over this reader's own 1,105 stored
+  // samples, six days of them: the crab was flat on its back 22.3% of the time and stood at the
+  // working step 2.8%. The hardest state was the commonest and the ordinary one was invisible, and
+  // the owner asked twice why the crab kept collapsing while the weekly bar read 19% and then 24%.
+  //
+  // So above an even pace the climb is stretched, and there is ONE dial rather than three: 1.0 is
+  // still the working line and PACE_TOP is the pace that stands on the top step. Despair is not a
+  // second dial, it falls out halfway between them, at 1.75 while the top is 2.5. At that top the
+  // same six days come out idle 53.6%, working 22.8%, despair 23.6%, stunned 0%. Zero is
+  // the right answer there and not a hole: the hardest pace those six days reached was 2.10, and
+  // what still stuns this account is `weekly >= 100` in mascotState, a week that is actually gone.
+  // That is what the top step is for and what the shelf calls it. 3.0 was measured too and drains
+  // despair to 14.8%; 3.5 empties it altogether.
+  //
+  // BELOW AN EVEN PACE NOTHING CHANGED, and an account with a five-hour window is not touched by
+  // any of this: it still gets the window's own percentage, unmapped.
   //
   // THE SECOND AXIS ARRIVED, AND IT IS NOT IN HERE. "Is anyone working right now" picks WHICH
   // DRAWING is shown and this function still answers WHICH STEP, so the two sit side by side
   // (mascotQuiet and MASCOT_ART below) rather than one inside the other. Nothing about this
   // function's inputs or its output moved, which is what keeps a Pro or Max reader's picture
   // exactly where it was (docs/shop-spec.md, section 8).
+  // The pace that stands on the top step (90). Measured, not chosen: see the paragraph above.
+  // Despair falls out of it at halfway, 1.75, and is not a dial of its own.
+  var PACE_TOP = 2.5;
   function mascotStrain(d, noSession) {
     if (!noSession) return (d.fh && d.fh.used_percentage) || 0;
     if (!d.sd || d.sd.used_percentage == null) return 0;
@@ -2035,7 +2056,13 @@
     // the percentage an even spender would have reached by now. The floor matters: for the first
     // 8.4 hours of a week `e * 100` is under 5 and any real use divided by it explodes
     var expected = Math.max(5, e * 100);
-    return Math.min(100, Math.round(d.sd.used_percentage / expected * 50));
+    var pace = d.sd.used_percentage / expected;
+    // an even pace IS the working line, so below it the scale is the pace itself and 0 is 0
+    if (pace <= 1) return Math.round(pace * 50);
+    // ...and above it, 40 points of scale are spread over the stretch from an even pace to the one
+    // that stands on the top step, so moving PACE_TOP moves despair with it and keeps the two in
+    // the same relation. 100 is still the ceiling: it is reached at a pace of 2.875
+    return Math.min(100, Math.round(50 + (pace - 1) * (40 / (PACE_TOP - 1))));
   }
   // --- WHICH DRAWING, the second axis: is anything being answered right now.
   //
