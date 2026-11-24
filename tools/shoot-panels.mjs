@@ -224,6 +224,55 @@ function playShop({ purse, owned, slots, ownAll }) {
   };
 }
 
+// The mine is the third screen with no round, and like the other two its record is seeded through
+// the STORAGE boundary rather than dug on the spot. It has to be: the depth is a function of the
+// ledger's whole weighted token count (mine.js), so a mine shot on this machine's own ledger would
+// be a different picture on every machine and on every run.
+//
+// WHAT IS WORTH MEASURING IS THE STATE WITH THE LINE IN IT. A pick with more reach than the window
+// draws no line and no veil at all (5-15's first row), which is the state that says least about the
+// geometry, so the record below is a tier-1 pick two thirds worn: the line lands inside the rock
+// and the ground beyond it is veiled.
+function playMine({ purse, tok, pick, depth }) {
+  const engine = require(path.join(ROOT, 'mine.js'));
+  const meta = require(path.join(ROOT, 'games/mine/meta.js'));
+  const by = 'a1b2c3d4e5f60718';
+  // `anchorDepth` is set so that the depth comes out where this shot wants it: the dug part is
+  // tok / TOK_PER_M and the rest is where the mine was when this pick was fitted
+  const dug = Math.floor(tok / engine.TOK_PER_M);
+  let store = engine.clean({
+    by, moves: 3, pick, anchorTok: 0, anchorDepth: depth - dug, claimedTo: depth,
+    bonus: 0, spent: engine.pickOf(pick).price, earned: 420, best: 100, finds: 6
+  });
+  const sent = [];
+  const balance = () => purse + engine.netOf(store);
+  const h = meta.createHandler({
+    tokens: () => tok,
+    reply(key, viewer, rec, reqN, error) {
+      const bal = balance();
+      const msg = { type: key, balance: bal, free: bal };
+      if (reqN != null) msg.n = reqN;
+      if (error) msg.error = error;
+      msg.state = viewer.view(rec, bal);
+      sent.push(msg);
+    },
+    budget: () => balance(),
+    replica: () => by,
+    storedMine: () => store,
+    record: (_net, extra) => { store = engine.merge(store, extra.mine); return { mine: store }; },
+    ensureReplica() {}, push() {}, log() {}, live: () => true
+  });
+  h.handle({ type: 'mn', op: 'open', n: 1 });
+  const v = sent[sent.length - 1].state;
+  return {
+    sent,
+    note: 'depth ' + v.depth + v.unit + ', reach ' + v.reach + v.unit
+      + ' of a ' + v.window.ahead + v.unit + ' lookahead, '
+      + (v.seam.length ? v.seam.map((s) => s.kind + ' at +' + (s.at - v.depth)).join(', ') : 'bare rock')
+      + ', offer ' + (v.offer ? v.offer.name + ' ' + v.offer.price : 'none')
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // the shots
 //
@@ -348,6 +397,14 @@ const SHOTS = {
   'shop-own': {
     file: 'measure-shop-own', tab: 'games', door: 'shop', measure: true,
     shop: { ownAll: true, slots: { burn: 'float', typing: 'working' } }
+  },
+  // ...and the third door. A measuring shot for the same reason: what is read off it is the band's
+  // geometry (how much rock the lookahead really is, where the crab's box lands against the face,
+  // how tall the card comes out), and the depth behind it is invented.
+  // 10 MT of a 15 MT tier-1 pick: 100 m dug, 50 m of reach left, so the line is inside the window
+  mine: {
+    file: 'measure-mine', tab: 'games', door: 'mine', measure: true,
+    mine: { tok: 10000000, pick: 1, depth: 1284 }
   }
 };
 
@@ -580,7 +637,9 @@ function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, c
     // leaving one out here measures a box with a broken image in it
     mascotCodingUri: 'mascot-coding.png', mascotFloatUri: 'mascot-float.png',
     mascotSleepUri: 'mascot-sleep.png', mascotBlackholeUri: 'mascot-blackhole.png',
-    heroGamesUri: 'hero-games.png', heroShopUri: 'hero-shop.png',
+    // the crossroads' doors, the register's own list of them: leaving one out measures a box with
+    // a broken image in it, and the register is where a door's picture is named
+    doors: registry.doors(uri), heroShopUri: 'hero-shop.png',
     roomMinecraftUri: 'room-minecraft.png',
     assetsJson, gameList, gameScripts: registry.panels()
   });
@@ -908,6 +967,12 @@ async function main() {
     } else if (shot.market) {
       const m = playMarket(Object.assign({ purse }, shot.market));
       messages = m.sent;
+      note = m.note;
+    } else if (shot.mine) {
+      const m = playMine(Object.assign({ purse }, shot.mine));
+      // the data push first, because the swing's speed is the window's own rung (webview.js's
+      // driveStep) and a screen with no push on it would be measured with the crab standing still
+      messages = [{ type: 'data', data: usageData({ pct: 42, weekly: 61, session: true }) }].concat(m.sent);
       note = m.note;
     } else if (shot.shop) {
       const s = playShop(Object.assign({ purse }, shot.shop));

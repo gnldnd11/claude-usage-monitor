@@ -14,6 +14,9 @@ module.exports = {
         latchIdle, active, activeName, mouseClick, ledgerBalance, useSeed, standOut, watch,
         noStaleTimer, toWebview, sentOps, sentHl, errors, hostLog, roCbs, ext, bj, credits,
         registry, gs, config, EXT, path } = h;
+    // WHAT THE LIST IS, which is not every game in the register any more: a game behind a door of
+    // its own has no row (games/registry.js, and docs/shop-spec.md 2-7)
+    const LISTED = registry.behind(registry.LIST_DOOR);
 
     if (MODE === 'poor50' || MODE === 'poor5') {
     openTable();
@@ -37,34 +40,34 @@ module.exports = {
     // step inside the Games one. What the crossroads itself is made of is checked in _shop.js;
     // what matters here is that the way in still lands somewhere that is not a table
     ok('credits click opens the crossroads, not a game', $('panelCross').style.display === '' && notShown('panelTable') && $('panelGames').style.display === 'none' && $('panelUsage').style.display === 'none' && bodyTabs() === 'tab-games' && $('hdCredits').getAttribute('aria-pressed') === 'true', bodyTabs());
-    mouseClick($('crDoorGames')); advance(20);
+    mouseClick(h.doorBtn('games')); advance(20);
     ok('and the Games door opens the list', $('panelGames').style.display === '' && notShown('panelTable') && $('panelCross').style.display === 'none', bodyTabs());
     // the register is the expectation: every game it lists has a row, in that order, carrying that
     // game's own name and line. A game added to games/registry.js is checked here by being there
     ok('the list has every registered game, in order, with its name',
-      doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join() === registry.GAMES.map((g) => g.id).join()
-      && doc.querySelectorAll('#panelGames .gm-nm').map((e) => e.textContent).join() === registry.GAMES.map((g) => g.name).join(),
+      doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join() === LISTED.map((g) => g.id).join()
+      && doc.querySelectorAll('#panelGames .gm-nm').map((e) => e.textContent).join() === LISTED.map((g) => g.name).join(),
       doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join());
     // a second line only where it says something. Every row reading "Min bet 10" is wallpaper, and
     // the same line on two rows out of five is "this one is expensive"
     ok('the second line is drawn only for the games that have one',
       doc.querySelectorAll('#panelGames .gm-sub').map((e) => e.textContent).join()
-        === registry.GAMES.filter((g) => g.sub).map((g) => g.sub).join(),
+        === LISTED.filter((g) => g.sub).map((g) => g.sub).join(),
       doc.querySelectorAll('#panelGames .gm-sub').map((e) => e.textContent).join());
     // the five the casino was cut down to on 2026-11-13. test/registry.test.js is where the same
     // list is asserted against the register; this is the one that says they reach the PAGE
     ok('the five games this build ships are all still listed',
       ['blackjack', 'hilo', 'slots', 'wheel', 'market'].every((id) => !!registry.BY_ID[id]),
-      registry.GAMES.map((g) => g.id).join());
+      LISTED.map((g) => g.id).join());
     // A row's picture is painted art (an <img>) or a drawn tile (an inline <svg class="gm-tile">),
     // never both. Either way it sits OVER the glyph and the glyph
     // stays: an alt="" image that fails to load draws nothing, so the glyph underneath is what shows
     ok('every row carries one picture, decorative, over a glyph that stays',
       doc.querySelectorAll('#panelGames .gm-ic img').map((e) => /[^/]+$/.exec(e.getAttribute('src'))[0]).join()
-        === registry.GAMES.filter((g) => g.thumb).map((g) => g.thumb).join()
+        === LISTED.filter((g) => g.thumb).map((g) => g.thumb).join()
       && doc.querySelectorAll('#panelGames .gm-ic img').every((e) => e.getAttribute('alt') === '')
-      && doc.querySelectorAll('#panelGames .gm-ic .gm-tile').length === registry.GAMES.filter((g) => g.tile).length
-      && doc.querySelectorAll('#panelGames .gm-ic svg:not(.gm-tile)').length === registry.GAMES.length,
+      && doc.querySelectorAll('#panelGames .gm-ic .gm-tile').length === LISTED.filter((g) => g.tile).length
+      && doc.querySelectorAll('#panelGames .gm-ic svg:not(.gm-tile)').length === LISTED.length,
       doc.querySelectorAll('#panelGames .gm-ic img').map((e) => /[^/]+$/.exec(e.getAttribute('src'))[0] + ' alt=' + JSON.stringify(e.getAttribute('alt'))).join(' '));
     // THE LIST IS FLAT: five rows in the register's own order, no headings over them and nothing to
     // fold (docs/game-panels.md, section 7-2). This is the assertion that keeps the next reader from
@@ -74,7 +77,7 @@ module.exports = {
     // (test/webview/games/_chrome.js, the favs mode, is where the starring itself lives)
     ok('the list is five flat rows in the register’s order, with no headings and nothing folded',
       doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join()
-        === registry.GAMES.map((g) => g.id).join()
+        === LISTED.map((g) => g.id).join()
       && doc.querySelectorAll('#panelGames .gm-sec').length === 0
       && doc.querySelectorAll('#panelGames .gm-fold').length === 0
       && $('gmFavRows').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0,
@@ -99,7 +102,7 @@ module.exports = {
     // until 1.25.0. The other half of the rule (a position that IS held fills the row) is the
     // market's own, in test/webview/games/market.js
     ok('every row has its figure slot, and a wallet holding nothing says nothing into it',
-      doc.querySelectorAll('#panelGames .gm-fig').length === registry.GAMES.length
+      doc.querySelectorAll('#panelGames .gm-fig').length === LISTED.length
       && hostLog.filter((l) => l.type === 'mk').length === 0
       && doc.querySelectorAll('#panelGames .gm-fig').every((e) => e.textContent === ''),
       doc.querySelectorAll('#panelGames .gm-fig').map((e) => JSON.stringify(e.textContent)).join()

@@ -51,6 +51,9 @@ module.exports = {
         latchIdle, active, activeName, mouseClick, ledgerBalance, useSeed, standOut, watch,
         noStaleTimer, toWebview, sentOps, sentHl, errors, hostLog, roCbs, ext, bj, credits,
         registry, gs, config, EXT, path } = h;
+    // WHAT THE LIST IS, which is not every game in the register any more: a game behind a door of
+    // its own has no row (games/registry.js, and docs/shop-spec.md 2-7)
+    const LISTED = registry.behind(registry.LIST_DOOR);
 
     if (MODE === 'header' || MODE === 'header-reduce') {
     // the header credits line, re-checked on the real HTML now that it is a button
@@ -112,7 +115,7 @@ module.exports = {
     // ---------- nothing starred ----------
     ok('nothing starred: the box is not there at all (no empty box, no dotted slot)',
       $('gmFavRows').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0
-      && listed().join() === registry.GAMES.map((g) => g.id).join(), listed().join());
+      && listed().join() === LISTED.map((g) => g.id).join(), listed().join());
     ok('every star is off and says so, and names the game it keeps',
       doc.querySelectorAll('#panelGames .gm-fav').every((s) => s.getAttribute('aria-pressed') === 'false')
       && star('market').getAttribute('aria-label') === 'Favourite Market'
@@ -122,14 +125,14 @@ module.exports = {
     // the first paint has to be right on its own: the scripts run after it, and a star that only
     // says it is off once webview.js has been through the list is a star that says nothing at first
     ok('the markup itself says every star is off, and carries no heading and nothing to fold',
-      (h.rawHtml.match(/class="gm-fav" data-fav="[a-z]+" aria-pressed="false"/g) || []).length === registry.GAMES.length
+      (h.rawHtml.match(/class="gm-fav" data-fav="[a-z]+" aria-pressed="false"/g) || []).length === LISTED.length
       && h.rawHtml.indexOf('gm-sec') < 0 && h.rawHtml.indexOf('gm-fold') < 0,
       (h.rawHtml.match(/aria-pressed="false"/g) || []).length + ' stars, '
         + (h.rawHtml.match(/gm-sec/g) || []).length + ' headings');
     ok('two boxes and no headings: every row lives in the one below',
       doc.querySelectorAll('#panelGames .gm-rows').length === 2
       && doc.querySelectorAll('#panelGames .gm-sec').length === 0
-      && rowsIn('gmRows').join() === registry.GAMES.map((g) => g.id).join(),
+      && rowsIn('gmRows').join() === LISTED.map((g) => g.id).join(),
       rowsIn('gmRows').join());
     ok('the box that SHOWS carries the top margin, not the hidden one',
       doc.querySelectorAll('#panelGames .gm-rows.gm-top').length === 1
@@ -161,8 +164,8 @@ module.exports = {
     ok('the box keeps the register’s order, not the order they were starred in',
       rowsIn('gmFavRows').join() === 'blackjack,market', rowsIn('gmFavRows').join());
     ok('and the rows left behind keep theirs, with every game still listed once',
-      rowsIn(home).join() === registry.GAMES.map((g) => g.id).filter((id) => ['blackjack', 'market'].indexOf(id) < 0).join()
-      && listed().length === registry.GAMES.length, rowsIn(home).join());
+      rowsIn(home).join() === LISTED.map((g) => g.id).filter((id) => ['blackjack', 'market'].indexOf(id) < 0).join()
+      && listed().length === LISTED.length, rowsIn(home).join());
     // ---------- off again, from the keyboard ----------
     star('market').focus(); doc.pressKey('Enter'); advance(20);
     ok('Enter on the star unstars it and the row goes home, in its own order',
@@ -171,13 +174,13 @@ module.exports = {
       rowsIn('gmFavRows').join() + ' | ' + rowsIn(home).join());
     star('blackjack').focus(); doc.pressKey('Enter'); advance(20);
     ok('the last one off takes the box away again',
-      $('gmFavRows').hidden && kept() === '' && listed().join() === registry.GAMES.map((g) => g.id).join(),
+      $('gmFavRows').hidden && kept() === '' && listed().join() === LISTED.map((g) => g.id).join(),
       listed().join());
     // every game starred: the list below is the empty box now, and the same rule hides it
-    for (const g of registry.GAMES) { mouseClick(star(g.id)); advance(20); }
+    for (const g of LISTED) { mouseClick(star(g.id)); advance(20); }
     ok('every game starred: the list below is hidden rather than left as an empty box',
       $('gmRows').hidden && !$('gmFavRows').hidden
-      && rowsIn('gmFavRows').join() === registry.GAMES.map((g) => g.id).join(),
+      && rowsIn('gmFavRows').join() === LISTED.map((g) => g.id).join(),
       rowsIn('gmFavRows').join());
     // out of the area and back in through the Games door: the list is one step inside the
     // crossroads now, so this is what "coming back to the list" costs
@@ -187,11 +190,11 @@ module.exports = {
     const base = { agents: [], agentActivity: { instances: [], stats: {} }, xp: {}, today: {}, count: 0, cfg: { panelHidden: [] }, credits: { balance: 0, today: 0, frac: 0, perCredit: 10000 } };
     toWebview({ type: 'data', data: Object.assign({}, base, { favGames: gs.data.gameFavoritesV1 }) }); advance(20);
     ok('a data push leaves the starred rows where they are',
-      rowsIn('gmFavRows').join() === registry.GAMES.map((g) => g.id).join() && $('gmRows').hidden,
+      rowsIn('gmFavRows').join() === LISTED.map((g) => g.id).join() && $('gmRows').hidden,
       rowsIn('gmFavRows').join());
-    for (const g of registry.GAMES) { mouseClick(star(g.id)); advance(20); }
+    for (const g of LISTED) { mouseClick(star(g.id)); advance(20); }
     ok('and clearing them all puts every row back in the list', $('gmFavRows').hidden
-      && rowsIn('gmRows').join() === registry.GAMES.map((g) => g.id).join(), rowsIn('gmRows').join());
+      && rowsIn('gmRows').join() === LISTED.map((g) => g.id).join(), rowsIn('gmRows').join());
     // ---------- the ring, lowered for the light theme in one place ----------
     ok('no focus ring writes the ember straight into the rule any more',
       !/focus-visible[^{]*\{[^}]*#e8895a/.test(css) && (css.match(/outline:2px solid var\(--focus\)/g) || []).length >= 9,

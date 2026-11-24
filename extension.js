@@ -1711,8 +1711,9 @@ class UsageViewProvider {
     // the quiet scene's second drawing, and the one that belongs to no scene at all (shop.js, POOL)
     const mascotSleepUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-sleep.png'));
     const mascotBlackholeUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'mascot-blackhole.png'));
-    // the two doors of the crossroads the credits button opens (html.js, #panelCross)
-    const heroGamesUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'hero-games.png'));
+    // The shop's door of the crossroads (html.js, #panelCross). The other doors' pictures come
+    // with the doors themselves, below: the shop is not a game, so its door is the one the register
+    // does not own (docs/shop-spec.md, section 4-5)
     const heroShopUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'hero-shop.png'));
     const roomMinecraftUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'room-minecraft.png'));
     const spriteUri = (n) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, n)).toString();
@@ -1721,6 +1722,9 @@ class UsageViewProvider {
     // too or the panels have no script (see .vscodeignore)
     const gameList = registry.view(spriteUri, (k) => IC[k]);
     const gameScripts = registry.panels().map(spriteUri);
+    // ...and the doors the register owns: one per area that has a game behind it, each with its
+    // own picture out of the published root (games/registry.js's `doors`)
+    const doors = registry.doors(spriteUri);
     // sprites resolve to embedded base64 (data URI); room images stay as file URIs (own assets)
     const spriteSrc = (n) => spriteData[n] || spriteUri(n);
     const npcs = buildNpcCatalog(spriteSrc, path.join(this.extensionUri.fsPath, 'sprite-bbox.json'));
@@ -1761,7 +1765,7 @@ class UsageViewProvider {
       scriptUri, crabUri,
       mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
       mascotCodingUri, mascotFloatUri, mascotSleepUri, mascotBlackholeUri,
-      heroGamesUri, heroShopUri,
+      doors, heroShopUri,
       roomMinecraftUri, assetsJson, gameList, gameScripts
     });
   }

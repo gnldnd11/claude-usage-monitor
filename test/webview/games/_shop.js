@@ -44,7 +44,7 @@ module.exports = {
   },
 
   run: function (h, MODE) {
-    const { ok, advance, doc, $, showing, notShown, bodyTabs, openList, openShop, openGame, active, activeName } = h;
+    const { ok, advance, doc, $, showing, notShown, bodyTabs, openList, openDoor, doorBtn, openGame, active, activeName } = h;
     // the catalog, which every mode now reads: the two short modes price their own refusal off it
     // rather than writing a figure that a drawing changing rung would silently falsify
     const shop = require(h.path.join(h.EXT, 'shop.js'));
@@ -76,18 +76,20 @@ module.exports = {
     // ---------- 1. the coin opens a choice ----------
     ok('the page starts on Usage, as it always has', bodyTabs() === 'tab-usage', bodyTabs());
     $('hdCredits').click(); advance(20);
-    ok('the coin opens the crossroads and neither of the two screens behind it',
+    ok('the coin opens the crossroads and none of the screens behind it',
       showing('panelCross') && !showing('panelGames') && !showing('panelShop')
       && notShown('panelTable') && bodyTabs() === 'tab-games', bodyTabs());
     const doors = doc.querySelectorAll('#panelCross .cr-door');
-    ok('two doors, each a picture with its name under it',
-      doors.length === 2
-      && doors.map((d) => d.querySelector('.cr-cap').textContent).join() === 'Games,Shop'
+    // THREE SINCE 2026-11-24 (docs/shop-spec.md, 2-7). The order is the register's doors and then
+    // the shop's, which is the one html.js owns because the shop is not a game
+    ok('three doors, each a picture with its name under it',
+      doors.length === 3
+      && doors.map((d) => d.querySelector('.cr-cap').textContent).join() === 'Mine,Games,Shop'
       && doors.every((d) => !!d.querySelector('.cr-art img')),
       doors.map((d) => d.querySelector('.cr-cap').textContent).join());
-    ok('and they are the two drawings, not a glyph or a tile',
+    ok('and they are the three drawings, not a glyph or a tile',
       doors.map((d) => /[^/]+$/.exec(d.querySelector('.cr-art img').getAttribute('src'))[0]).join()
-        === 'hero-games.png,hero-shop.png',
+        === 'hero-mine.png,hero-games.png,hero-shop.png',
       doors.map((d) => d.querySelector('.cr-art img').getAttribute('src')).join(' '));
     // NO NUMBERS. The balance is in the button directly above this screen, and a figure here would
     // be the same number twice (docs/shop-spec.md, section 2-1)
@@ -96,10 +98,12 @@ module.exports = {
     // NO ARROW either: the way out is the same button that was pressed to come in, and a second
     // control for one step is what section 4-2 refuses
     ok('and no second way back: the coin is the only one', !doc.querySelector('#panelCross .bj-back'));
-    ok('the first door takes the focus', active() === $('crDoorGames'), activeName());
-    // the pictures have no pixel grid to preserve, so nearest-neighbour would drop their outlines
+    ok('the first door takes the focus', active() === doorBtn('mine'), activeName());
+    // the pictures have no pixel grid to preserve, so nearest-neighbour would drop their outlines.
+    // The box went from 2/1 to 1.7/1 when the third door arrived: at 2/1 a third column renders the
+    // shop's drawing at 0.049x, where a 1px outline survives about one column in twenty (2-7)
     ok('the heroes are scaled smoothly while the pixel art is not',
-      /\.cr-art\{[^}]*aspect-ratio:2\/1[^}]*max-height:72px/.test(css())
+      /\.cr-art\{[^}]*aspect-ratio:1\.7\/1[^}]*max-height:72px/.test(css())
       && !/\.cr-art img\{[^}]*image-rendering/.test(css())
       && /\.sparkle\{[^}]*image-rendering:pixelated/.test(css()),
       (/\.cr-art\{[^}]*\}/.exec(css()) || [''])[0]);
@@ -110,12 +114,12 @@ module.exports = {
       (/\.cr-art img\{[^}]*\}/.exec(css()) || [''])[0]);
 
     // ---------- 2. one arrow is one step, from every depth ----------
-    $('crDoorGames').click(); advance(20);
+    doorBtn('games').click(); advance(20);
     ok('the Games door opens the list', showing('panelGames') && !showing('panelCross'), bodyTabs());
     ok('and the list carries the arrow back to the crossroads', !!$('gmBack'));
     $('gmBack').click(); advance(20);
     ok('which is one step up, not out of the area', showing('panelCross') && bodyTabs() === 'tab-games', bodyTabs());
-    $('crDoorShop').click(); advance(20);
+    doorBtn('shop').click(); advance(20);
     ok('the Shop door opens the shop', showing('panelShop') && !showing('panelCross') && !showing('panelGames'), bodyTabs());
     $('shBack').click(); advance(20);
     ok('and its arrow climbs to the same place', showing('panelCross'), bodyTabs());
@@ -128,7 +132,7 @@ module.exports = {
     ok('and the next press to the crossroads', showing('panelCross'), bodyTabs());
 
     // ---------- the door is not remembered ----------
-    $('crDoorShop').click(); advance(20);
+    doorBtn('shop').click(); advance(20);
     $('hdCredits').click(); advance(20);
     ok('the coin leaves for the tab it was pressed from', bodyTabs() === 'tab-usage', bodyTabs());
     $('hdCredits').click(); advance(20);
@@ -136,7 +140,7 @@ module.exports = {
       showing('panelCross') && !showing('panelShop'), bodyTabs());
 
     // ---------- Escape takes the same step the arrow does ----------
-    $('crDoorGames').click(); advance(20);
+    doorBtn('games').click(); advance(20);
     doc.pressKey('Escape'); advance(20);
     ok('Escape in the list climbs to the crossroads', showing('panelCross'), bodyTabs());
     doc.pressKey('Escape'); advance(20);
@@ -157,7 +161,7 @@ module.exports = {
       $('bjDeal').click(); advance(2); advance(1200);
       ok('a round is live and holding its stake of 1,000',
         !$('bjPlay').hidden && h.sent('bj').filter((m) => m.op === 'deal').pop().bet === 1000, bodyTabs());
-      openShop(); advance(20);
+      openDoor('shop'); advance(20);
       // NOTHING IS ASKED FOR UNTIL A PRICE IS PRESSED, so the refusal is not on the screen yet
       // either. The reader aims at something first, exactly as they would with a full purse
       ok('the shop opens with no button and so with nothing refused yet',
@@ -786,7 +790,7 @@ module.exports = {
     }
 
     // ---------- the choice survives leaving the screen ----------
-    openList(); advance(20); openShop(); advance(20);
+    openList(); advance(20); openDoor('shop'); advance(20);
     ok('coming back to the shop shows the same drawings in the same scenes',
       cell('float').classList.contains('on') && inScene('typing', 'coding').classList.contains('on')
       && worn().length === shop.SLOTS.length, wornKeys().join(' '));
@@ -815,13 +819,13 @@ module.exports = {
       h.toWebview({ type: 'shop', n: m.n, balance: h.ledgerBalance(), free: h.ledgerBalance(), error: 'the shelf could not be read' });
       return true;
     };
-    openList(); advance(20); openShop(); advance(20);
+    openList(); advance(20); openDoor('shop'); advance(20);
     ok('a reply with no shelf shows the reason and keeps what is drawn',
       !$('shErr').hidden && /could not be read/.test($('shErr').textContent) && cells().length === shelf0,
       $('shErr').textContent);
     // and when nothing answers at all, it says so
     h.intercept = (m) => m.type === 'shop';
-    openList(); advance(20); openShop(); advance(5);
+    openList(); advance(20); openDoor('shop'); advance(5);
     ok('a message nobody answers leaves a clock running', h.pending() > 0, h.pending() + ' timer(s)');
     advance(4100);
     ok('and four seconds later the screen says so', /respond/.test($('shErr').textContent), $('shErr').textContent);
@@ -830,11 +834,11 @@ module.exports = {
     // while a message is out there leaves it locked for the rest of the four seconds, and a reader
     // who comes straight back gets the stale shelf and nothing asked for a new one
     h.intercept = (m) => m.type === 'shop';
-    openList(); advance(20); openShop(); advance(5);
+    openList(); advance(20); openDoor('shop'); advance(5);
     h.intercept = null;
     const asked = h.sent('shop').filter((m) => m.op === 'open').length;
     openList(); advance(20);          // out of the shop, one step up and across
-    openShop(); advance(20);
+    openDoor('shop'); advance(20);
     ok('leaving and coming back asks the host again rather than sitting out the wait',
       h.sent('shop').filter((m) => m.op === 'open').length === asked + 1 && $('shErr').hidden,
       (h.sent('shop').filter((m) => m.op === 'open').length - asked) + ' new ask(s), warning bar '

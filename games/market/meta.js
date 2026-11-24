@@ -208,7 +208,7 @@ module.exports = {
 
   css: `
   /* --- The coin market. The one screen with no table on it: there is no round to lay down, so the
-     felt comes off and the chart sits in the well games/casino.js already owns (.mk-well) on the
+     felt comes off and the chart sits in the well games/casino.js already owns (.gm-well) on the
      panel's own surface (docs/game-panels.md, section 5-10).
      Everything here is therefore the ROOM's, not the table's (section 4), and that decides the two
      colours: the felt's #7ee6a4 is 1.53:1 on a white card, so the pair brought out for .gm-fig is

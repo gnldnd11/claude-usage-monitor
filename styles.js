@@ -547,30 +547,37 @@ module.exports = `
   .wb-desc{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
   .wb-clear{flex:none;padding:4px 9px;border:1px solid rgba(245,166,35,.5);border-radius:7px;background:transparent;color:#f5a623;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;}
   .wb-clear:hover{background:rgba(245,166,35,.16);}
-  /* --- the crossroads: two doors, one row ------------------------------------------------------
-     The two drawings stand on the same floor (align-items:flex-end) and split the width in half,
-     so neither door is the bigger offer. The picture is the thing being pressed and the word under
-     it is only its name.
-     THE BOX IS THE COLUMN'S AND TWICE AS WIDE AS IT IS TALL, with max-height as a ceiling. The
-     ratio is the whole rule: both heroes are narrower than 2:1 (hero-games 592x386 = 1.534,
-     hero-shop 646x526 = 1.228), so inside a 2:1 box HEIGHT ALWAYS BINDS and the two come out the
-     same height on the same floor, each one only as wide as its own drawing needs. That is what
-     makes them read as a pair; before this they filled the column edge to edge and the shop stood
-     21.5px taller than the dealer (docs/shop-spec.md, section 2-2).
+  /* --- the crossroads: three doors, one row -----------------------------------------------------
+     The drawings stand on the same floor (align-items:flex-end) and share the width equally, so no
+     door is the bigger offer. The picture is the thing being pressed and the word under it is only
+     its name. How MANY doors there are is the register's answer, not this file's (html.js).
+     THE BOX IS THE COLUMN'S AND 1.7 TIMES AS WIDE AS IT IS TALL, with max-height as a ceiling. The
+     ratio is the whole rule: every hero is narrower than 1.7:1 (hero-games 592x386 = 1.534,
+     hero-shop 646x526 = 1.228, hero-mine 646x446 = 1.448), so inside the box HEIGHT ALWAYS BINDS
+     and the three come out the same height on the same floor, each one only as wide as its own
+     drawing needs. That is what makes them read as a set; before this they filled the column edge
+     to edge and the shop stood 21.5px taller than the dealer (docs/shop-spec.md, section 2-2).
      The width left over inside each column is the air, and it is the point: the drawings no longer
      run wall to wall. max-height:72 is the ceiling, so a wider sidebar stops feeding the pictures
-     at about 374 instead of letting them eat the extra width.
-     A redrawn hero WIDER than 2:1 would bind on width instead and sit on the floor of the box, so
+     instead of letting them eat the extra width.
+     IT WAS 2/1 WHILE THERE WERE TWO DOORS (section 2-7). A third column takes each box from 132.5
+     to 85.67 at a 351px sidebar, and at 2/1 that is a 42.83px box: the shop's drawing would render
+     at 0.081x, where a 1px outline survives about one column in twelve. 1.7 buys back 5.6px of
+     height, the drawing comes out at 0.096x, and the row is 15.86px SHORTER than the two-door row
+     was, because the box got lower. The condition is the paragraph above, so this number cannot go
+     past 1.534 without breaking the set; test/panel-css.test.js section 2c reads the PNG headers
+     and holds it.
+     A redrawn hero WIDER than the box would bind on width instead and sit on the floor of it, so
      the row still cannot grow past the ceiling whatever picture arrives.
-     NOT PIXELATED, measured: both heroes carry 1px outlines and dithering, and nearest-neighbour
-     at this scale (0.126x for the shop) drops most of them (section 2-4). The mascot and the tiles
+     NOT PIXELATED, measured: the heroes carry 1px outlines and dithering, and nearest-neighbour at
+     this scale (0.096x for the shop) drops most of them (section 2-4). The mascot and the tiles
      keep theirs. --- */
   .cr-pair{display:flex;align-items:flex-end;gap:8px;}
   .cr-door{flex:1 1 0;min-width:0;display:block;padding:0 0 8px;border:0;border-radius:12px;
     background:transparent;cursor:pointer;font-family:inherit;text-align:center;}
   .cr-door:hover{background:var(--track);}
   .cr-door:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
-  .cr-art{display:block;width:100%;aspect-ratio:2/1;max-height:72px;}
+  .cr-art{display:block;width:100%;aspect-ratio:1.7/1;max-height:72px;}
   .cr-art img{width:100%;height:100%;object-fit:contain;object-position:bottom;display:block;}
   .cr-cap{display:block;margin-top:8px;font-size:12.5px;font-weight:700;color:var(--text);}
   /* --- the shop. The casino's chrome is games/casino.js and every game's own CSS lives with that

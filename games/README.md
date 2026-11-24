@@ -4,6 +4,11 @@
 > `html.js`, `styles.js` or `games/registry.js`. **A game is a directory and nothing else.**
 > Where it sits on the list is a number in its own `meta.js`, so two people can add two games in
 > the same minute without either of them touching a line the other is editing.
+>
+> **That held for the mine too, except once.** A game behind a door of its own (`door`, section 3)
+> is a kind of place the page did not have, so the door itself cost one edit each to `html.js`,
+> `webview.js`, `styles.js` and the register. The second game to stand behind a door costs none of
+> them: the doors are a table in `games/registry.js` and the page is built from it.
 
 The stack is the extension's: **plain JavaScript, no dependencies, no build step.** No TypeScript,
 no bundler, no new package. That is deliberate (see the project `CLAUDE.md`) and a change to it is
@@ -111,6 +116,8 @@ module.exports = {
   cls: 'mg',                      // goes on the panel element next to .inner
   order: 70,                      // WHERE ON THE LIST. See below
   rowTitle: '',                   // optional tooltip on the list row
+  door: 'mine',                   // optional: WHICH DOOR, if not the list's. See below
+  art: { dig: 'mine-dig.png' },   // optional: your own pictures, by your own names (CUC.art)
 
   // EITHER a round-based game (games/tables.js drives it)...
   table: {
@@ -163,6 +170,32 @@ A new game therefore declares no family and inherits none: `order` puts it somew
 what it is, is its name and its tile. The one place a row can still differ from the others is the
 figure on its right, which is for what MOVED while the panel was shut (section 7-4 of the same
 document), and it reads as a figure **because** every other row is shaped identically.
+
+### `door`: which door of the crossroads, if not the list's
+
+The coin button opens a crossroads and the list is one step inside it, behind the **Games** door
+(`docs/shop-spec.md`, section 2). A game with no `door` of its own stands behind that one, which is
+every game that was here before 2026-11-24.
+
+**A game that names a door gets a door of its own, and no row.** The register holds the doors
+(`games/registry.js`'s `DOORS`: an id, a name and a picture each) and builds the crossroads out of
+the ones that have something behind them, so a door is DATA the same way `order` is. The shared
+files learn the door's name and nothing else: `html.js` draws a button per door and `webview.js`
+asks how many games are behind the one that was pressed. **A door with one game behind it IS that
+game's screen** (there is no list of one, and the heading's arrow goes back to the crossroads from
+it); a door with more opens the list. One game to a side door, because there is one list in the
+page: a second meta claiming the same door costs itself its row rather than inventing a screen.
+
+Name a door only for a game the list's own question does not fit. The list asks *what shall I
+play*, and the mine (`docs/game-panels.md`, 5-15) is not an answer to it: nothing is wagered and it
+digs whether anybody opens it or not.
+
+### `art`: a picture of your own
+
+A list row's `thumb` is resolved into a webview URI by the host. `art` is the same thing for the
+pictures a PANEL draws with, by names you choose: the host resolves each one and your panel reads it
+with `CUC.art('<id>', '<name>')`. A panel cannot make a URI itself, and a shared file holding your
+game's filename is a shared file that knows your game, so this is the way through.
 
 ### What the register does with it
 
@@ -329,6 +362,7 @@ writes to it, and `test/credits.test.js` is what keeps it honest for the records
     credits: function () { /* optional: a credit minted while the bet screen is up */ },
     resize: function () { /* optional: the panel's width changed */ },
     seat: function () { /* optional: who sits at the player's side changed. See below */ },
+    step: function (rung) { /* optional: the window's rung changed. See CUC.step below */ },
     up: function () { /* optional: the heading's arrow. See below */ return false; }
   });
 })();
@@ -378,6 +412,8 @@ a game that grows a depth needs no change there either.
 | `npc(key, px)` | a still frame of an agent sprite, for whoever sits at your table |
 | `seat()` | WHO sits at the player's side: the sprite key the shop sold, or the free one. It is answered for every screen whether the shop has ever been opened or not (the host sends it with every push), and a key whose sprite this build no longer ships falls back to the free seat rather than drawing nothing. A table that draws a player takes `seat()` and not a key of its own, and adds the optional `seat` hook so a purchase made in ANOTHER window reaches it: blackjack's is a redraw of the felt and nothing else |
 | `crab()` | the dealer image |
+| `art(id, key)` | one of YOUR OWN pictures, by the name your meta gave it (`art` above). A webview URI is the host's to make, so this is the only way a panel reaches an asset of its own |
+| `step()` | which rung the window is on (`quiet` / `typing` / `work` / `burn` / `spent`), for a screen that draws a crab of its own. It is settled once per push with its deadband and its dwell floor (`webview.js`, `mascotState`), so a panel READS it and never works one out: two crabs in one window that disagreed about whether it is quiet would be two answers to one question. The optional `step(rung)` hook is called when it changes while your screen is open |
 | `stake(ui)`, `renderStakes(ui, locked)`, `wireStakes(ui, redraw)` | the bet controls |
 | `setHeld(key, m)`, `heldElsewhere`, `balance()` | the purse: see section 6 |
 | `live(id, text)`, `err(id, msg)`, `note(id, text)` | the read-out line, the warning bar, the note |

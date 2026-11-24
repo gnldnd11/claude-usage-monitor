@@ -140,7 +140,7 @@ module.exports = {
       doc.body.classList.contains('game-mk') && $('panelMarket').style.display === '' && ops() === 'open',
       ops() + ' | ' + h.bodyTabs());
     ok('the market has no felt: there is no round on a table here, so the chart gets the well instead',
-      !doc.querySelector('#panelMarket .bj-felt') && !!doc.querySelector('#panelMarket .mk-well'),
+      !doc.querySelector('#panelMarket .bj-felt') && !!doc.querySelector('#panelMarket .gm-well'),
       $('panelMarket').className);
     ok('four coins, a row each, in the engine’s own order', codes() === market.CODES.join(','), codes());
     ok('nothing is held, so no row carries a figure and the heading’s corner is empty',
@@ -234,7 +234,7 @@ module.exports = {
     // row within 40px, the stake chips being the first (docs/game-panels.md, section 5-10)
     ok('and they are above the well, not stacked on the stake chips',
       doc.querySelector('#mkCoin').innerHTML.indexOf('mk-spanrow')
-      < doc.querySelector('#mkCoin').innerHTML.indexOf('mk-well'));
+      < doc.querySelector('#mkCoin').innerHTML.indexOf('gm-well'));
     ok('the chart is one body a candle, thirty-six of them, every one placed in per cent',
       bodies().length === c0.candles.length && c0.candles.length === CANDLES
       && /^left:[\d.]+%;width:[\d.]+%;top:[\d.]+%;height:[\d.]+%$/.test(bodies()[0].getAttribute('style')),

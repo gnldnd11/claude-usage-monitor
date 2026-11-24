@@ -117,9 +117,21 @@ function renderHtml(vars) {
     csp, scriptUri, crabUri,
     mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
     mascotCodingUri, mascotFloatUri, mascotSleepUri, mascotBlackholeUri,
-    heroGamesUri, heroShopUri,
+    doors, heroShopUri,
     roomMinecraftUri, assetsJson, gameList, gameScripts
   } = vars;
+  // THE CROSSROADS' DOORS, in one row, and they come from two places because they are two kinds of
+  // thing. `doors` is the register's: a door with games behind it, with its own picture and name
+  // (games/registry.js). The SHOP's is this file's, because the shop is not a game and has no
+  // entry in that register (docs/shop-spec.md, section 4-5), and it comes last so that the two
+  // areas that were here first keep the order they were in.
+  // Nothing in this list is a game's name: a door's id is a door's id, which is the whole reason
+  // the register hands these over as data (shop-spec 2-7).
+  const crossDoors = [...(doors || []), { id: 'shop', name: 'Shop', art: heroShopUri }];
+  const crossDoor = (d) => `      <button type="button" class="cr-door" id="crDoor-${d.id}" data-door="${d.id}">
+        <span class="cr-art"><img src="${d.art}" alt=""/></span>
+        <span class="cr-cap">${d.name}</span>
+      </button>`;
   // A row: the picture, the name, the figure's empty slot, and the star.
   //
   // TWO BUTTONS IN A WRAPPER, not one button. The row opens a game and the star keeps it, and a
@@ -155,7 +167,11 @@ function renderHtml(vars) {
   // the same and one thing that is not.
   // Folding went with them, since five rows are all on screen at once, and so did the stored state
   // that remembered which families were shut.
-  const gameRows = (list) => list.map((g) => gameRow(g, 'gmRows')).join('\n');
+  // ...and only the games that stand on it. A game behind a door of its own is reached by that
+  // door and has no row here (docs/shop-spec.md, 2-7): a row for it would answer "what shall I
+  // play" with a screen that digs whether anybody opens it or not
+  const gameRows = (list) => list.filter((g) => g.door === games.LIST_DOOR)
+    .map((g) => gameRow(g, 'gmRows')).join('\n');
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
 <style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}${inkEdgeFilter}<div class="wrap"><div class="card">
@@ -305,29 +321,24 @@ function renderHtml(vars) {
     <div class="pool" id="pool"></div>
     <div class="crew-mini" id="crewMini"></div>
   </div>
-  <!-- THE CROSSROADS: the coin button opens two doors, and this screen answers one question.
-       Which way. So there is nothing on it but the two doors and their names: no heading (the way
+  <!-- THE CROSSROADS: the coin button opens the doors, and this screen answers one question.
+       Which way. So there is nothing on it but the doors and their names: no heading (the way
        in is the button directly above it), no arrow (there is no step back from here that the coin
        does not already take) and NO NUMBERS AT ALL, because the balance is in that same button.
-       The pictures are the point and the words under them are the caption: the shop's awning and
-       the dealer's felt say which door is which before either label is read.
+       The pictures are the point and the words under them are the caption: the shop's awning, the
+       dealer's felt and the mine's adit say which door is which before any label is read.
+       There were two doors until 2026-11-24 and there are three now, so they are a LOOP over data
+       rather than markup each: how many there are is the register's answer (crossDoors above) and
        Each drawing is fitted into a box of its own rather than stretched across its column, which
        is what stands them at one height with air around them instead of wall to wall
        (styles.js, .cr-art; docs/shop-spec.md, section 2-2).
-       Neither picture is given image-rendering:pixelated, and that is measured rather than chosen:
+       No picture is given image-rendering:pixelated, and that is measured rather than chosen:
        417 of hero-shop's 645 column boundaries are a single pixel apart, so nearest-neighbour at
-       0.126x drops seven out of eight of them and the black outline goes with them
+       0.096x drops nineteen out of twenty of them and the black outline goes with them
        (docs/shop-spec.md, section 2-4). -->
   <div class="inner cr" id="panelCross" style="display:none">
     <div class="cr-pair">
-      <button type="button" class="cr-door" id="crDoorGames">
-        <span class="cr-art"><img src="${heroGamesUri}" alt=""/></span>
-        <span class="cr-cap">Games</span>
-      </button>
-      <button type="button" class="cr-door" id="crDoorShop">
-        <span class="cr-art"><img src="${heroShopUri}" alt=""/></span>
-        <span class="cr-cap">Shop</span>
-      </button>
+${crossDoors.map(crossDoor).join('\n')}
     </div>
   </div>
   <!-- The shop's own screen is drawn by webview.js (renderShop), because what is on it is DATA:

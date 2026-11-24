@@ -27,6 +27,14 @@ module.exports = {
   // circle at r 1.9: a ring of 1 unit there is the first thing to disappear at that size.
   tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13.7 3.3h5.4a1.6 1.6 0 0 1 1.6 1.6v5.4a2 2 0 0 1-.6 1.4l-8 8a2 2 0 0 1-2.8 0l-6-6a2 2 0 0 1 0-2.8l8-8a2 2 0 0 1 1.4-.6z"/><circle cx="16.4" cy="7.6" r="1.9" fill="currentColor" stroke="none"/></svg>',
 
+  // The credit mine's heading. A PICKAXE, because the one thing the reader presses on that screen
+  // is a pick and the screen itself is a place rather than a table (docs/game-panels.md, 5-15).
+  // Read at 15px like the rest of this block: the handle and the head are both 2.5 units, which is
+  // the floor section 2 measured, and the head is one arc rather than a double-ended bar because at
+  // 15px two 1.5-unit prongs merge into a blob. The handle stops 2 units short of the arc's apex;
+  // at this size that gap is 0.7px and the two read as joined.
+  pick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5.5 19L16.2 8"/><path d="M9.5 5.2a9 9 0 0 1 9.3 9.3"/></svg>',
+
   // --- the glyphs that only a game panel head uses ---
   //
   // `bomb`, `tower`, `grid` and `rocket` are not claimed by any game right now (the minefield, the

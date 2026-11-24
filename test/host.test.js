@@ -1134,6 +1134,12 @@ test('shop: credits riding on a live round cannot be spent, and a refusal writes
 
 test('shop: a purchase is charged once, lands in the ledger, and the reply comes before the push', () => {
   fundTo(5000);                                         // enough for the one thing on the shelf
+  // ...AND THE MINE IS LET DIG FIRST. Funding this test raised the ledger's token count, which is
+  // the mine's depth (mine.js), so the next push after it claims the ground those tokens dug and
+  // that claim is a ledger write of its own. One push here leaves no backlog, so the counters below
+  // are about the purchase and nothing else; without it this test measures two writes and blames
+  // the shop for one of them
+  onMessage({ type: 'ready' });
   const before = send({ type: 'shop', op: 'open' }).balance;
   const bankBefore = { won: bankSum('won'), lost: bankSum('lost'), hands: bankSum('hands') };
   const from = posted.length;
@@ -1358,6 +1364,121 @@ test('shop: a drawing in that row is bought first and is a switch after', () => 
   // and no money moved for any of it
   assert.equal(shopRec().spent, spent, 'switching a drawing cost credits');
   assert.equal(JSON.stringify(shopRec().owned), owned, 'switching a drawing changed what is owned');
+});
+
+// --- the mine: the one game that is played by working --------------------------------------------
+//
+// The judging and the record's own rules are test/mine.test.js's, and the five claims it proves are
+// listed in mine.js's header. What is pinned HERE is the WIRING, which is the half that can mint
+// money: the ground is swept off the ledger's own token count and not off a clock, the claim and
+// the purchase travel in one write, the money lands in the record rather than in the bank, and the
+// reply goes out before the push.
+//
+// Every figure below is the engine's own answer rather than a number typed twice: the layout is a
+// pure function of the depth, so `mine.sweep` can be asked what this ledger is about to pay and the
+// test then checks that the handler wired exactly that into the record and the reply.
+const mine = require(path.join(ROOT, 'mine.js'));
+const credits = require(path.join(ROOT, 'credits.js'));
+const mineRec = () => (gs.data[LEDGER].mine || null);
+const tokNow = () => credits.weightedTotal(credits.normalizeLedger(gs.data[LEDGER]));
+// Another day in the ledger, in millions of weighted tokens. Input tokens weigh 1, so a million of
+// them is a million weighted and ten metres of drift at full speed (mine.js, TOK_PER_M)
+function digMt(day, mt) {
+  gs.data[LEDGER].days[day] = { input: mt * 1000000, output: 0, cache_creation: 0, cache_read: 0 };
+}
+
+test('mine: open answers with the drift, and with nothing beyond the lookahead', () => {
+  onMessage({ type: 'ready' });                 // no backlog left over from the shop's funding
+  const r = send({ type: 'mn', op: 'open', n: 31 });
+  assert.equal(r.n, 31, 'the reply echoes the request number');
+  assert.equal(r.error, undefined);
+  const v = r.state;
+  assert.equal(v.unit, mine.UNIT, 'the screen would have to invent the word');
+  assert.deepEqual(v.window, { behind: mine.BEHIND_M, ahead: mine.AHEAD_M });
+  // THE ONE THING THIS HOST KEEPS BACK. A webview holding the seam positions ten thousand metres
+  // out is holding the rest of the deck (games/README.md, section 2)
+  assert.ok(v.seam.every((s) => s.at > v.depth && s.at <= v.depth + v.window.ahead),
+    'a seam outside the lookahead reached the webview: ' + JSON.stringify(v.seam));
+  assert.deepEqual(v.seam, mine.seamsAhead(v.depth), 'the window the screen is shown is not the engine\'s');
+  // ...and the fold's pay table says what things are worth and not how dense the rock is
+  assert.ok(v.pays.every((p) => p.odds === undefined), 'the odds travelled with the pay table');
+  assert.equal(v.offer.price, mine.PICKS[0].price, 'the screen is being offered a price of its own');
+});
+
+test('mine: a pick is charged in the record, and the reply comes before the push', () => {
+  const price = mine.PICKS[0].price;
+  const before = send({ type: 'mn', op: 'open' }).balance;
+  const bank0 = { won: bankSum('won'), lost: bankSum('lost'), hands: bankSum('hands') };
+  const from = posted.length;
+  onMessage({ type: 'mn', op: 'buy', n: 32 });
+  const after = posted.slice(from);
+  const reply = after.filter((m) => m.type === 'mn');
+  assert.equal(reply.length, 1, 'one reply per message');
+  assert.equal(reply[0].error, undefined);
+  // THE REPLY FIRST, THE PUSH AFTER, like every table: the other way round and the header says the
+  // credits are gone before the screen has said what they bought
+  assert.ok(after.indexOf(reply[0]) < after.findIndex((m) => m.type === 'data'), 'the push arrived first');
+  assert.equal(mineRec().pick, 1, 'the pick is not in the ledger');
+  assert.equal(mineRec().spent, price, 'what it cost is not in the record');
+  assert.equal(reply[0].balance, before - price, 'the balance moved by something other than the price');
+  assert.equal(lastHeaderBalance(), before - price, 'the header and the reply disagree');
+  // and none of it is in the bank, which is the grow-only counter per window: a purchase banked
+  // there is the shape of the bug that minted 372,000 credits out of one sword
+  assert.equal(bankSum('won'), bank0.won, 'a purchase was banked as winnings');
+  assert.equal(bankSum('lost'), bank0.lost, 'a purchase was banked as a loss');
+  assert.equal(bankSum('hands'), bank0.hands + 1, 'the write that carried it is one write');
+});
+
+test('mine: the ground the tokens dug is claimed once, in the record, and nothing is banked', () => {
+  const rec0 = mineRec();
+  const bank0 = { won: bankSum('won'), lost: bankSum('lost'), hands: bankSum('hands') };
+  // 4 MT of work: 40 m with the pick just fitted, which is two cells of the drift
+  digMt('2026-09-03', 4);
+  const want = mine.sweep(mine.load(rec0, 0), tokNow());
+  assert.ok(want.claim && want.claim.pay > 0, 'this ledger digs no ground that pays: pick another figure');
+  const from = posted.length;
+  onMessage({ type: 'ready' });                 // the host's own push, which is what digs
+  const sent = posted.slice(from).filter((m) => m.type === 'mn');
+  assert.equal(sent.length, 1, 'one push, one redraw');
+  const v = sent[0].state;
+  assert.equal(v.depth, want.claim.depth, 'the depth the screen was shown is not the ground that was dug');
+  assert.equal(v.found.pay, want.claim.pay, 'the find the screen was shown is not the one that was paid');
+  const rec = mineRec();
+  assert.equal(rec.earned, rec0.earned + want.claim.pay, 'what the wall paid is not in the record');
+  assert.equal(rec.claimedTo, want.rec.claimedTo, 'the boundary did not move with the money');
+  // THE DATA PUSH THAT RAN THIS CLAIM WAS BUILT BEFORE IT, so the figure on it is the balance from
+  // before and the REPLY is what carries the new one. That is deliberate rather than a lag nobody
+  // noticed: this hook runs INSIDE push() (extension.js, gamesAfterPush), so asking for another
+  // push from inside it would re-enter the thing that called it, and the panel settles its header
+  // off the reply exactly as every table does (CUC.settle)
+  assert.equal(sent[0].balance, lastHeaderBalance() + want.claim.pay,
+    'the reply does not carry the balance this claim just made');
+  assert.equal(bankSum('won'), bank0.won, 'the wall paid into the bank instead of into the record');
+  assert.equal(bankSum('hands'), bank0.hands + 1, 'one claim is one write');
+
+  // ...AND THE SAME GROUND IS NOT PAID FOR TWICE. `claimedTo` is a boundary, so a second push over
+  // the same tokens has nothing to claim and nothing to say (mine.js, claim (b))
+  const from2 = posted.length;
+  onMessage({ type: 'ready' });
+  assert.equal(posted.slice(from2).filter((m) => m.type === 'mn').length, 0,
+    'a push with nothing new to say said something anyway');
+  assert.equal(mineRec().earned, rec.earned, 'the same ground was paid for twice');
+  assert.equal(bankSum('hands'), bank0.hands + 1, 'a push with nothing to claim still wrote to the ledger');
+});
+
+test('mine: a message is answered on the record another window left, not on the copy in memory', () => {
+  // Another window digs: a later record in storage, which this window has to adopt before it
+  // answers anything (games/README.md, section 3 point 4)
+  const other = Object.assign({}, mineRec(), {
+    by: 'ffffffffffffffff', moves: mineRec().moves + 5, earned: mineRec().earned + 777
+  });
+  gs.data[LEDGER].mine = other;
+  const r = send({ type: 'mn', op: 'open', n: 33 });
+  assert.equal(r.error, undefined);
+  assert.equal(mineRec().by, other.by, 'the stored record was overwritten by the copy in memory');
+  assert.equal(mineRec().earned, other.earned, 'the other window\'s money was dropped');
+  // and the balance the reply carries has that window's earnings in it, because there is one purse
+  assert.equal(r.balance, credits.creditSummary(credits.normalizeLedger(gs.data[LEDGER]), 'x', false).balance);
 });
 
 // --- the drive ring: what the crab is measured by -----------------------------------------------

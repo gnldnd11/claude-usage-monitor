@@ -116,7 +116,10 @@ const PAGE = require(path.join(ROOT, 'html.js')).renderHtml({
   mascotDespairUri: 'mascot-despair.png', mascotStunnedUri: 'mascot-stunned.png',
   mascotCodingUri: 'mascot-coding.png', mascotFloatUri: 'mascot-float.png',
   mascotSleepUri: 'mascot-sleep.png', mascotBlackholeUri: 'mascot-blackhole.png',
-  heroGamesUri: 'hero-games.png', heroShopUri: 'hero-shop.png',
+  // the crossroads' doors, as the host hands them over (games/registry.js's `doors`), with the
+  // asset names standing in for themselves
+  doors: require(path.join(ROOT, 'games/registry.js')).doors((f) => f),
+  heroShopUri: 'hero-shop.png',
   roomMinecraftUri: 'room-minecraft.png',
   assetsJson: '{}', gameList: [], gameScripts: []
 });
@@ -456,24 +459,30 @@ ok('and they are the shop’s own scenes, in the same order, with the same free 
   SHOP_SLOTS.map((s) => s.id + '=' + s.free).join(' '));
 
 // ---------------------------------------------------------------------------------------------
-// 2c. the crossroads: one box, two drawings, one height
+// 2c. the crossroads: one box, three drawings, one height
 // ---------------------------------------------------------------------------------------------
-// The two doors used to give each picture the whole column and let its own ratio decide its
-// height, so the shop stood 21.5px taller than the dealer and both ran wall to wall. Now the box
-// is the column at a fixed ratio and each drawing is fitted into it, which makes the heights equal
-// and turns the width each one does not need into air (docs/shop-spec.md, section 2-2).
+// The doors used to give each picture the whole column and let its own ratio decide its height, so
+// the shop stood 21.5px taller than the dealer and both ran wall to wall. Now the box is the column
+// at a fixed ratio and each drawing is fitted into it, which makes the heights equal and turns the
+// width each one does not need into air (docs/shop-spec.md, section 2-2).
 //
-// THAT ONLY HOLDS WHILE BOTH DRAWINGS ARE NARROWER THAN THE BOX. A hero wider than the box ratio
-// binds on width instead, comes out shorter than its neighbour and the pair stops reading as a
-// pair. The user redraws these pictures, so the condition is checked against the files themselves
-// rather than written down: a seventh hero with a wider canvas fails here, not on screen.
+// THAT ONLY HOLDS WHILE EVERY DRAWING IS NARROWER THAN THE BOX. A hero wider than the box ratio
+// binds on width instead, comes out shorter than its neighbours and the set stops reading as a set.
+// The user redraws these pictures, so the condition is checked against the files themselves rather
+// than written down: a hero with a wider canvas fails here, not on screen. The box came down from
+// 2/1 to 1.7/1 when the third door arrived (section 2-7), which tightened this by 11%: the widest
+// drawing is 1.534 and the box is 1.7.
+//
+// THE LIST OF THEM IS THE PAGE'S OWN, so a fourth door is covered the day it is drawn rather than
+// the day somebody remembers this file.
 const crArt = declOf('.cr-art') || {};
 const crImg = declOf('.cr-art img') || {};
 const boxRatio = (() => {
   const m = /^\s*(\d+(?:\.\d+)?)\s*(?:\/\s*(\d+(?:\.\d+)?))?\s*$/.exec(crArt['aspect-ratio'] || '');
   return m ? parseFloat(m[1]) / (m[2] ? parseFloat(m[2]) : 1) : null;
 })();
-const HEROES = ['hero-games.png', 'hero-shop.png'];
+// Read off the page rather than listed: every door's drawing, in the order they stand in
+const HEROES = [...PAGE.matchAll(/<span class="cr-art"><img src="([^"]+)"/g)].map((m) => m[1]);
 const heroRatios = HEROES.map((f) => { const s = pngSize(f); return s.w / s.h; });
 ok('the crossroads art sits in a box of its own with a fixed ratio',
   boxRatio > 0 && crArt.width === '100%', 'aspect-ratio ' + crArt['aspect-ratio'] + ', width ' + crArt.width);
@@ -483,7 +492,9 @@ ok('the drawings fill that box rather than their column, fitted whole and stood 
   crImg.width === '100%' && crImg.height === '100%' && crImg['object-fit'] === 'contain'
   && /bottom/.test(crImg['object-position'] || ''),
   [crImg.width, crImg.height, crImg['object-fit'], crImg['object-position']].join(' / '));
-ok('both heroes are narrower than the box, which is what makes the two come out the same height',
+ok('there is a drawing on every door the page draws',
+  HEROES.length >= 3, HEROES.join(', '));
+ok('every hero is narrower than the box, which is what makes them come out the same height',
   boxRatio > 0 && heroRatios.every((r) => r < boxRatio),
   HEROES.map((f, i) => f + ' ' + heroRatios[i].toFixed(3)).join(', ') + ' vs box ' + boxRatio);
 // the heroes are smooth-scaled and the pixel art is not: these two carry 1px outlines and

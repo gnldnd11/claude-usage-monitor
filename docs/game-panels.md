@@ -1196,7 +1196,7 @@ union 상자   217 x 195   (원본 313x313 의 +65+88)
 
 ```
 에셋   mine-dig.png    16프레임 가로 띠. 한 칸 152x136 (CSS 76x68 의 2배)
-CSS    .mn-crab{width:76px;height:68px;background:url(...) 0 0/1216px 136px;}
+CSS    .mn-crab{width:76px;height:68px;background:url(...) 0 0/1216px 68px;}
        .mn-crab.dig{animation:mnDig 1760ms steps(16) infinite;}
        @keyframes mnDig{to{background-position:-1216px 0;}}
 ```

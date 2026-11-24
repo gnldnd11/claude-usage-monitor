@@ -142,54 +142,45 @@ const RETIRED = Object.freeze([]);
 // because it is the one scene that is not on that ladder: it crosses two steps and what it answers
 // is the activity.
 //
-// A slot is NOT a cell of MASCOT_ART. That table is four steps by two columns and it is not
-// touched: webview.js keeps it as the drawing every cell uses by default and reads a slot only
-// where one governs the cell (MASCOT_SLOT there). The mapping:
+// ONE SCENE IS ONE RUNG, and that is the whole mapping (2026-11-25). webview.js's MASCOT_ART has
+// five entries keyed by the five ids below and holds the drawing each rung falls back to; the
+// reader's own choice is read over it. There is no second axis and no table of cells any more.
+// test/panel-css.test.js requires shop.js and asserts the two lists are identical, in order and in
+// fallback, so a sixth scene here fails there rather than quietly reaching nothing.
 //
-//   idle step,    quiet  ->  quiet      working step, quiet  ->  quiet
-//   idle step,    busy   ->  typing     working step, busy   ->  work
-//   despair step, both   ->  burn       stunned step, both   ->  spent
+// IT TOOK THREE VERSIONS TO GET THE AXIS RIGHT and the three are worth keeping because each was
+// wrong in a way the next one could not see:
 //
-// THE WORKING STEP'S BUSY CELL IS A SCENE OF ITS OWN (2026-11-24), and the judgement that kept it
-// out of the typing scene is why it is its own rather than typing's. That cell is the one picture
-// which says the limit is filling up WHILE you work, and letting the typing choice reach it would
-// flatten 5% and 65% of the limit into one drawing: the step axis would then say nothing at all in
-// the busy column until despair. It was left with NO scene instead, and what that cost came back
-// as a fault report: a reader who had put the laptop crab in a scene labelled `Replies landing` was
-// shown the busy one while replies were landing, which is the drawing they did not choose. So the
-// cell is named now, its fallback is the drawing it always had, and the step axis is kept by that
-// fallback rather than by the cell being unreachable (docs/shop-spec.md, 3-1b and 5-1a).
+//   1.36.1 and before   the step was how much of a limit was gone, crossed with whether a reply
+//                       had landed. Four steps by two columns, and the working step's busy cell
+//                       belonged to no scene at all, so a reader who put the laptop crab in the
+//                       scene labelled `Replies landing` was shown a different drawing while
+//                       replies were landing. They reported it.
+//   1.37.0              that cell was given a scene of its own, which fixed the report and left
+//                       the axis alone. `Limit used up` was then printed under a weekly bar
+//                       reading 19%, because for an account with no five-hour window the number
+//                       behind it was a weekly PACE and not a percentage of anything. Reported
+//                       within a day. 1.38.0 reworded the four rungs to say load instead.
+//   1.39.0              the owner said what the five had always been meant to be: nothing
+//                       running, something running, a lot of it, harder than that, and genuinely
+//                       overworked. One ladder read off recent activity (webview.js, drive.js).
+//                       The two kinds of account stopped mattering, because what is measured is
+//                       the machine's own work and not a limit.
 //
-// `when` IS A RUNG OF THE LADDER rather than a description of the activity. Typing and working are
-// both "a reply is landing" and what tells them apart is the load, so stating the activity twice
-// would leave one of the two rows with nothing to say.
+// The lesson the first two share: the words under these names described a ladder the code was not
+// climbing. Changing the words was treating it twice. The third change moved the ladder.
 //
-// AND IT MAY NOT NAME A PERCENTAGE OF ANYTHING. There is ONE set of thresholds picking the step
-// (50/70/90, webview.js MASCOT_STEPS) and TWO different quantities are fed through it
-// (mascotStrain):
+// `when` IS A RUNG and not a description of the activity. Typing and working are both "a reply is
+// landing" and what tells them apart is how much of it there is, so stating the activity twice
+// would leave one of the two rows with nothing to say. Quiet is the exception and may name the
+// activity, because at the bottom of the ladder there is none.
 //
-//   an account WITH a five-hour window   that window's used percentage, raw: 50 is half the window
-//   an account WITH NO window            the weekly burn PACE x50: 50 is spending the week exactly
-//                                        evenly, 70 is 1.4 times that pace, 90 is 1.8 times it
-//
-// Those two share an axis so that one set of thresholds can pick one set of drawings, NOT because
-// they measure the same amount. So a line saying how much of the limit is gone is false on one of
-// the two however it is worded: the second kind of account can stand on the top step having spent
-// 9% of its week, and `Limit used up` was printed under a single-digit weekly bar for a reader who
-// reported it (1.37.0, and that is the second time a line of text here lied). What is true on both
-// is only that a bigger number is an account being driven harder, and these four rungs say that and
-// nothing else. The bar on the panel says how much of the limit is gone; this line says what raises
-// the drawing. The two are not answers to one question (docs/shop-spec.md, 3-1c).
-//
-// WHAT THESE WORDS WILL NO LONGER REPORT, which is the price of fixing them and is written down
-// here because nothing else will say it. `Limit used up` was plainly false beside a weekly bar at
-// 9% and a reader said so within a day. `Overloaded` is TRUE there: a week is only a few hours old,
-// the pace's denominator has a floor under it (`expected`, webview.js mascotStrain), and 9% of a
-// week spent in its first eight hours really is close to twice an even pace. So the drawing on its
-// back early in a quiet week is no longer a thing the text will give away, and whether it is what
-// anybody wants to be shown is a question about the thresholds and that floor. NONE of that was
-// touched here: the thresholds, the deadband and mascotStrain are exactly as they were, and this
-// version changed four strings.
+// AND IT MAY NOT NAME A PERCENTAGE, A LIMIT OR A TIME. `drive` is a rate against the plan's weekly
+// budget, and this account's own measured spend per dollar runs 0.054 to 0.068 against the 0.0364
+// the code scales by (weekly.js REFERENCE_RATE, whose own header says the figure is not a
+// constant). The ladder is sound and the conversion is not, so "two hours left" is a sentence this
+// file may not write. The bar on the panel says how much of the limit is gone; this line says how
+// hard the machine is working. They are not answers to one question.
 //
 // IT IS SHORT because of where it is drawn, under the scene's name in one cell of a two-column
 // grid: 132.5px of 10.5px text at the sidebar width this panel is built for, and a line that
@@ -211,7 +202,7 @@ const RETIRED = Object.freeze([]);
 // one aiming bar on two cells at once. Only the free drawings may be shared, and `coding` is the one
 // which says the thing this cell shares with typing, that a reply is landing. Its id is `work` and
 // not `working`, because `working` is already a step's name and a drawing's key and a third meaning
-// would make a typo in MASCOT_SLOT invisible (docs/shop-spec.md, 3-1b).
+// would make a typo in the rung table invisible (webview.js, MASCOT_ART).
 const SLOTS = Object.freeze([
   { id: 'quiet', name: 'Quiet', when: 'Nothing answered', free: 'idle', opts: ['idle', 'sleep'] },
   { id: 'typing', name: 'Typing', when: 'Light load', free: 'coding', opts: ['coding', 'working'] },

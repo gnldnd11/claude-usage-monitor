@@ -199,7 +199,9 @@ try {
   // same reason every other piece of navigation is in this handle
   const BACK_STEPS = 4;
   const showing = (id) => { const e = $(id); return !!e && e.style.display !== 'none'; };
-  const openList = () => {
+  // BACK TO THE CROSSROADS from wherever the page is: into the area, out of whatever game is open
+  // (unwinding its own depths), then out of the list or the shop
+  const openCross = () => {
     if (!inGames()) { $('hdCredits').click(); advance(5); }
     for (const g of registry.GAMES) {
       if (!doc.body.classList.contains('game-' + g.key)) continue;
@@ -209,17 +211,22 @@ try {
         back.click(); advance(5);
       }
     }
-    // the shop is beside the list rather than inside it, so its arrow climbs to the crossroads
+    // the shop and the list are both beside the crossroads rather than inside each other, so each
+    // one's arrow climbs to it
     if (showing('panelShop')) { $('shBack').click(); advance(5); }
-    if (showing('panelCross')) { $('crDoorGames').click(); advance(5); }
-  };
-  // ...and the other door. Through the list, because that is the one path that unwinds a game's own
-  // depths first: from there it is one press up to the crossroads and one across
-  const openShop = () => {
-    if (!showing('panelShop')) openList();
     if (showing('panelGames')) { $('gmBack').click(); advance(5); }
-    if (showing('panelCross')) { $('crDoorShop').click(); advance(20); }
   };
+  // ...AND THROUGH ONE DOOR, by its id. There were two doors and a helper each (openList and
+  // openShop); the mine made a third, and a door is data now (games/registry.js), so what a mode
+  // file names is the door rather than a function per door. A door with one game behind it opens
+  // that game's screen, which is why this is also how the mine is reached
+  const doorBtn = (id) => $('crDoor-' + id);
+  const openDoor = (id) => {
+    openCross();
+    const b = doorBtn(id);
+    if (b) { b.click(); advance(20); }
+  };
+  const openList = () => openDoor(registry.LIST_DOOR);
   // The list row that opens a game, by id rather than by its place in the list: a game added above
   // another one must not move anybody else's test
   const rowFor = (id) => doc.querySelector('#panelGames .gm-open[data-game="' + id + '"]');
@@ -292,7 +299,7 @@ try {
     ok, advance, later,
     pending: (ms) => q.filter((t) => t.at > now + (ms || 0)).length,  // pacing timers still to fire
     doc, $, notShown, showing, bodyTabs, inGames, atTable, gameRow, rowFor, favFor, rowBox,
-    openGame, openList, openShop, openTable,
+    openGame, openList, openCross, openDoor, doorBtn, openTable,
     reopenTable, dealerCards, allCards, isBack, lineText, hdrBal, latchIdle, active, activeName,
     mouseClick, ledgerBalance, useSeed, standOut, watch, noStaleTimer,
     sent: sentOf, sentOps, sentHl, hostLog, errors, roCbs,

@@ -173,6 +173,13 @@ module.exports = {
         // the coin screen is also where the reported repaint happens
         id: 'market', key: 'mk', root: 'panelMarket',
         open: () => { openGame('market'); doc.querySelector('#mkList .mk-row').click(); advance(50); }
+      },
+      {
+        // The mine repaints on pushes nobody asked for, which is this rule's own situation: the
+        // reader presses nothing here, so every redraw is one the panel did not request. It is
+        // reached by its door rather than from the list (docs/shop-spec.md, 2-7)
+        id: 'mine', key: 'mn', root: 'panel-mine',
+        open: () => { h.openDoor('mine'); advance(60); }
       }
     ];
 

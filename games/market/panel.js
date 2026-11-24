@@ -184,7 +184,7 @@
       +     '<span class="mk-plsub" id="mkPlSub"></span></div>'
       +   '<div class="mk-spanrow">' + spanHtml()
       +     '<span class="mk-chg" id="mkChg"></span></div>'
-      +   '<div class="mk-well">'
+      +   '<div class="gm-well">'
       +     '<div class="mk-chart" id="mkChart" role="img" aria-label=""></div>'
       +     '<div class="mk-ax" id="mkAx"></div>'
       +   '</div>'

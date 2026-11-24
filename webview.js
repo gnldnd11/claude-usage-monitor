@@ -573,17 +573,43 @@
   // (compact) and a tab switch does not change it
   function curTab() { return (vscode.getState() || {}).tab || 'usage'; }
   // WHICH DOOR OF THE CROSSROADS IS OPEN, and null is the crossroads itself. It only means
-  // anything inside the games area, the same way `game` only means anything behind the Games door.
+  // anything inside the games area, the same way `game` only means anything behind a door.
   //
-  // A view STORED BEFORE THE CROSSROADS EXISTED knows a game but no door, and that is read as the
-  // Games door rather than migrated: a reload has to come back where it was, and writing a key into
-  // storage to say what the other key already implies is a second answer to one question
+  // A view STORED BEFORE THE CROSSROADS EXISTED knows a game but no door, and that is read as that
+  // game's own door rather than migrated: a reload has to come back where it was, and writing a key
+  // into storage to say what the other key already implies is a second answer to one question.
+  //
+  // THE DOOR IS DATA AND THE GAME'S NAME IS NOT. The register says which door each row is behind
+  // (games/registry.js) and this file asks only how many rows a door has: one, and the door IS that
+  // screen; more, and it is the list. So nothing here learns a game's name, which is the property
+  // the whole games/ directory is arranged around (CLAUDE.md, games/README.md section 1)
+  var DOOR_LIST = 'games';     // the one door that opens a list, which is also the default
+  function doorOf(g) { var r = GAME_ROWS[g]; return (r && r.door) || DOOR_LIST; }
+  function doorGames(d) {
+    var out = [], id;
+    for (id in GAME_ROWS) if (doorOf(id) === d) out.push(id);
+    return out;
+  }
+  // A door with one game behind it IS that game's screen: there is no list of one to show first
+  // (docs/shop-spec.md, 2-7). The list door is never one of these, however few rows it has
+  function soleGame(d) {
+    if (!d || d === DOOR_LIST) return null;
+    var gs = doorGames(d);
+    return gs.length === 1 ? gs[0] : null;
+  }
   function curDoor() {
     if (curTab() !== 'games') return null;
     var s = vscode.getState() || {};
-    return s.door || (s.game ? 'games' : null);
+    return s.door || (s.game ? doorOf(s.game) : null);
   }
-  function curGame() { return curDoor() === 'games' ? ((vscode.getState() || {}).game || null) : null; }
+  function curGame() {
+    var d = curDoor();
+    if (!d) return null;
+    var only = soleGame(d);
+    if (only) return only;
+    var g = (vscode.getState() || {}).game || null;
+    return (g && doorOf(g) === d) ? g : null;
+  }
   function creditsHidden() { return (((lastData && lastData.cfg && lastData.cfg.panelHidden) || []).indexOf('credits') >= 0); }
   function applyView() {
     var t = curTab(), door = curDoor(), g = curGame(), b = document.body, hdc = el('hdCredits'), id;
@@ -597,7 +623,7 @@
     setVis('panelAgents', t === 'agents');
     setVis('panelCross', t === 'games' && !door);
     setVis('panelShop', t === 'games' && door === 'shop');
-    setVis('panelGames', t === 'games' && door === 'games' && !g);
+    setVis('panelGames', t === 'games' && door === DOOR_LIST && !g);
     if (g) buildPanel(g);                          // the first time this game is opened, its markup is made here
     if (t === 'games' && door === 'shop') shopBuild(); // and the shop's, for the same reason
     // every registered game, not a list of four: the open one shows, the rest hide, and one that
@@ -692,7 +718,8 @@
   function enterGames() {
     var door = curDoor();
     if (!door) {
-      var first = el('crDoorGames');
+      // the first door in the row, whichever doors the register ended up with
+      var first = document.querySelector('#panelCross .cr-door');
       refocusIn(el('panelCross'), first, true);
       return;
     }
@@ -732,7 +759,9 @@
   function openDoor(d) {
     var s = vscode.getState() || {};
     s.door = d;
-    if (d !== 'games') s.game = null;   // the open game lives behind the Games door only
+    // a remembered game belongs to the list door only: behind any other one the door itself says
+    // which screen is open (soleGame), so there is nothing to remember
+    if (d !== DOOR_LIST) s.game = null;
     vscode.setState(s);
     gameLeave();
     applyView();
@@ -740,7 +769,7 @@
   }
   // null goes back to the list
   function openGame(g) {
-    var s = vscode.getState() || {}; s.game = g; if (g) s.door = 'games'; vscode.setState(s);
+    var s = vscode.getState() || {}; s.game = g; if (g) s.door = doorOf(g); vscode.setState(s);
     gameLeave(); // whichever game we were in stops pacing and lets a held header push through
     applyView();
     enterGames();
@@ -1300,7 +1329,8 @@
   // second answer for one of them would be a reader having to know which arrow they are pressing.
   // The step depends only on where the reader is:
   //   inside a game with a depth of its own  ->  that depth closes (the panel's `up`, below)
-  //   inside a game                          ->  the games list
+  //   inside a game behind the list          ->  the games list
+  //   inside a game that IS a door           ->  the crossroads, because there is no list of one
   //   the list, or the shop                  ->  the crossroads
   // The crossroads has no arrow at all: the coin button above it is the way out, and a second
   // control for the same step is exactly what this rule exists to prevent (docs/shop-spec.md, 4-2).
@@ -1311,6 +1341,9 @@
     if (curGame()) {
       var def = PANELS[curGame()];
       if (def && def.node && def.up && def.up()) return;   // the game climbed one level inside itself
+      // A game that is its own door has no list behind it, so one step out of it is the crossroads.
+      // Going to the list instead would show it a row that is deliberately not on it
+      if (soleGame(curDoor())) { openDoor(null); return; }
       openGame(null);
       return;
     }
@@ -1323,9 +1356,13 @@
     var b = e.target.closest ? e.target.closest('.bj-back') : null;
     if (b) backStep();
   });
-  var _crG = el('crDoorGames'), _crS = el('crDoorShop');
-  if (_crG) _crG.addEventListener('click', function () { openDoor('games'); });
-  if (_crS) _crS.addEventListener('click', function () { openDoor('shop'); });
+  // The crossroads, delegated for the back arrow's reason: there are three doors now and the
+  // register decides how many, so one listener on the screen beats one per button
+  var _crossEl = el('panelCross');
+  if (_crossEl) _crossEl.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.cr-door') : null;
+    if (b) openDoor(b.getAttribute('data-door'));
+  });
 
   window.CUC = {
     // --- registration. id is the list row and the stored view; def.key is the message type
@@ -1336,6 +1373,18 @@
       PANEL_BY_KEY[def.key] = def;
     },
     crab: function () { return ASSET_UI.crab || ''; },
+    // A GAME'S OWN PICTURE, by the name its meta gave it (games/registry.js's `art`). A webview URI
+    // is the host's to make and a panel cannot ask for one, so this is the floor's door to them,
+    // the way `crab` is for the dealer: the mine's 16-frame strip is the first one through it
+    art: function (id, k) {
+      var row = GAME_ROWS[id];
+      return (row && row.art && row.art[k]) || '';
+    },
+    // WHICH RUNG THE WINDOW IS ON (quiet / typing / work / burn / spent), for a screen that draws a
+    // crab of its own. It is not a reading a panel may take: the deadband and the dwell floor below
+    // are memories settled once per push, and two crabs in one window that disagreed about whether
+    // it is quiet would be two answers to one question (docs/game-panels.md, 5-15)
+    step: function () { return _mascotStepNow; },
     frame: frameHtml,
     stakesHtml: stakesHtml,
 
@@ -2123,6 +2172,19 @@
     return mascotWorn()[step] || MASCOT_ART[step];
   }
 
+  // ...AND THE RUNG REACHES THE OPEN SCREEN, because one of them draws a crab of its own (the
+  // mine's, docs/game-panels.md 5-15). Only on a change: the rung is settled once per push and a
+  // panel told the same thing every ten seconds would be a panel restarting an animation on a timer.
+  // A screen opened later reads it for itself (window.CUC.step), which is why nothing is replayed here
+  var _stepTold = null;
+  function tellStep() {
+    if (_stepTold === _mascotStepNow) return;
+    _stepTold = _mascotStepNow;
+    var def = PANELS[curGame()];
+    if (!def || !def.node || !def.step) return;
+    try { def.step(_mascotStepNow); } catch (e) { /* one screen's crab, not the whole push */ }
+  }
+
   // --- A DRAWING WITH NO SCENE ----------------------------------------------------------------
   //
   // Everything above answers a question about the account: how much of the limit is gone, and
@@ -2373,6 +2435,7 @@
     // test/panel-css.test.js, which reads this file's source to hold that true)
     mascotState(d);
     paintMascot();
+    tellStep();
 
     // the session has no bar: the ring below is its one showing, and meter() is called for the
     // three that still have one

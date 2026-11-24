@@ -145,6 +145,18 @@ module.exports = {
         press: () => doc.dispatchKey('b'),
         ready: () => !$('mkDeal').hidden && !$('mkDeal').disabled,
         next: () => { doc.dispatchKey('b'); advance(1000); }
+      },
+      {
+        // A DEPTH IS PROPERTY TOO, like a position, and this screen is reached through its own door
+        // rather than through the list (docs/shop-spec.md, 2-7). The fault is taken on the one thing
+        // there is to press; what may not be wiped is the band, because a drift back at bare rock is
+        // the reading nobody can tell from "my mine is gone"
+        id: 'mine', err: 'mnErr', key: 'mn', moves: ['buy'], shows: /mn-crab/,
+        open: () => { h.openDoor('mine'); advance(60); },
+        drawn: () => $('mnDrift').innerHTML + '|' + text('mnLast') + '|' + text('mnSide'),
+        press: () => $('mnBuy').click(),
+        ready: () => !$('mnBuy').hidden && !$('mnBuy').disabled,
+        next: () => { $('mnBuy').click(); advance(1000); }
       }
     ];
 

@@ -69,10 +69,13 @@ const CSS = `
   .sy-sprite{display:none;}
   .sy-cell{display:flex;width:48px;height:48px;border-radius:6px;background:#15181c;}
   .sy{width:100%;height:100%;display:block;}
-  /* --- the market's chart well. The one screen with no table on it: it has no round, so there is
-     no hand to lay down, and a red candle on green felt is the only candle that reads as an event
-     (docs/game-panels.md, section 5-10) --- */
-  .mk-well{padding:8px;border-radius:10px;background:var(--inner);
+  /* --- THE WELL: the surface a screen with no round sits on. It has no hand to lay down, so the
+     felt comes off, and what is left is a thing looked INTO rather than played on
+     (docs/game-panels.md, section 5-10 for the market's chart and 5-15 for the mine's drift).
+     It was .mk-well while the market was the only one. Two screens is the threshold, in both
+     directions (games/README.md, section 4), and the alternative was the mine copying these three
+     properties into its own stylesheet, which is the thing that threshold exists to stop --- */
+  .gm-well{padding:8px;border-radius:10px;background:var(--inner);
     box-shadow:inset 0 0 0 1px var(--iborder);}
   /* --- games list: the third view. A game screen opens from a row --- */
   .bj-games .ihead{margin-bottom:8px;}

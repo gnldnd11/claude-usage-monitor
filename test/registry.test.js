@@ -93,10 +93,33 @@ test('the real register lists every game and has nothing to complain about', () 
   // the five the casino was cut down to on 2026-11-13: a game may be added, none of these may
   // quietly vanish. Nine games were removed that day on purpose, so this list is the decision
   // rather than a historical accident, and a tenth going without anyone meaning it should fail here
-  for (const id of ['blackjack', 'hilo', 'slots', 'wheel', 'market']) {
+  for (const id of ['blackjack', 'hilo', 'slots', 'wheel', 'market', 'mine']) {
     assert.ok(real.BY_ID[id], id + ' is no longer listed');
   }
-  assert.equal(real.GAMES.length, 5, 'the casino is five games: ' + real.GAMES.map((g) => g.id).join(','));
+  // Five on the list and the mine behind its own door (2026-11-24, docs/shop-spec.md 2-7). The two
+  // halves are counted apart because they are two decisions: which games the casino was cut down to,
+  // and which of them is not a bet
+  assert.equal(real.GAMES.length, 6, 'the register is six games: ' + real.GAMES.map((g) => g.id).join(','));
+  assert.equal(real.behind(real.LIST_DOOR).length, 5,
+    'the list is five rows: ' + real.behind(real.LIST_DOOR).map((g) => g.id).join(','));
+});
+
+// A DOOR OF ITS OWN HOLDS EXACTLY ONE GAME, because the door opens that game's screen and there is
+// one list in the page. The shared files are built on that (webview.js's soleGame): a second game
+// behind a side door is a door that wants a list of its own, which somebody has to build
+test('every door of the crossroads has something behind it, and a side door has one thing', () => {
+  const list = real.doors((f) => 'uri:' + f);
+  assert.ok(list.length >= 2, 'the crossroads has ' + list.length + ' door(s) from the register');
+  for (const d of list) {
+    const games = real.behind(d.id);
+    assert.ok(games.length >= 1, d.id + ' is a door with nothing behind it');
+    assert.match(d.art, /^uri:.+\.png$/, d.id + ': the door has no drawing');
+    if (d.id === real.LIST_DOOR) assert.equal(d.game, null, 'the list door names a single game');
+    else {
+      assert.equal(games.length, 1, d.id + ' has ' + games.length + ' games behind one door');
+      assert.equal(d.game, games[0].id, d.id + ': the door does not name the game behind it');
+    }
+  }
 });
 
 // The nine games removed on 2026-11-13 were NOT renumbered out of the sequence: the five left are
@@ -146,8 +169,13 @@ test('every panel the register names is a file that is published', () => {
 // test went with the thing it was testing. What `order` still has to do is below, and the page
 // having no headings on it is checked where the page is (test/webview/games/blackjack.js).
 
+// ...and a game that is NOT on the list has no row to carry one: the mine is reached by its door,
+// where the picture is the door's own drawing (docs/shop-spec.md, 2-7). So this walks the rows that
+// stand on the list rather than every game in the register
 test('a list row carries a picture exactly one way: painted art or a drawn tile', () => {
-  for (const row of real.view((f) => 'uri:' + f, () => '<svg/>')) {
+  const rows = real.view((f) => 'uri:' + f, () => '<svg/>').filter((r) => r.door === real.LIST_DOOR);
+  assert.ok(rows.length >= 2, 'no rows stand on the list at all: this test stopped testing anything');
+  for (const row of rows) {
     assert.equal(typeof row.tile, 'string', row.id + ': tile is not a string');
     assert.equal(typeof row.thumb, 'string', row.id + ': thumb is not a string');
     // both would stack two pictures in one 48px square, neither leaves the glyph alone in it
