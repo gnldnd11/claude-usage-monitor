@@ -634,15 +634,54 @@
   // stored tab at startup, where honouring the ask would take the keyboard off whatever the window
   // opened on.
   //
+  // `document.hasFocus()` ONLY SEPARATES THEM HALFWAY, and the other half was reported next. It
+  // answers "is the focus inside this frame at all", which is the whole of case 2 only while the
+  // user is typing somewhere else. Press anything in the sidebar once and this document holds the
+  // focus again, and from then on `activeElement === document.body` is the answer in both
+  // situations once more: it is what a panel the focus HAS NEVER BEEN IN reads, every beat, for as
+  // long as it repaints. A market coin left open took the keyboard once a second from a reader who
+  // had not touched that panel.
+  //
+  // So the question is asked of the focus's OWN HISTORY rather than of the body fallback.
+  // `focusPath` is the element the focus last landed on and its ancestors, captured on `focusin`
+  // while that element was still attached, and a panel that is not in the path was never the
+  // focus's home. Capturing the ancestors rather than the element is the point: the repaint that
+  // drops the focus is usually the one that DETACHES the control it was on, and a detached node no
+  // longer answers `root.contains()` for anybody, while the path taken before it was detached still
+  // names the panel it was in. Nothing is cleared on `focusout`, deliberately: engines disagree
+  // about whether removing a focused node fires one at all, and a path cleared by a repaint would
+  // take the hand-back away with it.
+  //
   // `want` is the panel's own ask (it entered, or the controls under the focus were swapped out).
   // Returns whether the focus was actually moved.
+  var focusPath = [];
+  document.addEventListener('focusin', function (e) {
+    var path = [], n = e.target;
+    while (n) { path.push(n); n = n.parentNode; }
+    focusPath = path;
+  }, true);
+  function focusWasIn(root) {
+    if (!root) return false;
+    for (var i = 0; i < focusPath.length; i++) if (focusPath[i] === root) return true;
+    return false;
+  }
+  // NOTHING THE FLOOR FOCUSES SCROLLS THE SIDEBAR. `focus()` on its own rolls the page until the
+  // element is in view, and every target here is a panel's own first control right after that panel
+  // repainted, so there is nothing to bring into view that the repaint has not already placed. With
+  // the market repainting once a second that scroll was the reported defect: the page kept walking
+  // out from under the mouse, a second at a time. A press that does want the view to follow calls
+  // focus() at the press instead (the chip row, the list row, the starred row that moved).
+  function focusNoScroll(target) {
+    try { target.focus({ preventScroll: true }); }
+    catch (e) { target.focus(); }   // an engine that refuses the options bag still gets the keyboard
+  }
   function refocusIn(root, target, want) {
     if (!document.hasFocus()) return false;
     var a = document.activeElement;
     var lost = !a || a === document.body || a.hidden || a.disabled || !(root && root.contains(a));
-    if (!want && !lost) return false;
+    if (!want && (!lost || !focusWasIn(root))) return false;
     if (!target || target.hidden || target.disabled) return false;
-    target.focus();
+    focusNoScroll(target);
     return true;
   }
 
@@ -2081,43 +2120,71 @@
   // rarity is stated in: a second of a panel somebody could have been looking at. A clock would
   // count a laptop that was shut for the afternoon and hand the reader three of these in a row on
   // waking, and it would count a sidebar that was closed all morning. So the counter below only
-  // moves when the tick runs and the document is visible, and "twenty minutes" means twenty
+  // moves when the tick runs and THE CRAB IS ON SCREEN (cameoSeen), and "ten minutes" means ten
   // minutes of that.
   //
+  // A SECOND NOBODY COULD SEE IS NOT A SECOND OF WAITING, which is the other half of that choice
+  // and the one that was missing. `document.hidden` is the whole window; this panel has three tabs
+  // and the big crab is in one of them (html.js, #pm_mascot, inside #panelUsage), and the settings
+  // sheet can hide its box outright. A showing that started while the Games or the Agents tab was
+  // open spent its four seconds and reset the floor behind it with nobody watching, so a reader who
+  // had bought a drawing for the pool and left it switched on could go weeks without seeing it
+  // once. Starting is therefore gated on the crab being visible, and only starting: one that is
+  // already running is left alone, because its end condition is its own (below).
+  //
   // HOW RARE, in two numbers, because one would not do it.
-  //   CAMEO_FLOOR  Nothing twice inside five minutes. "No pattern" has to stop short of "it keeps
-  //                doing it": two showings thirty seconds apart read as a beat and five minutes
-  //                apart do not. It is also longer than the quiet threshold above (180s), so a
+  //   CAMEO_FLOOR  Nothing twice inside four minutes. "No pattern" has to stop short of "it keeps
+  //                doing it": two showings thirty seconds apart read as a beat and four minutes
+  //                apart do not. It MUST stay longer than the quiet threshold above (180s), so a
   //                cameo can never be the SECOND thing that changes the crab inside one quiet
-  //                transition. It is counted from a panel OPENING too, so the first thing a reader
+  //                transition: that is the floor on the floor, and 240 is the smallest round number
+  //                above it. It is counted from a panel OPENING too, so the first thing a reader
   //                sees is never this.
-  //   CAMEO_ODDS   One in 900 ticks above that floor, which is memoryless, so there is no rhythm
-  //                left to learn: every tick carries the same chance. Mean gap 20 minutes, median
-  //                15.4, nine in ten under 40.
-  // At four seconds a showing that is 0.33% of the time.
+  //   CAMEO_ODDS   One in 400 ticks above that floor, which is memoryless, so there is no rhythm
+  //                left to learn: every tick carries the same chance. Mean gap 10.7 minutes, median
+  //                8.6, nine in ten under 19.4.
+  // At four seconds a showing that is 0.63% of the time somebody is looking at the crab.
   //
   // HOW LONG. Four seconds is five whole loops of the drawing in the pool today (8 frames x 100ms,
   // measured). The file loops for ever, so the panel is what ends it: one loop would be a flicker
   // nobody could name, and much longer would start to compete with the state it borrowed.
   //
-  // WHERE IT MAY NOT GO, and this is the part that is not taste. Not in despair and not in
-  // stunned: there the drawing IS the message, and a vortex over "the limit is used up" replaces a
-  // warning with a joke. And not while the burn-rate bubble is up, because that bubble's tail is
-  // placed against the top of the INK of whatever is under it (styles.js, .mwarn), so swapping the
-  // picture under a raised bubble moves the head out from under the tail. It also ENDS the instant
-  // either becomes true, so a cameo can never be what delayed bad news.
+  // WHERE IT MAY NOT GO, and this is the part that is not taste. Not in stunned: there the drawing
+  // IS the message, and a vortex over a crab knocked out replaces a warning with a joke. Despair
+  // used to be shut for the same reason and IS NOT ANY MORE (2026-11-24): the step is reached at a
+  // load of 70, and a load is not a limit. For an account with no five-hour window that is 1.4
+  // times the pace the week is being spent at, which can be true at 19% of the week, so the reading
+  // under the drawing was never "nearly out" there and the news it was protecting was not news. The
+  // top step keeps the block because the one case that IS the limit being gone arrives in it (a
+  // week at 100%, mascotState). And not while the burn-rate bubble is up, because that bubble's
+  // tail is placed against the top of the INK of whatever is under it (styles.js, .mwarn), so
+  // swapping the picture under a raised bubble moves the head out from under the tail. It also ENDS
+  // the instant either becomes true, so a cameo can never be what delayed bad news.
   var CAMEO_SECS = 4;
-  var CAMEO_FLOOR = 300;
-  var CAMEO_ODDS = 900;
+  var CAMEO_FLOOR = 240;
+  var CAMEO_ODDS = 400;
+  // the steps a cameo may cover, as an allow list: a step this does not name blocks one, so the
+  // question is asked about the step rather than about the three that are open
+  var CAMEO_STEPS = { idle: 1, working: 1, despair: 1 };
   // `left` is the ticks a showing has to run, `since` the ticks of visible panel since the last
   // one ended. `since` starts at zero, so the floor covers a panel that has just been opened.
   var cameo = { key: null, left: 0, since: 0 };
   var _mascotStepNow = 'idle';       // the step the last paint worked out, for the tick to read
   function cameoHolds(step) {
-    if (step !== 'idle' && step !== 'working') return false;
+    if (!CAMEO_STEPS[step]) return false;
     var w = el('mwarn');
     if (w && !w.hidden) return false;
     return !cameo.key || mascotPool().indexOf(cameo.key) >= 0;   // switched off in another window
+  }
+  // Is the crab the cameo would cover actually in front of somebody. Two ways it is not, and the
+  // tick cannot tell them apart from the picture: another tab is open, or the settings sheet has
+  // hidden the box (webview.js, applyPanelVis). Read on the box rather than on the picture, because
+  // hiding the picture alone would leave the box's 74px of nothing behind and that is why the
+  // setting moves the wrap.
+  function cameoSeen() {
+    if (curTab() !== 'usage') return false;
+    var box = el('pm_mascot');
+    return !!box && box.style.display !== 'none';
   }
   function cameoEnd() { cameo.key = null; cameo.left = 0; cameo.since = 0; }
   // Once a second, off the panel's own tick. Two decisions and never both: end the one that is
@@ -2127,7 +2194,9 @@
       if (--cameo.left <= 0 || !cameoHolds(_mascotStepNow)) { cameoEnd(); paintMascot(); }
       return;
     }
-    if (document.hidden || !lastData) return;
+    // the gate comes BEFORE the floor on purpose: a second the crab was not on screen for is not a
+    // second of waiting, so a tab switch pauses the count rather than filling it up invisibly
+    if (document.hidden || !cameoSeen() || !lastData) return;
     if (++cameo.since < CAMEO_FLOOR) return;
     if (!cameoHolds(_mascotStepNow)) return;
     var pool = mascotPool();

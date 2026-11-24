@@ -132,13 +132,15 @@ const RETIRED = Object.freeze([]);
 // --- THE FIVE SCENES ----------------------------------------------------------------------------
 //
 // What the reader sees is five moments, and these are the ones they named: quiet, typing, working
-// while the limit fills, burning through it, and out of it. Each one is a SLOT holding one drawing,
-// with the free drawing it has always held and whatever else may go in it.
+// under a load that is building, burning through it, and spent. Each one is a SLOT holding one
+// drawing, with the free drawing it has always held and whatever else may go in it.
 //
 // THE ORDER IS THE LADDER. The shelf draws them in this order (two abreast where there is room,
-// then the next row) and `when` says how much of the limit is gone, so reading it runs from
-// "nothing answered" to "limit used up". Quiet stands first because it is the one scene that is not
-// on that ladder: it crosses two steps and what it answers is the activity.
+// then the next row) and `when` says HOW HARD THE ACCOUNT IS BEING DRIVEN, so reading it runs from
+// "nothing answered" to "overloaded". It is a ladder of LOAD and not of the limit, which is the one
+// thing about these five strings that is not a preference (see `when` below). Quiet stands first
+// because it is the one scene that is not on that ladder: it crosses two steps and what it answers
+// is the activity.
 //
 // A slot is NOT a cell of MASCOT_ART. That table is four steps by two columns and it is not
 // touched: webview.js keeps it as the drawing every cell uses by default and reads a slot only
@@ -159,11 +161,40 @@ const RETIRED = Object.freeze([]);
 // fallback rather than by the cell being unreachable (docs/shop-spec.md, 3-1b and 5-1a).
 //
 // `when` IS A RUNG OF THE LADDER rather than a description of the activity. Typing and working are
-// both "a reply is landing" and what tells them apart is the limit, so stating the activity twice
-// would leave one of the two rows with nothing to say. It is SHORT because of where it is drawn,
-// under the scene's name in one cell of a two-column grid: 132.5px of 10.5px text at the sidebar
-// width this panel is built for, and a line that ellipsizes explains nothing (measured 2026-11-24,
-// docs/shop-spec.md section 3-1b; the earlier "about 90px" here predated the two-line heading)
+// both "a reply is landing" and what tells them apart is the load, so stating the activity twice
+// would leave one of the two rows with nothing to say.
+//
+// AND IT MAY NOT NAME A PERCENTAGE OF ANYTHING. There is ONE set of thresholds picking the step
+// (50/70/90, webview.js MASCOT_STEPS) and TWO different quantities are fed through it
+// (mascotStrain):
+//
+//   an account WITH a five-hour window   that window's used percentage, raw: 50 is half the window
+//   an account WITH NO window            the weekly burn PACE x50: 50 is spending the week exactly
+//                                        evenly, 70 is 1.4 times that pace, 90 is 1.8 times it
+//
+// Those two share an axis so that one set of thresholds can pick one set of drawings, NOT because
+// they measure the same amount. So a line saying how much of the limit is gone is false on one of
+// the two however it is worded: the second kind of account can stand on the top step having spent
+// 9% of its week, and `Limit used up` was printed under a single-digit weekly bar for a reader who
+// reported it (1.37.0, and that is the second time a line of text here lied). What is true on both
+// is only that a bigger number is an account being driven harder, and these four rungs say that and
+// nothing else. The bar on the panel says how much of the limit is gone; this line says what raises
+// the drawing. The two are not answers to one question (docs/shop-spec.md, 3-1c).
+//
+// WHAT THESE WORDS WILL NO LONGER REPORT, which is the price of fixing them and is written down
+// here because nothing else will say it. `Limit used up` was plainly false beside a weekly bar at
+// 9% and a reader said so within a day. `Overloaded` is TRUE there: a week is only a few hours old,
+// the pace's denominator has a floor under it (`expected`, webview.js mascotStrain), and 9% of a
+// week spent in its first eight hours really is close to twice an even pace. So the drawing on its
+// back early in a quiet week is no longer a thing the text will give away, and whether it is what
+// anybody wants to be shown is a question about the thresholds and that floor. NONE of that was
+// touched here: the thresholds, the deadband and mascotStrain are exactly as they were, and this
+// version changed four strings.
+//
+// IT IS SHORT because of where it is drawn, under the scene's name in one cell of a two-column
+// grid: 132.5px of 10.5px text at the sidebar width this panel is built for, and a line that
+// ellipsizes explains nothing (measured 2026-11-24, docs/shop-spec.md section 3-1b; the earlier
+// "about 90px" here predated the two-line heading)
 //
 // QUIET HOLDS TWO AND ITS FALLBACK DID NOT MOVE. The sleeping crab (2026-11-20) went in beside the
 // small one rather than over it. `free` is what a reader who has pressed nothing sees, and the
@@ -183,10 +214,10 @@ const RETIRED = Object.freeze([]);
 // would make a typo in MASCOT_SLOT invisible (docs/shop-spec.md, 3-1b).
 const SLOTS = Object.freeze([
   { id: 'quiet', name: 'Quiet', when: 'Nothing answered', free: 'idle', opts: ['idle', 'sleep'] },
-  { id: 'typing', name: 'Typing', when: 'Limit has room', free: 'coding', opts: ['coding', 'working'] },
-  { id: 'work', name: 'Working', when: 'Limit half gone', free: 'working', opts: ['working', 'coding'] },
-  { id: 'burn', name: 'Burning', when: 'Limit mostly gone', free: 'despair', opts: ['despair', 'float'] },
-  { id: 'spent', name: 'Spent', when: 'Limit used up', free: 'stunned', opts: ['stunned'] }
+  { id: 'typing', name: 'Typing', when: 'Light load', free: 'coding', opts: ['coding', 'working'] },
+  { id: 'work', name: 'Working', when: 'Steady load', free: 'working', opts: ['working', 'coding'] },
+  { id: 'burn', name: 'Burning', when: 'Heavy load', free: 'despair', opts: ['despair', 'float'] },
+  { id: 'spent', name: 'Spent', when: 'Overloaded', free: 'stunned', opts: ['stunned'] }
 ].map((s) => Object.freeze(Object.assign({}, s, { opts: Object.freeze(s.opts) }))));
 
 // --- THE POOL: DRAWINGS WITH NO SCENE -----------------------------------------------------------

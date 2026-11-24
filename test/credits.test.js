@@ -565,7 +565,7 @@ test('shop: prices come off a ladder, and the rung is the drawing\'s frame count
   assert.equal(shopMod.slotOf('float'), 'mascot:float');
   // THE SCENES, each falling back to a drawing that is free: a scene whose fallback had a price
   // would be a scene a reader who bought nothing could not fill at all.
-  // THE ORDER IS THE SHELF'S and the shelf's is the limit ladder (shop.js), so it is pinned here
+  // THE ORDER IS THE SHELF'S and the shelf's is the load ladder (shop.js), so it is pinned here
   // rather than taken as whatever the file happens to list: a row out of order would still pass
   // every other check in this file and would say the wrong thing on the screen
   assert.deepEqual(shopMod.SLOTS.map((s) => s.id), ['quiet', 'typing', 'work', 'burn', 'spent']);
@@ -575,24 +575,35 @@ test('shop: prices come off a ladder, and the rung is the drawing\'s frame count
   // was not the one the panel drew in the cell replies land in. These five were not checked
   // anywhere, so putting that sentence back passed every test in this repository.
   //
-  // THE EXACT STRINGS AND NOT A SHAPE, because a shape cannot say this. `when` was unified onto the
-  // limit ladder as a decision (docs/shop-spec.md, 3-1b): the NAME carries the activity and `when`
-  // carries how much of the limit is gone, since typing and working are both "a reply is landing"
-  // and stating that twice would leave one of the two rows with nothing to say. A rule like "it
-  // mentions the limit" would pass `Limit mostly gone` in the typing row, which is the same class of
-  // lie as the one that was reported. The ladder itself is checked under them, as the property the
-  // five strings are supposed to have
+  // THE EXACT STRINGS AND NOT A SHAPE, because a shape cannot say this. The NAME carries the
+  // activity and `when` carries the LOAD, the one axis that is true for both kinds of account,
+  // since typing and working are both "a reply is landing" and stating that twice would leave one
+  // of the two rows with nothing to say.
+  //
+  // THE SECOND LIE WAS CAUGHT ON A SCREEN RATHER THAN HERE, and that is why these strings are
+  // pinned word for word. 1.37.0 unified them onto the LIMIT, which is not what picks a drawing:
+  // one set of thresholds is fed two different quantities (webview.js, mascotStrain), a five-hour
+  // window's used percentage where there is a window and the weekly burn pace x50 where there is
+  // not. So an account can stand on the top step having spent 9% of its week, and `Limit used up`
+  // was printed under a single-digit weekly bar. These four say only that the account is being
+  // driven harder and name no percentage of anything (docs/shop-spec.md, 3-1c). A rule like "it
+  // mentions the limit" is exactly what let that through, and a rule like "it mentions the load"
+  // would pass `Heavy load` in the typing row, which is the same class of lie as the one that was
+  // reported. The ladder itself is checked under them, as the property the five strings are
+  // supposed to have
   assert.deepEqual(shopMod.SLOTS.map((s) => s.name), ['Quiet', 'Typing', 'Working', 'Burning', 'Spent']);
   assert.deepEqual(shopMod.SLOTS.map((s) => s.when),
-    ['Nothing answered', 'Limit has room', 'Limit half gone', 'Limit mostly gone', 'Limit used up']);
+    ['Nothing answered', 'Light load', 'Steady load', 'Heavy load', 'Overloaded']);
   // the property: no two scenes say the same thing (two rows a reader cannot tell apart is the
   // fault itself), and QUIET IS THE ONLY ONE OFF THE LADDER, because it is the only scene that
-  // crosses two steps and what it answers is the activity rather than the limit
+  // crosses two steps and what it answers is the activity rather than the load. `Overloaded` holds
+  // the word too, which is one of the reasons it won over `pace`: the last rung could not have
+  // carried `pace`, so the property would have held for three rows out of four (3-1c)
   {
     const whens = shopMod.SLOTS.map((s) => s.when);
     assert.equal(new Set(whens).size, whens.length, 'two scenes say the same thing: ' + whens.join(' / '));
     for (const s of shopMod.SLOTS) {
-      assert.equal(/^Limit /.test(s.when), s.id !== 'quiet',
+      assert.equal(/load/i.test(s.when), s.id !== 'quiet',
         s.id + ' says "' + s.when + '", which is the wrong axis for that row');
     }
   }

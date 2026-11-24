@@ -4,8 +4,9 @@
 // disabled, title, textContent, innerHTML, children, closest, contains, bubbling events, click(),
 // scrollIntoView (which moves nothing and records the ask in doc.scrollLog), and a
 // minimal focus model: activeElement, focus()/blur(), hasFocus() (whether the document itself holds
-// the editor's focus, which a test moves with doc.winFocused), keys dispatched from the focused element with
-// Enter's default action pressing a focused button (as Chromium does).
+// the editor's focus, which a test moves with doc.winFocused), a bubbling focusin, every focus()
+// recorded in doc.focusLog as { id, preventScroll }, and keys dispatched from the focused element
+// with Enter's default action pressing a focused button (as Chromium does).
 'use strict';
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
 const RAW = new Set(['style', 'script']);
@@ -107,10 +108,16 @@ class Element {
     return !ev.defaultPrevented;
   }
   click() { if (this.disabled) return; this.dispatchEvent(makeEvent('click', {})); }
-  focus() {
+  // The log is the ASK, not just the element: a repaint that hands the keyboard back must not also
+  // scroll the page to it, and `preventScroll` is the only part of that a test can see (nothing
+  // here scrolls). focusin bubbles as Chromium fires it, which is how a shared floor can know which
+  // panel the focus was last in without reading the body fallback (webview.js, refocusIn)
+  focus(opts) {
     if (this.disabled || this.hidden || !this.ownerDocument) return;
     this.ownerDocument.activeElement = this;
-    (this.ownerDocument.focusLog = this.ownerDocument.focusLog || []).push(this.id || this.localName);
+    (this.ownerDocument.focusLog = this.ownerDocument.focusLog || [])
+      .push({ id: this.id || this.localName, preventScroll: !!(opts && opts.preventScroll) });
+    this.dispatchEvent(makeEvent('focusin', { target: this }));
   }
   blur() { if (this.ownerDocument && this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = this.ownerDocument.body; }
   // Nothing here scrolls, so this only RECORDS that it was asked to, which is all a test can check:

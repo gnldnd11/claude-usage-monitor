@@ -573,15 +573,25 @@ function noSession(h) {
 //      only input is a clock: a reader who spends more tokens does not get more of them.
 //   2. IT GOES AWAY. The file loops for ever, so the panel is what ends it, and four seconds later
 //      whatever the account's real state is, is back on screen.
-//   3. IT NEVER COVERS BAD NEWS. Not at despair, not at stunned, and not under a raised burn-rate
-//      bubble, however the coin falls. This is the half that would be expensive to get wrong: the
-//      crab is the only thing on the panel that says the limit is gone.
+//   3. IT NEVER COVERS BAD NEWS, and WHICH news that is was re-read on 2026-11-24. Not at stunned
+//      and not under a raised burn-rate bubble, however the coin falls. Despair is open now: that
+//      step is a load of 70 and a load is not a limit, so the drawing there was not the warning the
+//      block was protecting (docs/shop-spec.md, 3-1c). Both halves are walked below, because the
+//      one that stayed shut is the expensive one and the one that opened is why it was looked at.
 //   4. AN EMPTY ROW MEANS NEVER. That is the whole of the off switch, so it has to be absolute.
 //   5. IT MOVES NOTHING. The box is a fixed height and the picture goes in it; nothing is given an
 //      inline style and the keyboard is not touched.
+//   6. AND IT IS NOT SPENT WHERE NOBODY CAN SEE IT (2026-11-24). The crab is in the Usage tab and
+//      the settings sheet can hide its box, and a showing that started with either one true burned
+//      its four seconds and the floor behind it in front of nobody: a reader who had bought a
+//      drawing for the pool and left it on reported never once having seen it. Starting is gated
+//      on the crab being visible, and ONLY starting, so one already on screen is not snatched away
+//      by a tab press.
 //
 // The page's coin is seeded here (h.setRandom), because a test of "now and then" that waited on
-// chance is a test that fails on some runs. Always-wins and never-wins are both run.
+// chance is a test that fails on some runs. Always-wins and never-wins are both run, and so are
+// the two coins either side of the odds themselves, which is how the rarity is pinned without
+// averaging anything.
 function cameo(h) {
   const { ok, advance, doc, $, toWebview, setRandom } = h;
   const WORN = { quiet: 'idle', typing: 'coding', work: 'working', burn: 'despair', spent: 'stunned' };
@@ -594,11 +604,11 @@ function cameo(h) {
   const resets = () => Math.floor(Date.now() / 1000) + 3 * HOUR;
   // one push. `pool` is what the HOST resolved (shop.js, randomPool), never a choice, and `burn`
   // raises the burn-rate bubble by handing the page a spike against a small average
-  const push = (sess, pool, burn) => {
+  const push = (sess, pool, burn, hidden) => {
     toWebview({
       type: 'data',
       data: {
-        agents: [], xp: {}, today: {}, count: burn ? 10 : 0, cfg: { panelHidden: [] },
+        agents: [], xp: {}, today: {}, count: burn ? 10 : 0, cfg: { panelHidden: hidden || [] },
         credits: { balance: 0, today: 0, frac: 0, perCredit: 10000, counting: false },
         fh: { used_percentage: sess, resets_at: resets() },
         sd: { used_percentage: 10, resets_at: resets() },
@@ -619,7 +629,7 @@ function cameo(h) {
       if (shown() === 'blackhole') {
         if (!run && lastEnd != null) {
           const gap = i - lastEnd;
-          if (gap < 300) gapsOk = false;
+          if (gap < 240) gapsOk = false;
           if (gap < shortestGap) shortestGap = gap;
         }
         on++; run++; if (run > longest) longest = run;
@@ -633,14 +643,16 @@ function cameo(h) {
 
   // ---------- 1. the floor, counted from the panel OPENING ----------
   // A coin rigged to win every single second, straight after the first push. Even then the first
-  // five minutes are silent: the floor is counted from a panel opening as well as from the last
-  // showing, so the first thing a reader is shown is never this
+  // four minutes are silent: the floor is counted from a panel opening as well as from the last
+  // showing, so the first thing a reader is shown is never this.
+  // BOTH SIDES OF IT ARE WALKED, because only a pair of assertions says where the floor is: 230
+  // silent seconds and then one inside the next 20 puts it at 240 and nowhere else
   setRandom(() => 0);
   push(10, ['blackhole']);
   ok('the crab starts as the account’s own state, not as a gimmick', shown() === 'coding', shown());
-  ok('a winning coin still shows nothing in the first five minutes a panel is open',
-    watchFor(290).on === 0, 'in the first 290s');
-  ok('and then the floor is out and it turns up', watchFor(60).on > 0);
+  ok('a winning coin still shows nothing in the first four minutes a panel is open',
+    watchFor(230).on === 0, 'in the first 230s');
+  ok('and the floor is out at four minutes, not five', watchFor(20).on > 0, 'by 250s');
 
   // ---------- 2. a coin that never wins ----------
   setRandom(() => 0.999);
@@ -656,7 +668,7 @@ function cameo(h) {
   // a panel that never took it off would leave the crab as a vortex until the next push
   ok('and it is gone again four seconds later, never longer', run.longest === 4,
     'longest showing ' + run.longest + 's');
-  ok('and two of them are never closer together than five minutes', run.gapsOk,
+  ok('and two of them are never closer together than four minutes', run.gapsOk,
     'shortest gap ' + (run.shortestGap === Infinity ? 'n/a' : run.shortestGap + 's'));
   ok('the account’s own drawing is what is on screen the rest of the time', shown() === 'coding', shown());
   // 1. NOTHING IS SENT AND NOTHING IS OWED. The host is not told, so there is nothing to pay for
@@ -673,16 +685,25 @@ function cameo(h) {
     doc.activeElement && doc.activeElement.localName);
 
   // ---------- 4. where it may not go ----------
-  // THE TWO STEPS WHERE THE DRAWING IS THE MESSAGE. A vortex over "the limit is used up" replaces
-  // a warning with a joke, and the coin is rigged to win every second here
+  // THE ONE STEP WHERE THE DRAWING IS THE MESSAGE. A vortex over a crab knocked out replaces a
+  // warning with a joke, and the coin is rigged to win every second here
   push(95, ['blackhole']);
-  ok('at a spent limit the crab is the one that says so', shown() === 'stunned', shown());
+  ok('at the top step the crab is the one that says so', shown() === 'stunned', shown());
   let bad = watchFor(3600);
   ok('and an hour of a winning coin never covers it', bad.on === 0, bad.on + ' second(s) of it');
+  // ...AND THE STEP BELOW IT IS OPEN. It was shut for the same reason, and the reason did not hold:
+  // 70 is a LOAD and not a limit, which for an account with no five-hour window is 1.4 times the
+  // pace its week is being spent at and can be true at 19% of the week. There is no warning there
+  // to replace (docs/shop-spec.md, 3-1c)
   push(75, ['blackhole']);
-  ok('at a limit mostly gone the crab is the one that says so', shown() === 'despair', shown());
-  bad = watchFor(3600);
-  ok('and an hour of a winning coin never covers that either', bad.on === 0, bad.on + ' second(s) of it');
+  ok('at a heavy load the crab is the one the step says', shown() === 'despair', shown());
+  const heavy = watchFor(1200);
+  ok('and one may turn up over it, because a heavy load is not a spent limit',
+    heavy.on > 0, heavy.on + ' second(s) of it in twenty minutes');
+  ok('still four seconds and no longer, at that step like any other', heavy.longest === 4,
+    'longest showing ' + heavy.longest + 's');
+  for (let i = 0; i < 10 && shown() === 'blackhole'; i++) advance(1000);
+  ok('and the step’s own drawing is what is back when it ends', shown() === 'despair', shown());
   // ...AND NOT UNDER A RAISED BUBBLE. That one is geometry rather than taste: the bubble's tail is
   // placed against the top of the ink of whatever is under it (styles.js, .mwarn), so swapping the
   // picture would point the tail at nothing
@@ -709,6 +730,65 @@ function cameo(h) {
   push(10, []);
   ok('and switching the row off in another window takes it off this screen at once',
     shown() === 'coding', shown());
+
+  // ---------- 6. not where nobody can see it ----------
+  // The crab is in the Usage tab (html.js, #pm_mascot) and the settings sheet can hide its box, and
+  // a showing under either one is four seconds and a floor spent in front of nobody. THE FLOOR IS
+  // WALKED OFF FIRST with a coin that cannot win, so what every assertion below measures is the
+  // start being refused and not the floor still being in the way
+  setRandom(() => 0.999);
+  push(10, ['blackhole']);
+  watchFor(300);                                  // floor served, nothing shown
+  setRandom(() => 0);                             // and now a coin that wins every second
+  $('hdCredits').click(); advance(5);
+  ok('the games area is open, so the crab is not on screen', !h.showing('panelUsage'),
+    'panelUsage display=' + ($('panelUsage').style.display || '(shown)'));
+  let away = watchFor(1800);
+  ok('half an hour of a winning coin on another tab shows nothing at all', away.on === 0,
+    away.on + ' second(s) of it');
+  // AND THE FLOOR WAS NEITHER RESET NOR FILLED IN BY THE TIME AWAY. 60 seconds is a quarter of the
+  // floor, so one turning up inside them says the 300 served before the tab press were kept, and
+  // the half hour away adding nothing is the assertion above
+  $('tabUsage').click(); advance(5);
+  ok('and back on the tab the crab is on, the very same coin shows one at once', watchFor(60).on > 0,
+    'in 60s back on the tab, a quarter of the floor');
+  // THE SETTINGS KEY IS THE SAME LOSS. It hides the box, not the picture, so this is read on the
+  // box; the tab is unchanged here
+  push(10, ['blackhole'], false, ['mascot']);
+  ok('the box is hidden from settings', $('pm_mascot').style.display === 'none',
+    'display=' + $('pm_mascot').style.display);
+  away = watchFor(1800);
+  ok('and a hidden box shows nothing either, however the coin falls', away.on === 0,
+    away.on + ' second(s) of it');
+  push(10, ['blackhole']);
+  ok('the box is back', $('pm_mascot').style.display !== 'none');
+  // and the floor picks up where it paused rather than being reset or filled in, so this takes the
+  // rest of four minutes and not four minutes again
+  ok('and so is the chance of one', watchFor(300).on > 0, 'in five minutes with the box back');
+  // ONLY STARTING IS GATED. One already on screen runs out its four seconds wherever the reader
+  // goes: its end is its own business, and snatching it away on a tab press would be a second rule
+  // about the same four seconds
+  push(10, ['blackhole']);
+  for (let i = 0; i < 400 && shown() !== 'blackhole'; i++) advance(1000);
+  ok('one is on screen to walk away from', shown() === 'blackhole', shown());
+  $('hdCredits').click(); advance(5);
+  ok('pressing a tab does not snatch it off the screen behind you', shown() === 'blackhole', shown());
+  advance(5000);
+  ok('and it still ends on its own four seconds, not when the tab comes back',
+    shown() === 'coding', shown());
+  $('tabUsage').click(); advance(5);
+
+  // ---------- 7. the odds themselves ----------
+  // A boundary and not a mood. `Math.random() * CAMEO_ODDS >= 1` wins below 1/ODDS, so a coin just
+  // inside the odds turns one up and a coin just outside them never does: two assertions that pin
+  // 400 from both sides without averaging chance, which is the thing that makes a test flaky
+  setRandom(() => 1 / 500);                       // inside 1/400. Outside 1/900, which is what it was
+  push(10, ['blackhole']);
+  ok('a coin just inside the odds turns one up', watchFor(600).on > 0, 'in ten minutes');
+  setRandom(() => 1 / 350);                       // outside 1/400 by as little
+  push(10, ['blackhole']);
+  ok('and a coin just outside them never does, however long you wait', watchFor(3600).on === 0,
+    'in an hour');
 
   ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e.message).join('; '));
 }
