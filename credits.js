@@ -51,7 +51,7 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 //          forge: { by, level, moves, tries, spent, heat, best, broke, earned },
 //          market: { by, pos: { CODE: {amount, entryTicks, at} }, moves, trades, staked, earned, best, at },
 //          shop: { by, owned: { 'mascot:float': 1 }, moves, spent },
-//          mine: { by, moves, pick, anchorTok, anchorDepth, claimedTo, bonus, spent, earned, best, finds } }
+//          mine: { by, moves, pick, durTok, anchorTok, anchorDepth, claimedTo, bonus, spent, earned, best, finds } }
 // Raw tokens per day are stored, not credits, so a changed rate or weighting also re-prices the past.
 // `days` is not per Claude account, and cannot be: a day's cell is the largest figure any reader has
 // seen for that day, which is what lets several windows count the same day without crediting it

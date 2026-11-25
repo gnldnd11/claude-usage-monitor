@@ -128,9 +128,16 @@ function renderHtml(vars) {
   // Nothing in this list is a game's name: a door's id is a door's id, which is the whole reason
   // the register hands these over as data (shop-spec 2-7).
   const crossDoors = [...(doors || []), { id: 'shop', name: 'Shop', art: heroShopUri }];
+  // A DOOR SAYS HOW FINISHED IT IS BEFORE IT IS OPENED, which is the only place saying so is
+  // worth anything: inside the screen the reader is already there. `beta` is a property of a
+  // DOOR and arrives on the data (games/registry.js), so this loop never learns which game it is
+  // marking -- an `if` on an id here would be the one thing games/README.md section 1 forbids.
+  // The badge is a word and not an icon, in the corner the drawings leave empty (every hero is
+  // bottom-aligned art on a transparent canvas), so it covers none of them
   const crossDoor = (d) => `      <button type="button" class="cr-door" id="crDoor-${d.id}" data-door="${d.id}">
         <span class="cr-art"><img src="${d.art}" alt=""/></span>
-        <span class="cr-cap">${d.name}</span>
+        <span class="cr-cap">${d.name}</span>${d.beta ? `
+        <span class="cr-beta">BETA</span>` : ''}
       </button>`;
   // A row: the picture, the name, the figure's empty slot, and the star.
   //

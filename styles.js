@@ -573,13 +573,31 @@ module.exports = `
      this scale (0.096x for the shop) drops most of them (section 2-4). The mascot and the tiles
      keep theirs. --- */
   .cr-pair{display:flex;align-items:flex-end;gap:8px;}
-  .cr-door{flex:1 1 0;min-width:0;display:block;padding:0 0 8px;border:0;border-radius:12px;
+  .cr-door{position:relative;flex:1 1 0;min-width:0;display:block;padding:0 0 8px;border:0;border-radius:12px;
     background:transparent;cursor:pointer;font-family:inherit;text-align:center;}
   .cr-door:hover{background:var(--track);}
   .cr-door:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}
   .cr-art{display:block;width:100%;aspect-ratio:1.7/1;max-height:72px;}
   .cr-art img{width:100%;height:100%;object-fit:contain;object-position:bottom;display:block;}
   .cr-cap{display:block;margin-top:8px;font-size:12.5px;font-weight:700;color:var(--text);}
+  /* HOW FINISHED THE ROOM BEHIND A DOOR IS, said before it is opened. Which doors wear it is the
+     register's (games/registry.js's \`beta\`) and never this file's: a stylesheet that knew would
+     be a stylesheet that knows a game's name.
+     IT IS THE QUIETEST MARK ON THE CARD AND THAT IS THE POINT. A badge is a warning and not an
+     offer, so it takes NO accent: ember is the one thing this panel highlights with and it is
+     already spoken for twice over (the picked shop cell, and the mine's own reach line), and gold
+     is money. Muted on the card's own surface with the inner border round it is the pair the
+     panel already uses for a thing that is there to be read and not pressed, and both halves are
+     tokens, so the light and high-contrast themes get it for free.
+     IN THE TOP CORNER, which is air: every hero is bottom-aligned art on a transparent canvas,
+     so the badge sits over none of the drawing. 7.5px with a little tracking, which is BELOW the
+     six type sizes of docs/game-panels.md section 2 on purpose -- it is a stamp rather than a
+     line of the page, the way a corner fold is not a paragraph. At a 250px sidebar a door is
+     about 60px wide and the stamp is 30, so it stays inside its own column. */
+  .cr-beta{position:absolute;top:0;right:0;padding:1px 4px;border-radius:5px;
+    background:var(--card);box-shadow:inset 0 0 0 1px var(--iborder);
+    font-size:7.5px;font-weight:700;letter-spacing:.06em;line-height:11px;color:var(--muted);
+    pointer-events:none;}
   /* --- the shop. The casino's chrome is games/casino.js and every game's own CSS lives with that
      game, but the shop is not a game (docs/shop-spec.md, section 4-5), so its screen is here,
      beside the Agents tab's, and it borrows the chrome's heading, note, warning bar and button.

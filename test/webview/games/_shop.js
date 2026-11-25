@@ -27,7 +27,11 @@
 
 module.exports = {
   id: 'shop',
-  modes: ['cross', 'shop', 'shop-poor', 'shop-held'],
+  // `cross-beta` is the crossroads again and only about the stamp on a door. Its own mode rather
+  // than four more lines in `cross`, because what it is checking is a rule about the page and not
+  // a step of the walk `cross` makes: a door says how finished the room behind it is, and it says
+  // so from DATA (games/registry.js's `beta`) so that no shared file has to know which game it is
+  modes: ['cross', 'cross-beta', 'shop', 'shop-poor', 'shop-held'],
   // 3,000 buys the one thing on the shelf and leaves something over. 5 is a purse that cannot
   // reach it, and 1,500 is a purse that can until a table is holding 1,000 of it, which is what
   // the two different short-purse sentences need
@@ -71,6 +75,54 @@ module.exports = {
     const srcOf = (e) => e && e.getAttribute('src');
     const picOf = (c) => srcOf(c && c.querySelector('.sh-pic'));
     const artOf = (key) => $('mascot').getAttribute('data-' + key);
+
+    // --- the stamp on a door ---------------------------------------------------------------------
+    //
+    // A ROOM THAT IS STILL BEING FINISHED SAYS SO BEFORE IT IS OPENED, which is the only place
+    // saying it is worth anything: a reader who is already inside has nothing left to decide.
+    //
+    // WHICH DOORS WEAR IT IS DATA. `beta` is a property of a door and travels on the register's
+    // own list, so html.js draws the stamp without ever learning which game is behind the door it
+    // is drawing. An `if (door.id === 'mine')` in a shared file is the one thing games/README.md
+    // section 1 refuses, and making the doors data in 1.39.0 was for this. So the check below is
+    // written against `registry.doors()` rather than against the word "Mine": mark a second door
+    // tomorrow and this follows, unmark the mine and it follows that way too
+    if (MODE === 'cross-beta') {
+    $('hdCredits').click(); advance(20);
+    const want = h.registry.doors((f) => f).filter((d) => d.beta).map((d) => d.id);
+    const worn = [].slice.call(doc.querySelectorAll('#panelCross .cr-door'))
+      .filter((d) => !!d.querySelector('.cr-beta'))
+      .map((d) => d.getAttribute('data-door'));
+    ok('the register says at least one room is still being finished, or this mode proves nothing',
+      want.length > 0, JSON.stringify(want));
+    ok('exactly the doors the register marks carry the stamp, and no others',
+      worn.join() === want.join(), JSON.stringify(worn) + ' vs ' + JSON.stringify(want));
+    const badge = doc.querySelector('#panelCross .cr-beta');
+    ok('it is one word, in letters, with no picture in it',
+      badge.textContent === 'BETA' && !badge.querySelector('svg') && !badge.querySelector('img'),
+      JSON.stringify(badge.textContent));
+    // ON THE DOOR AND NOT ON THE PICTURE. Every hero is bottom-aligned art on a transparent
+    // canvas, so the top corner is air: a stamp pinned to the button's corner covers none of the
+    // drawing, and a stamp inside .cr-art would ride the picture's box instead of the card's
+    ok('it hangs in the button\'s own top corner, which is the air above every drawing',
+      badge.parentNode.className === 'cr-door'
+      && /\.cr-door\{[^}]*position:relative/.test(css())
+      && /\.cr-beta\{[^}]*position:absolute[^}]*top:0[^}]*right:0/.test(css()),
+      (/\.cr-beta\{[^}]*\}/.exec(css()) || [''])[0]);
+    // NO ACCENT. A badge is a warning, not an offer, and this panel's one highlight is already
+    // spoken for twice (the shop's picked cell, and the mine's reach line). Gold is money. So it
+    // is the muted token on the card's own surface, which both the light and the high-contrast
+    // themes already define
+    const beta = (/\.cr-beta\{([^}]*)\}/.exec(css()) || ['', ''])[1];
+    ok('and it takes no accent colour: every value in it is a token this panel already has',
+      !/#[0-9a-f]{3,8}/i.test(beta) && /color:var\(--muted\)/.test(beta)
+      && /background:var\(--card\)/.test(beta),
+      beta);
+    ok('the crossroads still has no digit on it', !/\d/.test($('panelCross').textContent),
+      JSON.stringify($('panelCross').textContent.trim()));
+    ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e && e.message).join(' | '));
+    return;
+    }
 
     if (MODE === 'cross') {
     // ---------- 1. the coin opens a choice ----------

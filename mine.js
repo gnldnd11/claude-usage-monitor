@@ -35,13 +35,19 @@
 // band does not apply, the same way it does not apply to the market. Five claims stand in its place
 // and `test/mine.test.js` is where each one is made:
 //
-//   a  NET PAY PER TOKEN HAS A CEILING. What the mine adds to the balance grows at no more than
-//      EARN_CAP_NUM/EARN_CAP_DEN of what the same tokens earn in the ledger. Enumerated over the
-//      seam table, the relic spacing rule and the fever's grant, as an exact rational
+//   a  NET PAY PER TOKEN HAS A CEILING, AND EVERY TIER HAS ITS OWN. What the mine adds to the
+//      balance grows at no more than EARN_CAP_NUM/EARN_CAP_DEN of what the same tokens earn in the
+//      ledger. Enumerated over the seam table, the relic spacing rule and the fever's grant, as an
+//      exact rational, ONCE PER TIER: a pick is a key (see the picks below), so each tier takes a
+//      different set out of the wall and the ceiling has to stand against the richest of them
 //   b  A STRETCH PAYS ONCE. `claimedTo` is a boundary, so the same ground cannot be claimed twice,
 //      and a claim that loses a merge takes `earned` and `claimedTo` back together
-//   c  PICKS DO NOT OVERLAP. Fitting one replaces the anchor and the old pick's unused durability
-//      is gone, so two purchases in a row cannot add the same ground twice
+//   c  PICKS DO NOT OVERLAP: THE GROUND IS COUNTED ONCE. Fitting one replaces the anchor, so two
+//      purchases in a row cannot each add a stretch of ground. WHAT THE OLD PICK HAD LEFT IS NOT
+//      THROWN AWAY: it is carried into the new pick's durability (`durTok`), in TOKENS and off the
+//      same anchor the wear is measured off, so the carry is exactly the reach the screen was
+//      showing, a stale window cannot make it grow, and a merge that drops the purchase takes the
+//      carry back with the money
 //   d  THE GROUND IS MONOTONE. `weightedTotal` only grows, whatever order the days arrive in
 //      (test/credits.test.js)
 //   e  ONE CLAIM WALKS A BOUNDED NUMBER OF CELLS. A mine nobody has opened for a month does not
@@ -72,39 +78,67 @@ const UNIT = 'm';                // the host names the unit; the screen never in
 
 // What a fist is worth. The pick is 1 token to 1 token of digging and the fist is one eighth of it,
 // which is the whole of "the efficiency collapses": a day's work that was 524 m becomes 65 m.
-// INTEGER division, so this cannot drift with a float
+// INTEGER division, so this cannot drift with a float.
+// The hands are slower AND they are tier 0, so the wall gives them gems and nothing else (the seam
+// table's `gate`). Both halves of that arrive together: `tierOf` reads the tool and not the receipt
 const FIST_DIV = 8;
 
 // --- the picks ----------------------------------------------------------------------------------
 //
-// Four rungs, five times apart in price, and the only thing that differs between them is the price
-// and how long they last. THEY ALL DIG AT THE SAME SPEED, and that is a condition rather than a
-// simplification: claim (a) caps what the mine may pay per TOKEN, so a pick that dug faster would
-// have to pay less per metre to stay under it, and the four rungs would then be four different
-// games. One speed means one ceiling, proved once, and the rungs are about how long you can keep
-// digging before the hands come out.
+// Four rungs. THEY ALL DIG AT THE SAME SPEED, and that is a condition rather than a simplification:
+// claim (a) caps what the mine may pay per TOKEN, so a pick that dug faster would have to pay less
+// per metre to stay under it, and the four rungs would then be four different games. One speed
+// means one shape of ceiling, enumerated per tier against one constant.
 //
-// `durMt` is the durability in millions of weighted tokens. For this reader:
+// SO A RUNG IS NOT A TIMER, IT IS A KEY. Two things differ up the ladder and the second one is the
+// reason to climb:
 //
-//   1    15 MT     2.8 hours of activity (24 minutes on a busy day)
-//   2    85 MT     16 hours
-//   3   470 MT     88 hours
-//   4  2700 MT     52 days
+//   durMt   how long the pick lasts before the hands come out
+//   gate    WHAT THE WALL GIVES UP TO IT (the seam table's `gate` column, below)
 //
-// THE PRICES ARE HALF WHAT WAS PROPOSED and the ceiling is why, not taste. Over its whole
-// durability a pick can return at most
+// It was only the first of those until 1.40.0, and that was the whole of what the reader was buying:
+// four picks that dug the same ground at the same speed for the same pay, so the reward for the next
+// rung up was that the day the hands come out arrives later. A delay is not a gain, and the screen
+// had nothing to show for a purchase. The gate is the fix, and it costs the ladder nothing: the
+// layout is still one layout (`seamAt` is a pure function of the metre and no tier moves it), so
+// what a tier changes is what it can pull OUT of a wall everybody sees the same.
+//
+// `durMt` is the durability in millions of weighted tokens. For this reader (5.32 MT an hour of
+// activity, 52.4 MT a day):
+//
+//   1    15 MT     2.8 hours of activity        gems
+//   2    85 MT     16 hours                     + fevers
+//   3   470 MT     88 hours                     + old coins
+//   4  2700 MT     52 days                      + the crab idol
+//
+// THE PRICES WERE HALVED ONCE FOR THE CEILING AND THE BOTTOM THREE ARE CUT AGAIN FOR THE GATE, and
+// both times the arithmetic is the same one. Over its whole durability a pick can return at most
 //
 //     EARN_CAP x (durMt x TOK_PER_MT / CREDIT_UNIT) x (1 - 1/FIST_DIV)
 //
 // credits, the last factor being the fist it replaces rather than adds to. At 15% that is 196.9
-// credits for a 15 MT pick, so the proposed 200 was a rung that could not pay for itself however
-// the seam table was written. Halved, every rung returns more than it costs and the RATIO rises up
-// the ladder (1.67 / 1.90 / 2.10 / 2.41 at the realised rate), which is what saving for the next one
-// should buy. test/mine.test.js asserts both the ceiling and the ratios off these numbers.
+// credits for a 15 MT pick, so the originally proposed 200 was a rung that could not pay for itself
+// however the seam table was written. The gate then takes the relics off the bottom rungs, so what
+// a tier-1 pick can earn over its life falls to 47.6 credits against the table's own expectation
+// and 100 becomes the same unpayable rung a second time. The way out is NOT a richer table: the
+// ceiling is a hard cap on the total, and giving the gems enough mass to carry a 100-credit pick
+// would take the whole 2.08 points of margin claim (a) has left. So the rungs are priced against
+// what each one can actually take out of the wall:
+//
+//   tier   price   can take        lifetime pay   ratio
+//   1         40   gems                   47.6    1.19x
+//   2        200   + fevers              269.8    1.35x     (the fever pays in GROUND, not credits,
+//   3      1,500   + old coins         2,656.7    1.77x      so it is not in these two columns at
+//   4     12,500   + the crab idol    27,305.0    2.18x      all: see the ratio block in the suite)
+//
+// Every rung returns more than it costs and the RATIO RISES UP THE LADDER, which is what saving for
+// the next one should buy. test/mine.test.js asserts the ceiling per tier and these four ratios off
+// these numbers, and it measures the ratio on the pays ALONE: the ground a fever gives away is a
+// bonus on top of a rung that already clears its price.
 const PICKS = Object.freeze([
-  { tier: 1, name: 'Tin pick', price: 100, durMt: 15 },
-  { tier: 2, name: 'Iron pick', price: 500, durMt: 85 },
-  { tier: 3, name: 'Steel pick', price: 2500, durMt: 470 },
+  { tier: 1, name: 'Tin pick', price: 40, durMt: 15 },
+  { tier: 2, name: 'Iron pick', price: 200, durMt: 85 },
+  { tier: 3, name: 'Steel pick', price: 1500, durMt: 470 },
   { tier: 4, name: 'Crab pick', price: 12500, durMt: 2700 }
 ].map((p) => Object.freeze(p)));
 
@@ -114,7 +148,9 @@ const FIST = 0;
 const TOP_TIER = PICKS.length;
 
 function pickOf(tier) { return (tier >= 1 && tier <= TOP_TIER) ? PICKS[tier - 1] : null; }
-// The tokens a tier can dig at full speed. Tier 0 has none, which is why a reader who has bought
+// THE TOKENS A NEW PICK OF THAT TIER IS WORTH, which is the table's figure and not the record's:
+// what a FITTED pick can still dig is `durOf` below, because a purchase adds the old pick's
+// remainder to this (claim (c)). Tier 0 is worth nothing, which is why a reader who has bought
 // nothing digs with their hands from the first metre
 function durTokOf(tier) { const p = pickOf(tier); return p ? p.durMt * TOK_PER_MT : 0; }
 
@@ -122,7 +158,9 @@ function durTokOf(tier) { const p = pickOf(tier); return p ? p.durMt * TOK_PER_M
 // a time is the screen's own rule (docs/game-panels.md, 5-15: no chips, one button, and the decision
 // is already "now or at the next seam"), and the ladder being one way is what makes "a rising price"
 // true. A worn tier-1 pick is therefore not replaced by another tier-1 pick: the reader digs with
-// their hands until tier 2 is affordable, which is the only tension this screen has
+// their hands until tier 2 is affordable, and the ladder being one way is also what keeps the gate
+// from being bought around -- an idol two cells ahead cannot be answered by jumping to the rung
+// that lifts it
 function nextTier(tier) { return Math.min((tier >= 1 ? tier : 0) + 1, TOP_TIER); }
 
 // --- the ceiling --------------------------------------------------------------------------------
@@ -154,18 +192,37 @@ const BUCKETS = 64;
 // The pays are tuned DOWN to the ceiling and not up to a feeling: see test/mine.test.js, which
 // enumerates this table against EARN_CAP and would fail on a single pay raised past it. The shape
 // of the ladder is 6 / 16 / 36 for the three gems and 100 / 360 for the two relics, so a relic is
-// worth a handful of gems and the rarest find is three tier-1 picks.
+// worth a handful of gems and the rarest find is nine tier-1 picks.
+//
+// `gate` IS THE LOWEST TIER THE WALL GIVES THE ROW UP TO, and it is the whole of "a pick is a key"
+// (see the picks above). Three things to keep about it:
+//
+//   gate 0   bare hands take it. The gems are all 0, so a reader who has bought nothing still has
+//            something coming out of the wall and the screen is not dead on its first open
+//   gate 2+  the row is in the rock for everybody and OUT OF REACH of the rungs below it. It is
+//            still drawn (`seamsAhead` sends it with `locked`), because a thing you can see and
+//            cannot take is the whole of what the next rung is for
+//   TOP_TIER the top rung has to open something no other rung can take, or 12,500 credits buys a
+//            delay. The load-time check below refuses a table where it does not
+//
+// AND A LOCKED ROW STILL CLEARS ITS NEIGHBOURS. The spacing rule (`seamAt`) reads the LAYOUT, which
+// is the same for every tier, so an idol a tin pick cannot lift still keeps the two cells beside it
+// empty. That is deliberate twice over: the screen's 48px marker needs that room whether the reader
+// can take the thing or not, and a layout that rearranged itself per tier would be a different
+// drift for every pick.
 //
 // A FEVER PAYS NOTHING. What it gives is ground, which is the reader's own words for it ("it digs
 // through a lot of DIRT"), and the gems standing in that ground pay because they are gems. Written
 // as a pay of 0 rather than as a separate table so the walk below has one kind of thing to look at.
+// Its gate is 2 because the ground it gives is worth less than a relic is: the rungs open the three
+// gated rows in the order of what they are worth, cheapest first.
 const SEAMS = Object.freeze([
-  { name: 'Quartz', kind: 'gem', pay: 6, odds: 20 },
-  { name: 'Garnet', kind: 'gem', pay: 16, odds: 14 },
-  { name: 'Amethyst', kind: 'gem', pay: 36, odds: 6 },
-  { name: 'Old coin', kind: 'relic', pay: 100, odds: 4 },
-  { name: 'Crab idol', kind: 'relic', pay: 360, odds: 2 },
-  { name: 'Fever', kind: 'fever', pay: 0, odds: 2 }
+  { name: 'Quartz', kind: 'gem', pay: 6, odds: 20, gate: 0 },
+  { name: 'Garnet', kind: 'gem', pay: 16, odds: 14, gate: 0 },
+  { name: 'Amethyst', kind: 'gem', pay: 36, odds: 6, gate: 0 },
+  { name: 'Old coin', kind: 'relic', pay: 100, odds: 4, gate: 3 },
+  { name: 'Crab idol', kind: 'relic', pay: 360, odds: 2, gate: 4 },
+  { name: 'Fever', kind: 'fever', pay: 0, odds: 2, gate: 2 }
 ].map((s) => Object.freeze(s)));
 
 // How far a fever carries. Four cells, which is more than the whole lookahead window, so the ground
@@ -249,6 +306,20 @@ const CLAIM_CELLS = 64;
     if (PICKS[i].price <= PICKS[i - 1].price) throw new Error('mine: the picks are not a rising price');
     if (PICKS[i].durMt <= PICKS[i - 1].durMt) throw new Error('mine: a dearer pick does not last longer');
   }
+  // THE GATE COLUMN IS A LADDER TOO, and these three are what make it one. The suite proves the
+  // ceiling and the ratios off the table; these are the two ends of it, which a retune can break
+  // without any ratio moving: a table with nothing at gate 0 is a screen that pays a new reader
+  // nothing, and a table with nothing at the top gate is 12,500 credits buying a delay
+  let free = 0, top = 0;
+  for (const s of SEAMS) {
+    if (!Number.isInteger(s.gate) || s.gate < 0 || s.gate > TOP_TIER) {
+      throw new Error('mine: ' + s.name + ' is behind a tier that is not on the ladder');
+    }
+    if (s.gate === 0) free += 1;
+    if (s.gate === TOP_TIER) top += 1;
+  }
+  if (!free) throw new Error('mine: bare hands can take nothing out of the wall');
+  if (!top) throw new Error('mine: the top rung opens nothing the rung below it cannot take');
 })();
 
 // --- the record ---------------------------------------------------------------------------------
@@ -258,6 +329,11 @@ const CLAIM_CELLS = 64;
 //                moves is the later one, and a window writes exactly one record per move count,
 //                which is what makes (moves, by) the record's name
 //   pick         the tier fitted, 0 for none. Only ever rises (nextTier)
+//   durTok       WHAT THAT PICK CAN DIG, in weighted tokens, measured off `anchorTok` the way the
+//                wear is. It is a field and not `durTokOf(pick)` because a purchase carries the old
+//                pick's remainder into it (claim (c)), so the tier's row is only what a FRESH pick
+//                of that tier is worth. pick >= 1 and durTok > 0 stand or fall together: `act` is
+//                the only thing that sets either, and `clean` repairs a record that disagrees
 //   anchorTok    the weighted token count when that pick was fitted
 //   anchorDepth  the depth it was fitted at, MINUS `bonus`, so that depth = anchorDepth + bonus + dug
 //                is continuous across a purchase while `bonus` goes on being a lifetime figure
@@ -277,7 +353,7 @@ const CLAIM_CELLS = 64;
 // token count that disagreed would be two answers to one question, and the token count is the one
 // that cannot be edited by hand.
 const REC_FIELDS = Object.freeze([
-  'moves', 'pick', 'anchorTok', 'anchorDepth', 'claimedTo', 'bonus', 'spent', 'earned', 'best', 'finds'
+  'moves', 'pick', 'durTok', 'anchorTok', 'anchorDepth', 'claimedTo', 'bonus', 'spent', 'earned', 'best', 'finds'
 ]);
 
 // EMPTY, AND THIS IS THE ONE LINE IN THIS FILE THAT COULD MINT MONEY. Max a field across a merge and
@@ -288,6 +364,10 @@ const REC_FIELDS = Object.freeze([
 //                      ground is still there to be claimed again. That is claim (b) broken, and it
 //                      is the 372,000 bug exactly
 //   `bonus` maxed      a fever's ground kept while the write that claimed it was thrown away
+//   `durTok` maxed     THE CARRY, GROWN BY A MERGE. Durability is money here: it is paid for and it
+//                      is what the wall is opened with, so a window whose purchase was dropped
+//                      would keep the pick it did not buy, and two windows buying at once would
+//                      each keep the other's remainder. One figure for a pick that is one pick
 // `best` and `finds` are not maxed either, for the market's reason (market.js, MAX_FIELDS): a find
 // that was dropped did not happen, so its figure may not outlive it. The winning record is adopted
 // WHOLE and nothing is lifted out of the loser.
@@ -304,8 +384,12 @@ const MAX_MOVES = 1e9;
 const MAX_MONEY = 1e15;
 const MAX_TOK = 1e15;
 const MAX_DEPTH = 1e12;
+// `durTok` rides MAX_TOK, and an immortal pick off a hand-edited store is not a hole in claim (a):
+// a pick that never wears out is exactly the case the ceiling is enumerated against, because the
+// enumeration prices a cell at full-speed digging. What such a store buys is skipping the fist,
+// which `pick` and `anchorTok` could already buy between them before this field existed
 const REC_CEIL = Object.freeze({
-  moves: MAX_MOVES, pick: TOP_TIER, anchorTok: MAX_TOK, anchorDepth: MAX_DEPTH,
+  moves: MAX_MOVES, pick: TOP_TIER, durTok: MAX_TOK, anchorTok: MAX_TOK, anchorDepth: MAX_DEPTH,
   claimedTo: MAX_DEPTH, bonus: MAX_DEPTH, spent: MAX_MONEY, earned: MAX_MONEY,
   best: MAX_MONEY, finds: MAX_MOVES
 });
@@ -318,7 +402,7 @@ function fresh(by, anchorTok) {
   const tok = (Number.isSafeInteger(anchorTok) && anchorTok > 0) ? Math.min(anchorTok, MAX_TOK) : 0;
   return {
     by: by == null ? '' : String(by),
-    moves: 0, pick: FIST, anchorTok: tok, anchorDepth: 0, claimedTo: 0, bonus: 0,
+    moves: 0, pick: FIST, durTok: 0, anchorTok: tok, anchorDepth: 0, claimedTo: 0, bonus: 0,
     spent: 0, earned: 0, best: 0, finds: 0
   };
 }
@@ -371,6 +455,15 @@ function seamAt(cell) {
   return (relicStands(cell - 1) || relicStands(cell + 1)) ? null : s;
 }
 
+// --- what a tier may take out of the wall ---------------------------------------------------------
+
+// Is this row's gate open to that tier? One comparison, in one place, and every reader of it goes
+// through here: the claim (`sweep`), what the screen is shown (`seamsAhead`) and the fold
+// (`paysFor`). Written as a function rather than inlined three times because the three have to
+// agree -- a locked row the screen drew as takeable, or a row the wall paid for and the fold said
+// was out of reach, is the host telling the reader two things
+function takes(tier, s) { return !!s && tier >= s.gate; }
+
 // --- depth ---------------------------------------------------------------------------------------
 
 // The tokens this pick has seen. CLAMPED AT 0, which is not defensive tidying: two windows hold
@@ -381,12 +474,18 @@ function usedOf(rec, tok) {
   return Math.max(0, t - rec.anchorTok);
 }
 
+// WHAT THE PICK IN HAND CAN DIG, in tokens. The record's own figure, because a purchase carried the
+// last pick's remainder into it, and 0 whenever there is no pick: the `pick >= 1` guard is here as
+// well as in `clean` because a durability that outlived its tier would be a fist digging at full
+// speed, which is the one shape of nonsense in this file that pays
+function durOf(rec) { return rec.pick >= 1 ? rec.durTok : 0; }
+
 // Metres dug since the anchor. The pick's stretch at full speed, then the fist's at one eighth.
 // Integer throughout: the division by FIST_DIV happens on TOKENS and the division to metres happens
 // once, so there is no float in the chain and the result cannot drift between two windows
 function dugOf(rec, tok) {
   const used = usedOf(rec, tok);
-  const dur = durTokOf(rec.pick);
+  const dur = durOf(rec);
   const t = used <= dur ? used : dur + Math.floor((used - dur) / FIST_DIV);
   return Math.floor(t / TOK_PER_M);
 }
@@ -395,15 +494,29 @@ function depthOf(rec, tok) { return rec.anchorDepth + rec.bonus + dugOf(rec, tok
 
 // Is the pick still in one piece? Asked in tokens rather than in metres, so the last fraction of a
 // metre of a pick is still a pick
-function hasPick(rec, tok) { return usedOf(rec, tok) < durTokOf(rec.pick); }
+function hasPick(rec, tok) { return usedOf(rec, tok) < durOf(rec); }
+
+// WHICH KEY IS IN HAND. The tier the gate is read against, and it is the tool rather than the
+// purchase: a worn-out pick is bare hands, so the idols stop coming the moment it goes, and `pick`
+// going on naming the tier is what lets the one-way ladder (`nextTier`) offer the next rung up.
+// ASKED ONCE PER CLAIM and not per cell: a stretch that the pick began and the hands finished is
+// claimed at the tool the record is holding when the claim is made, which is the only reading that
+// needs no second clock. Nothing is gained by sitting on a backlog either, because the sweep runs
+// before anything else in a message (games/mine/meta.js) and a purchase cannot be slipped in front
+// of it
+function tierOf(rec, tok) { return hasPick(rec, tok) ? rec.pick : FIST; }
 
 // How much further this pick can dig, in metres, and 0 for bare hands. This is the number the
 // screen draws as a line in the rock rather than printing: the question it answers is "does it reach
-// that seam", and a line beside the seam answers that without any arithmetic
-function reachOf(rec, tok) {
-  const left = durTokOf(rec.pick) - usedOf(rec, tok);
-  return left > 0 ? Math.floor(left / TOK_PER_M) : 0;
+// that seam", and a line beside the seam answers that without any arithmetic.
+// `reachTokOf` is the same thing in TOKENS, which is what a purchase carries over: rounding the
+// carry down to the metre the line was drawn at would quietly lose up to a metre of a pick that was
+// paid for
+function reachTokOf(rec, tok) {
+  const left = durOf(rec) - usedOf(rec, tok);
+  return left > 0 ? left : 0;
 }
+function reachOf(rec, tok) { return Math.floor(reachTokOf(rec, tok) / TOK_PER_M); }
 
 // --- the claim -----------------------------------------------------------------------------------
 
@@ -421,6 +534,7 @@ function reachOf(rec, tok) {
 // stored the last one would show it again after a reload.
 function sweep(rec, tok) {
   const face = depthOf(rec, tok);
+  const tier = tierOf(rec, tok);
   const from = rec.claimedTo;
   const paidTo = Math.floor(from / CELL_M);         // the last cell already paid for
   const dugEnd = Math.floor(face / CELL_M);         // the last cell the TOKENS have reached
@@ -434,6 +548,13 @@ function sweep(rec, tok) {
   for (let c = paidTo + 1; c <= end; c++) {
     const s = seamAt(c);
     if (!s) continue;
+    // THE WALL KEEPS WHAT THIS TIER IS NOT THE KEY TO, and it keeps it for good: the boundary is
+    // one number, so the cell is behind `claimedTo` the moment the claim passes it and no later
+    // purchase can come back for it. That is claim (b) having one shape, not a penalty bolted on --
+    // a list of the cells that were left would be the union-across-two-copies the forge minted
+    // 372,000 credits out of. The screen says so in advance: a locked seam is drawn in the
+    // lookahead with `locked` on it, which is the reader's cue to fit the next rung before it goes
+    if (!takes(tier, s)) continue;
     if (s.kind === 'fever') {
       // A fever in the ground the TOKENS dug gives FEVER_M away; one standing in ground a fever
       // already gave is inert, and those two sentences are the whole of "the chain is broken"
@@ -482,9 +603,10 @@ const OPS = Object.freeze(['buy']);
 // calling in. Written as !(a <= b) so a NaN budget, which is a broken ledger, refuses rather than
 // allows.
 //
-// There is no refusal for a pick that still has life in it. Fitting a new one early throws the rest
-// of the old one away, which is a real cost, and the screen is told what it is (`offer.lose`) rather
-// than being stopped from making the trade
+// There is no refusal for a pick that still has life in it, and since 1.40.0 there is nothing to
+// refuse: fitting a new one early CARRIES the rest of the old one over (claim (c)), so an early
+// purchase costs the price and nothing else. The refusal was never there, but the warning that
+// stood in its place (`offer.lose`) is gone with the loss it described
 function whyNot(rec, op, budget) {
   const name = op && typeof op === 'object' ? op.op : null;
   if (OPS.indexOf(name) < 0) return 'unknown action';
@@ -499,10 +621,22 @@ function whyNot(rec, op, budget) {
 // Fits the offered pick. Never mutates its input and hands the very same object back when the move
 // is not allowed, so a host can test for identity rather than for a reason (the market's rule).
 //
-// THE ANCHOR IS REPLACED AND THE OLD PICK'S REMAINING DURABILITY IS GONE. That is what makes claim
-// (c) true: there is one anchor, so two purchases in a row cannot each contribute a stretch of
+// THE ANCHOR IS REPLACED AND THE OLD PICK'S REMAINDER IS CARRIED OVER. The first half is what makes
+// claim (c) true: there is one anchor, so two purchases in a row cannot each contribute a stretch of
 // ground. `anchorDepth` is the depth at the moment of fitting MINUS `bonus`, which keeps the depth
 // continuous across the purchase while `bonus` goes on being a lifetime count.
+//
+// THE CARRY IS THE REASON TO BUY RATHER THAN TO WAIT. Thrown away, the best play was to let the pick
+// wear out first, and the moment it wore out was the moment the screen had least to offer: a reader
+// doing the right thing was a reader with bare hands. Carried, `durTok` is the new pick's row plus
+// whatever the old one had left, and buying early costs the price alone.
+//
+// AND IT CANNOT GROW IN A STALE WINDOW, which is the one way a carry could mint something. The carry
+// is measured off the SAME anchor that is held forward below: a window reading a count lower than
+// the anchor computes a wear of 0 and carries the whole figure, but it also leaves the anchor where
+// it was, so the tokens already spent still count against the sum. Read at the true count, such a
+// record reaches exactly what a purchase made at the true count would have reached, and the suite
+// asserts that equality rather than the inequality the old clamp had.
 //
 // `claimedTo` is clamped to the new depth here and nowhere else. This is the one moment the record
 // knows what the depth is without a clock in its hand, so it is the one moment a boundary left
@@ -514,13 +648,20 @@ function act(rec, op, tok) {
   const p = pickOf(nextTier(rec.pick));
   const depth = depthOf(rec, tok);
   const now = Number.isSafeInteger(tok) && tok > 0 ? Math.min(tok, MAX_TOK) : 0;
+  // in TOKENS and off the old anchor, so the carry is exactly the reach the screen was showing
+  const carry = reachTokOf(rec, tok);
   return Object.assign({}, rec, {
     moves: rec.moves + 1,
     pick: p.tier,
+    // clamped so the figure stays one `clean` would believe: over the ceiling it would be zeroed
+    // at the storage boundary and repaired to a fresh pick of this tier, quietly dropping a carry
+    // that was paid for
+    durTok: Math.min(durTokOf(p.tier) + carry, MAX_TOK),
     // NEVER BELOW THE OLD ANCHOR. A window holding an older ledger reads a lower count than the one
-    // that anchored the last pick, and an anchor moved back to it would hand the new pick the old
-    // one's wear as fresh durability. Held forward, the stale window's pick is a little worn when it
-    // is fitted, which is the side of the clamp that cannot pay anybody anything
+    // that anchored the last pick, and an anchor moved back to it would hand the new pick the wear
+    // that has already happened as fresh durability. Held forward, that wear still counts against
+    // the sum above, which is why the carry a stale window computes (the whole figure, since it
+    // reads no wear at all) comes out exactly right rather than merely safe
     anchorTok: Math.max(rec.anchorTok, now),
     anchorDepth: depth - rec.bonus,
     claimedTo: Math.min(rec.claimedTo, depth),
@@ -541,6 +682,20 @@ function clean(rec) {
     const n = rec[k];
     out[k] = (Number.isSafeInteger(n) && n > 0 && n <= REC_CEIL[k]) ? n : 0;
   }
+  // THE PAIR HAS TO AGREE, and it is repaired here rather than being believed and worked around on
+  // every read. `act` is the only thing that writes either field and it writes both, so a tier with
+  // no durability is one of exactly two things and the same repair is right for both:
+  //   - A RECORD FROM BEFORE 1.40.0, where there was no field and the durability was derived from
+  //     the tier. Reading it as a worn-out pick would break every pick in the field on upgrade, so
+  //     it is given the figure the derivation would have given it: the tier's own row, which is
+  //     also what it had. The loop above cannot tell this case from the next one and does not need
+  //     to, because the answer is the same
+  //   - A HAND-EDITED FIGURE the loop rejected, which falls back to a fresh pick of the tier the
+  //     record claims and so gains nothing a forged `pick` could not already claim
+  // The other way round is nonsense with no honest reading at all: durability without a pick would
+  // be a fist digging at full speed, so it goes (see `durOf`, which guards it a second time)
+  if (out.pick >= 1 && out.durTok <= 0) out.durTok = durTokOf(out.pick);
+  if (out.pick < 1) out.durTok = 0;
   return out;
 }
 
@@ -622,30 +777,60 @@ function netOf(rec) {
 // Only what is in FRONT of the face: the dug half of the drift carries no markers (the screen draws
 // seams in the rock, which is its right 60%), and a seam the budget has not reached yet is behind
 // the face and will be paid for by the next claim rather than drawn twice.
-function seamsAhead(depth) {
+// WHAT IS LOCKED IS STILL SENT, and that is the gate's whole point on this screen: a seam the pick
+// in hand cannot take is drawn in the rock with `locked` on it, so the reason to fit the next rung
+// is a thing the reader can see rather than a sentence. It is not a secret either -- its position
+// was already inside the lookahead, and what the host withholds is distance and not kind.
+// `tier` is the key in hand (`tierOf`), and leaving it out reads as bare hands
+function seamsAhead(depth, tier) {
+  const t = tier >= 1 ? tier : FIST;
   const out = [];
   const first = Math.floor(depth / CELL_M) + 1;
   const last = Math.floor((depth + AHEAD_M) / CELL_M);
   for (let c = first; c <= last; c++) {
     const s = seamAt(c);
-    if (s) out.push({ at: c * CELL_M, kind: s.kind });
+    if (s) out.push({ at: c * CELL_M, kind: s.kind, locked: !takes(t, s) });
   }
   return out;
 }
 
 // The pay table, for the `?` fold. The odds are NOT in it: how dense the rock is belongs with the
-// layout the host withholds, and a name against a figure is the whole of what the fold is for
-const PAYS = Object.freeze(SEAMS.map((s) => Object.freeze({ name: s.name, kind: s.kind, pay: s.pay })));
+// layout the host withholds, and a name against a figure is the whole of what the fold is for.
+//
+// It is built per tier rather than frozen once, because the gate is half of what a row means now:
+// `needs` NAMES THE PICK the row's gate asks for (null when bare hands take it), so the fold can
+// say which rung opens a thing without holding a tier-to-name table of its own, and `locked` says
+// whether the pick in hand is that rung. Both are the host's: a screen working either one out would
+// be a screen that can disagree with what the wall actually pays
+function paysFor(tier) {
+  const t = tier >= 1 ? tier : FIST;
+  return SEAMS.map((s) => {
+    const key = pickOf(s.gate);
+    return { name: s.name, kind: s.kind, pay: s.pay, needs: key ? key.name : null, locked: !takes(t, s) };
+  });
+}
 
-// What the one button fits, what it costs, and WHAT IT THROWS AWAY. `lose` is the reach of the pick
-// in hand, which fitting a new one discards, and it is here because this module is the only thing
-// that can work it out: docs/game-panels.md 5-15 asks for a screen that does not have to say "and
-// you lose the rest", and it can only avoid saying it by being handed the number and staying quiet
-// when it is 0
+// What the one button fits, what it costs, WHAT IT REACHES ONCE FITTED and WHAT IT OPENS.
+//
+// `lose` is gone with the loss it described (claim (c)): there is nothing to throw away, so the
+// screen no longer has to carry the sentence docs/game-panels.md 5-15 asked it not to have.
+// What took its place is the other half of that paragraph:
+//   reach  the metres the pick would reach the moment it is fitted, carry and all, so the screen
+//          can slide the line from where it is to where it is going with no arithmetic
+//   opens  the names of the rows this purchase takes out of `locked`, measured against the key in
+//          HAND and not against `pick`: with a worn tier-2 pick the reader has none of them now,
+//          so the next rung opens the fever again as well as the coin
 function offerFor(rec, tok) {
   const p = pickOf(nextTier(rec.pick));
   if (!p) return null;
-  return { name: p.name, price: p.price, lose: reachOf(rec, tok) };
+  const now = tierOf(rec, tok);
+  const opens = [];
+  for (const s of SEAMS) if (s.gate > now && s.gate <= p.tier) opens.push(s.name);
+  return {
+    tier: p.tier, name: p.name, price: p.price,
+    reach: Math.floor((durTokOf(p.tier) + reachTokOf(rec, tok)) / TOK_PER_M),
+    opens: opens
+  };
 }
 
 // Everything the screen needs and nothing more (docs/game-panels.md 5-15 is the shape).
@@ -656,9 +841,24 @@ function offerFor(rec, tok) {
 //
 // `ev` is the claim that just landed, or null. It is the handler's and not the record's, so a reload
 // shows a quiet drift rather than celebrating a find from last week.
+//
+// WHICH PICK IS IN HAND TRAVELS AS A NUMBER AND A NAME, and that is 1.40.0's one addition to the
+// shape. `tool` was the whole of it until then, and 'pick' against 'claw' cannot tell a tin pick
+// from a crab one, so a screen that wanted to draw the rung (the colour of the swing, the one cell
+// that shows what is fitted) had nothing to draw it from. The three are sent together rather than
+// being derived from one another on the far side:
+//   tool      'pick' or 'claw': whether the hands are out. The oldest field, and still the one the
+//             line and the veil hang off
+//   tier      0..tiers, the rung in hand, 0 being the fist. WORKED OUT ONCE HERE (tierOf), so a
+//             worn tier-4 pick is 0 and not 4: the screen draws the tool, not the receipt
+//   pickName  its name, for whatever says so in words. null for bare hands
+// `tiers` is how many rungs the ladder has, so the screen's cell count is the engine's and a rung
+// added here does not leave a panel drawing four of five
 function view(rec, free, tok, ev) {
   const st = rec || fresh('', tok);
   const depth = depthOf(st, tok);
+  const tier = tierOf(st, tok);
+  const held = pickOf(tier);
   const finds = (ev && ev.finds) || [];
   let top = null;
   for (const f of finds) if (!top || f.pay > top.pay) top = f;
@@ -666,16 +866,19 @@ function view(rec, free, tok, ev) {
     depth: depth,
     unit: UNIT,
     window: { behind: BEHIND_M, ahead: AHEAD_M },
-    tool: hasPick(st, tok) ? 'pick' : 'claw',
+    tool: tier >= 1 ? 'pick' : 'claw',
+    tier: tier,
+    tiers: TOP_TIER,
+    pickName: held ? held.name : null,
     reach: reachOf(st, tok),
-    seam: seamsAhead(depth),
+    seam: seamsAhead(depth, tier),
     // the biggest name in the claim, the claim's whole pay, and how many things were in it
     found: top ? { name: top.name, pay: ev.pay, n: finds.length } : null,
     // the dash: where it ended, how many seams it passed (the screen's pacing divides by this) and
     // what they came to. A fever's own pay is 0; this is the ground's
     fever: (ev && ev.grant) ? { to: ev.depth, hits: ev.dashHits, pay: ev.dashPay } : null,
     offer: offerFor(st, tok),
-    pays: PAYS
+    pays: paysFor(tier)
   };
 }
 
@@ -687,10 +890,12 @@ module.exports = {
   // the layout and the window
   CELL_M, BUCKETS, SEAMS, FEVER_M, AHEAD_M, BEHIND_M, PUSH_M, CLAIM_CELLS,
   bucketOf, rawAt, relicStands, seamAt, seamsAhead,
+  // which key is in hand, and what the wall gives up to it
+  takes, tierOf,
   // depth, derived on every read
-  usedOf, dugOf, depthOf, hasPick, reachOf,
+  usedOf, durOf, dugOf, depthOf, hasPick, reachOf, reachTokOf,
   // storage: the rules credits.js calls rather than copies
   clean, load, save, newer, merge, same, kept, netOf, REC_FIELDS, MAX_FIELDS, REC_CEIL,
   // the game
-  fresh, OPS, whyNot, act, sweep, view, offerFor, PAYS
+  fresh, OPS, whyNot, act, sweep, view, offerFor, paysFor
 };

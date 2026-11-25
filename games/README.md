@@ -316,6 +316,29 @@ rather than running on the driver. The rules, in the order they bite:
 `games/market/meta.js` is the worked example, and the only one: the forge was the other and it went
 on 2026-11-13. Its `settle()` is points 4, 5 and the reply-before-push rule.
 
+### Adding a field to a stored record: the two rules that come with it
+
+A record in the ledger is in the field, on other people's machines, written by a version that did
+not have your new field. So a field added to one costs exactly two things, and the mine's `durTok`
+(1.40.0) is the worked example of both:
+
+1. **`clean` has to answer for the record that has no such field.** It cleans field by field against
+   `REC_CEIL`, so an absent field reads as 0, and 0 has to be either a legitimate value or a state
+   you repair. `durTok` is a pick's durability, which was derived from its tier until 1.40.0 and is
+   stored from then on: read as 0 it would be a worn-out pick, so **every pick in the field would
+   break on upgrade.** `clean` therefore repairs the pair (`pick >= 1` with no durability becomes
+   the durability that tier's row would have given it), and the same repair covers a hand-edited
+   figure the ceiling rejected. Write the repair where `clean` is, not in the readers.
+2. **Decide whether it may be maxed across a merge, and say why in `MAX_FIELDS`'s own comment.**
+   Anything a dropped move has to take back may not be (point 3 above). Durability is money in the
+   mine: it is paid for and it is what the wall is opened with, so a merge that kept the larger
+   figure would leave a window holding the pick its dropped purchase bought.
+
+**And a field added to `view()` is a contract with the panel, not an internal detail.** The mine's
+view grew `tier`, `tiers`, `pickName` and a `locked` flag per seam in 1.40.0, and lost `offer.lose`;
+the shape lives in `docs/game-panels.md` section 5-15 and that is the copy a panel is written
+against, so it moves in the same change as the engine.
+
 **There is a third record in that ledger and it is not a game's.** `shop.js` keeps what the shop
 sold (`owned`, `seat`, `spent`), and it is wired into `credits.js` through the same three lines and
 owns the same seven rules. It is worth reading next to the market's, because it is the strictest
@@ -547,12 +570,21 @@ has to be named in `games/registry.js` to appear.
 A game that pays out needs its band proved, not asserted. The house keeps **3 to 4%**: the return to
 the player lands in **96 to 97%**, the band every game with a pay table sits in.
 
-**Two games are outside it, and neither is a bug.** Blackjack under basic strategy is about 99.5%
-(`test/blackjack.test.js`), and the market charges **0.5%** on a round trip. The market's case is
-structural: it has no round, so "the return of one play" is not defined for it, and what is proved
+**Three games are outside it, and none of them is a bug.** Blackjack under basic strategy is about
+99.5% (`test/blackjack.test.js`), and the market charges **0.5%** on a round trip. The market's case
+is structural: it has no round, so "the return of one play" is not defined for it, and what is proved
 instead is that the price is a supermartingale, which makes every rule for selling worth the same.
 Its fee is then solved against how far a price moves while a position is held, not against this band.
 Do not drag either game back into 96 to 97% on the strength of this paragraph.
+
+**The mine is the third and it is the market's case again.** Nothing is wagered and it has no round,
+so what is proved in place of a return is five claims, listed in `mine.js`'s own header and made one
+block each in `test/mine.test.js`. The one to copy if you build another game with no round is the
+first: **what the mine adds to the balance is capped at a fraction of what the same tokens earn in
+the ledger** (`EARN_CAP`, 15%), enumerated as an exact rational over the seam table rather than
+sampled, and enumerated **once per pick tier** because a tier is a key and each one takes a different
+set out of the wall. A cap against the game's own input is what a game played with work that was
+done anyway can be held to; a percentage return is not defined for it.
 
 **Enumerate if you can. Sample only what you cannot enumerate.** This is the order, and it is not a
 preference: an enumeration is a proof of the pay table and a simulation is a measurement of it with

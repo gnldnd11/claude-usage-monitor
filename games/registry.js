@@ -42,14 +42,22 @@ const NEEDED = ['id', 'key', 'name', 'panel'];
 const NO_ORDER = Number.MAX_SAFE_INTEGER;
 
 // THE DOORS OF THE CROSSROADS, in the order they stand in a row (docs/shop-spec.md, 2-7). A door
-// is a picture and a name and nothing else; what is behind it is whichever games claim it.
+// is a picture, a name and how finished it is; what is behind it is whichever games claim it.
 //
 // The art is a filename in the published root, resolved by the host the way a list row's `thumb`
 // is: this module never sees a URI. The crossroads' third door is the SHOP's and it is not in here,
 // because the shop is not a game and has no entry in this register (docs/shop-spec.md, 4-5);
 // html.js owns that one and puts it last.
+//
+// `beta` IS A PROPERTY OF A DOOR AND NOT THE NAME OF A GAME, which is the whole reason it is a
+// flag here rather than a test in html.js. A shared file holding `if (door.id === 'mine')` is a
+// shared file that knows a game's name, and games/README.md section 1 does not allow one: the
+// register is the only place a game is named, and that is what makes adding one cost no edit
+// anywhere else. Making the doors data in 1.39.0 was for exactly this, and this is the first
+// thing to use it. A door that is not marked carries nothing, so the badge cannot leak onto a
+// finished screen by default
 const DOORS = Object.freeze([
-  { id: 'mine', name: 'Mine', art: 'hero-mine.png' },
+  { id: 'mine', name: 'Mine', art: 'hero-mine.png', beta: true },
   { id: 'games', name: 'Games', art: 'hero-games.png' }
 ].map((d) => Object.freeze(d)));
 
@@ -225,7 +233,13 @@ function doors(uri) {
   for (const d of DOORS) {
     const games = behind(d.id);
     if (!games.length) continue;
-    out.push({ id: d.id, name: d.name, art: uri(d.art), game: d.id === LIST_DOOR ? null : games[0].id });
+    out.push({
+      id: d.id, name: d.name, art: uri(d.art),
+      // flat and always a boolean, so the page's loop reads a value rather than asking whether a
+      // key is there: an undefined that renders as nothing is the same bug as a false that does
+      beta: !!d.beta,
+      game: d.id === LIST_DOOR ? null : games[0].id
+    });
   }
   return out;
 }

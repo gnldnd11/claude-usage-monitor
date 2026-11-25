@@ -68,6 +68,21 @@
   var MN_KINDS = { gem: 'gem', relic: 'relic', fever: 'fever' };
   var MN_WORDS = { gem: 'a gem', relic: 'a relic', fever: 'a fever' };
 
+  // The five pictures the host resolved for this game (games/mine/meta.js's `art`). They are
+  // handed to the stylesheet as custom properties on the band rather than written onto elements,
+  // because three of them are worn by nineteen boxes between them and the rules that place those
+  // boxes are all in one file already
+  var MN_ART = ['dig', 'rock', 'beam', 'post', 'sill'];
+
+  // WHERE THE TIMBER STANDS, in pixels of the dug hole. A frame is two posts 10px apart under a
+  // cap that overhangs them, and the frames repeat every 32px: at a 250px sidebar one of them is
+  // in the hole and at 351 two are. A frame past the end is CLIPPED and never nudged inwards,
+  // which is the rule the seams in the rock keep as well
+  var MN_FRAME_X = [2, 34, 66, 98];
+  // ...and the sleepers on the floor, at 16/17/14/17/16/16. The unevenness is the whole point:
+  // seven evenly spaced rungs across a dark gap are a ladder, not a drift
+  var MN_SILL_X = [3, 19, 36, 50, 67, 83, 99];
+
   var mn = {
     st: null,            // the last state the host sent
     busy: false, op: null, n: 0, to: null,
@@ -113,17 +128,52 @@
       + '<div class="bj-pays" id="mnPays" hidden></div>';
   }
 
-  // The band, built once: the dug ground, the lookahead with the sliding floor inside it, the line
-  // and its veil, and the crab standing at the face. Only the slide's contents and three inline
-  // positions ever change after this
+  // The band, built once: the dug hole with its timber and its floor, the lookahead with the
+  // sliding ground inside it, the line and its veil, and the crab swinging at the face. Only the
+  // slide's contents and three inline positions ever change after this.
+  //
+  // THE HOLE'S FURNITURE IS MARKUP AND NOT A BACKGROUND, because there are fifteen pieces of it
+  // at fifteen separate x positions and a background can carry one period, not fifteen. It is
+  // also why it is built once: none of it ever moves
   function driftHtml() {
-    return '<div class="mn-cut"></div>'
+    var frames = '', sills = '', i, b;
+    for (i = 0; i < MN_FRAME_X.length; i++) {
+      b = MN_FRAME_X[i];
+      // the cap overhangs its posts by 3px each side, which is what makes it hold the roof up
+      frames += '<i class="mn-beam" style="left:' + (b - 3) + 'px"></i>'
+        + '<i class="mn-bsh" style="left:' + (b - 3) + 'px"></i>'
+        + '<i class="mn-post" style="left:' + b + 'px"></i>'
+        + '<i class="mn-post" style="left:' + (b + 10) + 'px"></i>';
+    }
+    for (i = 0; i < MN_SILL_X.length; i++) {
+      sills += '<i class="mn-sill" style="left:' + MN_SILL_X[i] + 'px"></i>';
+    }
+    return '<div class="mn-cut">'
+      +   '<div class="mn-floor"></div>'
+      +   '<i class="mn-brow"></i>'
+      +   '<div class="mn-sills">' + sills + '</div>'
+      +   '<div class="mn-frames">' + frames + '</div>'
+      + '</div>'
       + '<div class="mn-rock" id="mnRock">'
       +   '<div class="mn-slide" id="mnSlide"></div>'
       +   '<i class="mn-veil" id="mnVeil" hidden></i>'
       +   '<i class="mn-reach" id="mnReach" hidden></i>'
       + '</div>'
-      + '<div class="mn-crab" id="mnCrab" aria-hidden="true"></div>';
+      + '<i class="mn-shade"></i>'
+      + '<div class="mn-crab" id="mnCrab" aria-hidden="true"></div>'
+      + '<i class="mn-pick" id="mnPick" hidden></i>'
+      + '<i class="mn-hit" id="mnHit" hidden></i>';
+  }
+
+  // The host's URIs, onto the band, once. An empty one is left out rather than written as url(""),
+  // which a browser resolves against the page and then fails to load
+  function mnArt(band) {
+    var out = [];
+    for (var i = 0; i < MN_ART.length; i++) {
+      var u = CUC.art('mine', MN_ART[i]);
+      if (u) out.push('--mn-' + MN_ART[i] + ':url("' + u + '")');
+    }
+    if (out.length) band.setAttribute('style', out.join(';'));
   }
 
   // --- the band ----------------------------------------------------------------------------------
@@ -135,7 +185,11 @@
     var out = '';
     for (var i = 0; i < st.seam.length; i++) {
       var s = st.seam[i];
-      out += '<i class="mn-ore ' + kindOf(s.kind) + '" style="left:' + fx(pctOf(st, s.at - st.depth)) + '%"></i>';
+      // `locked` is the host's and not a sum done here (mine.js, `takes`): the rock still lying
+      // over a seam is "the pick in hand is the wrong key", which is a different sentence from
+      // the veil's "the pick does not reach that far"
+      out += '<i class="mn-ore ' + kindOf(s.kind) + (s.locked ? ' locked' : '')
+        + '" style="left:' + fx(pctOf(st, s.at - st.depth)) + '%"></i>';
     }
     box.innerHTML = out;
   }
@@ -208,14 +262,37 @@
     mn.reach = st.reach;
   }
 
-  // The crab: one class, and the rung decides the speed. Reduced motion takes the class off, which
-  // leaves frame 0 of the strip (the crab standing) and is why no still drawing was needed
-  function mnCrab() {
-    var c = el('mnCrab'); if (!c) return;
+  // THE SWING, AND THREE ELEMENTS RIDE ONE NUMBER. The crab is a strip, the pick is a rotation and
+  // the mark is an opacity, but they are one movement cut into three layers, so the duration is
+  // read ONCE here and written to all three in one loop. Two places that could be given different
+  // values are two places that eventually will be, and a pick a frame behind the arm holding it
+  // is the one defect on this screen with no innocent reading.
+  //
+  // Reduced motion and a quiet window take the class off all three, which leaves frame 0 of the
+  // strip (the crab standing), the pick at its resting -12 degrees and no mark. That is why this
+  // screen needs no still drawing of its own.
+  //
+  // WHICH RUNG IS IN HAND IS THE HOST'S (mine.js, tierOf, and `tier` on the reply). A worn tier-4
+  // pick arrives as 0, which is bare hands: the crab keeps swinging and the tool and the mark go,
+  // because 5-15's rule is that bad news is never told by switching the main character off. The
+  // screen does NOT work the rung out from `pick` or from the reach -- a receipt for a pick that
+  // is used up would draw a tool that is not in anybody's hand
+  function mnSwing() {
     var ms = MN_DIG[mn.step] || 0;
     var on = !!ms && !CUC.reduceMotion();
-    if (ms) c.style.animationDuration = ms + 'ms';
-    c.classList.toggle('dig', on);
+    var tier = (mn.st && mn.st.tier) | 0;
+    var c = el('mnCrab'), p = el('mnPick'), hit = el('mnHit');
+    var all = [c, p, hit];
+    for (var i = 0; i < all.length; i++) {
+      if (!all[i]) continue;
+      if (ms) all[i].style.animationDuration = ms + 'ms';
+    }
+    if (c) c.className = 'mn-crab' + (on ? ' dig' : '');
+    // the rung is written as the whole class, so a drop from tier 3 to bare hands cannot leave
+    // last reply's `t3` behind on an element nobody is looking at
+    var rung = tier >= 1 ? ' t' + tier : '';
+    if (p) { p.className = 'mn-pick' + rung + (on ? ' dig' : ''); p.hidden = tier < 1; }
+    if (hit) { hit.className = 'mn-hit' + rung + (on ? ' dig' : ''); hit.hidden = tier < 1; }
   }
 
   // A seam leaving the face. The one that was found is BEHIND the face by the time the reply lands
@@ -253,7 +330,9 @@
   function mnLast() {
     var box = el('mnLast'); if (!box) return;
     var c = mn.chip;
-    if (!c) { box.textContent = 'nothing yet'; return; }
+    // "No finds yet" and not "nothing yet": the line sits under a band full of things, and
+    // "nothing" on its own was a reader's answer to a question nobody had asked yet
+    if (!c) { box.textContent = 'No finds yet'; return; }
     box.innerHTML = '<span class="bj-chip ' + c.cls + (c.still ? ' still' : '') + '">'
       + esc(c.text) + '</span>';
     c.still = true;
@@ -269,9 +348,17 @@
     mnLast();
   }
 
-  // The one button. What it fits and what it costs are the host's (mine.offerFor); what fitting it
-  // throws away rides in the TITLE, because the one thing this screen must not grow is a sentence
-  // apologising for the trade it is about to make (5-15)
+  // The one button. What it fits and what it costs are the host's (mine.offerFor).
+  //
+  // IT SAYS WHICH PICK, which it did not until 1.40.1. The host has been sending the name all
+  // along and the button read "New pick 12,500", so the four rungs of the ladder were four
+  // identical presses at rising prices and the thing being bought was never named anywhere on the
+  // screen. At a 250px sidebar the button is 172px and "Crab pick 12,500" is about 100px of 12px
+  // type, so it fits at the narrowest the panel goes.
+  //
+  // WHAT FITTING IT THROWS AWAY IS GONE FROM THE TITLE because it is gone from the game: a
+  // purchase carries the old pick's remainder over now (mine.js, claim (c)), so `offer.lose` no
+  // longer exists and the sentence apologising for the trade has nothing left to apologise for
   function mnButton() {
     var b = el('mnBuy'), st = mn.st;
     if (!b) return;
@@ -281,10 +368,9 @@
     var free = CUC.free('mn');
     var poor = free != null && free < o.price;
     b.disabled = !!mn.locked || poor;
-    b.textContent = 'New pick ' + fmtInt(o.price);
+    b.textContent = o.name + ' ' + fmtInt(o.price);
     b.title = (poor ? 'Not enough credits · ' : '')
       + o.name + ' · ' + fmtInt(o.price) + ' credits'
-      + (o.lose > 0 ? ' · the pick in hand has ' + fmtInt(o.lose) + ' ' + st.unit + ' left' : '')
       + (poor ? '' : ' (Enter)');
     b.setAttribute('aria-label', 'Fit ' + o.name + ' for ' + fmtInt(o.price) + ' credits');
     // Two things want this line and they cannot both have it, so the one that changes what the
@@ -297,19 +383,31 @@
   }
 
   // The pay table, folded. A fever's own pay is 0 and printing a 0 would read as a seam worth
-  // nothing, so what it gives is named instead: ground (mine.js, SEAMS)
+  // nothing, so what it gives is named instead: ground (mine.js, SEAMS).
+  //
+  // A ROW THE PICK IN HAND CANNOT TAKE IS DIMMED AND CARRIES THE NAME OF THE RUNG THAT OPENS IT.
+  // Both halves are the host's (`locked` and `needs`, mine.paysFor), and both have to be here
+  // because the rock only draws the gate for the seams that happen to be in the window: a reader
+  // who opened this fold to work out what the next pick is for would otherwise see five rows that
+  // all look like theirs. No new size and no new colour -- the fold is already 10.5px muted
   function mnPays(st) {
     var w = el('mnWhy'), p = el('mnPays');
     if (!w || !p) return;
     var rows = st.pays || [];
     w.hidden = !rows.length;
     p.innerHTML = rows.map(function (r) {
-      return '<div>' + esc(r.name) + ' <b>' + (r.pay ? fmtInt(r.pay) : 'ground') + '</b></div>';
+      return '<div' + (r.locked ? ' class="mn-shut"' : '') + '>'
+        + esc(r.name) + ' <b>' + (r.pay ? fmtInt(r.pay) : 'ground') + '</b>'
+        + (r.locked && r.needs ? ' ' + esc(r.needs) : '')
+        + '</div>';
     }).join('');
   }
 
   // The band is a picture, so it says in words what it shows: where the face is, what is standing
-  // in front of it and whether the pick gets there. No per cent and no durability, here either
+  // in front of it and whether the pick gets there. No per cent and no durability, here either.
+  // THE GATE IS SAID TOO, because a reader on a screen reader has neither of the two pictures that
+  // carry it: the veil says "too far" and the rock over a marker says "wrong key", and both of
+  // them are shapes
   function mnSaid(st) {
     var out = 'Depth ' + fmtInt(st.depth) + ' ' + st.unit + '. ';
     out += st.reach === 0 ? 'No pick: digging by hand. '
@@ -319,7 +417,8 @@
     return out + st.seam.map(function (s) {
       var d = s.at - st.depth;
       return (MN_WORDS[s.kind] || 'a seam') + ' ' + fmtInt(d) + ' ' + st.unit + ' ahead'
-        + (st.reach < d ? ', out of reach' : '');
+        + (st.reach < d ? ', out of reach' : '')
+        + (s.locked ? ', needs a better pick' : '');
     }).join(', ') + '.';
   }
 
@@ -332,7 +431,7 @@
     mnOre(st);
     mnSlideIn(from, ms);
     mnLine(st);
-    mnCrab();
+    mnSwing();
     mnButton();
     mnPays(st);
     var d = el('mnDrift'); if (d) d.setAttribute('aria-label', mnSaid(st));
@@ -469,14 +568,15 @@
     cls: 'mn',
     markup: markup,
     init: function () {
-      var d = el('mnDrift'); if (d) d.innerHTML = driftHtml();
-      // The strip is the host's URI (games/mine/meta.js's `art`), and the image is set here rather
-      // than in the stylesheet for that reason. The longhand, so the strip's size and position in
-      // the CSS survive it
-      var c = el('mnCrab');
-      if (c) c.style.backgroundImage = 'url("' + CUC.art('mine', 'dig') + '")';
+      // The five pictures are the host's URIs (games/mine/meta.js's `art`), which is why they are
+      // set here and not in the stylesheet. They go on the BAND as custom properties and every
+      // rule that wants one reads it: a size, a position and a repeat belong with the rule that
+      // places the box, and a panel writing nineteen inline background-images would be carrying
+      // the stylesheet about in a loop
+      var d = el('mnDrift');
+      if (d) { d.innerHTML = driftHtml(); mnArt(d); }
       mn.step = CUC.step ? CUC.step() : 'quiet';
-      mnCrab();
+      mnSwing();
       mnLast();
       CUC.why('mnWhy', 'mnPays');
       el('mnBuy').addEventListener('click', function () {
@@ -487,7 +587,7 @@
     enter: function () {
       mn.wantFocus = true;
       mn.step = CUC.step ? CUC.step() : mn.step;
-      mnCrab();
+      mnSwing();
       mnLock(true);
       mnSend('open');
     },
@@ -499,7 +599,7 @@
     receive: mnReceive,
     // The rung changed, which is the only thing on this screen that is not about the mine: how hard
     // the machine is working is what the swing says, and the crab in the Usage tab says it too
-    step: function (rung) { mn.step = rung; mnCrab(); },
+    step: function (rung) { mn.step = rung; mnSwing(); },
     // A credit minted while this screen is up lights the button at once, which is the same question
     // asked about a price that every other screen asks
     credits: function () { mnButton(); },

@@ -1399,7 +1399,11 @@ test('mine: open answers with the drift, and with nothing beyond the lookahead',
   // out is holding the rest of the deck (games/README.md, section 2)
   assert.ok(v.seam.every((s) => s.at > v.depth && s.at <= v.depth + v.window.ahead),
     'a seam outside the lookahead reached the webview: ' + JSON.stringify(v.seam));
-  assert.deepEqual(v.seam, mine.seamsAhead(v.depth), 'the window the screen is shown is not the engine\'s');
+  // THE KEY IN HAND IS PART OF THE ANSWER since 1.40.0: a seam carries whether this pick opens it
+  // (mine.js, the seam table's `gate`), and this reader has bought nothing, so the window is the
+  // one bare hands are shown
+  assert.equal(v.tier, mine.FIST, 'a reader who has bought nothing was sent a rung');
+  assert.deepEqual(v.seam, mine.seamsAhead(v.depth, mine.FIST), 'the window the screen is shown is not the engine\'s');
   // ...and the fold's pay table says what things are worth and not how dense the rock is
   assert.ok(v.pays.every((p) => p.odds === undefined), 'the odds travelled with the pay table');
   assert.equal(v.offer.price, mine.PICKS[0].price, 'the screen is being offered a price of its own');
