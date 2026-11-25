@@ -1,5 +1,9 @@
 const CSS = require('./styles');
 const games = require('./games/registry');
+// The panel themes, by the same contract the games keep: a theme is a directory, the register
+// reads it, and this file learns a theme's NAME from nowhere. What it takes is one attribute's
+// value and one block of stylesheet (themes/README.md)
+const themes = require('./themes/registry');
 const IC = require('./icons');
 // The ten sea symbols, once. The slot machine shows nine squares and the markup for one symbol is
 // not small, so the drawings go into the page as one hidden <symbol> sheet and each square is a
@@ -101,6 +105,12 @@ const INK_LIFT_DECLINED = {
 };
 const inkEdgeFilter = `<svg class="cuc-fx" aria-hidden="true" width="0" height="0"><filter id="cucInkEdge" color-interpolation-filters="sRGB" x="-20%" y="-20%" width="140%" height="140%"><feColorMatrix type="luminanceToAlpha" result="lum"/><feComponentTransfer in="lum" result="darkness"><feFuncA type="table" tableValues="1 1 1 0 0 0 0 0 0"/></feComponentTransfer><feComposite in="darkness" in2="SourceGraphic" operator="in" result="darkInk"/><feMorphology in="darkInk" operator="dilate" radius="1" result="grown"/><feFlood id="cucInkFlood" result="tint"/><feComposite in="tint" in2="grown" operator="in" result="edge"/><feMerge><feMergeNode in="edge"/><feMergeNode in="SourceGraphic"/></feMerge></filter></svg>`;
 
+// The one shape a theme's id may have, which is themes/registry.js's own (ID_RE there). It is
+// checked AGAIN here, not instead: this is the boundary where an id becomes an attribute value in
+// a string of HTML, and a value that reaches it unescaped is the one way a theme could write
+// markup. A value that does not match comes out empty, which is the free theme
+const THEME_RE = /^[a-z][a-z0-9-]{0,23}$/;
+
 // Render the panel webview HTML. All per-webview values (CSP source, asset URIs, the serialized
 // asset catalog, and the script URIs) are injected via `vars` so this stays free of vscode
 // specifics. The static stylesheet and icon set are required directly.
@@ -118,7 +128,15 @@ function renderHtml(vars) {
     mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
     mascotCodingUri, mascotFloatUri, mascotSleepUri, mascotBlackholeUri,
     doors, heroShopUri,
-    roomMinecraftUri, assetsJson, gameList, gameScripts
+    roomMinecraftUri, assetsJson, gameList, gameScripts,
+    // WHICH THEME THE PANEL OPENS WEARING, resolved by the host out of what was bought and what
+    // was chosen (the shop's own wornTheme). It is on the first paint rather than only on the data
+    // push because a bought theme that arrived 200ms late would flash the default card every time
+    // the sidebar is opened. webview.js writes the same attribute on every push after that, which
+    // is what carries a choice made in another window.
+    // `themeVars` is the host's resolution of each theme's PICTURES into webview URIs
+    // (themes/registry.js, artCss). Empty while every theme is painted in CSS, which is today
+    theme, themeVars
   } = vars;
   // THE CROSSROADS' DOORS, in one row, and they come from two places because they are two kinds of
   // thing. `doors` is the register's: a door with games behind it, with its own picture and name
@@ -181,7 +199,23 @@ function renderHtml(vars) {
     .map((g) => gameRow(g, 'gmRows')).join('\n');
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
-<style>${CSS}${games.css()}</style></head><body>${symbols.sprite()}${inkEdgeFilter}<div class="wrap"><div class="card">
+<style>${CSS}${games.css()}${themes.css()}${themeVars || ''}</style></head><body data-theme="${THEME_RE.test(theme || '') ? theme : ''}">${symbols.sprite()}${inkEdgeFilter}<div class="wrap">
+  <!-- THE THEME'S FRAME, and it is a child of the WRAP rather than of the card: it runs the full
+       height of the panel and its two outer strips are wider than the card's own padding, so a
+       frame boxed to the card could not reach the edge it is drawing. It sits OVER the card
+       (styles.js, z-index 5) and what keeps it off the text is the mask, not the stacking order.
+       Empty, like every layer here: what goes in it is a theme's CSS, and a theme that is not
+       worn paints nothing at all. -->
+  <div class="th-l th-frame" aria-hidden="true"></div>
+  <div class="card">
+  <!-- ...and the three that belong to the card. aria-hidden because there is nothing here to
+       read: a theme adds no information to this panel, which is the property that lets it be sold
+       at all. The badge is not here either -- it belongs on the crab and is drawn inside the
+       mascot's own box (#pm_mascot below), because that box is the crab's geometry and nothing
+       outside it knows where the drawing came out. -->
+  <div class="th-l th-scene" aria-hidden="true"></div>
+  <div class="th-l th-floor" aria-hidden="true"></div>
+  <div class="th-l th-motes" aria-hidden="true"></div>
   <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11px;font-weight:600;line-height:1.35">
     <span>Sign in for <b>live</b> session &amp; weekly %</span>
     <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11px;white-space:nowrap">Sign In</button>
@@ -254,6 +288,9 @@ function renderHtml(vars) {
              countdown with nothing to count against -->
         <div class="ringside" id="pm_ring">
           <div class="ringwrap">
+            <!-- a theme with something IN the ring: it is off for every other one (styles.js,
+                 .th-orbit), and it is the only piece of a theme that is inside a reading -->
+            <div class="th-orbit" aria-hidden="true"></div>
             <svg width="88" height="88" viewBox="0 0 88 88">
               <circle class="rtrack" cx="44" cy="44" r="33" fill="none" stroke-width="6"/>
               <circle id="ringArc" cx="44" cy="44" r="33" fill="none" stroke="#e8895a" stroke-width="6"
@@ -284,6 +321,10 @@ function renderHtml(vars) {
              test/panel-css.test.js recomputes this list from the PNGs and fails BOTH ways, so a
              drawing that stops needing the lift fails here just as loudly as one that starts. -->
         <div class="mascot-wrap" id="pm_mascot">
+          <!-- the theme's fourth layer, and the only one that is over the drawing rather than
+               under the card (styles.js, .th-badge). It is inside this box because the box is the
+               crab's own geometry and nothing outside it knows that -->
+          <div class="th-badge" aria-hidden="true"></div>
           <div class="mwarn" id="mwarn" hidden>${IC.warn}</div>
           <img id="mascot" class="sparkle" src="${mascotIdleUri}" data-idle="${mascotIdleUri}" data-working="${mascotWorkingUri}" data-despair="${mascotDespairUri}" data-stunned="${mascotStunnedUri}" data-coding="${mascotCodingUri}" data-float="${mascotFloatUri}" data-sleep="${mascotSleepUri}" data-blackhole="${mascotBlackholeUri}" data-lift="${INK_LIFT.join(' ')}" alt=""/>
         </div>

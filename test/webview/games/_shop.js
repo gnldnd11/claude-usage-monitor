@@ -25,6 +25,13 @@
 //      belong to the scene, and the money record does not move for a choice at all.
 'use strict';
 
+// WHAT THE WHOLE SHELF COSTS, read off the catalog rather than written down. The `shop` mode has to
+// be able to buy all of it, because the last part of that run is what the screen does once there is
+// nothing left to sell, and a figure written here would quietly turn that into a purse that ran out
+// the day a row was added. It went from 11,000 to 61,000 on 2026-11-26 with the second shelf
+// (shop.js, THEMES) and this line did not have to change for it
+const SHELF = require('../../../shop.js').CATALOG.reduce((n, i) => n + i.price, 0);
+
 module.exports = {
   id: 'shop',
   // `cross-beta` is the crossroads again and only about the stamp on a door. Its own mode rather
@@ -46,7 +53,7 @@ module.exports = {
   // here rather than written, so a new drawing on a higher rung does not quietly turn that last
   // part of the run into a purse that ran out. `shop-poor` is the opposite case on purpose: five
   // credits reaches nothing at all
-  start: { shop: 50000, 'shop-poor': 5, 'shop-held': 1500 },
+  start: { shop: SHELF + 5000, 'shop-poor': 5, 'shop-held': 1500 },
   // the two shop modes RESUME INTO THE SHOP, which also says that the stored door comes back
   state: {
     shop: { tab: 'games', door: 'shop', lastTab: 'usage' },
@@ -77,6 +84,14 @@ module.exports = {
     const randCells = () => doc.querySelectorAll('#shRand .sh-cell');
     const randSoon = () => doc.querySelectorAll('#shRand .sh-cell.soon');
     const poolCell = (key) => doc.querySelector('#shRand .sh-cell[data-pool="' + key + '"]');
+    // ...and the SECOND SHELF, which is its own block again and for the same reason the last row
+    // is: a theme is what the whole panel wears rather than what is in one moment of it
+    const themes = () => $('shThemes');
+    const themeCell = (key) => doc.querySelector('#shThemes .sh-cell[data-theme="' + key + '"]');
+    const anyCell = (key) => cell(key) || poolCell(key) || themeCell(key);
+    // EVERYTHING THE SHOP SELLS, both prefixes, so a count written against it covers a row added to
+    // either shelf the day it lands (shop.js, CATALOG)
+    const SELLS = shop.CATALOG.filter((i) => i.price);
     const worn = () => cells().filter((c) => c.classList.contains('on'));
     const wornKeys = () => worn().map((c) => c.getAttribute('data-key') || (c.querySelector('.sh-pic') || {}).src || '?');
     const btn = () => $('shAct');
@@ -461,12 +476,12 @@ module.exports = {
     // EVERY PRICE ON THE SHELF IS A RUNG OF THE LADDER and is written the way the stake chips
     // write a figure. Walked over the catalog so a new drawing on a higher rung is covered here
     // the day it lands, rather than the one priced drawing this used to name
-    const forSaleKeys = shop.ITEMS.filter((i) => i.price).map((i) => i.key);
-    ok('every unbought drawing says what it costs, as the stake chips write a figure',
+    const forSaleKeys = SELLS.map((i) => i.key);
+    ok('every unbought row says what it costs, as the stake chips write a figure',
       forSaleKeys.length > 1
-      && forSaleKeys.every((k) => (cell(k) || poolCell(k)).textContent.trim()
+      && forSaleKeys.every((k) => anyCell(k).textContent.trim()
         === (shop.itemOf(k).price / 1000) + 'K'),
-      forSaleKeys.map((k) => k + ':' + (cell(k) || poolCell(k)).textContent.trim()).join(' '));
+      forSaleKeys.map((k) => k + ':' + anyCell(k).textContent.trim()).join(' '));
     ok('and every one of those prices is a rung of the ladder, not a number of its own',
       forSaleKeys.every((k) => shop.PRICES.indexOf(shop.itemOf(k).price) >= 0),
       forSaleKeys.map((k) => k + '@' + shop.itemOf(k).price).join(' ') + ' vs ' + shop.PRICES.join('/'));
@@ -578,7 +593,7 @@ module.exports = {
       + ($('shCtl').hidden ? 'no button' : 'BUTTON') + ', ' + aimed().length + ' aimed');
     h.mouseClick(inScene(pickSlot, backKey)); advance(40);   // put that scene back as it was found
     ok('the shelf opens with things for sale on it and nothing aimed at',
-      forSale().length === shop.ITEMS.filter((i) => i.price).length && aimed().length === 0,
+      forSale().length === SELLS.length && aimed().length === 0,
       forSale().length + ' for sale, ' + aimed().length + ' aimed');
     ok('and so there is no block and no button, rather than a button nobody pointed',
       $('shTry').hidden && $('shCtl').hidden && note().hidden,
@@ -593,9 +608,9 @@ module.exports = {
     // from when nothing in it had a price; a bar down there pointed up past the thing it meant
     const order = $('panelShop').children.map((e) => e.getAttribute('id') || e.getAttribute('class'));
     const at = (id) => order.indexOf(id);
-    ok('the whole shelf, last row included, comes before the button in the page',
-      at('shSlots') >= 0 && at('shRand') > at('shSlots')
-      && at('shTry') > at('shRand') && at('shCtl') > at('shTry'),
+    ok('the whole shelf, both extra rows included, comes before the button in the page',
+      at('shSlots') >= 0 && at('shRand') > at('shSlots') && at('shThemes') > at('shRand')
+      && at('shTry') > at('shThemes') && at('shCtl') > at('shTry'),
       order.join(' > '));
     // ---------- 5b. ...AND THEN IT IS PRESSED ----------
     // WHICH CELL IS READ OFF THE SHELF, not written here: what stands first for sale moved the day
@@ -839,14 +854,14 @@ module.exports = {
     // THE SHOP STOPS BEING A SHOP, but only once there is nothing left. Buy the rest the way the
     // reader has to: press a price, press the button, and count the pairs rather than the items
     let more = 0;
-    while (doc.querySelectorAll('#panelShop .sh-cell.buy').length && more < 8) {
+    while (doc.querySelectorAll('#panelShop .sh-cell.buy').length && more < SELLS.length + 2) {
       h.mouseClick(doc.querySelectorAll('#panelShop .sh-cell.buy')[0]); advance(40);
       if ($('shCtl').hidden || btn().disabled) break;
       btn().click(); advance(20);
       more++;
     }
     ok('the rest of the shelf is bought the same way, a press on the cell and a press on the button',
-      more === shop.ITEMS.filter((s) => s.price).length - 1, more + ' more purchase(s)');
+      more === SELLS.length - 1, more + ' more purchase(s)');
     ok('with nothing left to sell, the sale block and the button leave together',
       $('shTry').hidden && $('shCtl').hidden && note().hidden,
       ($('shTry').hidden ? 'no block' : 'block') + ', ' + ($('shCtl').hidden ? 'no button' : 'button'));
@@ -862,7 +877,7 @@ module.exports = {
       (/\.sh-try\[hidden\][^}]*\}/.exec(css()) || ['(no rule)'])[0]);
     // WHAT THE WHOLE SHELF COST, summed off the catalog rather than written down, so a drawing
     // moving rung moves this with it
-    const spentAll = shop.ITEMS.filter((i) => i.price).reduce((n, i) => n + i.price, 0);
+    const spentAll = SELLS.reduce((n, i) => n + i.price, 0);
     ok('the purse is down by the sum of the shelf and not a credit more',
       stored().spent === spentAll && h.ledgerBalance() === bal0 - spentAll,
       bal0 + ' -> ' + h.ledgerBalance() + ' against ' + spentAll);

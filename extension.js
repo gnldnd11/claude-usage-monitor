@@ -15,6 +15,7 @@ const team = require('./team');     // opt-in: the same account's PCs side by si
 const IC = require('./icons');
 const registry = require('./games/registry');
 const shop = require('./shop');     // the one screen in the casino that spends rather than stakes
+const themes = require('./themes/registry');   // the panel themes it sells, for their art alone
 const tables = require('./games/tables'); // refusal(): one engine throw, one sentence (gameReply)
 const claudedir = require('./claudedir'); // where Claude Code's configuration directory is
 
@@ -1653,6 +1654,22 @@ class UsageViewProvider {
           }
         }
       }
+      // WHICH THEME THE PANEL WEARS. The same preference object as the scenes and the pool, under
+      // a key shop.js asserts is neither (THEME_ID), and the same two rules: the HOST refuses, so
+      // a theme nobody bought cannot be worn however the press was made, and the data push is the
+      // only thing that says what is worn now. No reply, for the reason mascotSlot has none.
+      // IT IS A VALUE AND NOT A TOGGLE, which matters here as it does for the pool: the window
+      // says which theme it wants, so two windows pressing at the same moment land on one of the
+      // two rather than flipping past each other
+      else if (m.type === 'panelTheme' && typeof m.id === 'string') {
+        const why = shop.whyNotTheme(shopHandler.owned(), m.id);
+        if (why) logLine('[theme] ' + m.id + ': ' + why);
+        else if (mascotSlots[shop.THEME_ID] !== m.id) {
+          mascotSlots = Object.assign({}, mascotSlots, { [shop.THEME_ID]: m.id });
+          if (extContext) extContext.globalState.update('mascotSlotsV1', mascotSlots);
+          push();
+        }
+      }
       else if (m.type === 'setAppearance' && m.name) {
         if (m.appearance) agentAppearance[m.name] = m.appearance; else delete agentAppearance[m.name];
         if (extContext) extContext.globalState.update('agentAppearanceV1', agentAppearance);
@@ -1725,6 +1742,15 @@ class UsageViewProvider {
     // ...and the doors the register owns: one per area that has a game behind it, each with its
     // own picture out of the published root (games/registry.js's `doors`)
     const doors = registry.doors(spriteUri);
+    // THE PANEL THEME, in two pieces, and both of them are data rather than a name. `theme` is the
+    // one the reader is wearing, which is what was bought and what was chosen read together in the
+    // one place that answers that question (shop.js, wornTheme); it is on the first paint so a
+    // bought theme does not flash the default card every time the sidebar opens.
+    // `themeVars` is each theme's PICTURES resolved into webview URIs, which is the host's job for
+    // the same reason a game's `art` is: a stylesheet cannot ask for a URI. It is empty today,
+    // because every theme is still painted in CSS (themes/README.md, section 5)
+    const theme = shop.wornTheme(shopHandler.owned(), mascotSlots);
+    const themeVars = themes.artCss(spriteUri);
     // sprites resolve to embedded base64 (data URI); room images stay as file URIs (own assets)
     const spriteSrc = (n) => spriteData[n] || spriteUri(n);
     const npcs = buildNpcCatalog(spriteSrc, path.join(this.extensionUri.fsPath, 'sprite-bbox.json'));
@@ -1766,7 +1792,8 @@ class UsageViewProvider {
       mascotIdleUri, mascotWorkingUri, mascotDespairUri, mascotStunnedUri,
       mascotCodingUri, mascotFloatUri, mascotSleepUri, mascotBlackholeUri,
       doors, heroShopUri,
-      roomMinecraftUri, assetsJson, gameList, gameScripts
+      roomMinecraftUri, assetsJson, gameList, gameScripts,
+      theme, themeVars
     });
   }
 }
@@ -2006,6 +2033,13 @@ function activate(context) {
   // than taking the extension with it, so this is the only place a user can find out that it did.
   // The list is built at require time, which is before this channel exists, hence the replay here
   for (const line of registry.PROBLEMS) logLine(line);
+  // ...AND THE SAME FOR A PANEL THEME, which has more riding on it than a game does. A game that
+  // fails to list costs itself a row on a screen nobody has paid for. A THEME that fails to list
+  // is a theme somebody may have bought: its row leaves the shelf and the key in their record
+  // stops matching anything this build knows. The record keeps it (shop.js, clean) so nothing is
+  // lost, but the reader is wearing the default panel with no explanation anywhere, and the
+  // register's own console.error goes to the extension host log, which they never open.
+  for (const line of themes.PROBLEMS) logLine(line);
 
   // Where Claude Code keeps its configuration. Resolved before anything reads a file out of it,
   // because the first value this module had was the environment's and the settings can override it

@@ -619,6 +619,10 @@
     // compact means and what the chevron does are decided per TAB, and the crossroads, the list,
     // the shop and a table are all the same tab
     b.classList.toggle('tab-games', t === 'games');
+    // ...and the surface under the drawings is settled here too, because a PANEL THEME's own
+    // tokens are scoped to the Usage tab: leaving this tab takes the theme's card away and the
+    // shipped one comes back, so the question `is the surface dark` has a new answer (inkDark)
+    inkDark();
     setVis('panelUsage', t === 'usage');
     setVis('panelAgents', t === 'agents');
     setVis('panelCross', t === 'games' && !door);
@@ -861,7 +865,23 @@
     setVis('hdCredits', hid.indexOf('credits') < 0);
     if (hid.indexOf('credits') >= 0 && curTab() === 'games') switchTab((vscode.getState() || {}).lastTab || 'usage');
   }
-  function setBar(id, p) { var e = el(id); if (e) { e.style.width = Math.min(p, 100) + '%'; e.style.background = grad(p); } }
+  // THE BURN RAMP IS A READING AND THE ACCENT IS A DECORATION, and this is where the two meet.
+  //
+  // A bar at 90% is red because the limit is nearly gone. That is the panel saying something, and
+  // no PANEL THEME may take it away: a reader who bought a green forest must still see a red bar
+  // when the week is spent. A bar in the calm band is saying nothing in particular, and THAT is
+  // the band a theme repaints.
+  //
+  // So the warning colours are written on the element, where nothing can override them, and the
+  // calm one is NOT WRITTEN AT ALL -- which leaves the stylesheet's own gradient, built out of
+  // --accent (styles.js), to paint it. With no theme worn those two tokens hold exactly the
+  // colours this ramp used to write for the calm band, so the default panel is unchanged.
+  var WARN_AT = 70;
+  function setBar(id, p) {
+    var e = el(id); if (!e) return;
+    e.style.width = Math.min(p, 100) + '%';
+    e.style.background = p >= WARN_AT ? grad(p) : '';
+  }
 
   // count-up tween: from → to over 500ms
   function tween(id, from, to, fmt) {
@@ -1161,6 +1181,56 @@
   // for itself would be a second answer. Empty is a legal answer and means nothing ever appears
   function mascotPool() {
     return (lastData && lastData.shop && lastData.shop.pool) || [];
+  }
+  // ...AND WHICH THEME THE PANEL IS WEARING. The third thing that rides the push for the same
+  // reason the two above do: the host resolved what was bought against what was chosen (shop.js,
+  // wornTheme), and a window that worked it out for itself would be a second answer.
+  // It is a NAME AND NOT A STYLE. This file hands it to the body as an attribute and stops there;
+  // what that attribute means is a theme's own CSS, which is how nothing in this file ever learns
+  // a theme's name (themes/README.md)
+  // NULL IS "THE PUSH SAID NOTHING ABOUT IT", which is a different answer from a theme id and has
+  // to be: a push with no shop block on it (a host older than this build, or a message that is
+  // about something else) must leave the panel wearing what it is wearing rather than stripping it
+  function panelTheme() {
+    var t = lastData && lastData.shop && lastData.shop.theme;
+    return typeof t === 'string' && t ? t : null;
+  }
+  // The attribute is already on the body when the page is first painted (html.js resolves it the
+  // same way), so this is for what CHANGES: a purchase, a choice, or a choice made in another
+  // window. Only on a change, because writing the same attribute on every push would be a
+  // stylesheet recalculation every ten seconds for nothing
+  var _themeOn = null;
+  function applyTheme() {
+    var id = panelTheme();
+    if (id == null || id === _themeOn) return;      // nothing said, or nothing moved
+    _themeOn = id;
+    document.body.setAttribute('data-theme', id);
+    inkDark();
+  }
+  // IS THE SURFACE UNDER THE DRAWINGS DARK. Two rules in the stylesheet need this and both of them
+  // used to ask a different question, "is the EDITOR dark", which was the same question until a
+  // theme could carry its own card. It is not any more: a reader on a light editor wearing a dark
+  // theme keeps `vscode-light` on the body, and the mascot's ink lift never ran for them, which
+  // put mascot-coding's near-black keystrokes at 1.1:1 on a dark card (styles.js, .ink-lift and
+  // .ws-room; docs/panel-themes/spec.md, section 10).
+  //
+  // IT IS MEASURED AND NOT LISTED. The card's own colour is read off the page after the attribute
+  // is set, so a theme that is dark says so by BEING dark: nothing here learns a theme's name and
+  // a theme added tomorrow is covered by the same line. The threshold is the midpoint of the
+  // relative luminance scale, which is the only place it can be without becoming a preference.
+  function inkDark() {
+    var dark = !document.body.classList.contains('vscode-light');
+    try {
+      var c = getComputedStyle(document.body).getPropertyValue('--card');
+      var m = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(c)
+        || /#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(c.trim());
+      if (m) {
+        var base = /^#/.test(c.trim()) ? 16 : 10;
+        var r = parseInt(m[1], base), g = parseInt(m[2], base), b = parseInt(m[3], base);
+        dark = (0.2126 * r + 0.7152 * g + 0.0722 * b) < 128;
+      }
+    } catch (e) { /* no computed style (a shim): the editor's own class is the fallback above */ }
+    document.body.classList.toggle('ink-dark', dark);
   }
 
   // --- the one figure a list row may carry, on the right of the row.
@@ -1508,7 +1578,7 @@
   var sh = {
     st: null, busy: false, op: null, n: 0, to: null, wantFocus: false, pressed: null, aim: null,
     // what the last push said, in two halves (shopFromPush), and the worn map it said it with
-    sigOwned: null, sigWorn: null, worn: null, pool: null, justBought: false, opKey: null
+    sigOwned: null, sigWorn: null, worn: null, pool: null, theme: null, justBought: false, opKey: null
   };
 
   function shopMarkup() {
@@ -1527,10 +1597,18 @@
       // a price with its button ABOVE it points the wrong way. The whole shelf is above the
       // button again, which is the rule that was right in the first place
       + '<div class="sh-rand" id="shRand"></div>'
+      // ...AND THE SECOND SHELF, which is what the whole panel wears rather than what is in one
+      // moment of it (shop.js, THEMES). It is here, above the button, by the rule the last row
+      // learned the hard way: everything the one button can be aimed at is above it, or a bar
+      // under a price points at a control that is somewhere else on the screen
+      + '<div class="sh-themes" id="shThemes"></div>'
       // what is on sale, beside the button that buys it. The art is aria-hidden and the name
       // beside it is what a reader is told, the same rule the pixel cards keep (CUC.cardWord)
+      // The chip stands in for the picture when the aimed row is off the second shelf: a theme has
+      // no drawing to preview, so what it shows is what its cell shows (styles.js, .th-chip)
       + '<div class="sh-try" id="shTry" hidden>'
       + '<img id="shArt" src="" alt="" aria-hidden="true"/>'
+      + '<span class="th-chip" id="shChip" aria-hidden="true" hidden></span>'
       + '<span class="sh-what"><span class="sh-nm" id="shName"></span>'
       + '<span class="sh-price" id="shPrice"></span></span></div>'
       + '<div class="bj-sr" id="shLive" aria-live="polite"></div>'
@@ -1564,6 +1642,15 @@
       // be a switch with nothing behind it
       if (c.classList.contains('buy')) shopPick(c.getAttribute('data-pool'));
       else shopPoolSet(c.getAttribute('data-pool'), c.getAttribute('aria-pressed') !== 'true');
+    });
+    // AND A FOURTH KIND OF PRESS, which is the first kind again on a different shelf: a theme that
+    // has been bought is WORN (there is exactly one, so this is a choice and not a switch), and one
+    // that has not points the single button at it, the same as every price above
+    el('shThemes').addEventListener('click', function (e) {
+      var c = e.target.closest ? e.target.closest('button.sh-cell') : null;
+      if (!c) return;
+      if (c.classList.contains('buy')) shopPick(c.getAttribute('data-theme'));
+      else shopThemeSet(c.getAttribute('data-theme'));
     });
     el('shAct').addEventListener('click', shopAct);
     return node;
@@ -1608,6 +1695,15 @@
         if (p.opts[j].price && !p.opts[j].owned) out.push(p.opts[j]);
       }
     }
+    // ...and the second shelf last, which is the order the shelf is read in. A theme is a priced
+    // row like any other and the one button has to be able to aim at it, or a price would be drawn
+    // on a cell that nothing could ever buy
+    var t = sh.st && sh.st.themes;
+    if (t && t.opts) {
+      for (j = 0; j < t.opts.length; j++) {
+        if (t.opts[j].price && !t.opts[j].owned) out.push(t.opts[j]);
+      }
+    }
     return out;
   }
   // WHAT THE ONE BUTTON BUYS: the drawing the reader aimed it at, while that drawing is still for
@@ -1637,7 +1733,17 @@
     }
     var p = sh.st && sh.st.pool;
     if (p && p.opts) for (j = 0; j < p.opts.length; j++) if (p.opts[j].key === key) return p.opts[j];
+    var t = sh.st && sh.st.themes;
+    if (t && t.opts) for (j = 0; j < t.opts.length; j++) if (t.opts[j].key === key) return t.opts[j];
     return null;
+  }
+  // Is this key off the SECOND shelf? Asked where a cell has to be drawn differently (a theme has
+  // a chip rather than a crab), and answered off the host's own view rather than from a list here
+  function shopIsTheme(key) {
+    var t = sh.st && sh.st.themes;
+    if (!t || !t.opts) return false;
+    for (var i = 0; i < t.opts.length; i++) if (t.opts[i].key === key) return true;
+    return false;
   }
   // One cell. `on` is whether this drawing is the one in that scene now, `pick` whether choosing in
   // this scene could change anything at all, and `aim` whether the button below is pointed here
@@ -1724,6 +1830,52 @@
     for (j = p.opts.length; j < p.cells; j++) html += shopSoonHtml();
     return html + '</div>';
   }
+  // --- THE SECOND SHELF'S CELLS -----------------------------------------------------------------
+  //
+  // The same three kinds of cell as the scenes', told apart the same way, with one difference that
+  // is a property of what is being sold rather than a style choice: THERE IS NO PICTURE OF A THEME.
+  // The thing on sale is this whole card repainted, so a 36px thumbnail of it would be a smudge;
+  // what the cell carries instead is the theme's colour, which is the one part of it that is
+  // already final and the one part that reads at a glance (styles.js, .th-chip).
+  //
+  // AND EVERY OWNED CELL IS PRESSABLE, where a scene with one drawing is not. A scene must always
+  // hold exactly one drawing, so one owned drawing settles it; the panel also wears exactly one
+  // theme, but the free one is always on the shelf, so there is always another cell to move to and
+  // a press always changes something.
+  //
+  // NO NAME IS PRINTED. The scenes' cells do not print theirs either: a cell carries a tag (what it
+  // costs, or what it is) and its name is in the label, which is what a reader on a screen reader
+  // is told. This product does not grow text for a decoration.
+  function shopThemeCellHtml(o, on) {
+    var buy = !o.owned && !!o.price;
+    var what = o.owned ? (on ? 'in use' : 'yours') : fmtInt(o.price) + ' credits';
+    var chip = '<span class="th-chip" data-th="' + esc(o.key) + '"></span>';
+    var at = ' data-theme="' + esc(o.key) + '"';
+    if (buy) {
+      var aim = sh.aim === o.key;
+      return '<button type="button" class="sh-cell buy' + (aim ? ' aim' : '') + '"' + at
+        + ' aria-pressed="' + (aim ? 'true' : 'false') + '"'
+        + ' aria-label="' + esc(o.name + ', ' + what) + '">'
+        + chip + '<span class="sh-tag">' + esc(shopTag(o.price)) + '</span></button>';
+    }
+    return '<button type="button" class="sh-cell pick' + (o.price ? ' owned' : '') + (on ? ' on' : '') + '"' + at
+      + ' aria-pressed="' + (on ? 'true' : 'false') + '"'
+      + ' aria-label="' + esc(o.name + ', ' + what) + '">'
+      + chip + '<span class="sh-tag">' + (on ? 'in use' : (o.price ? 'own' : 'free')) + '</span></button>';
+  }
+  // The row: the same heading the scenes have, because it answers the same question, and then the
+  // cells. No empty slots on this shelf: a theme is a directory and the shelf is however many of
+  // them there are, so there is no fixed number of cells for a missing one to leave a hole in
+  function shopThemesHtml() {
+    var t = sh.st && sh.st.themes;
+    if (!t || !t.opts || !t.opts.length) return '';
+    var on = panelTheme() || t.free, j;
+    var html = '<div class="sh-shead"><span class="sh-sn">' + esc(t.name) + '</span>'
+      + '<span class="sh-sw">' + esc(t.when) + '</span></div>'
+      + '<div class="sh-opts" role="group" aria-label="' + esc(t.name) + '">';
+    for (j = 0; j < t.opts.length; j++) html += shopThemeCellHtml(t.opts[j], t.opts[j].key === on);
+    return html + '</div>';
+  }
   // An empty slot: the frame, the word, and no picture. It says that more goes here without saying
   // what, because that has not been decided
   function shopSoonHtml() {
@@ -1739,10 +1891,13 @@
     // which cell the keyboard is on, before this repaint takes it away (restored at the end)
     var was = document.activeElement;
     var onCell = (was && was.closest) ? was.closest('.sh-cell') : null;
-    // a cell is named by its scene and its drawing, or, on the last row, by its drawing alone
-    var keep = onCell && (onCell.getAttribute('data-pool')
-      ? '[data-pool="' + onCell.getAttribute('data-pool') + '"]'
-      : '[data-slot="' + onCell.getAttribute('data-slot') + '"][data-key="' + onCell.getAttribute('data-key') + '"]');
+    // a cell is named by its scene and its drawing, or, on either of the two rows under them, by
+    // the one thing it is
+    var keep = onCell && (onCell.getAttribute('data-theme')
+      ? '[data-theme="' + onCell.getAttribute('data-theme') + '"]'
+      : onCell.getAttribute('data-pool')
+        ? '[data-pool="' + onCell.getAttribute('data-pool') + '"]'
+        : '[data-slot="' + onCell.getAttribute('data-slot') + '"][data-key="' + onCell.getAttribute('data-key') + '"]');
     // every scene shows the same number of cells, which is as many as the widest one has: the
     // shelf is a rectangle and the spare cells are where the next drawing goes
     var wide = 1;
@@ -1770,14 +1925,22 @@
     }
     el('shSlots').innerHTML = html;
     el('shRand').innerHTML = shopPoolHtml();
+    el('shThemes').innerHTML = shopThemesHtml();
     // what is on sale, and the one control. Both leave together when there is nothing left to buy
     el('shTry').hidden = !sale;
     el('shCtl').hidden = !sale;
     var note = el('shNote');
     note.hidden = true;
     if (sale) {
-      el('shArt').setAttribute('src', shopArt(sale.key));
-      el('shArt').classList.toggle('ink-lift', inkLift(sale.key));
+      // WHAT IS ON SALE IS DRAWN IN THE BOX IT WILL BE DRAWN IN, and the second shelf has no
+      // drawing to put in one: a theme shows the chip its own cell shows, at the size the crab
+      // would be, so the block is the same shape whichever shelf the aimed row came off
+      var isTheme = shopIsTheme(sale.key);
+      el('shArt').hidden = isTheme;
+      el('shChip').hidden = !isTheme;
+      if (isTheme) el('shChip').setAttribute('data-th', sale.key);
+      el('shArt').setAttribute('src', isTheme ? '' : shopArt(sale.key));
+      el('shArt').classList.toggle('ink-lift', !isTheme && inkLift(sale.key));
       el('shName').textContent = sale.name;
       el('shPrice').innerHTML = COIN_FULL + '<b>' + fmtInt(sale.price) + '</b>';
       // what the price is measured against is the credits this screen may spend, not the header's
@@ -1820,6 +1983,14 @@
   function shopPoolSet(key, on) {
     if (!key) return;
     vscode.postMessage({ type: 'mascotPool', key: key, on: !!on });
+  }
+  // ...and putting a theme on the panel. Same rule and same silence as the two above: this is a
+  // preference rather than money, the host refuses one nobody bought, and the data push is the
+  // only thing that says what is worn. A VALUE AND NOT A TOGGLE, so two windows pressing at once
+  // land on one theme rather than past each other
+  function shopThemeSet(id) {
+    if (!id) return;
+    vscode.postMessage({ type: 'panelTheme', id: id });
   }
   // Pointing the one button at a price. NOTHING IS SENT AND NOTHING IS STORED: no money moves, the
   // host is not asked, and the next repaint would work the same answer out again. A cursor is the
@@ -1947,7 +2118,11 @@
   function shopOwnedSig(s) { return (s.owned || []).join(','); }
   // the last row rides the same half: what is in play is a choice, it comes on the push, and a
   // press on it is a repaint rather than a round trip, here and in the window that did not press
-  function shopWornSig(s) { return JSON.stringify(s.slots || {}) + '|' + (s.pool || []).join(','); }
+  // ...and the theme rides it too, for the same reason: it is a choice, it comes on the push, and a
+  // press on it is a repaint rather than a round trip, here and in the window that did not press
+  function shopWornSig(s) {
+    return JSON.stringify(s.slots || {}) + '|' + (s.pool || []).join(',') + '|' + (s.theme || '');
+  }
   function shopFromPush(d) {
     var s = d && d.shop;
     if (!s) return;
@@ -1955,14 +2130,43 @@
     var first = sh.sigOwned == null;
     var ownedMoved = !first && ownedSig !== sh.sigOwned;
     var wornMoved = !first && wornSig !== sh.sigWorn;
-    var was = sh.worn, wasPool = sh.pool;
+    var was = sh.worn, wasPool = sh.pool, wasTheme = sh.theme;
     sh.sigOwned = ownedSig; sh.sigWorn = wornSig; sh.worn = s.slots || {}; sh.pool = s.pool || [];
+    sh.theme = s.theme || '';
+    // THE PURCHASE HAS ALREADY BEEN READ OUT BY ITS OWN REPLY, so the first push after it adds
+    // nothing, and the flag is spent ON THAT PUSH whatever it happens to carry -- including a push
+    // this window does nothing else with, which is why it is spent ABOVE the guard below and not
+    // after it. Left under it, a reader who bought something and then left the shop carried the
+    // flag out with them and it ate the next thing they chose when they came back.
+    // It used to be spent only where something was redrawn, which was a bug hiding behind a
+    // coincidence: the reply moves the owned half of the signature itself (shopReceive), so the
+    // push that follows a purchase usually finds NOTHING moved and returns a line above, leaving
+    // the flag standing. The next choice the reader made was then swallowed by it. Found when a
+    // theme bought and then worn read out "bought" and said nothing else (2026-11-26)
+    var quiet = sh.justBought;
+    sh.justBought = false;
     if (first || curDoor() !== 'shop') return;
     if (ownedMoved) { if (!sh.busy) shopSend('open'); return; }
     if (!wornMoved) return;
     renderShop();
-    if (sh.justBought) sh.justBought = false;      // the purchase has already been read out
-    else if (!shopPoolLive(wasPool, s.pool || [])) shopSceneLive(was, s.slots || {});
+    // ONE PRESS IS ONE ANNOUNCEMENT, which is why these are chained rather than all run: a press
+    // cannot have been a purchase and a switch and a scene and a theme at once
+    if (quiet) return;
+    if (shopThemeLive(wasTheme, s.theme || '')) return;
+    if (!shopPoolLive(wasPool, s.pool || [])) shopSceneLive(was, s.slots || {});
+  }
+  // The theme, read out, and whether it moved. Its NAME comes off the shelf the host last sent, the
+  // same place every other name on this screen comes from: this file does not hold one
+  function shopThemeLive(was, now) {
+    if (!was || was === now) return false;
+    var t = sh.st && sh.st.themes;
+    if (!t || !t.opts) return false;
+    for (var i = 0; i < t.opts.length; i++) {
+      if (t.opts[i].key !== now) continue;
+      setLive('shLive', t.opts[i].name + ' is on the panel.');
+      return true;
+    }
+    return false;
   }
   // A switch, read out, and whether there was one: the scene reader below is asked only when
   // there was not, since one press cannot be both
@@ -2420,6 +2624,7 @@
     renderWaiting(d.agentActivity); // always: a fold must not hide a row the user may need to clear
     applyFavs(d.favGames); // the host owns the set, so every window hears about a star through here
     shopFromPush(d);       // ...and about a seat bought in another window the same way
+    applyTheme();          // ...and about the theme the panel is wearing, which is the same push
     // compact usage HUD over the room (so session/weekly stay visible on the Agents tab)
     hudSessionPiece(!noSession);
     var _hs = el('wsHudS');
@@ -2473,14 +2678,16 @@
     if (d.fh && d.fh.used_percentage != null) {
       var p = Math.round(d.fh.used_percentage);
       var arc = el('ringArc');
-      if (arc) { arc.style.strokeDashoffset = (C * (1 - Math.min(p, 100) / 100)).toFixed(1); arc.style.stroke = col(p); }
+      // the stroke, by the same split setBar keeps: the warning bands are written here and the
+      // calm one is left to the stylesheet (styles.js, #ringArc), so a theme reaches the ring
+      if (arc) { arc.style.strokeDashoffset = (C * (1 - Math.min(p, 100) / 100)).toFixed(1); arc.style.stroke = p >= WARN_AT ? col(p) : ''; }
       tween('ringPct', prev.ring, p, function (v) { return Math.round(v); });
       prev.ring = p;
       if (el('st_time')) el('st_time').textContent = activeTime(d.fh.resets_at);
     } else if (noSession && d.sd.used_percentage != null) {
       var pw = Math.round(d.sd.used_percentage);
       var arcw = el('ringArc');
-      if (arcw) { arcw.style.strokeDashoffset = (C * (1 - Math.min(pw, 100) / 100)).toFixed(1); arcw.style.stroke = col(pw); }
+      if (arcw) { arcw.style.strokeDashoffset = (C * (1 - Math.min(pw, 100) / 100)).toFixed(1); arcw.style.stroke = pw >= WARN_AT ? col(pw) : ''; }
       tween('ringPct', prev.ring, pw, function (v) { return Math.round(v); });
       prev.ring = pw;
       if (el('st_time')) el('st_time').textContent = activeToday(d);
@@ -2700,7 +2907,16 @@
     if (src && img.getAttribute('src') !== src) img.setAttribute('src', src);
   }
   applyRoom();
-  if (window.MutationObserver) new MutationObserver(applyRoom).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  // THE EDITOR'S OWN THEME ARRIVES AS A BODY CLASS AND AS NOTHING ELSE. VS Code writes
+  // `vscode-light` on and off the body when the reader changes their colour theme, with no event
+  // and no push, so everything that reads it has to be re-run from here.
+  // `inkDark` is one of those and was not, which was a defect with a shape worth remembering: it
+  // replaced a CSS selector (which the browser re-evaluates on its own, instantly) with a class
+  // that one function computes. A reader who switched from a light theme to a dark one kept the
+  // stale answer, and the near-black ink the lift exists for went back to 1.1:1 -- the very thing
+  // this was written to fix. A derived class is only as live as the things that recompute it.
+  function onBodyClass() { applyRoom(); inkDark(); }
+  if (window.MutationObserver) new MutationObserver(onBodyClass).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   // room picker: a dropdown showed one name at a time, which hid the fact that there are
   // twelve rooms at all. The grid shows them.
   function currentMap() { return (vscode.getState() || {}).map || 'cave'; }
@@ -3207,6 +3423,10 @@
   // once they have all registered: a reload straight into a game has to find that game's panel.
   // Everything above is wiring that does not care, and this is the one thing that does
   function boot() {
+    // the theme is already on the body (the host put it there, html.js), so the one thing read off
+    // it has to be settled BEFORE the first push: without this a reader on a light editor wearing
+    // a dark theme gets an unlifted crab until something else changes
+    inkDark();
     switchTab((st0 && st0.tab) || 'usage');
     vscode.postMessage({ type: 'ready' });
   }

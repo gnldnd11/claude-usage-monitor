@@ -1,8 +1,14 @@
-// Panel webview stylesheet. Pure static CSS (no interpolation) — inlined into the
-// webview HTML via <style>${CSS}</style>. Extracted from extension.js unchanged.
+// Panel webview stylesheet. Pure static CSS (no interpolation), inlined into the webview HTML via
+// a <style> tag. Extracted from extension.js unchanged.
+//
+// *** THE WHOLE OF THIS MODULE IS ONE TEMPLATE LITERAL. A BACKTICK ANYWHERE IN IT, INCLUDING IN A
+// COMMENT, ENDS THE STRING AND THE EXTENSION DOES NOT LOAD. *** That is not a style note: it has
+// happened twice while the panel themes were being written, and the second time it took 35 webview
+// modes down at once with a syntax error pointing at a sentence rather than at a rule. There is a
+// lot of prose in here now. Name a selector or a token in plain words, never in backticks.
 module.exports = `
   *{box-sizing:border-box;}
-  body{margin:0;padding:0;background:transparent;color:var(--text);font-size:12px;
+  body{margin:0;padding:0;background:var(--shell,transparent);color:var(--text);font-size:12px;
     font-family:var(--vscode-font-family),-apple-system,"SF Pro",sans-serif;
     --card:#232326;--inner:#191919;--track:#3a3a3d;--text:#ececec;--muted:#8b8b90;
     --border:#303034;--iborder:#2c2c30;--ringtrack:#333;--bubble:#fff;--bubblebd:rgba(0,0,0,.06);
@@ -12,6 +18,17 @@ module.exports = `
        on the light one, so the light theme lowers it (below) instead of each place deciding for
        itself */
     --focus:#e8895a;
+    /* THE USAGE CARD'S ONE ACCENT, as a token, because a PANEL THEME moves it (themes/registry.js
+       writes --accent under body[data-theme="<id>"]). The default is the ember this file has
+       always used and the light theme does not lower it, so a reader on no theme renders what
+       they have always rendered, to the byte.
+       WHAT IT REACHES is the Usage chrome and only that: the three bars, the ring, the section
+       glyphs, the freshness dot and the two deltas. The casino keeps --felt-*, every screen keeps
+       --focus (whose value is MEASURED per theme, which is why a theme may not move it), and the
+       Agents tab, the room picker and the weekly sheet keep their literals. A game that read
+       --accent would be a game a theme could repaint, which games/README.md section 1 does not
+       allow; test/themes.test.js checks that none does. */
+    --accent:#e8895a;--accent-hi:#f0a882;
     /* the one surface that does not follow the theme: the room note's plate is rgba(0,0,0,.82)
        in light and dark alike, so the lowered light --focus would sit at 3.25:1 on it while the
        ember sits at 5.5:1. A second token rather than a literal, for the same reason as above */
@@ -22,8 +39,133 @@ module.exports = `
        new colour: it is tiles.js's emberLo, the pixel coin's rim */
     --focus:#c25a34;}
   body.vscode-high-contrast{--card:#000;--inner:#000;--border:#6fc3df;--iborder:#6fc3df;--text:#fff;--track:#555;}
-  .wrap{padding:10px;}
-  .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;}
+  /* positioned because the theme's FRAME is a child of this and not of the card: the frame's
+     drawing runs the full height of the panel and reaches the two outer columns the card's own
+     padding does not cover (docs/panel-themes/spec.md, 5-1) */
+  .wrap{padding:10px;position:relative;}
+  /* 30 AT THE TOP AND 14 EVERYWHERE ELSE. The extra 16px is the band a theme's frame spills into
+     from the two top corners (docs/panel-themes/spec.md, 5-1, segments C and D): with 14 the arch
+     and the lantern had to sit on the header row. The panel is 16px taller for it and that is the
+     price, paid once, for every theme including the free one, so the two never differ in height.
+     The isolation keeps the theme's six layers in a stack of their own, so a z-index inside the
+     card cannot be reached by anything outside it. --glow is a theme's rim light and is none by
+     default, which is what the panel has always had. */
+  .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;
+    padding:30px 14px 14px;box-shadow:var(--glow,none);isolation:isolate;}
+  /* ===========================================================================================
+     THE PANEL THEME'S LAYERS. The boxes are here; what goes in them is each theme's
+     (themes/<id>/meta.js) and this file never learns a theme's name -- the only thing it knows is
+     that a theme is an attribute on the body AND THAT IT ONLY MEANS ANYTHING ON THE USAGE TAB.
+     Every rule a theme writes carries body.tab-usage, including the surface tokens, so leaving
+     this tab puts the shipped palette back and a game draws in the colours it was drawn for.
+
+     NOTHING IS DRAWN UNTIL A THEME SAYS SO. Every layer is display:none and a theme turns on the
+     ones it paints, so the free theme (which declares nothing and ships no CSS) renders this whole
+     block as five empty elements and the panel is what it has always been, to the pixel.
+
+     THE ORDER IS A NUMBER AND NOT AN ACCIDENT (docs/panel-themes/spec.md, section 4):
+
+        1  scene    the card's own backdrop: texture, light pools, vignette
+        2  floor    the landscape along the bottom of the card
+        3  motes    the drifting specks
+        4  THE CARD'S CONTENT.  Every reading on the panel
+        5  frame    the border art.  ABOVE the content, and see the mask below
+        6  badge    what the mascot wears, drawn on the crab
+
+     FIVE AND SIX ARE OVER THE WORDS AND THAT IS NOT A SLIP. In the reference the vines and the pit
+     timbers lie ON the card's corners; a frame underneath them is a frame the card paints over.
+     What keeps them off the text is not the z-index, it is the MASK: the frame can only paint in
+     four strips and the rest of it is transparent, so there is no stacking order in which it could
+     cover a figure. The floor is the other way round and stays at 2, because a landscape is a long
+     soft shape with no edge to mask to -- the ore cart is behind the stat row in the reference and
+     every number on it reads.
+
+     THE FRAME'S BOX IS THE WRAP AND NOT THE CARD. It runs the full height of the panel and its two
+     outer strips are 24px wide, which is wider than the card's own padding: a frame boxed to the
+     card could not reach the edge it is drawing.
+
+     ON THE USAGE TAB AND NOWHERE ELSE. A game's screen has its own CSS in its own meta and a theme
+     may not reach into it (games/README.md, section 1), so the boxes are switched off on every
+     other tab rather than each theme being trusted to stay out.
+     =========================================================================================== */
+  /* A LAYER WITH NOTHING IN IT PAINTS NOTHING, which is why there is no per-layer switch: the free
+     theme gives these five elements no background at all and they render zero pixels. What the tab
+     rule below decides is only WHERE they may paint, never whether a theme is on */
+  .th-l{position:absolute;display:none;pointer-events:none;}
+  body.tab-usage .th-l{display:block;}
+  .th-scene{inset:0;border-radius:15px;overflow:hidden;z-index:1;background:var(--scene,none);}
+  .th-floor{left:0;right:0;bottom:0;height:156px;z-index:2;border-radius:0 0 15px 15px;overflow:hidden;}
+  /* THE MOTES PAINT WHERE THERE IS NO TEXT, and this mask is the whole of that rule.
+     Without it they are specks sitting on the figures -- a bubble over the credit figure, an ember
+     over the weekly label -- and a speck on a glyph does not read as weather, it reads as dirt on the
+     screen. Reported on the first render of the finished themes.
+     The two bands are the card's own padding, so they hold whatever the panel's content does:
+        the top    0..20, fading out by 30.  The header row starts at 30
+        the bottom the last 39, fading in from 30 above the card's floor. The last line of the
+                   stat row ends there: a stat tile's bottom padding (10), the inner's (13), the
+                   card's (14) and the inner's border all stack under it
+     A theme may not widen this. The one theme that shipped a mask of its own had a tighter one
+     (an ellipse in the top right corner) and it was dropped for this, because six of the seven
+     had none at all and the rule belongs to the shell rather than to whoever remembers it. */
+  .th-motes{inset:0;border-radius:15px;z-index:3;overflow:hidden;
+    -webkit-mask:linear-gradient(180deg,#000 0,#000 20px,transparent 30px,
+      transparent calc(100% - 39px),#000 calc(100% - 30px),#000 100%);
+    mask:linear-gradient(180deg,#000 0,#000 20px,transparent 30px,
+      transparent calc(100% - 39px),#000 calc(100% - 30px),#000 100%);}
+  /* the content, above the first three. Written as a list of the card's own children so that a
+     layer cannot be slipped between two of them by anything but this line */
+  .card > .head,.card > .tabs,.card > .inner,.card > #gameStage,.card > #authbar{position:relative;z-index:4;}
+  /* THE FRAME, AND THE FOUR STRIPS IT MAY PAINT IN. Everything outside them is masked away, which
+     is what lets this layer sit over the card's content: there is no overlap to resolve.
+
+     ITS BOX IS THE WRAP AND THE MASK IS THE CARD. The art is drawn in the wrap's own coordinates,
+     which is where it was composed, and the mask is what keeps it on the card. The alternative
+     was tried and dropped: moving the BOX to the card means every right-hand coordinate has to be
+     re-anchored, and a group that was composed on one axis (a chain, a hood and a lamp body all
+     centred on x234) comes apart the moment each layer is re-anchored by its own width.
+
+     THE STRIPS ARE THE CARD'S OWN PADDING, which is where a frame can paint without touching a
+     figure, and writing them as the padding rather than as measured numbers is what stops them
+     drifting when the layout moves. The card sits at x10..240 inside the wrap, so:
+
+        left    x  10..24    the card's left padding
+        right   x 227..240   the card's right padding (13 of it, the mockup's own figure)
+        top     y  10..40    the card's top padding, 52px deep into each corner, where an arch or
+                             a hanging lamp spills in. It ENDS above the header row
+     The art loses its outer 10px to this, which was drawn for the wrap's wider strips. That is a
+     post 12px wide instead of 22, and it reads the same, because a post is a vertical gradient.
+
+     The top padding is 30 and not 14 FOR THIS: at 14 that band was the header row. The panel is
+     16px taller for it, for every theme including the free one, so the two never differ in height. */
+  .th-frame{inset:0;z-index:5;
+    -webkit-mask:linear-gradient(#000,#000) left 10px top 10px/14px calc(100% - 20px) no-repeat,
+      linear-gradient(#000,#000) right 10px top 10px/14px calc(100% - 20px) no-repeat,
+      linear-gradient(#000,#000) left 10px top 10px/52px 30px no-repeat,
+      linear-gradient(#000,#000) right 10px top 10px/52px 30px no-repeat;
+    mask:linear-gradient(#000,#000) left 10px top 10px/14px calc(100% - 20px) no-repeat,
+      linear-gradient(#000,#000) right 10px top 10px/14px calc(100% - 20px) no-repeat,
+      linear-gradient(#000,#000) left 10px top 10px/52px 30px no-repeat,
+      linear-gradient(#000,#000) right 10px top 10px/52px 30px no-repeat;}
+  /* THE BADGE'S BOX IS THE MASCOT'S BOX, to the pixel, and a theme places its drawing inside it.
+     It is drawn for the QUIET crab and for no other: the head is somewhere different in each of
+     the eight drawings (the burn-rate bubble needs eight offsets for exactly that, every one
+     computed from the file -- .mascot-wrap[data-state] below, and test/panel-css.test.js), and a
+     hat that floats beside the head is worse than no hat. So the other seven states switch it off
+     below rather than wearing it in the wrong place. */
+  /* NOT a .th-l: that class is the four boxes the Usage tab switches on, and this one lives inside
+     the mascot's box, which only exists on that tab anyway */
+  .th-badge{position:absolute;pointer-events:none;left:0;top:0;width:88px;height:74px;z-index:6;}
+  .mascot-wrap:not([data-state="idle"]) .th-badge{display:none;}
+  /* a theme with something IN the ring (an orbiting point of light). Off everywhere else, so the
+     ring is the ring it has always been */
+  .th-orbit{position:absolute;inset:0;display:none;pointer-events:none;}
+  /* THE ONE PIECE OF MOTION A THEME IS ALLOWED, and the guard that stops it is the shell's rather
+     than each theme's: a rule a theme has to remember is a rule six themes out of seven will
+     forget. The layers themselves animate, as do their two pseudo-elements */
+  @media (prefers-reduced-motion:reduce){
+    .th-l,.th-l::before,.th-l::after,.th-orbit,.th-orbit::after{animation:none !important;}}
+  /* folded, the stat row is gone and there is no ground for a landscape to stand on */
+  .compact .th-floor{height:0;}
   .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:13px;}
   .brand{display:flex;align-items:center;gap:8px;min-width:0;}
   .ttl{min-width:0;flex:1 1 auto;overflow:hidden;}
@@ -114,9 +256,9 @@ module.exports = `
   #uhead .d{display:none;}
   #uhead.loading .d{display:block;}
   .ihead .it{display:flex;align-items:center;gap:7px;font-weight:600;font-size:12.5px;color:var(--text);white-space:nowrap;min-width:0;overflow:hidden;flex:0 1 auto;}
-  .ihead .it svg{width:15px;height:15px;color:#e8895a;}
+  .ihead .it svg{width:15px;height:15px;color:var(--accent);}
   .upd{color:var(--muted);font-size:10.5px;display:flex;align-items:center;gap:5px;white-space:nowrap;flex:none;}
-  .upd .d{width:6px;height:6px;border-radius:50%;background:#e8895a;box-shadow:0 0 3px #e8895a;flex:none;}
+  .upd .d{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 3px var(--accent);flex:none;}
   .body{display:flex;gap:14px;align-items:center;flex-wrap:nowrap;}
   .meters{flex:1 1 auto;min-width:0;}
   .meter{margin-bottom:10px;}
@@ -124,9 +266,9 @@ module.exports = `
   .mtop{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
   .mlabel{color:var(--muted);font-size:11px;}
   .mval{font-weight:700;font-size:12px;color:var(--text);}
-  .mbar{position:relative;height:7px;border-radius:4px;background:var(--track);overflow:hidden;}
+  .mbar{position:relative;height:7px;border-radius:4px;background:var(--bartrack,var(--track));overflow:hidden;}
   .mfill{position:absolute;left:0;top:0;height:100%;border-radius:4px;
-    background:linear-gradient(90deg,#e8895a,#f0a882);transition:width .5s ease;width:0;}
+    background:linear-gradient(90deg,var(--accent),var(--accent-hi));transition:width .5s ease;width:0;}
   .msub{color:var(--muted);font-size:10.5px;margin-top:3px;text-align:right;opacity:.85;}
   .ringbox{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;}
   .ringside{display:flex;flex-direction:column;align-items:center;}
@@ -134,7 +276,7 @@ module.exports = `
   .ringwrap svg{transform:rotate(-90deg);}
   .rtrack{stroke:var(--ringtrack);}
   .rcenter{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-  .rpct{font-size:22px;font-weight:800;color:#e8895a;line-height:1;}
+  .rpct{font-size:22px;font-weight:800;color:var(--accent);line-height:1;}
   .rpct span:last-child{font-size:12px;}
   .rtext{font-size:10.5px;color:var(--muted);margin-top:2px;}
   /* the session window's time left. It was the one thing the removed Session bar still owned */
@@ -166,7 +308,13 @@ module.exports = `
      the point. The figures above are its contrast on each of those floors; the high-contrast theme
      does not redefine --muted, so it keeps this grey too. */
   #cucInkFlood{flood-color:var(--muted);}
-  body:not(.vscode-light) .ink-lift{filter:url(#cucInkEdge);}
+  /* IT ASKS ABOUT THE SURFACE AND NOT ABOUT THE EDITOR, and that distinction only became real
+     when a PANEL THEME could carry its own surface. This used to read body:not(.vscode-light),
+     which is the editor's question: a reader on a LIGHT editor wearing a dark theme kept
+     vscode-light on the body, so the lift never ran and mascot-coding's near-black keystrokes
+     measured 1.1:1 on the theme's dark card. ink-dark is written by whatever knows the surface
+     (webview.js: the editor's own dark themes, and every theme that carries a dark card) */
+  body.ink-dark .ink-lift{filter:url(#cucInkEdge);}
   /* NOT display:none, which is what .sy-sprite uses two files over and what this had first.
      A <use> resolves out of a display:none sprite; a <filter> resolves too, but its flood-color
      does not: Chrome computes it as the initial black, so the edge comes out black on a black
@@ -183,21 +331,27 @@ module.exports = `
   @keyframes mascotBeat{from{transform:translateY(2px);}to{transform:translateY(0);}}
   .sparkle.beat{animation:mascotBeat .16s steps(2,jump-none);}
   @media (prefers-reduced-motion:reduce){.sparkle.beat{animation:none;}}
-  .stats{display:flex;gap:1px;margin-top:13px;background:var(--iborder);border-radius:11px;overflow:hidden;}
-  .stat{flex:1;background:var(--inner);padding:10px 8px;min-width:0;position:relative;}
+  /* THE SEPARATORS ARE A 1px GAP SHOWING THE ROW'S OWN BACKGROUND THROUGH OPAQUE TILES, which is
+     why a theme has to move BOTH: make the tiles see-through alone and that background stops being
+     a hairline and becomes a plate across the whole row, over the landscape. A theme sets both to
+     transparent and draws the line on the tile instead (themes/<id>/meta.js, .stat + .stat) */
+  .stats{display:flex;gap:1px;margin-top:13px;background:var(--statsbg,var(--iborder));border-radius:11px;overflow:hidden;}
+  .stat{flex:1;background:var(--tilebg,var(--inner));padding:10px 8px;min-width:0;position:relative;}
   .stat .stop{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
-  .stat svg{width:14px;height:14px;color:#e8895a;flex:none;}
+  .stat svg{width:14px;height:14px;color:var(--accent);flex:none;}
   .stat .sval{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .stat .slabel{color:var(--muted);font-size:10.5px;white-space:nowrap;}
   /* narrow panel: hide the stat tiles so values never truncate */
   body.narrow .stats{display:none;}
   .mgrp{display:flex;align-items:baseline;gap:6px;}
   .srow{display:flex;align-items:baseline;gap:5px;}
-  .delta,.sdelta{color:#e8895a;font-weight:700;opacity:0;}
+  .delta,.sdelta{color:var(--accent);font-weight:700;opacity:0;}
   .delta{font-size:11px;}
   .sdelta{font-size:10.5px;position:absolute;top:7px;right:8px;}
   .delta.show,.sdelta.show{animation:flash 1.9s ease forwards;}
-  #ringArc{transition:stroke-dashoffset .6s ease, stroke .3s ease;}
+  /* the stroke is written on the element too (html.js), and this beats it: a presentation
+     attribute loses to any rule. Same colour by default, so nothing moves without a theme */
+  #ringArc{stroke:var(--accent);transition:stroke-dashoffset .6s ease, stroke .3s ease;}
   .roll{display:inline-block;animation:roll .45s ease;}
   .upd .d{animation:pulse 2.2s ease-in-out infinite;}
   .notrans *{transition:none !important;}
@@ -252,7 +406,7 @@ module.exports = `
      already one of the panel's spacings (docs/game-panels.md, section 2). 440.59 -> 263. */
   .compact .ringbox{max-width:0;max-height:0;opacity:0;overflow:hidden;}
   .compact .body{gap:0;}
-  .compact .card{padding:10px;}
+  .compact .card{padding:26px 10px 10px;}
   .compact .inner{padding:0;background:transparent;border-width:0;}
   .compact .head{margin-bottom:10px;}
   .compact .meter{margin-bottom:9px;}
@@ -276,9 +430,11 @@ module.exports = `
   body.wrapcols .ringbox{margin:6px auto 0;}
   @media (max-width:270px){.stat .slabel{display:none;}.stat .sval{font-size:11px;text-overflow:clip;}.stat .sdelta{display:none;}.stat{padding:8px 6px;}.munit{display:none;}}
   /* --- tab switcher + agent roster (tide pool) --- */
-  .tabs{display:flex;gap:3px;margin-bottom:11px;background:var(--inner);border:1px solid var(--iborder);border-radius:10px;padding:3px;}
+  .tabs{display:flex;gap:3px;margin-bottom:11px;background:var(--tabsbg,var(--inner));border:1px solid var(--iborder);border-radius:10px;padding:3px;}
   .tab{position:relative;flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:transparent;border:0;color:var(--muted);font-size:12px;font-weight:600;padding:6px 8px;border-radius:7px;cursor:pointer;font-family:inherit;transition:color .15s ease,background .15s ease;}
-  .tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18);}
+  /* a theme turns this plate into an accent chip (--tabon) and darkens the word on it
+     (--tabonink). Both default to what the panel has always drawn */
+  .tab.active{background:var(--tabon,var(--card));color:var(--tabonink,var(--text));box-shadow:0 1px 3px rgba(0,0,0,.18);}
   .tab:hover:not(.active){color:var(--text);}
   .inner.agents{padding:11px 11px 14px;}
   .ws-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px;min-width:0;}
@@ -330,7 +486,9 @@ module.exports = `
   .ws-run{display:inline-flex;align-items:center;gap:3px;margin-left:2px;font-size:9px;font-weight:800;color:#e5484d;flex:none;}
   .ws-run::before{content:'';width:6px;height:6px;border-radius:50%;background:#e5484d;box-shadow:0 0 4px #e5484d;animation:pulse 1.4s ease-in-out infinite;}
   #panelAgents:not(.room-collapsed) .ws-run{display:none;} /* redundant while the room itself is visible */
-  body.vscode-light .ws-room{background:#ececef;}
+  /* the same question, the same answer: the room's plate follows the SURFACE (see .ink-lift
+     above), so a dark theme on a light editor keeps the dark room it is drawn for */
+  body:not(.ink-dark) .ws-room{background:#ececef;}
   .ws-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
   .ws-stage{position:absolute;inset:0;overflow:hidden;}
   .ws-hud{position:absolute;top:6px;left:7px;z-index:8;display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;letter-spacing:.2px;color:#fff;background:rgba(0,0,0,.68);padding:2px 8px;border-radius:8px;pointer-events:none;box-shadow:0 1px 5px rgba(0,0,0,.5);white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.6);}
@@ -699,6 +857,33 @@ module.exports = `
      this panel is built for; at a 250px sidebar four would be 40 wide, which is narrower than the
      word inside them, and the row folds instead, which is what the scenes above do at that width */
   .sh-rand .sh-opts{grid-template-columns:repeat(auto-fit,minmax(60px,64px));}
+  /* --- THE SECOND SHELF: the panel themes, under the second prefix (shop.js).
+     IT IS DRAWN AS THE LAST ROW IS and not as a scene, for the same two reasons: the grid above is
+     a RECTANGLE sized to the widest scene, so a six-cell row among them would make all five six
+     wide and drop the shelf to one column; and in meaning a theme is not one of five moments, it
+     is what the whole panel is wearing. So it sits under them, across the width, behind the same
+     hairline. */
+  .sh-themes{margin-top:11px;padding-top:11px;border-top:1px solid var(--iborder);}
+  .sh-themes .sh-opts{grid-template-columns:repeat(auto-fit,minmax(60px,64px));}
+  /* WHAT A THEME'S CELL SHOWS, since it cannot show a panel. The cell is 64px square and the thing
+     being sold is a card the size of this whole sidebar, so a thumbnail of it would be a smudge.
+     What it shows instead is the three things that read at 48x34: the theme's own CARD COLOUR, its
+     SCENE (the backdrop, at the panel's own scale so the texture is the texture and not a stretch)
+     and a bar in its ACCENT.
+     THE TOKENS ARE RESET HERE, not inherited. A reader browsing the shelf is WEARING one theme and
+     looking at eight, so without this line every cell would be painted in the worn one and the
+     shelf would be one colour. Each theme writes its own values on .th-chip[data-th="<id>"]:
+     themes/registry.js puts the accent there and the theme's own CSS puts the rest. */
+  .th-chip{--accent:#e8895a;--accent-hi:#f0a882;--card:#232326;--text:#ececec;--th-scene:none;
+    position:relative;width:48px;height:34px;border-radius:5px;display:block;overflow:hidden;
+    background:var(--card);box-shadow:inset 0 0 0 1px rgba(127,127,127,.3);}
+  .th-chip::before{content:'';position:absolute;inset:0;background:var(--th-scene);
+    background-size:250px 598px;}
+  .th-chip::after{content:'';position:absolute;left:7px;bottom:7px;width:24px;height:4px;
+    border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--accent-hi));}
+  /* ...and the same chip at the size the drawing would be, in the block beside the Buy button, so
+     that block is the same shape whichever shelf the aimed row came off */
+  .sh-try .th-chip{width:88px;height:74px;border-radius:10px;flex:none;}
   /* AN EMPTY SLOT: the frame, and the word in the middle of it. NO PICTURE, which is the one thing
      that tells it from a drawing nobody can press: that one has a crab in it and says when the
      crab shows up, and this says only that something will go here */

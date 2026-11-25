@@ -374,10 +374,22 @@ ok('the lift is one rule on one class, with no drawing named in the stylesheet',
   lifted.length === 1 && /\.ink-lift\s*$/.test(groups(lifted[0].sel)[0] || '')
     && !STATES.some((f) => sels.indexOf(f.replace(/^mascot-|\.png$/g, '')) >= 0),
   sels);
-// the light theme is the one that was never broken: the same ink measures 18.6:1 there
-ok('and it is guarded so the light theme is left exactly as it was',
-  groups(lifted[0] ? lifted[0].sel : '').every((g) => /:not\(\s*\.vscode-light\s*\)/.test(g)),
+// ...AND IT ASKS ABOUT THE SURFACE RATHER THAN ABOUT THE EDITOR, which is the same question until
+// a PANEL THEME carries its own card and a different one afterwards. It read
+// body:not(.vscode-light) until 2026-11-26: a reader on a LIGHT editor wearing a dark theme kept
+// that class, so the lift never ran and the ink that measures 18.6:1 on the light card measured
+// 1.1:1 on the theme's dark one. ink-dark is written by whatever knows the surface (webview.js,
+// which reads the card's own colour), so the light panel is still left exactly as it was AND a
+// dark theme is covered wherever it is worn.
+ok('and it is guarded by what the SURFACE is, not by what the editor is',
+  groups(lifted[0] ? lifted[0].sel : '').every((g) => /^body\.ink-dark\b/.test(g.trim())),
   sels);
+// ...and the same question, the same class, on the other rule that asked it
+const roomPlate = RULES.filter((r) => /\.ws-room\s*$/.test(r.sel) && /background/.test(r.body)
+  && /vscode-light|ink-dark/.test(r.sel));
+ok('and the room plate follows the surface too, for the same reason',
+  roomPlate.length === 1 && /ink-dark/.test(roomPlate[0].sel) && !/vscode-light/.test(roomPlate[0].sel),
+  roomPlate.map((r) => r.sel).join(' , ') || '(no rule)');
 
 // the rule names a filter; the page has to contain it, or the declaration is a no-op that no
 // string check would notice
@@ -681,9 +693,26 @@ ok('and the border is animated rather than snapped away',
 // may not invent a number
 const SPACING = [4, 6, 8, 10, 12, 14];
 const cardC = declOf('.compact .card') || {};
-ok('the folded card’s padding is one of the panel’s own spacings, and smaller than the open one',
-  SPACING.indexOf(parseFloat(cardC.padding)) >= 0
-  && parseFloat(cardC.padding) < parseFloat((declOf('.card') || {}).padding), cardC.padding);
+// EACH SIDE OF IT, because the card's padding stopped being one number on 2026-11-26: the top is
+// 30 and the other three are 14, and the 16px of difference is the band a panel theme's frame
+// spills into from the two top corners (styles.js, and docs/panel-themes/spec.md 5-1). So the
+// check is per side: every side is one of the panel's own spacings or one of them plus that band,
+// and every side of the folded card is smaller than the same side of the open one.
+const sides = (v) => {
+  const n = String(v || '').trim().split(/\s+/).map(parseFloat);
+  return n.length === 1 ? [n[0], n[0], n[0], n[0]]
+    : n.length === 2 ? [n[0], n[1], n[0], n[1]]
+    : n.length === 3 ? [n[0], n[1], n[2], n[1]] : n;
+};
+const BAND = 16;
+const padOpen = sides((declOf('.card') || {}).padding), padFold = sides(cardC.padding);
+const spaced = (x) => SPACING.indexOf(x) >= 0 || SPACING.indexOf(x - BAND) >= 0;
+ok('the card padding is the panel own spacings, plus the frame band at the top',
+  padOpen.length === 4 && padOpen.every(spaced) && padOpen[0] - padOpen[2] === BAND,
+  padOpen.join(' '));
+ok('the folded card padding is one of them too, and smaller on every side',
+  padFold.length === 4 && padFold.every(spaced) && padFold.every((v, k) => v < padOpen[k]),
+  padFold.join(' ') + ' vs ' + padOpen.join(' '));
 // WHAT FOLDING MAY NOT TAKE: the way into the games. #hdCredits is the only door to five of them
 // and one press of the chevron used to shut it (header-fold-spec, 2-4)
 const compactHides = RULES

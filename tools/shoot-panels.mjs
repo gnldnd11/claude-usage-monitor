@@ -55,6 +55,10 @@ const HOUSE = {
   // which is what keeps a new capture on the same ground as the ones already in the README
   bg: { light: '#d6d8df', dark: '#1f1f22' }
 };
+// WHICH PANEL THEME IS WORN in this run, or '' for the free one. Set once from --panel-theme,
+// because the page's first paint and the data push both have to say the same thing: the host
+// resolves it in one place (shop.js, wornTheme) and so does this
+let PANEL_THEME = '';
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
 
@@ -493,7 +497,10 @@ function shopPush(owned, pref) {
   // left the pool out would draw that row switched off and nothing would say why
   return {
     owned: owned || [], slots: shop.wornSlots(owned || [], pref || {}),
-    pool: shop.randomPool(owned || [], pref || {})
+    pool: shop.randomPool(owned || [], pref || {}),
+    // ...and the panel theme, resolved the same way and by the same module: a shot that left it
+    // out would draw the card untouched and nothing would say why (shop.js, wornTheme)
+    theme: shop.wornTheme(owned || [], pref || {})
   };
 }
 function usageData({ pct, weekly, warn, session, stale, quiet, bought, worn, shop }) {
@@ -542,8 +549,10 @@ function usageData({ pct, weekly, warn, session, stale, quiet, bought, worn, sho
     // way to reach that drawing here. --worn reaches the rest: a scene with more than one FREE
     // drawing in it (the quiet one, since the sleeping crab arrived) cannot be measured any other
     // way, because the drawing it falls back to is the one that was always there.
-    shop: shop || shopPush(bought ? ['mascot:float'] : [],
-      Object.assign(bought ? { burn: 'float' } : {}, worn || {})),
+    // --panel-theme buys the theme and chooses it, which is the only way to reach a repainted
+    // card here: the free theme wins every other way, the same as a scene's fallback does
+    shop: shop || shopPush((bought ? ['mascot:float'] : []).concat(PANEL_THEME ? ['theme:' + PANEL_THEME] : []),
+      Object.assign(bought ? { burn: 'float' } : {}, PANEL_THEME ? { theme: PANEL_THEME } : {}, worn || {})),
     credits: { balance: 1240, today: 86, frac: 3, perCredit: 10000, counting: false },
     cfg: { statusBar: 'session+weekly', panelHidden: [], burnRate: true }
   };
@@ -671,9 +680,10 @@ function playUntil(id, shot, balance) {
   return out;
 }
 
-function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, click, probe, tall }) {
+function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, click, probe, tall, plain }) {
   const html = require(path.join(ROOT, 'html.js'));
   const registry = require(path.join(ROOT, 'games/registry.js'));
+  const themes = require(path.join(ROOT, 'themes/registry.js'));
   const IC = require(path.join(ROOT, 'icons.js'));
   const { buildNpcCatalog } = require(path.join(ROOT, 'sprites.js'));
   const spriteData = require(path.join(ROOT, 'sprite-data.js'));
@@ -705,7 +715,11 @@ function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, c
     // a broken image in it, and the register is where a door's picture is named
     doors: registry.doors(uri), heroShopUri: 'hero-shop.png',
     roomMinecraftUri: 'room-minecraft.png',
-    assetsJson, gameList, gameScripts: registry.panels()
+    assetsJson, gameList, gameScripts: registry.panels(),
+    // THE PANEL THEME ON THE FIRST PAINT, which is what the host sends (extension.js). It is
+    // `--panel-theme`'s doing and the free one otherwise, so an unflagged shot is the card as it
+    // has always been, which is the state every listing picture is of
+    theme: PANEL_THEME, themeVars: themes.artCss((n) => n)
   });
   // the asset catalog the page carries is built above, and the shop's heading glyph travels in it
   // the way the back arrow's does
@@ -819,6 +833,19 @@ function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, c
       // Once a picture is given a box of its own (.cr-art), getBoundingClientRect answers with the
       // box for every ratio alike and the drawing's real size on screen becomes invisible to a
       // probe. This is the one question those rows of docs/shop-spec.md are actually asking.
+      // "rect:<sel>" is the plain box of an element, in CSS pixels of the page. It is what a
+      // PIXEL measurement needs: the contrast of a figure against a theme's landscape cannot be
+      // computed from tokens (the landscape is a stack of gradients), so it is read off the
+      // rendered PNG, and the crop has to come from the page rather than from a guess
+      if (sel.indexOf('rect:') === 0) {
+        var re = document.querySelector(sel.slice(5));
+        if (!re) { out[sel] = null; return; }
+        var rb = re.getBoundingClientRect();
+        out[sel] = { w: +rb.width.toFixed(2), h: +rb.height.toFixed(2),
+          x: +rb.left.toFixed(2), y: +rb.top.toFixed(2), lines: 1, font: '', color: '',
+          clipped: false, text: '' };
+        return;
+      }
       if (sel.indexOf('ink:') === 0) {
         var im = document.querySelector(sel.slice(4));
         if (!im || !im.naturalWidth) { out[sel] = null; return; }
@@ -880,9 +907,27 @@ function renderPage({ messages, tab, game, door, theme, width, bg, openWeekly, c
   });
 })();
 </script>`;
+  // --plain: THE SCENE WITH THE READINGS TAKEN OFF IT. A theme's contrast cannot be computed
+  // from its tokens, because what a figure sits on is a stack of gradients and a drawing; it has
+  // to be read off the render. visibility rather than display, so every band stays exactly where
+  // it is and a crop taken from the lit page lines up with the same crop taken from this one.
+  // The badge goes because it is drawn ON the crab rather than under a figure; the frame STAYS,
+  // because the fold button sits on it and that is one of the places the spec measures
+  // (docs/panel-themes/spec.md, section 6-2).
+  if (plain) {
+    page = page.replace('</head>', '<style>'
+      + '.head,.tabs,.body,.stats,.warnbar,#uhead{visibility:hidden;}'
+      + '.th-badge{display:none;}</style></head>');
+  }
   page = page.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + boot);
-  page = page.replace('<body>', '<body' + (theme === 'light' ? ' class="vscode-light"' : '') + '><div id="shot-vp">')
+  // THE OPENING TAG IS MATCHED AND NOT ASSUMED. It used to be the literal `<body>`, and the day
+  // the page started writing an attribute on it (html.js, the panel theme) that replace silently
+  // did nothing: no #shot-vp, no height, and the run died two steps later saying the page never
+  // reported one. A pattern that keeps whatever is already on the tag cannot do that again
+  page = page.replace(/<body([^>]*)>/, (_m, attrs) =>
+    '<body' + attrs + (theme === 'light' ? ' class="vscode-light"' : '') + '><div id="shot-vp">')
              .replace('</body>', '</div></body>');
+  if (page.indexOf('id="shot-vp"') < 0) throw new Error('the page has no <body> to wrap');
   return page;
 }
 
@@ -932,7 +977,7 @@ function shoot(pagePath, outPath, { width, dpr, profile, probe }) {
 // ---------------------------------------------------------------------------------------------
 // A flag that takes no value has to be LISTED here, or it swallows the next argument as its value
 // and whatever that was is lost. Every switch belongs in the first line.
-const BOOLS = ['keep', 'list', 'warn', 'no-session', 'stale', 'quiet', 'bought', 'help'];
+const BOOLS = ['keep', 'list', 'warn', 'no-session', 'stale', 'quiet', 'bought', 'help', 'plain'];
 function flags(argv) {
   const f = {};
   for (let i = 0; i < argv.length; i++) {
@@ -949,7 +994,7 @@ function flags(argv) {
 // the run fell through to its default (every listing shot, into media/) and overwrote the six
 // PNGs the marketplace README serves off raw.githubusercontent. A subtree push would have shipped
 // them. The default run is the destructive one, so it may not be what a typo lands on.
-const KNOWN = BOOLS.concat(['only', 'theme', 'width', 'dpr', 'bg', 'out', 'purse', 'probe', 'pct', 'click', 'worn']);
+const KNOWN = BOOLS.concat(['only', 'theme', 'width', 'dpr', 'bg', 'out', 'purse', 'probe', 'pct', 'click', 'worn', 'panel-theme']);
 const USAGE = [
   'node tools/shoot-panels.mjs [--only <shot,shot>] [--theme light|dark|both] [--probe <sel,sel>]',
   '',
@@ -962,6 +1007,11 @@ const USAGE = [
   '  --stale          push a usage reading 18 minutes old, which shows the freshness row',
   '  --quiet          push the last reply as ten minutes old, which is the mascot\'s quiet drawing',
   '  --bought         the floating crab has been bought and is in the scene it is sold for',
+  '  --plain          the scene with every reading taken off it, which is how a theme\u2019s',
+  '                   contrast is measured: what a figure sits on is a stack of gradients and',
+  '                   has to be read off the render rather than computed from tokens',
+  '  --panel-theme <id>  a PANEL THEME is bought and worn (themes/<id>). Not --theme, which is',
+  '                   light or dark. The card itself is repainted; nothing it says moves',
   '  --worn <s=k,..>  which drawing is in which scene, as a stored choice (quiet=sleep). The only',
   '                   way to reach the second FREE drawing in a scene, since the fallback wins',
   '  --click <sel>    press something once the replies have been drawn, then measure',
@@ -985,11 +1035,37 @@ async function main() {
   const only = f.only ? String(f.only).split(',').map((s) => s.trim()) : Object.keys(SHOTS).filter((k) => !SHOTS[k].measure);
   // media/ is the listing's folder, so only the shots the listing uses default into it. A measuring
   // shot writes beside the harness instead: nothing it draws should be able to reach a reader
-  const measuring = only.some((id) => SHOTS[id] && SHOTS[id].measure);
+  // ...AND A FLAG CAN MAKE A LISTING SHOT A MEASURING ONE. `--plain` renders the panel with every
+  // reading hidden and `--panel-theme` renders it wearing something the reader has to buy: both
+  // are pictures of a state, and neither is the product's own front page. Without this line
+  // `node tools/shoot-panels.mjs --plain` overwrites the whole of media/ with panels that have no
+  // text on them, which is the same rule this file already keeps about invented figures.
+  const measuring = only.some((id) => SHOTS[id] && SHOTS[id].measure)
+    || !!f.plain || !!f['panel-theme'];
   const outDir = f.out ? path.resolve(ROOT, f.out) : (measuring ? path.join(HERE, '.measure') : path.join(ROOT, 'media'));
+  // ...and the belt to that brace: whatever was asked for, a measuring shot does not land in the
+  // listing's folder. `--out media` is the way this would be got round by accident
+  const media = path.join(ROOT, 'media');
+  if (measuring && (outDir === media || outDir.indexOf(media + path.sep) === 0)) {
+    console.log('refusing to write a measuring shot into media/: that folder is the marketplace');
+    console.log('listing and is not written by this tool except for the shots it ships.');
+    process.exit(1);
+  }
   const work = path.join(HERE, '.shoot');
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cuc-chrome-'));
   const purse = Number(f.purse || HOUSE.purse);
+  // --panel-theme, checked against the register rather than taken on trust: a typo would otherwise
+  // shoot the plain card and be reported as the theme, which is the one mistake a picture of a
+  // theme must not make
+  if (f['panel-theme']) {
+    const reg = require(path.join(ROOT, 'themes/registry.js'));
+    if (!reg.themeOf(String(f['panel-theme']))) {
+      console.log('no such panel theme: ' + f['panel-theme'] + '. There are: '
+        + reg.THEMES.map((t) => t.id).join(', '));
+      process.exit(1);
+    }
+    PANEL_THEME = String(f['panel-theme']);
+  }
   const probeSel = f.probe ? String(f.probe).split(',').map((x) => x.trim()) : null;
 
   fs.mkdirSync(work, { recursive: true });
@@ -1058,7 +1134,8 @@ async function main() {
         // --click reaches a state that only a press can reach, and a measuring shot needs it for
         // the same reason a game shot does: "how much does the fold actually fold" is a question
         // about the page AFTER the chevron, and no stylesheet rule answers it
-        openWeekly: !!shot.weekly, click: f.click || shot.click, probe: probeSel, tall: !!shot.weekly
+        openWeekly: !!shot.weekly, click: f.click || shot.click, probe: probeSel, tall: !!shot.weekly,
+        plain: !!f.plain
       });
       const pagePath = path.join(work, shot.file + '-' + theme + '.html');
       fs.writeFileSync(pagePath, page);

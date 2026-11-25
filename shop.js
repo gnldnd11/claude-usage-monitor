@@ -54,11 +54,36 @@
 // holds the other way round here: an item taken off the price list keeps its place in RETIRED below
 // rather than being cleaned out of the records that paid for it.
 //
-// This module is PURE: no vscode, no fs, no clock, no randomness. A record is a value and a move
-// returns the next value. `at` is deliberately not a field: the market stores the time of its last
-// move because a clock that runs backwards is a way to settle at a price already read off the
-// chart, and nothing here is priced off a clock.
+// This module is PURE: no vscode, no clock, no randomness. A record is a value and a move returns
+// the next value. `at` is deliberately not a field: the market stores the time of its last move
+// because a clock that runs backwards is a way to settle at a price already read off the chart, and
+// nothing here is priced off a clock.
+//
+// THE ONE THING IT READS FROM DISK IS THE SECOND SHELF, and it does so for the reason
+// games/registry.js does: a list of themes written out here is a line that four writers edit in the
+// same minute. themes/registry.js reads its directory once at require time and hands this module a
+// VALUE; nothing in this file calls fs, and no function in it does anything but take a value and
+// return one.
 'use strict';
+
+// --- THE SECOND PREFIX --------------------------------------------------------------------------
+//
+// The header above has said since this file was written that a shop which one day sells something
+// that is NOT a drawing of the crab needs a second prefix and not a migration. 2026-11-26 is that
+// day: the shop sells PANEL THEMES, which repaint what is behind and around the Usage card and
+// change nothing it says.
+//
+// NOT ONE SINGLE MASCOT KEY MOVED, which is what "not a migration" has to mean in practice. A
+// drawing is still `mascot:float` in every record that ever held one; a theme is `theme:forest`.
+// The two shelves share one record, one `spent`, one merge and one set of refusals, and they share
+// nothing else: they are priced off different ladders (a drawing's rung is its frame count, a
+// theme's is the pictures it ships), chosen in different ways (a drawing goes into a scene, a theme
+// is worn by the whole panel) and drawn by different code.
+//
+// A THEME IS A DIRECTORY, exactly as a game is, and this file names none of them. See
+// themes/README.md. The only thing this module knows about the second shelf is the shape of a
+// catalog row, which is the same shape the first shelf's rows have.
+const themes = require('./themes/registry');
 
 // extension.js makes these (16 hex characters). Anything else, "__proto__" included, is dropped
 const REPLICA_RE = /^[0-9a-f]{16}$/;
@@ -122,6 +147,46 @@ const ITEMS = Object.freeze([
   { key: 'float', name: 'Floating crab', price: 1000 },
   { key: 'blackhole', name: 'Black hole crab', price: 10000 }
 ].map((s) => Object.freeze(s)));
+
+// --- THE SECOND SHELF: the panel themes ---------------------------------------------------------
+//
+// Catalog rows of exactly the shape above, discovered from themes/ rather than written here. Each
+// one carries its own `slot` (`theme:forest`), which is what makes two prefixes possible without a
+// `kind` field on the wire: a row knows which prefix it belongs to and `slotOf` asks the row.
+//
+// THE PRICES ARE COUNTED AND NOT DECLARED. A theme's meta carries no price at all; the register
+// counts the pictures it ships (frame, floor, badge) and reads the rung off that count, which is
+// the same discipline the mascot ladder keeps and the same reason: a price nobody writes down
+// cannot drift. The check below ITEMS holds these to the same four rungs, so a theme that somehow
+// priced itself off the ladder refuses to load exactly as a drawing would.
+//
+// EVERY ONE OF THEM IS SOLD, except the free one, which is the panel as it has always looked. That
+// row is on the shelf rather than off it for the reason the free drawings are on the first shelf:
+// a shelf showing only what is on sale cannot tell "has not bought a theme" from "prefers the one
+// that was always there"
+const THEMES = Object.freeze(themes.items().map((t) => Object.freeze(t)));
+
+// Which theme a reader who has chosen nothing is on. The register's, not this file's: naming it
+// here would be the one shared file that knows a theme's name
+const THEME_FREE = themes.FREE;
+
+// The second prefix as a string, for the one place that has to recognise a key it has no row for
+// (`clean`), and the ceiling on how many such keys a record may carry
+const THEME_PREFIX = themes.PREFIX + ':';
+const UNKNOWN_THEME_CAP = 64;
+// ...and the record keys this build DOES have a row for, so the pass-through above can tell
+// "this build dropped a theme" from "this build decided about it". Filled in below the catalog
+const KNOWN_SLOTS = Object.create(null);
+
+// ...and what the preference stores the chosen theme under. It shares one object with the scenes
+// and the pool (extension.js, globalState), so like POOL_ID it may not collide with a scene's id,
+// which is asserted at load below
+const THEME_ID = 'theme';
+// The heading over the shelf's last block. Three words on the screen and not one more: a theme's
+// cell carries a tag and a label the way a drawing's does, and the NAME of each theme is in its
+// aria-label rather than printed, because this product does not grow text for a decoration
+const THEME_NAME = 'Panel';
+const THEME_WHEN = 'Behind everything';
 
 // SOLD ONCE AND NO LONGER OFFERED. Empty today, and it is here rather than waiting to be invented:
 // `clean` below believes only keys it knows, so an item simply deleted from ITEMS would be cleaned
@@ -241,24 +306,58 @@ const POOL = Object.freeze(['blackhole']);
 
 const OPS = Object.freeze(['buy']);
 
-const BY_KEY = new Map(ITEMS.concat(RETIRED).map((s) => [s.key, s]));
+// EVERYTHING THE SHOP HAS EVER SOLD, both shelves, in the order a record is read in. Every rule
+// below that walks "the catalog" walks this, which is what keeps the two prefixes from being two
+// shops: one `owned`, one `spent`, one merge, one set of refusals.
+// The order is fixed (the first shelf, then what it has retired, then the second), so `ownedList`
+// reads the same whichever window wrote the record
+const CATALOG = Object.freeze(ITEMS.concat(RETIRED).concat(THEMES));
+
+const BY_KEY = new Map(CATALOG.map((s) => [s.key, s]));
 const BY_SLOT = new Map(SLOTS.map((s) => [s.id, s]));
 function itemOf(key) { return (typeof key === 'string' && BY_KEY.get(key)) || null; }
-function slotOf(key) { return SLOT + ':' + key; }
+// A ROW KNOWS WHICH PREFIX IT BELONGS TO, which is the whole of what the second prefix costs. The
+// first shelf's rows carry none, because they are the ones that were here before there were two and
+// a field added to them would be a field in every record that ever quoted one; the second shelf's
+// rows carry `slot` because the register builds them. A key the catalog has no row for falls back
+// to the first prefix, so a stored `mascot:something` from a build that sold it still reads
+function slotOf(key) {
+  const it = itemOf(key);
+  return (it && it.slot) || (SLOT + ':' + key);
+}
+for (const s of CATALOG) KNOWN_SLOTS[slotOf(s.key)] = 1;
 
 // every price has to be one of the table's or nothing at all, or the rule above is a comment
-// rather than a rule
-for (const s of ITEMS.concat(RETIRED)) {
+// rather than a rule. BOTH SHELVES: the second one counts its own rungs (themes/registry.js) and
+// this is what stops that count from inventing one
+for (const s of CATALOG) {
   if (s.price !== 0 && PRICES.indexOf(s.price) < 0) throw new Error('shop: ' + s.key + ' is priced outside the table');
 }
-// and two rows may not claim one key: `owned` is keyed by it
+// and two rows may not claim one key: `owned` is keyed by it. ACROSS BOTH SHELVES, because the wire
+// carries a bare key and `itemOf` is the only thing that resolves one: a theme called `float` would
+// otherwise be bought by pressing a drawing
 (function () {
   const seen = Object.create(null);
-  for (const s of ITEMS.concat(RETIRED)) {
+  for (const s of CATALOG) {
     if (seen[s.key]) throw new Error('shop: two rows claim the key ' + s.key);
     seen[s.key] = 1;
   }
+  // ...and two rows may not claim one record key either, which is a different statement once there
+  // are two prefixes: a second shelf that forgot its prefix would collide with the first
+  const slots = Object.create(null);
+  for (const s of CATALOG) {
+    const k = slotOf(s.key);
+    if (slots[k]) throw new Error('shop: two rows claim the record key ' + k);
+    slots[k] = 1;
+  }
   if (BY_SLOT.size !== SLOTS.length) throw new Error('shop: two slots claim one id');
+  // the themes share the scenes' preference object, so their key may not be a scene's (the pool is
+  // held to the same rule a few lines down), and there has to be a free theme for a reader who has
+  // bought nothing to be on
+  if (BY_SLOT.has(THEME_ID)) throw new Error('shop: the themes and a scene claim the id ' + THEME_ID);
+  if (THEME_ID === POOL_ID) throw new Error('shop: the themes and the pool claim one id');
+  if (THEMES.length && !itemOf(THEME_FREE)) throw new Error('shop: no theme is free, so nothing can be worn by default');
+  if (THEME_FREE && itemOf(THEME_FREE).price) throw new Error('shop: the fallback theme is priced');
   // ...and a slot's options have to be rows, its default has to be one of its own options, and
   // that default has to be free: a slot whose fallback had a price would be a slot a reader who
   // bought nothing could not fill at all
@@ -356,10 +455,19 @@ function heldIn(ownedSlots, key) {
 // has to read the same whichever window wrote it, and insertion order is whoever bought first
 function ownedList(rec) {
   const out = [];
-  for (const s of ITEMS.concat(RETIRED)) {
+  for (const s of CATALOG) {
     if (s.price && rec && rec.owned[slotOf(s.key)]) out.push(slotOf(s.key));
   }
-  return out;
+  // ...and the `theme:` keys with no row in this build, which `clean` keeps (see there). They are
+  // sorted rather than left in insertion order for the reason the catalog rows are walked in the
+  // catalog's order: the same record has to read the same whichever window wrote it. Leaving them
+  // out would be worse than a cosmetic bug -- `same()` is what decides whether there is a write to
+  // make, and two records differing only in one of these would be called equal
+  const un = [];
+  for (const k in (rec && rec.owned) || {}) {
+    if (k.indexOf(THEME_PREFIX) === 0 && out.indexOf(k) < 0) un.push(k);
+  }
+  return out.concat(un.sort());
 }
 
 // A stored record, field by field, or null for a reader who has never opened the shop. Only these
@@ -380,12 +488,60 @@ function clean(rec) {
     out[k] = (Number.isSafeInteger(n) && n > 0 && n <= REC_CEIL[k]) ? n : 0;
   }
   const src = (rec.owned && typeof rec.owned === 'object') ? rec.owned : {};
-  for (const s of ITEMS.concat(RETIRED)) {
+  for (const s of CATALOG) {
     if (!s.price) continue;                           // free comes with the extension, not with a record
     if (src[slotOf(s.key)]) out.owned[slotOf(s.key)] = 1;
   }
+  // ...AND EVERY `theme:` KEY THIS BUILD DOES NOT KNOW, which is the one place this function keeps
+  // something it cannot name. It has to, and the reason is not the old-window case:
+  //
+  // THE SECOND SHELF IS DISCOVERED, AND A DISCOVERY CAN FAIL. themes/registry.js drops a theme
+  // whose accent slips under the contrast floor, whose CSS reaches out of its scope, whose meta
+  // throws. Those are all edits somebody makes to a directory, and the SAME BUILD then reads a
+  // record holding a key for it. Dropped here, the purchase would be gone and `spent` would stay:
+  // the reader is charged and has nothing, from one failed check, with no second window involved.
+  // The first shelf has RETIRED for exactly this and the second one cannot (its rows are not
+  // written down anywhere to retire them to), so the prefix stands in for it.
+  //
+  // IT MINTS NOTHING. `spent` is untouched, `owns()` still answers no for a key with no row (so
+  // nothing unknown can be worn or drawn), and both halves of the trade are still in this one
+  // record, adopted and dropped together. What is kept is the receipt.
+  //
+  // THE CAP IS WHAT `clean` WAS FOR. Without one a hand-edited store could hold a thousand keys
+  // and this would copy them all. 64 is a power of two eight times the shelf this product has and
+  // far above any it will have, so it never truncates a real record, and it bounds the object.
+  // ...and only the keys this build has NO ROW FOR. A key it does have a row for has already been
+  // decided above, and the decision has to stand: the free theme is free, and a record that held
+  // it could be edited into one that does not, which is the rule every free row keeps here
+  let extra = 0;
+  for (const k in src) {
+    if (k.indexOf(THEME_PREFIX) !== 0 || out.owned[k] || !src[k]) continue;
+    if (KNOWN_SLOTS[k]) continue;
+    if (++extra > UNKNOWN_THEME_CAP) break;
+    out.owned[k] = 1;
+  }
   return out;
 }
+
+// *** A SECOND SHELF COSTS WHAT A NEW ROW HAS ALWAYS COST HERE, AND IT IS WORTH SAYING OUT LOUD. ***
+//
+// `clean` takes only the keys THIS BUILD knows, and a window that is already open keeps the old
+// code until it is reloaded (games/README.md, section 6). So a theme bought in a new window is a
+// key the old window's `clean` has never heard of: it drops it and writes the record back without
+// it, while `spent` (a field, not a key) survives. The reader is charged and has nothing.
+//
+// THERE IS NO SHAPE THAT FIXES IT, and that is the honest answer rather than a missing one. The
+// mine's own case had one (`save` writes a small integer the shipped build's migration reads), and
+// this does not: there is no mascot key that could stand for a theme, and writing one would hand
+// the reader a drawing they did not buy, which is worse than the loss.
+//
+// IT IS NOT A NEW HAZARD EITHER. Every row ever added to the first shelf has carried it -- the
+// sleeping crab and the black hole both shipped with it on 2026-11-20 -- and the window it bites
+// in is one that was open across the upgrade AND bought something afterwards. What WOULD be new is
+// a second ledger key, which is the only construction that survives an old build (an unknown key
+// at the top of the ledger is passed through untouched), and it costs the rule this file is built
+// on: the thing bought and the money it cost would be in two records that are adopted and dropped
+// separately. That trade has not been made and should not be made quietly.
 
 // A record back into one this module will act on. Everything that can be wrong with a record is
 // wrong in clean() rather than thrown: a missing one is a reader who has never bought anything
@@ -516,6 +672,34 @@ function whyNotPool(ownedSlots, key) {
   if (!heldIn(ownedSlots, key)) return 'that has not been bought';
   return null;
 }
+// --- WHICH THEME THE PANEL IS WEARING -----------------------------------------------------------
+//
+// The same discipline `wornSlots` keeps, one line up, and for the same reason: every way of getting
+// it wrong has to land in the same place. A stored choice can name a theme this build dropped, one
+// that was never a theme at all, or one whose purchase lost a merge in another window; a first
+// launch has nothing stored; and the answer to all of them is the free theme, which is the panel as
+// it has always looked.
+//
+// IT IS ONE AND NOT A SET, which is what makes it a scene rather than a pool: the panel is always
+// wearing exactly one theme, and "none" is a theme (the free one) rather than an empty list. That
+// is the shape decision, and it is why this sits beside wornSlots and not beside randomPool.
+function wornTheme(ownedSlots, pref) {
+  const want = (pref && typeof pref[THEME_ID] === 'string') ? pref[THEME_ID] : '';
+  const it = itemOf(want);
+  if (it && it.slot && heldIn(ownedSlots, want)) return want;
+  return THEME_FREE;
+}
+// Why `id` cannot be worn, or null. Asked on the message for the same reason whyNotWear is: a theme
+// nobody bought cannot be worn however the press was made, and the screen is not what stops it.
+// `it.slot` is the test for "is this a theme at all": only the second shelf's rows carry one, so a
+// drawing's key cannot be worn by the panel and a theme's key cannot be put into a scene
+function whyNotTheme(ownedSlots, id) {
+  const it = itemOf(id);
+  if (!it || !it.slot) return 'that is not a theme';
+  if (!heldIn(ownedSlots, id)) return 'that has not been bought';
+  return null;
+}
+
 // Why `slot` cannot be given `key`, or null. The host asks this on the message, so the screen is
 // not what stops it: a drawing nobody bought cannot be worn however the press was made
 function whyNotWear(ownedSlots, slot, key) {
@@ -601,6 +785,18 @@ function view(rec) {
         const it = itemOf(k);
         return { key: k, name: it.name, price: it.price, owned: owns(st, k) };
       })
+    },
+    // THE SECOND SHELF, in exactly the shape the first one's cells have, so the screen draws it
+    // with the code it already has: what it is, what it costs, is it mine. There is no `pick` on
+    // this block because the question it answers is not a scene's: a theme is always pressable
+    // while it is owned, since the panel is always wearing exactly one of them and there is always
+    // another one to move to (the free one, which is on the shelf).
+    // WHICH ONE IS WORN IS NOT IN HERE, for the reason the scenes' is not: it rides every data
+    // push (`push` below), because the panel it repaints is on the Usage tab and most readers
+    // never open the shop at all, and a second copy here could disagree between two messages
+    themes: {
+      id: THEME_ID, name: THEME_NAME, when: THEME_WHEN, free: THEME_FREE,
+      opts: THEMES.map((t) => ({ key: t.key, name: t.name, price: t.price, owned: owns(st, t.key) }))
     }
   };
 }
@@ -609,9 +805,15 @@ function view(rec) {
 // crab is drawn from this and nothing else, so it is right in a window that has never opened the
 // shop and in a second window that did not make the purchase.
 // `pref` is the reader's stored choice, which is the host's (globalState) and not this module's
+// ...and `theme` for the same reason `slots` is here: the panel it repaints is drawn in a window
+// that may never have opened the shop, and the window that did not make the purchase has to show
+// it too. One field, one answer, resolved here and nowhere else
 function push(rec, pref) {
   const owned = ownedList(rec || fresh(''));
-  return { owned: owned, slots: wornSlots(owned, pref), pool: randomPool(owned, pref) };
+  return {
+    owned: owned, slots: wornSlots(owned, pref), pool: randomPool(owned, pref),
+    theme: wornTheme(owned, pref)
+  };
 }
 
 // --- the host side ------------------------------------------------------------------------------
@@ -690,10 +892,12 @@ function createHandler(deps) {
 
 module.exports = {
   // the catalog, the scenes, and the pool that is not one
-  ITEMS, SLOTS, RETIRED, PRICES, SLOT, OPS, slotOf, itemOf, owns, heldIn,
+  ITEMS, SLOTS, RETIRED, PRICES, SLOT, OPS, CATALOG, slotOf, itemOf, owns, heldIn,
   POOL, POOL_ID, POOL_NAME, POOL_WHEN, POOL_CELLS,
+  // ...and the second shelf, under the second prefix
+  THEMES, THEME_ID, THEME_FREE, THEME_NAME, THEME_WHEN,
   // what the preference and the record mean together. The host's, and nobody else's
-  wornSlots, whyNotWear, randomPool, poolAfter, whyNotPool,
+  wornSlots, whyNotWear, randomPool, poolAfter, whyNotPool, wornTheme, whyNotTheme,
   // storage: the rules credits.js calls rather than copies
   clean, load, save, newer, merge, same, kept, netOf, REC_FIELDS, MAX_FIELDS,
   // the game that is not a game
