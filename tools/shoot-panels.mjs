@@ -229,20 +229,25 @@ function playShop({ purse, owned, slots, ownAll }) {
 // ledger's whole weighted token count (mine.js), so a mine shot on this machine's own ledger would
 // be a different picture on every machine and on every run.
 //
-// WHAT IS WORTH MEASURING IS THE STATE WITH THE LINE IN IT. A pick with more reach than the window
-// draws no line and no veil at all (5-15's first row), which is the state that says least about the
-// geometry, so the record below is a tier-1 pick two thirds worn: the line lands inside the rock
-// and the ground beyond it is veiled.
-function playMine({ purse, tok, pick, depth }) {
+// THE LINE AND THE VEIL ARE GONE (1.41.0): a pick never wears out, so there is no distance from the
+// face at which it stops cutting and nothing for a line to stand at. What is worth measuring here
+// is therefore the band's own geometry plus the two things that do still vary with the record -- a
+// marker standing in the lookahead and a bag with something in it -- so the depths below are chosen
+// for a seam in the window rather than for where a line would have landed.
+function playMine({ purse, tok, step, depth }) {
   const engine = require(path.join(ROOT, 'mine.js'));
   const meta = require(path.join(ROOT, 'games/mine/meta.js'));
   const by = 'a1b2c3d4e5f60718';
-  // `anchorDepth` is set so that the depth comes out where this shot wants it: the dug part is
-  // tok / TOK_PER_M and the rest is where the mine was when this pick was fitted
-  const dug = Math.floor(tok / engine.TOK_PER_M);
+  // `anchorDepth` is set so that the depth comes out where this shot wants it: the cut part is the
+  // stones this step breaks for `tok` and the rest is where the mine was when the pick was fitted
+  const cut = Math.floor(tok / engine.workOf(step));
+  // ...and a bag with something in it, because what the screen draws under the well is the gems in
+  // hand rather than a credit figure (1.41.0). One of each of the rows this step can take
+  const got = [];
+  for (let i = 0; i < engine.ROWS; i++) got.push(engine.sellable(i) && engine.takes(step, engine.SEAMS[i]) ? 2 : 0);
   let store = engine.clean({
-    by, moves: 3, pick, anchorTok: 0, anchorDepth: depth - dug, claimedTo: depth,
-    bonus: 0, spent: engine.pickOf(pick).price, earned: 420, best: 100, finds: 6
+    by, moves: 3, step, anchorTok: 0, anchorDepth: depth - cut, claimedTo: depth,
+    bonus: 0, spent: engine.priceOf(step), earned: 420, finds: 6, got, sold: got.map(() => 0)
   });
   const sent = [];
   const balance = () => purse + engine.netOf(store);
@@ -266,10 +271,15 @@ function playMine({ purse, tok, pick, depth }) {
   const v = sent[sent.length - 1].state;
   return {
     sent,
-    note: 'depth ' + v.depth + v.unit + ', reach ' + v.reach + v.unit
-      + ' of a ' + v.window.ahead + v.unit + ' lookahead, '
+    note: 'depth ' + v.depth + v.unit
+      + ', a ' + v.window.ahead + v.unit + ' lookahead holding '
       + (v.seam.length ? v.seam.map((s) => s.kind + ' at +' + (s.at - v.depth)).join(', ') : 'bare rock')
-      + ', offer ' + (v.offer ? v.offer.name + ' ' + v.offer.price : 'none')
+      // the bag and the light, because both are things a still can be wrong about and neither is
+      // in the geometry above. `offer.name` went with the pick names in 1.41.0 and reading it here
+      // printed the word undefined into every report this tool made
+      + ', bag ' + v.got.join('/') + ' worth ' + v.worth
+      + ', step ' + v.step + ' of ' + v.steps + ' (band ' + v.tier + ')'
+      + ', offer ' + (v.offer ? 'step ' + v.offer.step + ' for ' + v.offer.price : 'none')
   };
 }
 
@@ -401,10 +411,64 @@ const SHOTS = {
   // ...and the third door. A measuring shot for the same reason: what is read off it is the band's
   // geometry (how much rock the lookahead really is, where the crab's box lands against the face,
   // how tall the card comes out), and the depth behind it is invented.
-  // 10 MT of a 15 MT tier-1 pick: 100 m dug, 50 m of reach left, so the line is inside the window
+  // 13 MT at the first step, which is 650 stones. The depth is invented and the one thing asked of
+  // it is that A MARKER IS STANDING IN THE LOOKAHEAD: an empty window says the least about the
+  // geometry, and it is what the band is most of the time (the lookahead holds something at 62% of
+  // depths). 1,301 m puts a gem at +99, which is the far edge of the window
   mine: {
     file: 'measure-mine', tab: 'games', door: 'mine', measure: true,
-    mine: { tok: 10000000, pick: 1, depth: 1284 }
+    mine: { tok: 13000000, step: 1, depth: 1301 }
+  },
+  // THE SAME BAND WITH THE LADDER CLIMBED, which is a second shot because the two states share no
+  // pixels where it matters. The shot above is step 1 of 100: the first drawing, no light on it,
+  // and the only row the wall gives up is a gem. This one is step 88, which is the fourth drawing
+  // under the top light (6px of gold over a 1px cream keyline) with both kinds in the bag.
+  // IT IS MEASURED AND NOT LISTED, like the one above: the depth behind it is invented, and the
+  // reason to have it at all is that a light nobody has looked at is a light nobody has checked
+  // (1.39.0 and 1.40.0 both shipped this band on a machine check alone).
+  // 101,112 stones at step 88, and the same one thing asked of the depth as above: 101,201 m puts
+  // a RELIC at +99, which is the 48px marker rather than the 24px one
+  'mine-lit': {
+    file: 'measure-mine-lit', tab: 'games', door: 'mine', measure: true,
+    mine: { tok: 924365904, step: 88, depth: 101201 }
+  },
+  // THE CAMERA, AS A PAIR OF STILLS ONE STRIDE APART (docs/mine-mockup/spec-idle.md, section 4).
+  // Nothing else in this file is a pair and this one has to be: what the band is now saying is
+  // "the crab is walking towards that", a sentence no single frame can carry, and the spec that
+  // designed it shipped with "whether the crab reading as walking is actually readable has not
+  // been looked at" as its first known gap. Two stills a metre of digging apart answer it -- the
+  // whole world is one stride to the left in the second one and the crab is back at its own mark.
+  //
+  // IT IS THREE AND NOT TWO, because there are two different movements to look at and a pair can
+  // only show one of them. The first two stills are the WALK: same camera stop, same marker in the
+  // same place, and the crab 30px further on. The third is the STRIDE: one stone later, the whole
+  // world a stride to the left and the crab back at its own mark.
+  //
+  // THE DEPTHS ARE THE ARITHMETIC OF THE LAYOUT AND NOT A CHOICE. A seam stands on a cell boundary
+  // (mine.js, seamAt) and the camera's stride is a third of a cell, so cell 47 holds a gem at
+  // 1,410m and the camera's stops around it are 1,390 and 1,400. 1,391 is the first depth after
+  // the first of those, 1,399 the last before the second, and 1,400 one stone past it.
+  //
+  // THEY MOVED IN 1.41.0 BECAUSE THE WINDOW DID, and the figures that were here (1,334 / 1,366 /
+  // 1,367) were the arithmetic of the OLD cell: a cell was 100m and a stride 33.33, so those three
+  // sat either side of 1,333.33 and 1,366.67. A cell is 30m now and a stride is 10, which puts all
+  // three of them in the middle of a stop rather than on the edges of one, and the pair of stills
+  // this set exists for would have shown the same camera twice.
+  // WHAT THE SHOTS ARE OF IS UNCHANGED, and so is the distance walked: a stride is cell / 3 and the
+  // band is `behind + ahead` metres wide whatever those are, so 33.33m at 0.945 px/m and 10m at
+  // 3.12 px/m are both about 31px of band. The marker stands at 80% of the band in the first two
+  // and at 60% in the third, which is one stride of world movement
+  'mine-walk': {
+    file: 'measure-mine-walk', tab: 'games', door: 'mine', measure: true,
+    mine: { tok: 13000000, step: 1, depth: 1391 }
+  },
+  'mine-walk-on': {
+    file: 'measure-mine-walk-on', tab: 'games', door: 'mine', measure: true,
+    mine: { tok: 13000000, step: 1, depth: 1399 }
+  },
+  'mine-walk-step': {
+    file: 'measure-mine-walk-step', tab: 'games', door: 'mine', measure: true,
+    mine: { tok: 13000000, step: 1, depth: 1400 }
   }
 };
 

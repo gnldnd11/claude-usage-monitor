@@ -1294,15 +1294,18 @@ test('(d) the ground is monotone: any order, any number of merges, the sum never
 test('the ledger is wired to mine.js\'s own rules, at all three places', () => {
   // 1. normalizeLedger cleans the key at the storage boundary
   assert.equal(mineLedger(null).mine, null, 'a reader who has never dug has a drift');
-  const bad = mineLedger({ mine: { by: 'nope', moves: 1e30, earned: -5, pick: 99, claimedTo: 1.5 } });
+  const bad = mineLedger({ mine: { by: 'nope', moves: 1e30, earned: -5, step: 1e9, claimedTo: 1.5 } });
   assert.equal(bad.mine.by, '');
   assert.equal(bad.mine.moves, 0, 'a hand-edited moves survived the boundary');
   assert.equal(bad.mine.earned, 0);
-  assert.equal(bad.mine.pick, 0);
+  assert.equal(bad.mine.step, 0);
   assert.equal(bad.mine.claimedTo, 0);
+  // the bag is rebuilt row by row, so a stored shape that is not one count per row is nothing
+  assert.deepEqual(mineLedger({ mine: { by: 'nope', got: 'lots', sold: [9, -1] } }).mine.got,
+    new Array(mineMod.ROWS).fill(0), 'a bag that is not a bag crossed the boundary');
   // 2. mergeLedger merges it and asks same() whether there is a write to make
   const A = 'a'.repeat(16), Z = 'f'.repeat(16);
-  const one = mineRec(A, { moves: 4, claimedTo: 600, earned: 710, spent: 100, finds: 9, best: 360, pick: 1 });
+  const one = mineRec(A, { moves: 4, claimedTo: 600, earned: 710, spent: 100, finds: 9, step: 1 });
   const first = credits.mergeLedger(null, { mine: one });
   assert.equal(first.changed, true);
   assert.deepEqual(first.ledger.mine, mineMod.clean(one));
@@ -1322,8 +1325,8 @@ test('two windows claiming at once: the loser\'s money and boundary go together'
   const A = '1'.repeat(16), Z = 'e'.repeat(16);
   let store = null;
   // A has claimed to 600 and B, from the same start, has claimed further
-  const a = mineRec(A, { moves: 3, claimedTo: 600, earned: 710, finds: 9, best: 360 });
-  const b = mineRec(Z, { moves: 5, claimedTo: 1200, earned: 1480, finds: 17, best: 360 });
+  const a = mineRec(A, { moves: 3, claimedTo: 600, earned: 710, finds: 9 });
+  const b = mineRec(Z, { moves: 5, claimedTo: 1200, earned: 1480, finds: 17 });
   const landedA = credits.mergeLedger(store, { mine: a }).ledger;
   store = landedA;
   const landedB = credits.mergeLedger(store, { mine: b }).ledger;

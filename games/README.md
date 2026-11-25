@@ -319,25 +319,43 @@ on 2026-11-13. Its `settle()` is points 4, 5 and the reply-before-push rule.
 ### Adding a field to a stored record: the two rules that come with it
 
 A record in the ledger is in the field, on other people's machines, written by a version that did
-not have your new field. So a field added to one costs exactly two things, and the mine's `durTok`
-(1.40.0) is the worked example of both:
+not have your new field. So a field added to one costs exactly two things, and the mine's pick
+(1.39.0 to 1.41.0) is the worked example of both:
 
 1. **`clean` has to answer for the record that has no such field.** It cleans field by field against
    `REC_CEIL`, so an absent field reads as 0, and 0 has to be either a legitimate value or a state
-   you repair. `durTok` is a pick's durability, which was derived from its tier until 1.40.0 and is
-   stored from then on: read as 0 it would be a worn-out pick, so **every pick in the field would
-   break on upgrade.** `clean` therefore repairs the pair (`pick >= 1` with no durability becomes
-   the durability that tier's row would have given it), and the same repair covers a hand-edited
-   figure the ceiling rejected. Write the repair where `clean` is, not in the readers.
-2. **Decide whether it may be maxed across a merge, and say why in `MAX_FIELDS`'s own comment.**
-   Anything a dropped move has to take back may not be (point 3 above). Durability is money in the
-   mine: it is paid for and it is what the wall is opened with, so a merge that kept the larger
-   figure would leave a window holding the pick its dropped purchase bought.
+   you repair. The mine's pick is the worked example and it has been through four shapes: `pick`
+   1..4 with the durability derived from the tier (1.39.0), `pick` plus `durTok` in TOKENS (1.40.0),
+   `step` 1..100 plus `durM` in METRES (1.41.0), and `step` alone (1.41.0, because a pick stopped
+   wearing out). Read as 0, `step` is bare hands, so **every reader's purchase would be gone on
+   upgrade**: `clean` therefore migrates it (`migrateStep` turns an old tier into the first step of
+   its band, which is the step with exactly the rows that tier could take). Write the repair where
+   `clean` is and not in the readers, and **repair in the direction that cannot take something away
+   from a reader who paid for it.**
+2. **A FIELD THAT GOES IS FREE, AND THAT IS WORTH KNOWING.** `durM` and `durTok` were dropped
+   rather than migrated: they are not in `REC_FIELDS`, so `clean` never reads them and a record
+   written by any older build comes across with its step intact. Nothing had to be converted,
+   because the field that was removed was the one carrying the thing that no longer exists.
+3. **Decide whether it may be maxed across a merge, and say why in `MAX_FIELDS`'s own comment.**
+   Anything a dropped move has to take back may not be (point 3 above). The mine's `step` is money:
+   it is paid for and it is what the wall is opened with, so a merge that kept the larger figure
+   would leave a window holding the pick its dropped purchase bought.
 
 **And a field added to `view()` is a contract with the panel, not an internal detail.** The mine's
-view grew `tier`, `tiers`, `pickName` and a `locked` flag per seam in 1.40.0, and lost `offer.lose`;
-the shape lives in `docs/game-panels.md` section 5-15 and that is the copy a panel is written
-against, so it moves in the same change as the engine.
+view grew `tier`, `tiers` and a `locked` flag per seam in 1.40.0, then `step`, `stone`, `broke`,
+`got` and `worth` in 1.41.0 while losing every name the screen used to PRINT; the shape lives in
+`docs/game-panels.md` section 5-15 and that is the copy a panel is written against, so it moves in
+the same change as the engine.
+
+**A THIRD RULE ARRIVED WITH THE MINE'S BAG (1.41.0): a count per kind is money, so it lives under
+the same rules as the cash.** The mine keeps `got[]` and `sold[]`, one count per row of its table,
+and what is held is the difference. Two monotone counters rather than one mutable count, for the
+reason point 3 gives: a window that sold and then lost the merge has to give the credits back AND
+get the gems back, and that is only true when `sold` and `earned` are fields of one record that is
+adopted whole. Nothing is unioned and nothing is maxed per row. The test that catches a union is
+not the obvious one: two windows that dug the same stretch hold the same gems, so the case to write
+is a winner whose bag is EMPTY (it bought rather than dug) against a loser who had found something.
+A merge that took the larger count per row passes every other test in the file.
 
 **There is a third record in that ledger and it is not a game's.** `shop.js` keeps what the shop
 sold (`owned`, `seat`, `spent`), and it is wired into `credits.js` through the same three lines and
@@ -582,9 +600,28 @@ so what is proved in place of a return is five claims, listed in `mine.js`'s own
 block each in `test/mine.test.js`. The one to copy if you build another game with no round is the
 first: **what the mine adds to the balance is capped at a fraction of what the same tokens earn in
 the ledger** (`EARN_CAP`, 15%), enumerated as an exact rational over the seam table rather than
-sampled, and enumerated **once per pick tier** because a tier is a key and each one takes a different
-set out of the wall. A cap against the game's own input is what a game played with work that was
-done anyway can be held to; a percentage return is not defined for it.
+sampled, and enumerated **once per step of its ladder** (a hundred of them) because a step is both
+a speed and a key, so each one takes a different set out of the wall at a different cost in tokens.
+A cap against the game's own input is what a game played with work that was done anyway can be held
+to; a percentage return is not defined for it.
+
+**THAT CAP IS ALSO WHAT DECIDES HOW THE SCREEN FEELS, and that is worth knowing before anybody asks
+for a faster one.** Two lines fall straight out of it: a find worth P credits costs at least
+P x CREDIT_UNIT / EARN_CAP weighted tokens, and the fraction of the lookahead a reply moves is
+`(what the cap allows a reply to pay) / E_cell / (cells in the window)`. So "make it dig faster"
+and "make the finds bigger" are the same dial pulled in opposite directions, and the only way to
+get visible movement without breaking the cap is to make each find smaller or to make the thing
+that moves pay nothing at all. The mine's stones are the second of those: a stone breaking is a
+free event, so the drift can advance ten times a minute while a find stays rare.
+
+**AND THERE IS A THIRD WAY, WHICH IS TO CHANGE THE UNIT AND THE TABLE TOGETHER** (1.41.0, and the
+sentence to read before the next "make it faster"). The cap bounds CREDITS PER TOKEN and says
+nothing about METRES per token, so dividing the work a step of ground costs by k and dividing every
+pay by the same k multiplies the speed by k and leaves the enumerated rate where it was: the two
+divisions cancel inside `E_cell x CREDIT_UNIT / (cell x work)`. What it costs is a pay table that
+has to stay in whole credits, so k is bounded by the smallest pay on it, and **the two halvings are
+one change**: `test/mine.test.js` re-enumerates with the table left alone and requires the ceiling
+to BREAK, because a suite that reads both figures off the engine passes either way.
 
 **Enumerate if you can. Sample only what you cannot enumerate.** This is the order, and it is not a
 preference: an enumeration is a proof of the pay table and a simulation is a measurement of it with

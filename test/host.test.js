@@ -1394,7 +1394,10 @@ test('mine: open answers with the drift, and with nothing beyond the lookahead',
   assert.equal(r.error, undefined);
   const v = r.state;
   assert.equal(v.unit, mine.UNIT, 'the screen would have to invent the word');
-  assert.deepEqual(v.window, { behind: mine.BEHIND_M, ahead: mine.AHEAD_M });
+  // THE CAMERA'S STRIDE COMES THROUGH THE HOST AS WELL (docs/mine-mockup/spec-idle.md, section 9):
+  // the screen parks every cell / 3 metres so that a cell boundary is one of its stops, and where
+  // a seam may stand is this engine's judgment rather than something a 72px box may assume
+  assert.deepEqual(v.window, { behind: mine.BEHIND_M, ahead: mine.AHEAD_M, cell: mine.CELL_M });
   // THE ONE THING THIS HOST KEEPS BACK. A webview holding the seam positions ten thousand metres
   // out is holding the rest of the deck (games/README.md, section 2)
   assert.ok(v.seam.every((s) => s.at > v.depth && s.at <= v.depth + v.window.ahead),
@@ -1402,15 +1405,21 @@ test('mine: open answers with the drift, and with nothing beyond the lookahead',
   // THE KEY IN HAND IS PART OF THE ANSWER since 1.40.0: a seam carries whether this pick opens it
   // (mine.js, the seam table's `gate`), and this reader has bought nothing, so the window is the
   // one bare hands are shown
-  assert.equal(v.tier, mine.FIST, 'a reader who has bought nothing was sent a rung');
+  assert.equal(v.step, mine.FIST, 'a reader who has bought nothing was sent a step');
+  assert.equal(v.tier, 0, 'a reader who has bought nothing was given a look');
   assert.deepEqual(v.seam, mine.seamsAhead(v.depth, mine.FIST), 'the window the screen is shown is not the engine\'s');
   // ...and the fold's pay table says what things are worth and not how dense the rock is
   assert.ok(v.pays.every((p) => p.odds === undefined), 'the odds travelled with the pay table');
-  assert.equal(v.offer.price, mine.PICKS[0].price, 'the screen is being offered a price of its own');
+  assert.equal(v.offer.price, mine.priceOf(1), 'the screen is being offered a price of its own');
+  // the stone in hand is the fist's, because nothing has been bought yet. The BAG is not empty by
+  // now and that is not a fault: every push in the lanes above this one ran the mine's own hook, so
+  // the wall has been giving up gems while the other screens were being tested
+  assert.equal(v.stone.of, mine.swingsOf(1) * mine.FIST_DIV, 'bare hands break a stone at a pick\'s pace');
+  assert.equal(v.got.length, mine.ROWS, 'the bag the screen is shown is not one count per row');
 });
 
-test('mine: a pick is charged in the record, and the reply comes before the push', () => {
-  const price = mine.PICKS[0].price;
+test('mine: a step is charged in the record, and the reply comes before the push', () => {
+  const price = mine.priceOf(1);
   const before = send({ type: 'mn', op: 'open' }).balance;
   const bank0 = { won: bankSum('won'), lost: bankSum('lost'), hands: bankSum('hands') };
   const from = posted.length;
@@ -1422,7 +1431,7 @@ test('mine: a pick is charged in the record, and the reply comes before the push
   // THE REPLY FIRST, THE PUSH AFTER, like every table: the other way round and the header says the
   // credits are gone before the screen has said what they bought
   assert.ok(after.indexOf(reply[0]) < after.findIndex((m) => m.type === 'data'), 'the push arrived first');
-  assert.equal(mineRec().pick, 1, 'the pick is not in the ledger');
+  assert.equal(mineRec().step, 1, 'the step is not in the ledger');
   assert.equal(mineRec().spent, price, 'what it cost is not in the record');
   assert.equal(reply[0].balance, before - price, 'the balance moved by something other than the price');
   assert.equal(lastHeaderBalance(), before - price, 'the header and the reply disagree');
@@ -1433,41 +1442,68 @@ test('mine: a pick is charged in the record, and the reply comes before the push
   assert.equal(bankSum('hands'), bank0.hands + 1, 'the write that carried it is one write');
 });
 
-test('mine: the ground the tokens dug is claimed once, in the record, and nothing is banked', () => {
+test('mine: the ground the work broke yields once, into the bag, and nothing is banked', () => {
   const rec0 = mineRec();
   const bank0 = { won: bankSum('won'), lost: bankSum('lost'), hands: bankSum('hands') };
-  // 4 MT of work: 40 m with the pick just fitted, which is two cells of the drift
-  digMt('2026-09-03', 4);
+  // 20 MT of work: a thousand stones with the first step just fitted, which is ten cells of the
+  // drift. The pick lasts 700 of them and the hands take the rest, which is why this is also the
+  // lane where a worn pick is answered for
+  digMt('2026-09-03', 20);
   const want = mine.sweep(mine.load(rec0, 0), tokNow());
-  assert.ok(want.claim && want.claim.pay > 0, 'this ledger digs no ground that pays: pick another figure');
+  assert.ok(want.claim && want.claim.worth > 0, 'this ledger breaks no ground that yields: pick another figure');
   const from = posted.length;
   onMessage({ type: 'ready' });                 // the host's own push, which is what digs
   const sent = posted.slice(from).filter((m) => m.type === 'mn');
   assert.equal(sent.length, 1, 'one push, one redraw');
   const v = sent[0].state;
-  assert.equal(v.depth, want.claim.depth, 'the depth the screen was shown is not the ground that was dug');
-  assert.equal(v.found.pay, want.claim.pay, 'the find the screen was shown is not the one that was paid');
+  assert.equal(v.depth, want.claim.depth, 'the depth the screen was shown is not the ground that was broken');
+  assert.equal(v.found.pay, want.claim.worth, 'the find the screen was shown is not the one that landed');
   const rec = mineRec();
-  assert.equal(rec.earned, rec0.earned + want.claim.pay, 'what the wall paid is not in the record');
-  assert.equal(rec.claimedTo, want.rec.claimedTo, 'the boundary did not move with the money');
-  // THE DATA PUSH THAT RAN THIS CLAIM WAS BUILT BEFORE IT, so the figure on it is the balance from
-  // before and the REPLY is what carries the new one. That is deliberate rather than a lag nobody
-  // noticed: this hook runs INSIDE push() (extension.js, gamesAfterPush), so asking for another
-  // push from inside it would re-enter the thing that called it, and the panel settles its header
-  // off the reply exactly as every table does (CUC.settle)
-  assert.equal(sent[0].balance, lastHeaderBalance() + want.claim.pay,
-    'the reply does not carry the balance this claim just made');
+  // THE GEMS GO IN THE BAG AND NO CREDITS MOVE. The wall yields and the selling pays, which is the
+  // two halves of claim (b): this lane is the first half
+  assert.deepEqual(rec.got, want.rec.got, 'what the wall gave up is not in the record');
+  assert.equal(rec.earned, rec0.earned, 'the wall paid credits without a sale');
+  assert.equal(rec.claimedTo, want.rec.claimedTo, 'the boundary did not move with the gems');
+  assert.equal(sent[0].balance, lastHeaderBalance(), 'a claim moved the balance');
   assert.equal(bankSum('won'), bank0.won, 'the wall paid into the bank instead of into the record');
   assert.equal(bankSum('hands'), bank0.hands + 1, 'one claim is one write');
 
-  // ...AND THE SAME GROUND IS NOT PAID FOR TWICE. `claimedTo` is a boundary, so a second push over
+  // ...AND THE SAME GROUND DOES NOT YIELD TWICE. `claimedTo` is a boundary, so a second push over
   // the same tokens has nothing to claim and nothing to say (mine.js, claim (b))
   const from2 = posted.length;
   onMessage({ type: 'ready' });
   assert.equal(posted.slice(from2).filter((m) => m.type === 'mn').length, 0,
     'a push with nothing new to say said something anyway');
-  assert.equal(mineRec().earned, rec.earned, 'the same ground was paid for twice');
+  assert.deepEqual(mineRec().got, rec.got, 'the same ground yielded twice');
   assert.equal(bankSum('hands'), bank0.hands + 1, 'a push with nothing to claim still wrote to the ledger');
+});
+
+test('mine: selling is what pays, once, out of the one record', () => {
+  // THE SECOND HALF OF CLAIM (b), wired. The row comes off the wire and the host checks it against
+  // the table; the credits land in the record's own `earned`, never in the bank, because a sale the
+  // merge drops has to take its money back with its gems
+  const rec0 = mineRec();
+  const row = rec0.got.findIndex((n, i) => n > 0 && mine.sellable(i));
+  assert.ok(row >= 0, 'nothing in the bag to sell: this lane needs the one above it');
+  const held = mine.heldOf(rec0, row);
+  const price = mine.SEAMS[row].pay;
+  const bank0 = { won: bankSum('won'), hands: bankSum('hands') };
+  const before = send({ type: 'mn', op: 'open' }).balance;
+  const r = send({ type: 'mn', op: 'sell', kind: row, n: 41 });
+  assert.equal(r.error, undefined);
+  assert.equal(r.balance, before + held * price, 'the sale did not pay the table\'s price');
+  assert.equal(mineRec().earned, rec0.earned + held * price, 'the sale is not in the record');
+  assert.equal(mineRec().sold[row], rec0.sold[row] + held, 'the sale was not written down');
+  assert.equal(r.state.got[row], 0, 'the screen was shown gems that were just sold');
+  assert.equal(bankSum('won'), bank0.won, 'the sale was banked per window');
+  assert.equal(bankSum('hands'), bank0.hands + 1, 'one sale is one write');
+  // ...and the second sale of the same gems is a refusal, not a payment
+  const again = send({ type: 'mn', op: 'sell', kind: row, n: 42 });
+  assert.equal(again.error, 'nothing to sell');
+  assert.equal(mineRec().earned, rec0.earned + held * price, 'the same gems were sold twice');
+  // a row that is not a row is refused before anything is counted
+  assert.equal(send({ type: 'mn', op: 'sell', kind: 99, n: 43 }).error, 'there is nothing of that kind');
+  assert.equal(send({ type: 'mn', op: 'sell', n: 44 }).error, 'there is nothing of that kind');
 });
 
 test('mine: a message is answered on the record another window left, not on the copy in memory', () => {
