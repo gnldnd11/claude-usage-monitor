@@ -73,6 +73,16 @@ Press **Details** on the Weekly meter for this PC's last seven days: tokens per 
 
 There is no code to type. The group is the account itself, identified only by a hash of its id, so only PCs signed in to it can read the group. It is off until you agree, **and agreeing is per account**: if you sign in to a second account, that one is off and asked separately, because the people who would see your row are different ones. The question is not asked where VS Code telemetry is off, and `claudeUsage.team.share` turns the account you are signed in to on or off at any time. Exactly what leaves the PC is listed under [How it works and privacy](#how-it-works-and-privacy).
 
+## The mine
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mine.png" width="330" alt="The mine: a crab swinging a glowing pickaxe at the rock face in a timbered shaft, the depth in metres above it and the bag of gems with a Sell button below" />
+</p>
+
+**Behind its own door, a shaft that the tokens you have already spent are digging.** Nothing is wagered and nothing is lost. A pickaxe is bought once and kept for good: a hundred steps, and a step buys how fast a stone breaks and what the wall will give up. Gems and relics go into a bag until you sell them.
+
+The crab digs while you work and stands back from the face when you stop, because the work is the digging.
+
 ## Credits and games
 
 <p align="center">
