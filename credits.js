@@ -51,7 +51,7 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 //          forge: { by, level, moves, tries, spent, heat, best, broke, earned },
 //          market: { by, pos: { CODE: {amount, entryTicks, at} }, moves, trades, staked, earned, best, at },
 //          shop: { by, owned: { 'mascot:float': 1 }, moves, spent },
-//          mine: { by, moves, step, anchorTok, anchorDepth, claimedTo, bonus, spent, earned, finds, got[], sold[] } }
+//          mine: { by, moves, rungs, step, anchorTok, anchorDepth, claimedTo, bonus, spent, earned, finds, got[], sold[] } }
 // Raw tokens per day are stored, not credits, so a changed rate or weighting also re-prices the past.
 // `days` is not per Claude account, and cannot be: a day's cell is the largest figure any reader has
 // seen for that day, which is what lets several windows count the same day without crediting it
@@ -341,7 +341,8 @@ function forgeEarned(forge) {
 //   mine.netOf   what the wall has paid minus what the picks cost, read out of the one surviving
 //                drift. Both halves are in that record as well. It is the only source whose own
 //                input is this ledger (weightedTotal above), and it is capped against it: the mine
-//                may add at most 15% of what the same tokens earn here (mine.js, EARN_CAP)
+//                may add at most EARN_CAP of what the same tokens earn here, which is twice them
+//                since 1.42.0 (mine.js, EARN_CAP, and the derivation is beside it)
 // The last three can go DOWN, once, when a collision drops a move: that is the move not having
 // happened, and the sword or the position is back in the player's hands to prove it. Writing either
 // of them into the bank's counters instead is the bug that mints money, and it has been written

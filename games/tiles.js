@@ -214,9 +214,10 @@ const market = tile('market',
   + '<rect x="16.3" y="5.2" width="1.2" height="8.2"/><rect x="15.1" y="6.6" width="3.6" height="5.4" rx=".3"/>'
   + '<rect x="20.7" y="2.6" width="1.2" height="8.8"/><rect x="19.5" y="4" width="3.6" height="6.2" rx=".3"/></g>');
 
-// `slots`, `wheel` and `market` are the three a meta.js asks for. `mines`, `tower`, `crash` and
-// `keno` are drawn but not used: those four left the floor on 2026-11-06 and an export nobody reads
-// costs nothing, so they were kept.
+// `slots` and `wheel` are the two a meta.js asks for. `mines`, `tower`, `crash`, `keno` and, since
+// 1.42.0, `market` are drawn but not used: a tile is a LIST ROW's 48px square, and the market stands
+// behind a door of its own now, where the picture is hero-market.png (games/market/meta.js). Those
+// four left the floor on 2026-11-06 and an export nobody reads costs nothing, so they were kept.
 //
 // The nine games abolished on 2026-11-13 are NOT kept the same way, and the difference is why this
 // note says so rather than growing by five more names: those four were taken off the floor while

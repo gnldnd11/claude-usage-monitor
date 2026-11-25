@@ -110,18 +110,23 @@ module.exports = {
     const rowsIn = (box) => doc.querySelectorAll('#' + box + ' .gm-row').map((r) => r.getAttribute('data-game'));
     const star = (id) => h.favFor(id);
     const kept = () => Object.keys(gs.data.gameFavoritesV1 || {}).join();
-    const home = h.rowBox('market').getAttribute('data-home');
-    const fig0 = $('fig-market');
+    // THE EXEMPLAR IS THE LAST ROW ON THE LIST, which was the market until 1.42.0 and is the wheel
+    // now: the market stands behind a door of its own and has no row to star. It is named rather
+    // than taken off the register, because what the assertions below read is the ORDER the box
+    // rebuilds in, and that only means something against two rows a reader can name
+    const EX = 'wheel';
+    const home = h.rowBox(EX).getAttribute('data-home');
+    const fig0 = $('fig-' + EX);
     // ---------- nothing starred ----------
     ok('nothing starred: the box is not there at all (no empty box, no dotted slot)',
       $('gmFavRows').hidden && doc.querySelectorAll('#panelGames .gm-row.fav').length === 0
       && listed().join() === LISTED.map((g) => g.id).join(), listed().join());
     ok('every star is off and says so, and names the game it keeps',
       doc.querySelectorAll('#panelGames .gm-fav').every((s) => s.getAttribute('aria-pressed') === 'false')
-      && star('market').getAttribute('aria-label') === 'Favourite Market'
-      && star('market').querySelectorAll('path').length === 1
-      && star('market').querySelector('svg').getAttribute('aria-hidden') === 'true',
-      star('market').getAttribute('aria-label'));
+      && star(EX).getAttribute('aria-label') === 'Favourite Wheel'
+      && star(EX).querySelectorAll('path').length === 1
+      && star(EX).querySelector('svg').getAttribute('aria-hidden') === 'true',
+      star(EX).getAttribute('aria-label'));
     // the first paint has to be right on its own: the scripts run after it, and a star that only
     // says it is off once webview.js has been through the list is a star that says nothing at first
     ok('the markup itself says every star is off, and carries no heading and nothing to fold',
@@ -140,20 +145,20 @@ module.exports = {
     ok('the list takes the focus on the open button, never on the row div',
       active() === h.rowFor('blackjack') && active().localName === 'button', activeName());
     // ---------- one star ----------
-    mouseClick(star('market')); advance(20);
+    mouseClick(star(EX)); advance(20);
     ok('a star does not open the game it is on', $('panelGames').style.display === '' && notShown('panelTable') && inGames() && !atTable(), bodyTabs());
     ok('starring lifts the row out of the list and into the box above it',
-      rowsIn('gmFavRows').join() === 'market' && rowsIn(home).indexOf('market') < 0 && !$('gmFavRows').hidden,
+      rowsIn('gmFavRows').join() === EX && rowsIn(home).indexOf(EX) < 0 && !$('gmFavRows').hidden,
       rowsIn('gmFavRows').join() + ' | ' + rowsIn(home).join());
-    ok('the HOST is what remembers it: globalState, not the webview’s own state', kept() === 'market', kept());
-    ok('the row moved whole, so its figure came with it (same element, not a redraw)',
-      $('fig-market') === fig0 && fig0.closest('.gm-rows').id === 'gmFavRows',
+    ok('the HOST is what remembers it: globalState, not the webview’s own state', kept() === EX, kept());
+    ok('the row moved whole, so its figure slot came with it (same element, not a redraw)',
+      $('fig-' + EX) === fig0 && fig0.closest('.gm-rows').id === 'gmFavRows',
       fig0.closest('.gm-rows').id);
     // THE LIT STAR IS THE WHOLE MARKER. There is no heading saying Favourites, so a kept row has to
     // be legible as kept on its own: the star is filled, always shown, and says aria-pressed
     ok('the star is on, is still the focus, and the row says so too',
-      star('market').getAttribute('aria-pressed') === 'true' && active() === star('market')
-      && h.rowBox('market').classList.contains('fav'), activeName());
+      star(EX).getAttribute('aria-pressed') === 'true' && active() === star(EX)
+      && h.rowBox(EX).classList.contains('fav'), activeName());
     ok('and the ember star is what shows it is kept, with no heading anywhere',
       /\.gm-row\.fav \.gm-fav\{opacity:1;color:#e8895a;\}/.test(css)
       && /\.gm-row\.fav \.gm-fav svg\{fill:currentColor;\}/.test(css)
@@ -162,14 +167,14 @@ module.exports = {
     // ---------- the second one ----------
     mouseClick(star('blackjack')); advance(20);
     ok('the box keeps the register’s order, not the order they were starred in',
-      rowsIn('gmFavRows').join() === 'blackjack,market', rowsIn('gmFavRows').join());
+      rowsIn('gmFavRows').join() === 'blackjack,' + EX, rowsIn('gmFavRows').join());
     ok('and the rows left behind keep theirs, with every game still listed once',
-      rowsIn(home).join() === LISTED.map((g) => g.id).filter((id) => ['blackjack', 'market'].indexOf(id) < 0).join()
+      rowsIn(home).join() === LISTED.map((g) => g.id).filter((id) => ['blackjack', EX].indexOf(id) < 0).join()
       && listed().length === LISTED.length, rowsIn(home).join());
     // ---------- off again, from the keyboard ----------
-    star('market').focus(); doc.pressKey('Enter'); advance(20);
+    star(EX).focus(); doc.pressKey('Enter'); advance(20);
     ok('Enter on the star unstars it and the row goes home, in its own order',
-      rowsIn('gmFavRows').join() === 'blackjack' && rowsIn(home).join() === 'hilo,slots,wheel,market'
+      rowsIn('gmFavRows').join() === 'blackjack' && rowsIn(home).join() === 'hilo,slots,' + EX
       && kept() === 'blackjack',
       rowsIn('gmFavRows').join() + ' | ' + rowsIn(home).join());
     star('blackjack').focus(); doc.pressKey('Enter'); advance(20);
@@ -195,6 +200,28 @@ module.exports = {
     for (const g of LISTED) { mouseClick(star(g.id)); advance(20); }
     ok('and clearing them all puts every row back in the list', $('gmFavRows').hidden
       && rowsIn('gmRows').join() === LISTED.map((g) => g.id).join(), rowsIn('gmRows').join());
+    // ---------- A STAR KEPT FOR A GAME THAT IS NO LONGER ON THE LIST ----------
+    //
+    // The favourites are the host's globalState, so they outlive an upgrade: a reader who starred
+    // the market before 1.42.0 still has `market: true` in `gameFavoritesV1`, and the host still
+    // sends it on every push. There is no row for it any more, and this is the push that used to
+    // walk into one: applyFavs() reads the register in order and the lookup comes back null.
+    //
+    // NOTHING IS DELETED EITHER, and that is deliberate rather than laziness: the entry is one
+    // boolean, it is the reader's own answer to "is this mine", and a migration that dropped it
+    // would be a star the reader has to set again if this game ever goes back on the list
+    const stale = { blackjack: true, market: true, nosuchgame: true };
+    toWebview({ type: 'data', data: Object.assign({}, base, { favGames: stale }) }); advance(20);
+    ok('a kept star for a game with no row is carried without a throw, and the rows it does have move',
+      rowsIn('gmFavRows').join() === 'blackjack'
+      && rowsIn('gmRows').join() === LISTED.map((g) => g.id).filter((id) => id !== 'blackjack').join()
+      && errors.length === 0,
+      rowsIn('gmFavRows').join() + ' | ' + rowsIn('gmRows').join()
+        + ' | ' + errors.map((e) => e && e.message).join());
+    ok('and no row is invented for it: the list is still the register’s rows and no more',
+      listed().length === LISTED.length && !h.rowBox('market'), listed().join());
+    // back to nothing starred, so what follows reads the plain list
+    toWebview({ type: 'data', data: Object.assign({}, base, { favGames: {} }) }); advance(20);
     // ---------- the ring, lowered for the light theme in one place ----------
     ok('no focus ring writes the ember straight into the rule any more',
       !/focus-visible[^{]*\{[^}]*#e8895a/.test(css) && (css.match(/outline:2px solid var\(--focus\)/g) || []).length >= 9,

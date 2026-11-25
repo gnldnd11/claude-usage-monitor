@@ -233,7 +233,16 @@ try {
   // the star on that row, and the row it is in: the two halves a favourite needs
   const favFor = (id) => doc.querySelector('#panelGames .gm-fav[data-fav="' + id + '"]');
   const rowBox = (id) => doc.querySelector('#panelGames .gm-row[data-game="' + id + '"]');
-  const openGame = (id) => { openList(); rowFor(id).click(); advance(20); };
+  // A GAME'S SCREEN, HOWEVER THAT GAME IS REACHED. Most are a row on the list; two stand behind
+  // doors of their own (the mine, and the market since 1.42.0), where the door IS the screen and
+  // there is no row to click. The register says which (games/registry.js's `door`), so a mode file
+  // asks for the game rather than for the route, and a game that moves behind a door tomorrow moves
+  // nobody's test. `openDoor('<id>')` is still there for a mode whose subject is the door itself
+  const openGame = (id) => {
+    const g = registry.BY_ID[id];
+    if (g && g.door !== registry.LIST_DOOR) { openDoor(g.door); return; }
+    openList(); rowFor(id).click(); advance(20);
+  };
   const openTable = () => { openList(); gameRow().click(); advance(5); latchIdle(); };
   const reopenTable = () => { $('bjBack').click(); advance(5); gameRow().click(); advance(5); }; // forces a fresh 'open'
   // no blackjack table built (another game's mode) means no cards, not a crash: watch() is shared

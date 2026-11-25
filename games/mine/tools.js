@@ -1,4 +1,4 @@
-// WHAT THE CRAB IS HOLDING, what the blow knocks loose, and how a hundred steps show on a tool
+// WHAT THE CRAB IS HOLDING, what the blow knocks loose, and how five hundred steps show on a tool
 // there are only four drawings of.
 //
 // WHY THIS IS NOT games/mine/ore.js. That file is what stands IN the rock and this is what hits
@@ -23,7 +23,7 @@
 //   3 -> 4   gold, and a glint            (a colour and a part that was not there)
 //
 // ...AND ABOVE THE FOUR BANDS THE LADDER IS A LIGHT (docs/mine-mockup/spec-dig.md, section 5).
-// A hundred steps cannot be a hundred drawings and they cannot be a hundred counts either, so the
+// Five hundred steps cannot be five hundred drawings and they cannot be five hundred counts, so the
 // four shapes keep their job (which rows the wall gives up) and the five GLOW bands carry how far
 // up the ladder the tool is. See GLOW below for why it is a drop-shadow and why it is gold.
 //
@@ -60,8 +60,8 @@ const D2 = 'M5.8 2.6 L16.8 7.5 L20.2 12.8 L17.3 14.4 L14.5 9.6 L7.4 6.2 Z';     
 const D3 = 'M4.4 1.4 L17.0 7.3 L22.6 15.4 L19.0 14.4 L14.4 9.4 L6.4 5.4 Z';             // two, longer
 
 // The first band is drawn in copper and the second in iron, which is left as it stands: the
-// palette's only warm dark metal is emberLo, and the bands have no names any more (a hundred steps
-// cannot have a hundred names, so nothing on the screen says one)
+// palette's only warm dark metal is emberLo, and the bands have no names any more (five hundred
+// steps cannot have five hundred names, so nothing on the screen says one)
 const PICKS = [
   pickSvg(HAFT + head(D1, C.emberLo)),
   pickSvg(HAFT + head(D2, C.stone)),

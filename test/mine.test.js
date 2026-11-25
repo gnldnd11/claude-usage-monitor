@@ -17,12 +17,12 @@
 // uniform, uncorrelated thing it assumed, and that is the only claim this file samples for ('the
 // hash', at the end).
 //
-// AND IT IS RUN ONCE PER STEP, ALL HUNDRED OF THEM. A step is a key (the seam table's `gate`) and
+// AND IT IS RUN ONCE PER STEP, ALL FIVE HUNDRED OF THEM. A step is a key (the seam table's `gate`) and
 // it is also a speed (`WORK`), and the rate is linear in the second and a step function of the
 // first, so the ceiling has to be held against the worst step rather than against an argument about
 // which one that is.
 //
-// NO CEILING IS WRITTEN AS A LITERAL HERE. The 15% is mine.js's own EARN_CAP and the credits a
+// NO CEILING IS WRITTEN AS A LITERAL HERE. The 200% is mine.js's own EARN_CAP and the credits a
 // token earns is credits.js's own CREDIT_UNIT, so this file cannot drift into agreeing with itself:
 // games/README.md section 7 records what a literal cost once, when an `rtp < 0.98` quietly became a
 // tautology after the fee it was measuring moved.
@@ -420,7 +420,7 @@ function enumerate(step) {
   return { eDug, eGrant, earnPerCell: eDug + eGrant };
 }
 
-test('(a) what the mine yields per token has a ceiling, enumerated exactly, at all hundred steps', () => {
+test('(a) what the mine yields per token has a ceiling, enumerated exactly, at all five hundred steps', () => {
   const cap = BigInt(mn.EARN_CAP_NUM), capDen = BigInt(mn.EARN_CAP_DEN);
   const cu = BigInt(credits.CREDIT_UNIT);
   const rates = [];
@@ -455,27 +455,48 @@ test('(a) what the mine yields per token has a ceiling, enumerated exactly, at a
   }
   console.log('      ceiling ' + mn.EARN_CAP_NUM + '/' + mn.EARN_CAP_DEN + ', worst step ' + worstAt
     + ' at ' + pct(worst) + ', margin ' + pct(mn.EARN_CAP_NUM / mn.EARN_CAP_DEN - worst));
-  // ...and the enumeration is not vacuous: the worst step has to be a real fraction of the ceiling,
-  // or a table of zeroes would pass every line above
+  // ...AND THE BAND IS TWO-SIDED. The line above is the only one that can refuse a table, so on its
+  // own a table of zeroes passes the whole block -- and that is not a theoretical worry, it is what
+  // 1.41.0 shipped: 12.108% against an allowance of 15 was 81% of the ceiling, and under the 200%
+  // ceiling the same table is 6% of it. The reader's words were that the ore is far too cheap, and
+  // THE CHEAPNESS WAS A NUMBER NOTHING IN THIS FILE WAS LOOKING AT.
+  //
+  // So the worst step has to come in at four fifths of the ceiling or better. That is a real
+  // constraint on a retune and it is meant to be: the seam table is tuned UP to this line (mine.js,
+  // SEAMS), the pays are whole credits over 64 buckets so the grain is coarse, and a fifth of the
+  // ceiling is the room that leaves. It also catches the other half of the cell: a lookahead
+  // widened without the table following it would drop the realised rate and nothing else here
+  // would say so
   const top = enumerate(TOP).earnPerCell;
   const ledgerTop = BigInt(CELL) * BigInt(mn.workOf(TOP));
-  assert.ok(top * capDen * cu * 3n >= DEN * ledgerTop * cap,
-    'the mine yields so little that this assertion proves nothing');
+  assert.ok(top * capDen * cu * 5n >= DEN * ledgerTop * cap * 4n,
+    'the mine yields under four fifths of what the ceiling allows (' + pct(worst) + ' of '
+    + pct(mn.EARN_CAP_NUM / mn.EARN_CAP_DEN) + '): the table is being left behind its own ceiling');
 });
 
-// THE MUTATION THIS RELEASE WAS ONE EDIT AWAY FROM. The window, the cell, the ruler and the pay
-// table all moved together, and the enumeration above passes whatever they are because it reads
-// every one of them off the engine: a cell cut from 100 m to 30 with the TABLE left alone would
-// have shipped a mine paying three times per token and no assertion here would have said so.
+// THE MUTATION THIS RELEASE WAS ONE EDIT AWAY FROM, IN BOTH DIRECTIONS. The ceiling and the pay
+// table are ONE CHANGE (1.42.0: the ceiling went 15% -> 200% and the table went up sixteenfold),
+// and the enumeration above passes whatever they are because it reads both of them off the engine.
+// Either half on its own is a shipped defect with nothing to say so:
 //
-// So it is run once more against 1.40.0'S OWN TABLE, the literal five numbers that shipped, and
-// the ceiling has to BREAK. That is a sharper statement than scaling the current table by a
-// factor: it is the exact table a merge, a revert or a careless hand would put back.
-const PAYS_1_40 = Object.freeze([2, 6, 14, 39, 140, 0]);
+//   the ceiling alone   a mine allowed 200% and paying 12%, which is the screen the reader
+//                       rejected, with the line that was supposed to stop it moved for nothing
+//   the table alone     a mine paying sixteen times what its own ceiling allows, which is the
+//                       balance earning credits out of the game rather than out of the work
+//
+// So both halves are frozen as literals here -- 1.41.0's five pays and 1.41.0's 15/100 -- and each
+// one has to disagree with the engine in the right direction. These are the exact figures a merge,
+// a revert or a careless hand would put back.
+const PAYS_1_41 = Object.freeze([1, 2, 3, 7, 26, 0]);
+const CAP_1_41 = Object.freeze({ num: 15, den: 100 });
 
-test('(a) the window and the pay table are one change: the old table breaks the ceiling', () => {
+test('(a) the ceiling and the pay table are one change, and each half fails without the other', () => {
   const cap = BigInt(mn.EARN_CAP_NUM), capDen = BigInt(mn.EARN_CAP_DEN);
   const cu = BigInt(credits.CREDIT_UNIT);
+  assert.notDeepEqual(mn.SEAMS.map((s) => s.pay), PAYS_1_41.slice(),
+    'the pay table is 1.41.0\'s again: the ceiling was raised and the table was not');
+  assert.ok(mn.EARN_CAP_NUM * CAP_1_41.den !== CAP_1_41.num * mn.EARN_CAP_DEN,
+    'the ceiling is 1.41.0\'s again: the table was raised and the ceiling was not');
   // the same fold as `enumerate`, with the pays handed in rather than read off the table. Held
   // beside the real one at the current pays, so this is not a second implementation drifting
   const fold = (pays, step) => {
@@ -495,30 +516,51 @@ test('(a) the window and the pay table are one change: the old table breaks the 
       + fever * standOther * BigInt(mn.FEVER_M / CELL) * Bb * raw;
   };
   const now = mn.SEAMS.map((s) => s.pay);
-  for (const step of [0, 1, 35, 70, TOP]) {
+  for (const step of [0, 1, mn.BANDS[2], mn.BANDS[3], TOP]) {
     assert.equal(fold(now, step), enumerate(step).earnPerCell,
       'the fold used here does not agree with the one the ceiling is proved with');
   }
+  // the rate of a table at a step, as a Number, with the same two sides the ceiling is proved over
+  const rateOf = (pays, step) => {
+    const work = BigInt(step === 0 ? mn.FIST_WORK : mn.workOf(step));
+    return Number(fold(pays, step)) / Number(DEN) / (Number(BigInt(CELL) * work) / credits.CREDIT_UNIT);
+  };
+  // HALF ONE: the ceiling raised, the table left behind. 1.41.0's five pays under THIS ceiling, at
+  // every step, and the best of them has to be a small fraction of what it is allowed -- that is
+  // the screen the reader rejected, and the number is why they were right to
+  let bestOld = 0, bestAt = 0;
+  for (let step = 0; step <= TOP; step++) {
+    const r = rateOf(PAYS_1_41, step);
+    if (r > bestOld) { bestOld = r; bestAt = step; }
+  }
+  const capNum = mn.EARN_CAP_NUM / mn.EARN_CAP_DEN;
+  assert.ok(bestOld * 4 < capNum,
+    '1.41.0\'s pay table would come within a quarter of this ceiling: the sixteenfold raise is not '
+    + 'in the table any more and only the line moved');
+  // HALF TWO: the table raised, the ceiling left behind. THIS table under 1.41.0's 15/100, which
+  // has to break at substantially every step and not just at the top: one step over the line could
+  // be a rounding artefact, the whole ladder over it is what a sixteenfold raise looks like
   let over = 0, firstOver = -1, worst = 0;
   for (let step = 0; step <= TOP; step++) {
-    const earn = fold(PAYS_1_40, step);
+    const earn = fold(now, step);
     const work = BigInt(step === 0 ? mn.FIST_WORK : mn.workOf(step));
     const ledgerPerCell = BigInt(CELL) * work;
-    if (earn * capDen * cu > DEN * ledgerPerCell * cap) {
+    if (earn * BigInt(CAP_1_41.den) * cu > DEN * ledgerPerCell * BigInt(CAP_1_41.num)) {
       over += 1;
       if (firstOver < 0) firstOver = step;
     }
-    const rate = Number(earn) / Number(DEN) / (Number(ledgerPerCell) / credits.CREDIT_UNIT);
-    if (rate > worst) worst = rate;
+    worst = Math.max(worst, rateOf(now, step));
   }
-  assert.ok(over > 0, '1.40.0\'s pay table would still hold under the ceiling on this window: '
-    + 'the two are no longer one change and the pairing has stopped being load-bearing');
-  // ...AND IT IS NOT ONE STEP AT THE VERY TOP EITHER. A single step over the line could be a
-  // rounding artefact; a third of the ladder over it is the whole top band paying several times
-  assert.ok(over >= 20, 'only ' + over + ' step(s) would break the ceiling: check the margin');
-  console.log('      1.40.0\'s table on this window: ' + over + ' of ' + (TOP + 1)
-    + ' steps over the cap, from step ' + firstOver + ', worst ' + pct(worst)
-    + ' against a cap of ' + pct(mn.EARN_CAP_NUM / mn.EARN_CAP_DEN));
+  assert.ok(over >= TOP, 'only ' + over + ' step(s) of this table would break 1.41.0\'s 15/100 '
+    + 'ceiling: the table has fallen back to something the old line would have allowed');
+  // ...and the sum that is actually being proved above, printed: the two halves and the pair
+  console.log('      1.41.0\'s table under this ceiling: ' + pct(bestOld) + ' at step ' + bestAt
+    + ', which is ' + (bestOld / capNum * 100).toFixed(1) + '% of an allowance of ' + pct(capNum));
+  console.log('      this table under 1.41.0\'s ceiling: ' + over + ' of ' + (TOP + 1)
+    + ' steps over it, from step ' + firstOver + ', worst ' + pct(worst) + ' against '
+    + pct(CAP_1_41.num / CAP_1_41.den));
+  // the cap the block read is the engine's and not a literal that drifted into agreeing with it
+  assert.equal(Number(cap) / Number(capDen), capNum);
 });
 
 test('(a) every step is recovered by the ground it digs, and a row beats a speed bump', () => {
@@ -1117,13 +1159,28 @@ test('a stored record is rebuilt field by field, and a figure outside the ceilin
   assert.equal(mn.clean(Object.assign({}, saved, { by: 'zz' })).by, '');
   assert.equal(mn.clean(Object.assign({}, saved, { by: '__proto__' })).by, '');
   assert.equal(Object.prototype.hasOwnProperty.call(mn.clean(JSON.parse('{"__proto__":{"x":1},"moves":1}')), 'x'), false);
-  // ...and so is a figure a save could not have produced
+  // ...and so is a figure a save could not have produced. `step` and `rungs` are the two that are
+  // not simply dropped, because they are read TOGETHER: a step is a rung of a ladder of a stated
+  // length, so what either one of them means depends on the other and both are checked below
   for (const k of mn.REC_FIELDS) {
-    if (k === 'step') continue;                                  // migrated, below
+    if (k === 'step' || k === 'rungs') continue;                 // read as a pair, below
     assert.equal(mn.clean(Object.assign({}, saved, { [k]: mn.REC_CEIL[k] + 1 }))[k], 0, k + ' was believed past its ceiling');
     assert.equal(mn.clean(Object.assign({}, saved, { [k]: -1 }))[k], 0, k + ' was believed negative');
     assert.equal(mn.clean(Object.assign({}, saved, { [k]: 1.5 }))[k], 0, k + ' was believed fractional');
   }
+  // `rungs` IS THIS BUILD'S LADDER ON THE WAY OUT, WHATEVER CAME IN. It is the one field in the
+  // record that is not a fact about the reader: it says which ladder the `step` beside it was
+  // counted on, so a stored figure is read (the block below) and never kept
+  for (const bad of [-1, 1.5, 0, 'nope', null, mn.REC_CEIL.rungs + 1]) {
+    assert.equal(mn.clean(Object.assign({}, saved, { rungs: bad })).rungs, mn.STEPS,
+      'a record came back on a ladder of ' + JSON.stringify(bad) + ' rungs');
+  }
+  // ...AND A STEP IS ONLY A STEP IF IT IS A RUNG OF THE LADDER IT NAMES. Past that it is a forgery
+  // and reads as nothing at all, which is the fist
+  assert.equal(mn.clean(Object.assign({}, saved, { rungs: 50, step: 51, pick: 0 })).step, 0,
+    'a step past the end of its own ladder was believed');
+  assert.equal(mn.clean(Object.assign({}, saved, { rungs: 50, step: 50, pick: 0 })).step, mn.STEPS,
+    'the top of a short ladder is not the top of this one');
   // THE BAGS, ROW BY ROW, and a count that is not one a claim could have made is nothing
   for (const k of mn.BAG_FIELDS) {
     for (const bad of [[mn.MAX_COUNT + 1], [-1], [1.5], 'nope', 42, null]) {
@@ -1163,13 +1220,13 @@ test('a stored record is rebuilt field by field, and a figure outside the ceilin
 });
 
 test('a record from an older build keeps the pick it paid for, and nobody\'s pick breaks', () => {
-  // THREE SHAPES ARE IN THE FIELD and all three keep the step they paid for. This is the whole of
-  // 1.41.0 at the storage boundary, and the reason it is the first thing in this block: a reader
-  // who bought a pick owns it, so the one answer that is not allowed is an empty claw.
+  // FOUR SHAPES ARE IN THE FIELD and all four keep the step they paid for. A reader who bought a
+  // pick owns it, so the one answer that is not allowed is an empty claw.
   //
   //   1.39.0 and before   `pick` 1..4, durability derived from the tier
   //   1.40.0              `pick` 1..4 and `durTok`, the remainder in TOKENS
   //   1.41.0              `step` 1..100 and `durM`, the remainder in METRES
+  //   1.42.0              `step` 1..500 and `rungs`, the length of the ladder it is a rung of
   //
   // A tier becomes the FIRST STEP OF ITS BAND, which is the step with exactly the rows that tier
   // could take: a tier-4 reader lands with the idol still open rather than losing it
@@ -1191,18 +1248,45 @@ test('a record from an older build keeps the pick it paid for, and nobody\'s pic
       }
     }
   }
-  // THE WORK-TREE SHAPE: a `step` of its own and a `durM` beside it, down to its last metre. The
-  // step stands and the metre is dropped, which is a reader keeping a step-88 pick for good
+  // THE 1.41.0 SHAPE: a `step` of its own, no `rungs` beside it, and a `durM` down to its last
+  // metre. The durability is dropped, and the STEP IS THE SAME RUNG ON A LADDER FIVE TIMES AS LONG
+  // (1.42.0): a step-88 pick out of a hundred comes back as step 440 out of five hundred, which is
+  // the same fraction of the climb, the same stone and the same set of keys
   const v141 = mn.clean({ by: 'e'.repeat(16), moves: 9, step: 88, durM: 1, anchorTok: 11, anchorDepth: 500, claimedTo: 500, bonus: 0, spent: 700, earned: 900, finds: 3 });
-  assert.equal(v141.step, 88, 'a step-88 pick did not survive the drop');
+  assert.equal(v141.step, 88 * mn.SUB, 'a step-88 pick out of a hundred is not step 440 out of five hundred');
+  assert.equal(v141.rungs, mn.STEPS, 'the migrated record is still on the old ladder');
   assert.equal(mn.hasPick(v141), true, 'a pick with one metre left came back as bare hands');
-  assert.equal(mn.cutOf(v141, 11 + tokFor(88, 1000)), 1000, 'the migrated pick stopped at its old durability');
+  assert.equal(mn.cutOf(v141, 11 + tokFor(v141.step, 1000)), 1000, 'the migrated pick stopped at its old durability');
+  // ...AND EVERY RUNG OF THAT LADDER LANDS ON ONE OF THIS ONE'S, with its keys and at least its
+  // speed. The whole hundred, because the one that matters is whichever one the reader is on
+  const W_1_41 = Object.freeze((function () {
+    const o = [0, 14950];
+    for (let s = 2; s <= mn.LADDER_1_41; s++) o[s] = Math.floor(o[s - 1] * 1000 / 1009);
+    return o;
+  })());
+  for (let s = 1; s <= mn.LADDER_1_41; s++) {
+    const got = mn.clean({ by: 'f'.repeat(16), moves: 2, step: s, durM: 5, anchorTok: 0 });
+    assert.equal(got.step, s * mn.SUB, 'step ' + s + ' of a hundred did not land on its own rung');
+    assert.ok(mn.workOf(got.step) <= W_1_41[s],
+      'step ' + s + ' came back SLOWER: ' + mn.workOf(got.step) + ' tokens a stone where it was ' + W_1_41[s]);
+    // the keys too: a row the old rung opened is a row the new one opens
+    for (const seam of mn.SEAMS) {
+      const wasOpen = s >= Math.ceil(seam.gate / mn.SUB);
+      assert.equal(mn.takes(got.step, seam), wasOpen, seam.name + ' changed hands at step ' + s);
+    }
+  }
   // THE STORED DEPTH IS STILL THE STORED DEPTH. `anchorDepth`, `bonus` and `claimedTo` are all in
   // METRES and none of them is converted, so a record read at the token count it was anchored at
   // comes back at the depth it was written with. What the ruler moving DOES do is to the ground
   // dug since that anchor, and the test below this one is about nothing else
   assert.equal(mn.depthOf(v141, 11), 500, 'the stored depth moved');
-  assert.equal(mn.depthOf(v141, 11 + tokFor(88, 10)), 510, 'the drift does not go on from there');
+  assert.equal(mn.depthOf(v141, 11 + tokFor(v141.step, 10)), 510, 'the drift does not go on from there');
+  // ...AND A RECORD THIS BUILD WROTE IS NOT RESCALED AGAIN. It names its own ladder, so the step
+  // stands exactly: without this, every read would multiply by SUB and the reader would be at the
+  // top of the ladder after four reloads
+  const mine142 = mn.save(rec({ step: 123, anchorTok: 11 }));
+  assert.equal(mn.clean(mine142).step, 123, 'a record from this build was rescaled');
+  assert.equal(mn.clean(mn.save(mn.clean(mine142))).step, 123, 'the rescale ran twice');
   const v140 = mn.clean({ by: 'c'.repeat(16), moves: 9, pick: 2, durTok: 850 * 100000 + 99999, anchorTok: 11, anchorDepth: 500, claimedTo: 500, bonus: 0, spent: 700, earned: 900, finds: 3 });
   assert.equal(mn.depthOf(v140, 11), 500, 'the stored depth moved');
   const old39 = mn.clean({ by: 'd'.repeat(16), moves: 1, pick: 4, anchorTok: 0, anchorDepth: 1284, claimedTo: 1200, bonus: 0, spent: 1, earned: 2, finds: 1 });
@@ -1226,52 +1310,172 @@ test('a record from an older build keeps the pick it paid for, and nobody\'s pic
   console.log('      tiers 1..4 land on steps ' + mn.BANDS.join(' / ') + ' with their rows intact');
 });
 
-// THE RULERS THIS RELEASE REPLACED, FROZEN. 1.41.0 changed what a stone costs (three times over,
-// in the end) and converted NOTHING at the storage boundary, which is only defensible in one
-// direction: a reader's depth may come forward and may never go back. The inequality that makes
-// it true is one line -- floor(u / w') >= floor(u / w) whenever w' <= w -- and a frozen fixture is
-// what keeps it from being an argument in a comment.
+// 1.41.0'S STORAGE BOUNDARY, FROZEN, BECAUSE IT IS STILL RUNNING. VS Code replaces an extension
+// globally but a window that is already open keeps the old code until it is reloaded, so for as
+// long as one 1.41.0 window is up two builds share one store. 1.41.0 shipped the day before this
+// release and those windows are on people's screens right now.
 //
-// 1.40.0 IS THE ONE IN THE FIELD: a flat 100,000 weighted tokens a metre, every tier at one speed
-// (its own CHANGELOG), and eight times that for bare hands. The second fixture is the curve this
-// release itself carried for a while, which no store has but which costs nothing to hold the
-// property against
+// WHAT IT DOES WITH A 1.42.0 RECORD, in its own two rules and nothing else:
+//
+//   REC_CEIL.step is 100   so a step of 350 is a figure its own save could not have produced, and
+//                          its `clean` drops it to 0 rather than clamping it
+//   migrateStep            it then runs `if (out.step < 1) out.step = migrateStep(rec)`, which
+//                          reads `pick` (1..4) and lands on the first step of that band
+//
+// So the whole of the reader's protection is that `pick` is in the store, and that is why
+// mine.save writes a field this build never reads (see its own note, which says not to delete it).
+// Both of 1.41.0's rules are copied out here as literals: a test that called the engine for them
+// would be asking the new build what the old one does.
+const CEIL_1_41 = Object.freeze({
+  moves: 1e9, step: 100, anchorTok: 1e15, anchorDepth: 1e12, claimedTo: 1e12, bonus: 1e12,
+  spent: 1e15, earned: 1e15, finds: 1e9
+});
+const BANDS_1_41 = Object.freeze([1, 10, 35, 70]);
+// 1.41.0's `clean`, down to the two lines that decide whether a pick survives
+function step_1_41(stored) {
+  const n = stored.step;
+  let step = (Number.isSafeInteger(n) && n > 0 && n <= CEIL_1_41.step) ? n : 0;
+  if (step < 1) {
+    const t = stored.pick;
+    step = (!Number.isSafeInteger(t) || t < 1) ? 0 : BANDS_1_41[Math.min(t, BANDS_1_41.length) - 1];
+  }
+  return step;
+}
+// ...and which of its four bands that is. 1.41.0's own bandOf, which is this build's with its own
+// four boundaries: a step BELOW the top of this ladder is a number its `clean` accepts as it
+// stands, so the tier it shows is not always read off `pick`
+function band_1_41(step) {
+  let b = 0;
+  for (let i = 0; i < BANDS_1_41.length; i++) if (step >= BANDS_1_41[i]) b = i + 1;
+  return b;
+}
+
+test('a 1.41.0 window reading a 1.42.0 record does not take the pick away', () => {
+  // the premise, which is what makes the rest of this block worth asserting: this ladder really
+  // does run past the end of 1.41.0's, so its own `clean` cannot keep a step from the top of it
+  assert.ok(TOP > CEIL_1_41.step, 'this ladder fits inside 1.41.0\'s, so there is nothing to protect');
+  // EVERY RUNG, because the one that matters is whichever one the reader is standing on
+  let dropped = 0, kept = 0;
+  for (let step = 1; step <= TOP; step++) {
+    const stored = mn.save(rec({ step, anchorTok: 11, anchorDepth: 500, claimedTo: 480, spent: 700 }));
+    const seen = step_1_41(stored);
+    assert.ok(seen >= 1, 'step ' + step + ' of this ladder reads as bare hands in a 1.41.0 window: '
+      + 'the climb is gone and `spent` is still charged for it');
+    // ...AND THE BAND NEVER GOES DOWN. A band is the four looks and the four sets of keys, so what
+    // may not happen is a reader watching the wall close on them. IT IS ONE-SIDED on purpose: a
+    // step inside 1.41.0's own hundred is a number its `clean` takes as it stands, so step 60 of
+    // five hundred reads as step 60 of a hundred and shows a HIGHER band than it should. That
+    // direction only ever gives
+    assert.ok(band_1_41(seen) >= mn.bandOf(step),
+      'step ' + step + ' shows band ' + band_1_41(seen) + ' in a 1.41.0 window where it is band '
+      + mn.bandOf(step) + ' here: the wall closed on the reader');
+    // ...AND THE ROUND TRIP BACK. The old window saves its own fields, which drops `rungs` and
+    // `pick`, so this build reads a bare step out of a hundred and `rescaleStep` multiplies it.
+    //
+    // THE AMBIGUITY IS REAL AND THIS IS THE SIDE TO ERR ON. A bare step of 60 could be 1.41.0's
+    // own rung or a rung of THIS ladder laundered through one of its windows, and nothing in the
+    // record can tell the two apart. Read as 1.41.0's, it can hand a reader rungs they did not buy
+    // (bounded by SUB times the step, and the ceiling is enumerated at every one of them, so no
+    // credit is minted by it). Read as this build's, a genuine 1.41.0 record would land on a
+    // SLOWER rung and that reader's depth would go backwards, which is the one thing that may not
+    // happen. So the gain is asserted as a BOUND rather than forbidden
+    const back = mn.clean({ by: stored.by, moves: stored.moves + 1, step: seen, anchorTok: 11, anchorDepth: 500, claimedTo: 480, spent: 700 });
+    assert.ok(mn.bandIn(back) >= mn.bandOf(step), 'the round trip closed the wall');
+    assert.ok(back.step >= mn.BANDS[mn.bandOf(step) - 1], 'the round trip landed below its own band');
+    assert.ok(back.step <= step * mn.SUB && back.step <= TOP,
+      'the round trip handed out more than the rescale can: ' + back.step + ' from ' + step);
+    assert.equal(mn.depthOf(back, 11), 500, 'the round trip moved the depth');
+    if (back.step < step) dropped += 1; else kept += 1;
+  }
+  // BARE HANDS STAY BARE HANDS. `pick` is 0 for a reader who has bought nothing, and 1.41.0's own
+  // rule reads that as no pick, which is the truth rather than a loss
+  assert.equal(mn.save(rec({ step: 0 })).pick, 0, 'a reader with no pick is sent a tier');
+  assert.equal(step_1_41(mn.save(rec({ step: 0 }))), 0, 'bare hands came back holding something');
+  // THE FIELD IS WRITTEN AND NEVER READ, and both halves of that are the contract. Written: a
+  // record without it is the defect this block is about. Never read: `pick` must not be able to
+  // overrule a `step` this build knows exactly, or a stale tier from an older window would pull a
+  // reader back down the ladder on every read
+  assert.ok(mn.REC_FIELDS.indexOf('pick') < 0, '`pick` is in REC_FIELDS: clean would read it');
+  assert.ok(mn.MAX_FIELDS.indexOf('pick') < 0, '`pick` is maxed across a merge: that is `step` maxed');
+  for (const t of [1, 2, 3, 4]) {
+    const spoof = Object.assign(mn.save(rec({ step: 440, anchorTok: 11 })), { pick: t });
+    assert.equal(mn.clean(spoof).step, 440, 'a stale tier of ' + t + ' overruled a step this build knows');
+  }
+  // ...and it is derived, so it cannot disagree with the step it was taken from
+  for (const step of [1, 49, 50, 174, 175, 349, 350, TOP]) {
+    assert.equal(mn.save(rec({ step })).pick, mn.bandOf(step), 'the tier sent out is not the step\'s band');
+  }
+  console.log('      all ' + TOP + ' rungs survive a 1.41.0 window with their band or better; '
+    + dropped + ' come back down at the band\'s first step and ' + kept + ' come back at or above '
+    + 'the rung they left');
+});
+
+// THE RULERS THAT HAVE BEEN IN THE FIELD, FROZEN. Two releases running have changed what a stone
+// costs and converted NOTHING at the storage boundary, which is only defensible in one direction:
+// a reader's depth may come forward and may never go back. The inequality that makes it true is one
+// line -- floor(u / w') >= floor(u / w) whenever w' <= w -- and a frozen fixture is what keeps it
+// from being an argument in a comment.
+//
+// WHAT CHANGED IN WHICH RELEASE, because the two are different shapes of the same promise:
+//
+//   1.40.0   a flat 100,000 weighted tokens a metre, every tier at one speed (its own CHANGELOG),
+//            and eight times that for bare hands. A hundred steps, so a step is a step
+//   1.41.0   14,950 down to 6,124 over a hundred steps, by 1000/1009 a rung
+//   1.42.0   THE SAME TWO STONES OVER FIVE HUNDRED RUNGS, so the step NUMBER means something else
+//            and a stored record is rescaled (mine.js, `rescaleStep`). The fixture is held against
+//            `step x SUB`, which is where a stored rung lands
+//
+// Both of the old curves are walked here against the rung this build puts their records on, so
+// what is proved is the promise itself and not the arithmetic of one release.
 const WORK_1_40 = Object.freeze({ any: 100000, fist: 100000 * 8 });
-const WORK_MID = (function () {
-  const out = [0, 20000];
-  for (let s = 2; s <= TOP; s++) out[s] = Math.floor(out[s - 1] * 1000 / 1009);
+const WORK_1_41 = (function () {
+  const out = [0, 14950];
+  for (let s = 2; s <= mn.LADDER_1_41; s++) out[s] = Math.floor(out[s - 1] * 1000 / 1009);
   return Object.freeze(out);
 })();
+// where a rung of either of those ladders lands on this one. Both were a hundred rungs long
+const landed = (step) => (step < 1 ? 0 : Math.min(TOP, step * mn.SUB));
 
 test('the ruler moved and no stored record came back shallower than it went in', () => {
-  // the fixtures really are slower than the ruler in hand at every step, which is the precondition
+  // the fixtures really are slower than the rung their records land on, which is the precondition
   // for the whole block: a FASTER ruler cannot move a stored record backwards, and a slower one can
-  for (let s = 1; s <= TOP; s++) {
-    assert.ok(mn.workOf(s) < WORK_1_40.any, 'step ' + s + ' is slower than the 1.40.0 ruler');
-    assert.ok(mn.workOf(s) < WORK_MID[s], 'step ' + s + ' is slower than the curve it replaced');
+  for (let s = 1; s <= mn.LADDER_1_41; s++) {
+    assert.ok(mn.workOf(landed(s)) < WORK_1_40.any, 'step ' + s + ' is slower than the 1.40.0 ruler');
+    assert.ok(mn.workOf(landed(s)) <= WORK_1_41[s],
+      'step ' + s + ' of 1.41.0 lands on a SLOWER rung: ' + mn.workOf(landed(s)) + ' where it was ' + WORK_1_41[s]);
   }
   assert.ok(mn.FIST_WORK < WORK_1_40.fist, 'bare hands are slower than 1.40.0\'s');
+  assert.equal(mn.FIST_WORK, WORK_1_41[1] * mn.FIST_DIV, 'bare hands changed with the ladder');
   // a month of this reader's work, a day of it, a single stone and the awkward remainders around
   // one: what is being looked for is a floor landing differently, so the boundaries matter more
   // than the big numbers
   const useds = [0, 1, 999, 1000, 9999, 10000, 10001, 20001, 123456, 5e6, 52.4e6, 1572e6];
   let worst = Infinity, forward = 0, same = 0;
   for (const [name, workOf] of [['1.40.0', (s) => (s === 0 ? WORK_1_40.fist : WORK_1_40.any)],
-    ['the curve between', (s) => (s === 0 ? WORK_MID[1] * mn.FIST_DIV : WORK_MID[s])]]) {
-    for (const step of [0, 1, 2, 10, 35, 70, 99, TOP]) {
+    ['1.41.0', (s) => (s === 0 ? mn.FIST_WORK : WORK_1_41[s])]]) {
+    for (const step of [0, 1, 2, 10, 35, 70, 99, mn.LADDER_1_41]) {
       for (const used of useds) {
-        // a record as the STORE hands one back: metres in three fields and a count in a fourth
-        const r = rec({ step, anchorTok: 400, anchorDepth: 4321, bonus: 700, claimedTo: 5000 });
+        // a record as the STORE hands one back: metres in three fields and a count in a fourth,
+        // and a `step` that is a rung of the ladder the fixture was written on
+        const r = mn.clean({ by: 'a'.repeat(16), moves: 3, step, anchorTok: 400, anchorDepth: 4321, bonus: 700, claimedTo: 5000 });
+        assert.equal(r.step, landed(step), 'the fixture record did not land where the migration puts it');
         const was = r.anchorDepth + r.bonus + Math.floor(used / workOf(step));
         const now = mn.depthOf(r, 400 + used);
         assert.ok(now >= was, name + ', step ' + step + ' at ' + used + ' tokens went backwards: '
           + now + ' m where the old ruler had ' + was + ' m');
         if (now > was) forward += 1; else same += 1;
         worst = Math.min(worst, now - was);
-        // ...AND A DAY'S WORK REALLY DOES COME OUT DEEPER, which is what stops this block passing
-        // on a grid where every sample happened to be too small to break a stone either way
-        if (used >= 52.4e6) {
+        // ...AND A DAY'S WORK REALLY DOES COME OUT DEEPER WHEREVER THE RULER ACTUALLY MOVED, which
+        // is what stops this block passing on a grid where every sample happened to be too small
+        // to break a stone either way. WHERE IT DID NOT MOVE, STANDING STILL IS THE RIGHT ANSWER
+        // and the line above is the whole claim: the fist is the case (1.42.0 changed the ladder
+        // and a fist is not on it, so FIST_WORK is 1.41.0's to the token), and a record on it has
+        // to come back at exactly the depth it went in with rather than deeper
+        if (used >= 52.4e6 && workOf(step) > mn.workIn(r)) {
           assert.ok(now > was, name + ', step ' + step + ': a day of work did not move forward');
+        }
+        if (workOf(step) === mn.workIn(r)) {
+          assert.equal(now, was, name + ', step ' + step + ': an unchanged ruler moved the depth');
         }
       }
     }

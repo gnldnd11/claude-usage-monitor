@@ -20,7 +20,6 @@
 //    that makes the refusal unreachable rather than merely correct.
 'use strict';
 const engine = require('../../market');
-const tiles = require('../tiles');
 
 // The round trip, as a percent and as what it leaves. Read off the engine rather than written down:
 // the fee has moved once already (3% to 0.5%), and a hint that disagrees with the Buy button is
@@ -52,19 +51,28 @@ const SPAN_DEF = '1D';
 module.exports = {
   id: 'market',
   key: 'mk',
-  name: 'Market',
+  name: 'Market',               // the DOOR's caption, since this game has no list row
+  // BEHIND ITS OWN DOOR AS OF 1.42.0, so it is not on the games list at all. The list answers
+  // "what shall I play", and the answer to that is a stake laid down and a round that ends: the
+  // four games on it are over the moment they are settled. A POSITION IS NOT A ROUND. It is bought
+  // and then it is the reader's property, it moves on the clock whether or not anybody opens the
+  // screen, and the figure it moved by was the one thing a list row was ever allowed to carry
+  // (docs/game-panels.md, section 7). That is the mine's argument, not the casino's, which is why
+  // this screen now stands where the mine does. games/registry.js is where a door becomes a button
+  door: 'market',
   icon: 'bars',                 // a chart glyph, which is what this screen is. icons.js's own key
-  tile: tiles.market,           // games/tiles.js: the only chart in the casino, and no felt furniture
+  // NO `tile` AND NO `rowTitle`. Both were the list row's: the drawn chart in the 48px square and
+  // the row's tooltip. The door's own picture (hero-market.png) is what says where this goes now,
+  // and the heading says what it is, so a tile here would be a drawing nothing renders
   title: 'Coin Market',
   hint: 'Four coins on one price walk · one position a coin · ' + FEE_PCT
     + '% on the round trip · no rule for selling beats ' + KEEP_PCT + '%',
   panel: 'games/market/panel.js',
   cls: 'mk',
-  order: 140,                   // the list's order and its heading: see games/blackjack/meta.js
-  // The same heading as the forge, and not a bag for leftovers: these two are the games that leave
-  // something behind when the window closes (a sword, a position), which is also why these two rows
-  // are the only ones allowed a figure on the right (docs/game-panels.md, section 7)
-  rowTitle: 'Coin Market',
+  // NOT A PLACE ON THE LIST, because there is no row: `order` is still here because it is what
+  // every reader of the register sorts on, and a game with none sorts by the file system
+  // (games/README.md). It also fixes which of two doors claiming one id keeps it
+  order: 140,
 
   // deps: reply, afterMove, budget, random, ensureReplica, replica, record, storedForge,
   // storedMarket, push, log, live. The market reads storedMarket() and nothing else: `random` is

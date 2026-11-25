@@ -79,7 +79,7 @@ There is no code to type. The group is the account itself, identified only by a 
   <img src="https://raw.githubusercontent.com/gnldnd11/claude-usage-monitor/main/media/mine.png" width="330" alt="The mine: a crab swinging a glowing pickaxe at the rock face in a timbered shaft, the depth in metres above it and the bag of gems with a Sell button below" />
 </p>
 
-**Behind its own door, a shaft that the tokens you have already spent are digging.** Nothing is wagered and nothing is lost. A pickaxe is bought once and kept for good: a hundred steps, and a step buys how fast a stone breaks and what the wall will give up. Gems and relics go into a bag until you sell them.
+**Behind its own door, a shaft that the tokens you have already spent are digging.** Nothing is wagered and nothing is lost. A pickaxe is bought once and kept for good: five hundred steps, and a step buys how fast a stone breaks and what the wall will give up. Gems and relics go into a bag until you sell them.
 
 The crab digs while you work and stands back from the face when you stop, because the work is the digging.
 
@@ -103,13 +103,13 @@ The crab digs while you work and stands back from the face when you stop, becaus
 
 The tokens you spend earn credits: one per 10K, weighted the way the API prices them, so output counts five times an input token and a cache read a tenth. On first run your past sessions are counted once in the background, so you start with what you have already earned. The balance sits under the title, next to a coin that fills toward the next credit.
 
-Click it for the games list, where the crab runs five games. Star the ones you come back to and they move to the top.
+Click it for a crossroads of four doors: the Mine, the Market, the Games list and the Shop. Behind the Games door are the four games the crab runs, and starring one moves it to the top of that list.
 
 **Card tables.** **Blackjack**: six decks, the dealer stands on soft 17, blackjack pays 3:2, double on your first two cards, split once. **High-Low**: one card lies face up and you call whether the next one beats it, with each side priced off the cards actually left in the shoe, so the odds move as the run goes on.
 
 **Machines.** **Slots**: three rings of 24, rolled to the position the extension picked, so the reel you watch is the reel that paid. **Wheel**: every slice carries its own multiplier, written on it. The wide ones pay nothing and the thin one pays twelve.
 
-**What you keep.** **Coin Market**: four coins (Tidether, Kelpereum, Shelliba and Crabidia) on a candle chart you pick the window of: three hours, a day, a week or a month. Buy with any amount of credits, typed in credits or in the coin itself (half a coin is fine), buy the same coin again as often as 16 times, sell whenever you like, 0.5% on the round trip, and the position is still there when you come back. The fee is small because the holding is long: a coin's realised move is 1.5% to 3.2% in a day, so coming back tomorrow is worth more than closing costs, while a second of it is never worth the trip.
+**Behind its own door.** **Coin Market**: four coins (Tidether, Kelpereum, Shelliba and Crabidia) on a candle chart you pick the window of: three hours, a day, a week or a month. Buy with any amount of credits, typed in credits or in the coin itself (half a coin is fine), buy the same coin again as often as 16 times, sell whenever you like, 0.5% on the round trip, and the position is still there when you come back. The fee is small because the holding is long: a coin's realised move is 1.5% to 3.2% in a day, so coming back tomorrow is worth more than closing costs, while a second of it is never worth the trip.
 
 Nothing you do moves a coin's price. The chart is the same in every window and on every install, it is drawn from the instant it belongs to, and there is no way to buy into a rise you have already seen. The price moves on a grid of a 64th of a minute, so the panel has something new to show every second it is open, and the figure it shows is the one the extension will trade at. Every game with a pay table returns between 96% and 97%, and no symbol line, slice or stopping rule beats another; each table was solved by counting every outcome rather than sampled. The market has no table and no round, so there is nothing to return a percentage of: what is proved about it instead is that no rule for deciding when to sell is worth more than any other, and the round trip costs 0.5%.
 
@@ -118,7 +118,7 @@ The extension deals and judges, so a hand survives switching tabs; reloading the
 ## Features
 
 - **Agents.** Your subagents as distinct pixel characters that walk into a room when invoked, with levels, lifetime stats and per-agent nickname, role, character and model. Read-only, hook-free.
-- **Credits and games.** Your token spend becomes credits, and the crab runs five games for them: two card tables, two machines and a coin market. Hide the whole thing from the settings gear if you would rather not have it.
+- **Credits and games.** Your token spend becomes credits, and the crab runs four games for them: two card tables and two machines. A coin market and a credit mine stand beside the list, behind doors of their own, because what they leave behind outlives a round. Hide the whole thing from the settings gear if you would rather not have it.
 - **Session (5h) / Weekly (7d) / Fable (7d).** The same live numbers as Claude Code's built-in usage dialog.
 - **Weekly details.** Seven days of this PC broken down by project, model, agent and session, and, if you share an account, every PC on it side by side so you can see your own share of the weekly limit. Off until you agree.
 - **Context window.** How full the current conversation is, scoped to the workspace you are actually in, with the window tier detected per session.

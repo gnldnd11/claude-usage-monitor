@@ -7,8 +7,11 @@
 >
 > **That held for the mine too, except once.** A game behind a door of its own (`door`, section 3)
 > is a kind of place the page did not have, so the door itself cost one edit each to `html.js`,
-> `webview.js`, `styles.js` and the register. The second game to stand behind a door costs none of
-> them: the doors are a table in `games/registry.js` and the page is built from it.
+> `webview.js`, `styles.js` and the register. **The second one cost none of the three** (the
+> market, 1.42.0): the doors are a table in `games/registry.js` and the page is built from it, so
+> that move was one line in a meta and one row in that table. `styles.js` did change in the same
+> release, but for the crossroads rather than for the market -- a fourth button does not fit one
+> row -- and a fifth door costs it nothing either.
 
 The stack is the extension's: **plain JavaScript, no dependencies, no build step.** No TypeScript,
 no bundler, no new package. That is deliberate (see the project `CLAUDE.md`) and a change to it is
@@ -150,7 +153,8 @@ every rule in section 6 by hand.
 ### `order`: where it goes on the list
 
 `order` is a number, and the register sorts on it. **The existing games are spaced by ten**
-(blackjack 10, high-low 30, the slots 50, the wheel 70, the market 140), so a game that belongs
+(blackjack 10, high-low 30, the slots 50, the wheel 70, the market 140, the mine 200), so a game
+that belongs
 between two of them takes 20 or 60 and nothing is renumbered. The gaps are the nine games removed on
 2026-11-13, left open on purpose: a game put back where one was takes the number it had.
 A game with no `order` goes after every game that has one. Two
@@ -187,8 +191,23 @@ it); a door with more opens the list. One game to a side door, because there is 
 page: a second meta claiming the same door costs itself its row rather than inventing a screen.
 
 Name a door only for a game the list's own question does not fit. The list asks *what shall I
-play*, and the mine (`docs/game-panels.md`, 5-15) is not an answer to it: nothing is wagered and it
-digs whether anybody opens it or not.
+play*, and the answer to that is a stake laid down and a round that ends. **Two games are not an
+answer to it.** The mine (`docs/game-panels.md`, 5-15) wagers nothing and digs whether anybody
+opens it or not. The market (1.42.0) is bought once and then owned: a position moves on the clock
+while the panel is shut, which is why it was the only row ever allowed a figure on the right.
+
+**A door and the game behind it have to be declared in BOTH places**, and each half is useless
+alone. A `door` naming an id that is not in `DOORS` costs the game its row *and* its door -- it is
+dropped from the register with a line in `PROBLEMS`, because a game behind a button nobody draws is
+a game nobody can reach. A row in `DOORS` with nothing behind it is simply not drawn. Both failures
+are quiet on the screen and loud in `test/registry.test.js`, which is where they are meant to land.
+
+**Two edits, and that is the whole of it.** Moving the market out of the list in 1.42.0 was one
+line in `games/market/meta.js` and one row in `DOORS`. Nothing in `extension.js`, `webview.js` or
+`html.js` was touched for it; the list shrank from five rows to four because those rows are
+whichever games stand on `LIST_DOOR`. `styles.js` changed, but for the doors and not for the market:
+four buttons do not fit one row, so the crossroads is a grid of two columns (`docs/shop-spec.md`,
+2-8). A fifth door costs that file nothing.
 
 ### `art`: a picture of your own
 
@@ -458,7 +477,7 @@ a game that grows a depth needs no change there either.
 | `stake(ui)`, `renderStakes(ui, locked)`, `wireStakes(ui, redraw)` | the bet controls |
 | `setHeld(key, m)`, `heldElsewhere`, `balance()` | the purse: see section 6 |
 | `live(id, text)`, `err(id, msg)`, `note(id, text)` | the read-out line, the warning bar, the note |
-| `rowFig(id, text, dir)` | the one figure a list row may carry. See section 7 of `docs/game-panels.md`: it is for what MOVED while the panel was shut, so `null` is the answer whenever nothing has |
+| `rowFig(id, text, dir)` | the one figure a list row may carry. See section 7 of `docs/game-panels.md`: it is for what MOVED while the panel was shut, so `null` is the answer whenever nothing has. **No game uses it as of 1.42.0**: the market was the one that did and it stands behind a door of its own now, where there is no row. The hook is kept wired because the question is the list's rather than that game's |
 | `why(whyId, paysId)` | wires the folded paytable's `?` toggle (`.bj-why` / `.bj-pays`). One call in `init()`, and `aria-expanded` and `aria-controls` are kept for you |
 | `post(key, op, extra)` | a message to the host. **The request number is added for you**; keep what it returns |
 | `hold()`, `settle(m)` | the header balance waits, then lands. See section 6 |
@@ -581,6 +600,31 @@ credits.
 in `html.js`, game CSS in `styles.js`, a `game-<key>` body class used to route keys, and a game that
 has to be named in `games/registry.js` to appear.
 
+### A field written for a build that is already shipped
+
+**Two builds share one store for as long as one window is unreloaded.** VS Code replaces an
+extension globally, but a window that is already open keeps the old code until it is reloaded, so
+the old build goes on reading and WRITING BACK the same record. That is not a rare case: it is
+every update, for as long as the reader leaves that window up.
+
+**So a field whose meaning changes needs a shape the shipped build can still read.** The mine is
+the worked example (1.42.0, `mine.save`): its ladder went from a hundred rungs to five hundred, a
+step of 350 is past 1.41.0's own `REC_CEIL.step`, and 1.41.0's `clean` drops a figure like that to
+zero rather than clamping it. The reader would have been handed bare hands and the old window would
+have written that back, with `spent` still charged for the climb. What fixes it is one small
+integer: `save` writes a `pick` of 1 to 4, the field 1.41.0's own `migrateStep` reads, so the old
+window lands on a band instead of on nothing.
+
+Three rules come with such a field, and they are what a review checks:
+
+1. **Write-only.** This build's truth is the new field. If `clean` reads the compatibility field, a
+   stale value from an older window can overrule a figure this build knows exactly.
+2. **Never in `MAX_FIELDS`.** It is derived, so lifting it out of a losing record carries the state
+   of a move the merge threw away.
+3. **A comment saying it is not dead code**, because the next reader will see a field that is
+   written and never read and delete it. Say which build reads it, which line of that build reads
+   it, and what the reader loses without it.
+
 ---
 
 ## 7. Proving the return
@@ -599,11 +643,31 @@ Do not drag either game back into 96 to 97% on the strength of this paragraph.
 so what is proved in place of a return is five claims, listed in `mine.js`'s own header and made one
 block each in `test/mine.test.js`. The one to copy if you build another game with no round is the
 first: **what the mine adds to the balance is capped at a fraction of what the same tokens earn in
-the ledger** (`EARN_CAP`, 15%), enumerated as an exact rational over the seam table rather than
-sampled, and enumerated **once per step of its ladder** (a hundred of them) because a step is both
-a speed and a key, so each one takes a different set out of the wall at a different cost in tokens.
-A cap against the game's own input is what a game played with work that was done anyway can be held
-to; a percentage return is not defined for it.
+the ledger** (`EARN_CAP`, **200%** since 1.42.0), enumerated as an exact rational over the seam
+table rather than sampled, and enumerated **once per step of its ladder** (five hundred of them)
+because a step is both a speed and a key, so each one takes a different set out of the wall at a
+different cost in tokens. A cap against the game's own input is what a game played with work that
+was done anyway can be held to; a percentage return is not defined for it.
+
+**THE CAP IS NOT A HOUSE EDGE AND MAY GO ABOVE 1:1.** It was 15% from the mine's first release to
+1.41.0, and the reader's verdict on that was that the ore is far too cheap. They were right by
+arithmetic rather than by taste: 15% of this reader's own throughput is 522 credits a day against
+4,310 the ledger hands over for the same tokens, so no find on the screen could be worth looking
+at. 1.42.0 took it to 200%, which is twice what the work earns, and the thing the cap protects is
+untouched by that -- **every term in the sum is a number of weighted tokens times a rate**, so a
+reader who stops working stops being paid however deep they are and however long the pick sat in
+the wall. What a ceiling above 1:1 may NOT be is the only reason to open the screen, and that is
+a judgment about the product rather than a property the suite can hold.
+
+**AND THE CEILING AND THE TABLE ARE ONE CHANGE, IN BOTH DIRECTIONS.** The enumeration reads both
+figures off the engine, so it passes whatever they are: a ceiling raised with the table left behind
+ships the screen the reader rejected, and a table raised with the ceiling left behind ships a mine
+paying sixteen times what it is allowed. `test/mine.test.js` freezes 1.41.0's five pays AND
+1.41.0's 15/100 as literals and requires each one to disagree with the engine in its own
+direction, and the main block's band is **two-sided**: the worst step has to come in under the
+ceiling and at four fifths of it or better. That second side is the one that was missing -- 1.41.0
+realised 6% of what 1.42.0's ceiling allows, and the cheapness was a number nothing in the suite
+was looking at.
 
 **THAT CAP IS ALSO WHAT DECIDES HOW THE SCREEN FEELS, and that is worth knowing before anybody asks
 for a faster one.** Two lines fall straight out of it: a find worth P credits costs at least
@@ -622,6 +686,19 @@ divisions cancel inside `E_cell x CREDIT_UNIT / (cell x work)`. What it costs is
 has to stay in whole credits, so k is bounded by the smallest pay on it, and **the two halvings are
 one change**: `test/mine.test.js` re-enumerates with the table left alone and requires the ceiling
 to BREAK, because a suite that reads both figures off the engine passes either way.
+
+**AND A FOURTH, WHICH IS NOT A FOURTH: MAKE THE LADDER LONGER** (1.42.0, and the sentence to read
+before the next "there are not enough upgrades"). The cap bounds credits per token and the window
+bounds the fastest step, so **a longer ladder cannot be a faster one**: both ends of the mine's
+work column are pinned (ten swings at the bottom, six ordinary replies of the lookahead at the
+top), and five hundred rungs between the same two stones is a FINER ladder rather than a taller
+one. What that buys is real and it is worth saying plainly -- a press is paid for in credits, not
+in rungs, so five rungs at a fifth of the speed gain and half the price are the same climb with
+five times as many places to stand on it. What it costs is a storage boundary: a `step` is a
+number on a ladder of a known length, so the record carries `rungs` and `clean` rescales a stored
+rung into the fraction of the climb it was. **Round that rescale UP**, always: the depth is derived
+from the work curve, so a rung rounded down is a slower stone and a reader's depth would come back
+shallower than it went in.
 
 **Enumerate if you can. Sample only what you cannot enumerate.** This is the order, and it is not a
 preference: an enumeration is a proof of the pay table and a simulation is a measurement of it with

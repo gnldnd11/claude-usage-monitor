@@ -96,12 +96,18 @@ test('the real register lists every game and has nothing to complain about', () 
   for (const id of ['blackjack', 'hilo', 'slots', 'wheel', 'market', 'mine']) {
     assert.ok(real.BY_ID[id], id + ' is no longer listed');
   }
-  // Five on the list and the mine behind its own door (2026-11-24, docs/shop-spec.md 2-7). The two
-  // halves are counted apart because they are two decisions: which games the casino was cut down to,
-  // and which of them is not a bet
+  // Four on the list, and two behind doors of their own: the mine (2026-11-24) and the market
+  // (1.42.0, docs/shop-spec.md 2-7). The two halves are counted apart because they are two
+  // decisions: which games the casino was cut down to, and which of them is not a bet. A game that
+  // moved off the list without anybody meaning it fails on the second figure alone
   assert.equal(real.GAMES.length, 6, 'the register is six games: ' + real.GAMES.map((g) => g.id).join(','));
-  assert.equal(real.behind(real.LIST_DOOR).length, 5,
-    'the list is five rows: ' + real.behind(real.LIST_DOOR).map((g) => g.id).join(','));
+  assert.equal(real.behind(real.LIST_DOOR).length, 4,
+    'the list is four rows: ' + real.behind(real.LIST_DOOR).map((g) => g.id).join(','));
+  // ...and the two that are not on it are the two that leave something behind when the window
+  // closes. Named, because which door a game stands behind is the decision this test is for
+  assert.deepEqual(real.GAMES.filter((g) => g.door !== real.LIST_DOOR).map((g) => g.id).sort(),
+    ['market', 'mine'], 'the side doors hold ' + real.GAMES.filter((g) => g.door !== real.LIST_DOOR)
+      .map((g) => g.id).join(','));
 });
 
 // A DOOR OF ITS OWN HOLDS EXACTLY ONE GAME, because the door opens that game's screen and there is

@@ -646,7 +646,7 @@ ${tools.CSS}  /* Reduced motion stops the swing and leaves frame 0, which is the
      hole punched in the wall that never heals is the one way this drawing could outstay a reader
      who asked for less motion (games/mine/tools.js, BITE).
      THE LIGHT ON THE PICK IS NOT IN HERE AND MUST NOT BE. It is a filter and not an animation, so
-     a reader who asked for less motion keeps every bit of what a hundred steps bought them
+     a reader who asked for less motion keeps every bit of what the ladder bought them
      (docs/mine-mockup/spec-dig.md, 5-6) */
   /* THE CAMERA STILL MOVES UNDER REDUCED MOTION, and only the TRANSITIONS are dropped (section 8).
      Where the crab is and where the face is are facts about how much ground the work has cut, and

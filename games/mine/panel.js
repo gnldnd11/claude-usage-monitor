@@ -107,7 +107,7 @@
   // by games/mine/tools.js and counted here, which is the one duplication on this screen: that
   // file is the host's (a stylesheet is built in node) and this one is the page's, so neither can
   // read the other. test/webview/games/mine.js holds the two pairs together.
-  // FIVE LIGHTS is 5-4's: a hundred steps cannot be a hundred drawings, the radius ladder runs out
+  // FIVE LIGHTS is 5-4's: the ladder cannot be a drawing a step, the radius ladder runs out
   // of pick at the fourth lit band, and five is the number of rungs the mascot already uses
   var MN_GLOW = 5;
   var MN_CHIPS = 5;
@@ -533,7 +533,7 @@
   // switched off. The screen does NOT work the band out from the price.
   //
   // THE LIGHT IS NOT IN THE `dig` CLASS, deliberately. It is a filter, it never blinks, and it is
-  // the whole of what a hundred steps bought: a reader who asked for less motion keeps all of it
+  // the whole of what the ladder bought: a reader who asked for less motion keeps all of it
   function mnSwing() {
     var ms = MN_DIG[mn.step] || 0;
     var on = !!ms && !CUC.reduceMotion();
@@ -591,7 +591,7 @@
       p.className = 'mn-pick' + rung + (lit ? ' g' + lit : '') + (on ? ' dig' : '');
       // NO TOOL IS DRAWN WHEN NONE HAS BEEN BOUGHT. It is the one thing on the band that `tier`
       // decides, and it has nothing to do with resting: the gap at the face is the whole of the
-      // resting picture (section 7-4), so bare hands and a hundred steps rest alike. That is why
+      // resting picture (section 7-4), so bare hands and the top step rest alike. That is why
       // the known weakness 7-5 used to carry is gone -- there is no second language to be missing
       p.hidden = tier < 1;
     }
@@ -609,7 +609,9 @@
 
   // WHICH OF THE FIVE LIGHTS, off `step` and `steps`. A CHANGE OF UNIT AND NOT A DECISION: it is
   // "how far up the ladder is this, in fifths", which is the same arithmetic pctOf does to a depth.
-  // The bands are spec-dig.md 5-4's (0-19 / 20-39 / 40-59 / 60-79 / 80-100 of a hundred steps) and
+  // The bands are spec-dig.md 5-4's (the five fifths of the ladder, which were 0-19 / 20-39 /
+  // 40-59 / 60-79 / 80-100 when it was a hundred steps long and are 0-99 / 100-199 / 200-299 /
+  // 300-399 / 400-500 at the five hundred it is now) and
   // they are written as a fraction of `steps` rather than as four literal thresholds, so a ladder
   // of a different length lights evenly without this line being found again.
   //
@@ -895,7 +897,7 @@
   }
 
   // The big button. WHAT IT FITS AND WHAT IT COSTS ARE THE HOST'S (mine.offerFor), and since 1.41.0
-  // the thing it fits has no name: a hundred steps cannot have a hundred names, so the ladder is a
+  // the thing it fits has no name: a ladder this long cannot have a name a rung, so the ladder is a
   // number and the button is a verb and a price.
   //
   // `Upgrade 12,500` AND NOT `Upgrade 12,500 · 5 swings`, although `offer.swings` arrives and says

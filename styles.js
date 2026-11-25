@@ -547,33 +547,63 @@ module.exports = `
   .wb-desc{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
   .wb-clear{flex:none;padding:4px 9px;border:1px solid rgba(245,166,35,.5);border-radius:7px;background:transparent;color:#f5a623;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;}
   .wb-clear:hover{background:rgba(245,166,35,.16);}
-  /* --- the crossroads: three doors, one row -----------------------------------------------------
-     The drawings stand on the same floor (align-items:flex-end) and share the width equally, so no
+  /* --- the crossroads: four doors, TWO TO A ROW -------------------------------------------------
+     The drawings stand on the same floor (align-items:end) and share the width equally, so no
      door is the bigger offer. The picture is the thing being pressed and the word under it is only
      its name. How MANY doors there are is the register's answer, not this file's (html.js).
+     IT WAS ONE ROW UNTIL THE MARKET GOT ITS OWN DOOR (1.42.0), and one row of four was measured
+     before it was given up on. The pair width is the sidebar less 78, so at the design width of 351
+     it is 273px and at a sidebar dragged to 250 it is 172. Four columns and three 8px gaps leave
+     62.25px a column at 351 and 37px at 250, and both figures fail twice over. Every number below
+     was taken off the rendered page with that layout in place
+     (tools/shoot-panels.mjs --only cross --probe, and its ink: form for the painted drawings):
+       the drawing  at 62.25px wide the box is 36.61px tall, so hero-shop paints 44.96x36.61 and
+                    renders at 0.070x, which is BELOW the 0.081x this very row rejected in 1.39.0
+                    (section 2-7 and below). At 250 the box is 37x21.75 and the shop is 0.041x,
+                    where next to nothing of a 1px outline survives.
+       the caption  at 12.5px/700 "Market" measures 39.53px and "Games" 37.31px, against a 37px
+                    column: two of the four captions hang over their neighbours, and no ellipsis
+                    would help, since the word is what tells the doors apart.
+     Two to a row gives 132.5px a column at 351 and 82px at 250, which is the TWO-DOOR width this
+     screen opened with, and the box comes back to 72px and 48.23px tall: the shop paints at 0.137x
+     and 0.092x, the market at 0.141x and 0.094x, and all four doors come out the same height.
+     What it costs is height: the screen goes from 81.38px to 214px at 351 and from 61.58 to 166.47
+     at 250. That is the whole of the trade, and it is paid on a screen that holds nothing else -- no
+     heading, no figure, no arrow (docs/shop-spec.md, 2-1) -- so there is nothing underneath it for
+     the second row to push off the fold.
+     A GRID AND NOT A WRAPPING FLEX ROW, because two per row has to be true at every width: a flex
+     basis of 50% wraps the same way until a caption or a gap rounds the other direction, and then
+     one width in the range is a 3+1 row with one door half the size of the others. Two columns are
+     two columns. A fifth door would make it 2+2+1 rather than squeezing five across, which is the
+     right failure for the same reason.
      THE BOX IS THE COLUMN'S AND 1.7 TIMES AS WIDE AS IT IS TALL, with max-height as a ceiling. The
      ratio is the whole rule: every hero is narrower than 1.7:1 (hero-games 592x386 = 1.534,
-     hero-shop 646x526 = 1.228, hero-mine 646x446 = 1.448), so inside the box HEIGHT ALWAYS BINDS
-     and the three come out the same height on the same floor, each one only as wide as its own
+     hero-shop 646x526 = 1.228, hero-mine 646x446 = 1.448, hero-market 768x512 = 1.500), so inside
+     the box HEIGHT ALWAYS BINDS and the four come out the same height on the same floor (measured:
+     all four paint 72.00 tall at 351 and 48.23 at 250), each one only as wide as its own
      drawing needs. That is what makes them read as a set; before this they filled the column edge
      to edge and the shop stood 21.5px taller than the dealer (docs/shop-spec.md, section 2-2).
      The width left over inside each column is the air, and it is the point: the drawings no longer
      run wall to wall. max-height:72 is the ceiling, so a wider sidebar stops feeding the pictures
      instead of letting them eat the extra width.
-     IT WAS 2/1 WHILE THERE WERE TWO DOORS (section 2-7). A third column takes each box from 132.5
-     to 85.67 at a 351px sidebar, and at 2/1 that is a 42.83px box: the shop's drawing would render
-     at 0.081x, where a 1px outline survives about one column in twelve. 1.7 buys back 5.6px of
-     height, the drawing comes out at 0.096x, and the row is 15.86px SHORTER than the two-door row
-     was, because the box got lower. The condition is the paragraph above, so this number cannot go
-     past 1.534 without breaking the set; test/panel-css.test.js section 2c reads the PNG headers
-     and holds it.
+     IT WAS 2/1 WHILE THERE WERE TWO DOORS IN ONE ROW (section 2-7) and 1.7 was bought in 1.39.0,
+     when a third column took each box from 132.5 to 85.67 at a 351px sidebar: at 2/1 that is a
+     42.83px box and the shop's drawing renders at 0.081x, where a 1px outline survives about one
+     column in twelve. 1.7 bought back 5.6px of height and 0.096x. THE NUMBER IS KEPT NOW THAT THE
+     COLUMNS ARE BACK TO TWO, and it is not idle: at 351 the ceiling binds instead (132.5/1.7 is
+     77.9, over the 72), but at a sidebar dragged to 250 the column is 82px and this ratio is what
+     makes the box 48.23px rather than the 41px that 2/1 would give: the shop paints at 0.092x here
+     and would paint at 0.078x there, which is under the figure this row has already rejected once
+     (0.081x). The condition is the paragraph above, so
+     the number cannot go past 1.500 without breaking the set; test/panel-css.test.js section 2c
+     reads the PNG headers and holds it.
      A redrawn hero WIDER than the box would bind on width instead and sit on the floor of it, so
      the row still cannot grow past the ceiling whatever picture arrives.
      NOT PIXELATED, measured: the heroes carry 1px outlines and dithering, and nearest-neighbour at
-     this scale (0.096x for the shop) drops most of them (section 2-4). The mascot and the tiles
-     keep theirs. --- */
-  .cr-pair{display:flex;align-items:flex-end;gap:8px;}
-  .cr-door{position:relative;flex:1 1 0;min-width:0;display:block;padding:0 0 8px;border:0;border-radius:12px;
+     this scale (0.092x for the shop at a 250px sidebar) drops most of them (section 2-4). The
+     mascot and the tiles keep theirs. --- */
+  .cr-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:end;gap:8px;}
+  .cr-door{position:relative;min-width:0;display:block;padding:0 0 8px;border:0;border-radius:12px;
     background:transparent;cursor:pointer;font-family:inherit;text-align:center;}
   .cr-door:hover{background:var(--track);}
   .cr-door:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;}

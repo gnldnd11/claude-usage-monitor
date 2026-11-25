@@ -1165,9 +1165,16 @@
 
   // --- the one figure a list row may carry, on the right of the row.
   //
-  // One game has one (the market's open profit) and the reason is that the figure's whole job is to
-  // have MOVED while the panel was shut. A figure on every row would be a column of numbers, and
-  // then the one that moved is invisible.
+  // The figure's whole job is to have MOVED while the panel was shut. A figure on every row would
+  // be a column of numbers, and then the one that moved is invisible.
+  //
+  // NO GAME ON THE LIST USES IT AS OF 1.42.0. The one that did was the market, whose open position
+  // moved on the clock, and the market stands behind a door of its own now, where there is no row
+  // to write into and no digit allowed on the screen (docs/shop-spec.md, 2-1). The floor keeps the
+  // hook rather than dropping it, because the question it answers is the list's and not that one
+  // game's: a row whose figure changed while nobody was looking is still the only thing on this
+  // list worth a number. It stays wired end to end (the `fig` hook below, #fig-<id> in html.js,
+  // .gm-fig in styles.js) so that the next such game is one method rather than a rebuild.
   //
   // This writes into the row, not into the panel, so it works for a game whose screen has never
   // been built: the rows exist from the first paint. `dir` is 'up', 'down' or nothing, and nothing
@@ -1258,10 +1265,18 @@
   // is open, and the arrow then plainly closes the thing the heading names (see `up` below). The
   // literal space that used to sit between the glyph and the title is gone with it: `.it` is a flex
   // row with a 7px gap, and a space at the start of a flex item's first line is dropped anyway
+  // ...AND THE ARROW SAYS WHERE IT GOES, which depends on the door and not on the game. One step
+  // out of a game on the list is the list; one step out of a game that IS a door is the crossroads,
+  // because there is no list of one (backStep, above). Both titles were "All games" until 1.42.0,
+  // which was true of four screens out of six and wrong on the two behind doors of their own.
+  // The DOOR is what is read, so this learns no game's name (games/README.md, section 1), and a
+  // game that keeps its own copy of the string reads it back off the markup rather than writing a
+  // third one (games/market/panel.js's mk.backTitle)
   function frameHtml(id) {
     var row = GAME_ROWS[id] || {}, key = row.key || id;
+    var up = doorOf(id) === DOOR_LIST ? 'All games' : 'Games and shop';
     return '<div class="ihead bj-head">'
-      + '<button type="button" class="bj-back" id="' + key + 'Back" title="All games">' + (ASSET_UI.chevron || '') + '</button>'
+      + '<button type="button" class="bj-back" id="' + key + 'Back" title="' + up + '">' + (ASSET_UI.chevron || '') + '</button>'
       + '<div class="it" title="' + esc(row.hint || '') + '">' + (row.icon || '')
       + '<span class="bj-ttl" id="' + key + 'Ttl">' + esc(row.title || row.name || '') + '</span></div>'
       + '<div class="bj-side" id="' + key + 'Side"></div></div>';

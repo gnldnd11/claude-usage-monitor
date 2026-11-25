@@ -64,10 +64,12 @@ module.exports = {
     'mine-seam', 'mine-bite'],
   // Deep enough that no pick on the ladder is refused for money: what is being measured is a
   // screen, and a refused purchase is a different reply with a different rule. The glow page
-  // climbs the WHOLE hundred steps, which is 410,383 credits
+  // climbs the WHOLE five hundred steps, which is 1,054,575 credits (1.42.0; it was 410,383 over a
+  // hundred steps, and a purse left at 600,000 stopped the climb at step 100 with the top two
+  // lights never drawn)
   start: {
-    mine: 20000, 'mine-reduce': 20000, 'mine-tiers': 40000,
-    'mine-break': 20000, 'mine-bag': 20000, 'mine-glow': 600000,
+    mine: 20000, 'mine-reduce': 20000, 'mine-tiers': 120000,
+    'mine-break': 20000, 'mine-bag': 20000, 'mine-glow': 1200000,
     // the camera pages buy one step and then dig, so they need a purse and nothing more.
     // `mine-rest-bare` is the exception: it buys NOTHING, which is the state it is about
     'mine-camera': 20000, 'mine-edge': 20000, 'mine-cull': 20000,
@@ -170,9 +172,9 @@ module.exports = {
     ok('...and the crab swings anyway, because bad news is not told by switching it off',
       swinging()[0] === true, swinging().join());
 
-    // ONE BAND AT A TIME, and the drawing on each is a different one. THE LADDER IS A HUNDRED STEPS
-    // AND FOUR DRAWINGS (1.41.0): the four looks are the four gate steps, so this loop climbs to
-    // each of those rather than pressing the button four times. The engine's own table is read
+    // ONE BAND AT A TIME, and the drawing on each is a different one. THE LADDER IS FIVE HUNDRED
+    // STEPS AND FOUR DRAWINGS (1.42.0): the four looks are the four gate steps, so this loop climbs
+    // to each of those rather than pressing the button four times. The engine's own table is read
     // rather than listed, so a fifth band there would be a fifth pass of this loop
     const ledgerNow = () => credits.normalizeLedger(gs.data.creditLedgerV1);
     const stepNow = () => engine.load(ledgerNow().mine, 0).step;
@@ -181,7 +183,7 @@ module.exports = {
     for (let t = 1; t <= engine.BANDS.length; t++) {
       const target = engine.BANDS[t - 1];
       let presses = 0;
-      while (stepNow() < target && presses < 200) { $('mnBuy').click(); advance(20); presses += 1; }
+      while (stepNow() < target && presses <= engine.STEPS) { $('mnBuy').click(); advance(20); presses += 1; }
       advance(400);
       ok('band ' + t + ' is the drawing in the claw',
         rungOf('mnPick') === t && !$('mnPick').hidden,
@@ -1596,18 +1598,25 @@ module.exports = {
         tools.GLOW[4] === 6 && /6px/.test(rule('.mn-pick.g4')),
         JSON.stringify(tools.GLOW));
 
-      // THE BANDS ARE A READING OF `step`, in fifths of `steps`. 0-19 / 20-39 / 40-59 / 60-79 /
-      // 80-100, which is spec-dig.md 5-4's table written as one division
+      // THE BANDS ARE A READING OF `step`, in fifths of `steps`, which is spec-dig.md 5-4's table
+      // written as one division. THE EDGES ARE DERIVED AND NOT LISTED (1.42.0): the ladder went
+      // from a hundred rungs to five hundred and the five bands are the same five fifths of it, so
+      // what is walked here is the last step of each fifth and the first step of the next
       const climb = (to) => {
         let n = 0;
-        while (stepOf() < to && n < 400) { $('mnBuy').click(); advance(20); n += 1; }
+        while (stepOf() < to && n <= engine.STEPS) { $('mnBuy').click(); advance(20); n += 1; }
         advance(200);
       };
       const want = (step) => Math.min(4, Math.floor(step / engine.STEPS * 5));
+      const edges = [];
+      for (let b = 1; b <= 5; b++) {
+        edges.push(Math.floor(engine.STEPS * b / 5) - 1);
+        edges.push(Math.min(engine.STEPS, Math.floor(engine.STEPS * b / 5)));
+      }
       climb(1);
-      ok('step 1 of a hundred is unlit, which is what the other four are read against',
+      ok('step 1 of ' + engine.STEPS + ' is unlit, which is what the other four are read against',
         stepOf() === 1 && glowOf() === 0 && want(1) === 0, 'step ' + stepOf() + ' g' + glowOf());
-      for (const edge of [19, 20, 39, 40, 59, 60, 79, 80, 100]) {
+      for (const edge of edges) {
         climb(edge);
         if (stepOf() < edge) { ok('the ladder reaches step ' + edge, false, 'stopped at ' + stepOf()); break; }
         ok('step ' + edge + ' of ' + engine.STEPS + ' is light ' + want(edge),

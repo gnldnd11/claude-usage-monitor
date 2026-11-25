@@ -45,7 +45,7 @@ const NO_ORDER = Number.MAX_SAFE_INTEGER;
 // is a picture, a name and how finished it is; what is behind it is whichever games claim it.
 //
 // The art is a filename in the published root, resolved by the host the way a list row's `thumb`
-// is: this module never sees a URI. The crossroads' third door is the SHOP's and it is not in here,
+// is: this module never sees a URI. The crossroads' LAST door is the SHOP's and it is not in here,
 // because the shop is not a game and has no entry in this register (docs/shop-spec.md, 4-5);
 // html.js owns that one and puts it last.
 //
@@ -56,8 +56,18 @@ const NO_ORDER = Number.MAX_SAFE_INTEGER;
 // anywhere else. Making the doors data in 1.39.0 was for exactly this, and this is the first
 // thing to use it. A door that is not marked carries nothing, so the badge cannot leak onto a
 // finished screen by default
+//
+// THE SECOND SIDE DOOR ARRIVED ON 2026-11-26 (1.42.0) and it is the market's. It is the same
+// argument the mine's door was built on, read the other way round: the four games left on the list
+// are a stake laid down and a round that ends, and a POSITION IS NEITHER. It is bought and then it
+// is the reader's, it moves on the clock while the panel is shut, and the one thing it ever put on
+// the list was a figure saying how far it had moved. Behind the Games door it was a row among four
+// rounds; here it is what it is. THE LIST SHRINKING TO FOUR IS NOT AN EDIT ANYWHERE: html.js draws
+// the rows this register says stand on LIST_DOOR, and `door` in games/market/meta.js is the whole
+// of the change.
 const DOORS = Object.freeze([
   { id: 'mine', name: 'Mine', art: 'hero-mine.png', beta: true },
+  { id: 'market', name: 'Market', art: 'hero-market.png' },
   { id: 'games', name: 'Games', art: 'hero-games.png' }
 ].map((d) => Object.freeze(d)));
 

@@ -36,11 +36,13 @@
 // band does not apply, the same way it does not apply to the market. Five claims stand in its place
 // and `test/mine.test.js` is where each one is made:
 //
-//   a  NET PAY PER TOKEN HAS A CEILING, AND EVERY TIER HAS ITS OWN. What the mine adds to the
+//   a  NET PAY PER TOKEN HAS A CEILING, AND EVERY STEP HAS ITS OWN. What the mine adds to the
 //      balance grows at no more than EARN_CAP_NUM/EARN_CAP_DEN of what the same tokens earn in the
 //      ledger. Enumerated over the seam table, the relic spacing rule and the fever's grant, as an
-//      exact rational, ONCE PER TIER: a pick is a key (see the picks below), so each tier takes a
-//      different set out of the wall and the ceiling has to stand against the richest of them
+//      exact rational, ONCE PER STEP, all five hundred of them: a step is a key (see the ladder
+//      below), so each one takes a different set out of the wall and the ceiling has to stand
+//      against the richest of them. THE CEILING IS 2:1 SINCE 1.42.0 and the table under it is
+//      sixteen times what it was; the derivation is at EARN_CAP and the sum is in the suite
 //   b  A STRETCH PAYS ONCE. `claimedTo` is a boundary, so the same ground cannot be claimed twice,
 //      and a claim that loses a merge takes `earned` and `claimedTo` back together
 //   c  PICKS DO NOT OVERLAP: THE GROUND IS COUNTED ONCE. Fitting one replaces the anchor, so two
@@ -71,12 +73,15 @@ const REPLICA_RE = /^[0-9a-f]{16}$/;
 // Read against this reader's own thirty days (52.4 MT a day, 5.32 MT an hour of activity, a reply
 // of about 30,600 weighted tokens):
 //
-//                       step 1        step 100
+//                       step 1        step 500
 //   a stone            14,950 tok     6,124 tok
 //   ...which is        10 swings      4 swings      at the working rung's 1,320 ms
 //   a reply moves      2.05 m         5.00 m        6.8% of the lookahead / 16.7%
 //   ...which is        6.39 px        15.59 px      of a 156px band at a 250px sidebar
 //   a seam cell        every 16.9 min every 6.9 min of activity
+//
+// BOTH ENDS OF THAT COLUMN ARE PINNED AND 1.42.0 DID NOT MOVE EITHER OF THEM: the ladder is five
+// hundred steps where it was a hundred, and it runs between the same two stones. See STEPS
 //
 // 1.40.0 WAS 100,000 TOKENS A METRE AND IT READ AS STANDING STILL: a reply moved 0.3 m of a 63 m
 // window, which is half a pixel.
@@ -113,7 +118,7 @@ const REPLICA_RE = /^[0-9a-f]{16}$/;
 //
 // WHAT THE RULER IS STILL FOR, since it is not for pixels: a stone is an EVENT (the chips, the
 // step into the hole), and how many of them a reply breaks is exactly REPLY_TOK / work. At this
-// window a reply breaks 2 stones at the first step and 4 at the hundredth, where 1.40.0 broke one
+// window a reply breaks 2 stones at the first step and 4 at the top one, where 1.40.0 broke one
 // every three replies. That is the second half of "I cannot tell it is digging" and it is the half
 // the ruler can actually answer.
 const TOK_PER_MT = 1000000;      // weighted tokens in a million of them, for reading the tables
@@ -138,7 +143,7 @@ const TOK_PER_SWING = 1495;
 // seam table's `gate`), and the first purchase is what lifts both halves at once
 const FIST_DIV = 8;
 
-// --- the ladder: one hundred steps ---------------------------------------------------------------
+// --- the ladder: five hundred steps, which are 1.41.0's hundred split five ways -----------------
 //
 // A step buys two things and the second one is why the top of the ladder is worth anything:
 //
@@ -158,11 +163,11 @@ const FIST_DIV = 8;
 // WHAT THE CURVES ARE TUNED AGAINST, in order of who wins:
 //
 //   1. claim (a). rate(step) = E_cell x CREDIT_UNIT / (CELL_M x work(step)), and the WORST step has
-//      to come in under EARN_CAP. The worst is step 100 at 12.108%, so the margin is 2.892 points.
+//      to come in under EARN_CAP. The worst is step 500 at 191.750%, so the margin is 8.250 points.
 //      WHAT FIXES THE PAY TABLE IS THE WINDOW, not the ruler. A cell is the lookahead (CELL_M) and
 //      the lookahead is six ordinary replies of the fastest step, so a cell costs six replies of
 //      work however fast the ruler is, and the credits a cell may pay are EARN_CAP of that:
-//      6 x REPLY_TOK x EARN_CAP / CREDIT_UNIT = 2.75 credits, whatever else moves
+//      6 x REPLY_TOK x EARN_CAP / CREDIT_UNIT = 36.72 credits, whatever else moves
 //   2. EVERY STEP IS RECOVERED BY THE GROUND IT DIGS, because a pick is for ever: a step brings in
 //      the extra credits its extra speed is worth from the moment it is fitted until the reader
 //      stops working, so there is no amount of digging over which it fails to clear its price. The
@@ -170,7 +175,31 @@ const FIST_DIV = 8;
 //      rather than whether anything recovers it, and test/mine.test.js prints that curve. The one
 //      rule left on it is that each step's speed really does rise, or there would be nothing to
 //      recover the price with
-const STEPS = 100;
+// FIVE HUNDRED STEPS, AND THEY ARE THE SAME CLIMB AS 1.41.0'S HUNDRED (1.42.0). The reader asked
+// for more of them, and the one thing more of them cannot be is a FASTER ladder: both ends of the
+// work column are pinned and neither one is this file's to move.
+//
+//   step 1    ten swings a stone, which is the reader's own figure for the first pick, and
+//             FIST_WORK hangs off it
+//   step 500  the lookahead is six ordinary replies of the TOP step (the window's own condition
+//             below), so the fastest stone may not cost less than 6 x REPLY_TOK / AHEAD_M = 6,120
+//             weighted tokens. 1.41.0's hundredth step was 6,124, which is four tokens off the line
+//
+// So a longer ladder is a FINER one, and the whole of 1.42.0's ladder is that: SUB rungs in place
+// of each of 1.41.0's, between the same two stones. NOTHING ABOVE HAD TO MOVE for it -- the ruler,
+// the window, the cell, the gates and the lights are all where they were, and what changed is how
+// many presses it takes to cross them. WHY THAT IS NOT A SMALLER CHANGE THAN IT SOUNDS: what a
+// press buys is measured in credits and not in rungs, so five rungs at a fifth of the speed gain
+// and half the price hand the reader the same climb with five times as many places to stand on it.
+const STEPS = 500;
+
+// HOW MANY OF THESE RUNGS MAKE ONE OF 1.41.0'S. It is here for the storage boundary and for one
+// sentence: a `step` is a number on a ladder OF A KNOWN LENGTH, so a record written against a
+// shorter ladder names its rung with the wrong number and has to be read as the fraction of the
+// climb it was. `clean` does that with `rungs`, and this is the length every record in the field
+// was written against
+const SUB = 5;
+const LADDER_1_41 = STEPS / SUB;
 
 // Tokens a stone takes, step by step. 14,950 down to 6,124, which is 2.441 times faster end to end.
 // THE SPREAD IS NOT A FREE CHOICE: the rate above is linear in 1/work, so the whole ladder's speed
@@ -184,22 +213,49 @@ const STEPS = 100;
 // 30 m lookahead is WORK[STEPS] >= 6,120, and 14,950 is the fastest multiple of ten whose curve
 // clears it. THE SPREAD IS WHAT COSTS THE FIRST STEP, and it is the lever left for next time: the
 // lookahead is sized by the fastest step while the reader who says nothing is moving is on the
-// slowest one, so a flatter ladder would hand step 1 the pixels step 100 is getting. It is out of
-// this release's scope because it changes what a step is worth rather than what a metre is
+// slowest one, so a flatter ladder would hand step 1 the pixels the top step is getting. It is out
+// of this release's scope because it changes what a step is worth rather than what a metre is.
+//
+// THE RATIO IS 1.41.0'S OWN, TAKEN A FIFTH AT A TIME (1.42.0). That curve stepped by 1000/1009 a
+// rung; this one steps by the fifth root of it, which is 0.1790% a step, and the figure below is
+// that root rounded to the part in a million AT WHICH THE FIVE-HUNDREDTH STEP LANDS EXACTLY ON
+// 1.41.0'S HUNDREDTH (6,124 tokens) rather than past it. That is the whole reason it is a seven
+// digit literal and not a tidy one: the window forbids anything faster (the condition block
+// throws) and a stored record forbids anything slower at the five-hundredth step, so the two
+// bracket this ratio to a single value. Both ends are proved rather than asserted in a comment --
+// test/mine.test.js walks all hundred of 1.41.0's rungs against WORK[s x SUB] and would fail on a
+// ratio a part in a million either way.
+//
+// CARRIED IN THOUSANDTHS, like the price below, for the reason the price needs it: at 0.179% a step
+// the tail of the curve moves by eleven tokens a rung, and a floor taken on the whole number every
+// step would eat a fifth of that and land the top step short of the window's line
 const WORK = (function () {
-  const out = [0, 14950];
-  for (let s = 2; s <= STEPS; s++) out[s] = Math.floor(out[s - 1] * 1000 / 1009);
+  const out = [0];
+  let mil = 14950 * 1000;
+  for (let s = 1; s <= STEPS; s++) { out[s] = Math.round(mil / 1000); mil = Math.floor(mil * 998213 / 1000000); }
   return Object.freeze(out);
 })();
 
-// What a step costs. 10 credits up to 32,159, and 410,383 for the whole ladder, which is 78 days of
-// this reader's entire credit income. CARRIED IN THOUSANDTHS so the floor does not stall the bottom
-// of the curve: a price of 10 times 1.085 floors back to 10 and the first ten steps would all cost
-// the same
+// What a step costs. 5 credits up to 17,072, and 1,054,575 for the whole ladder.
+//
+// THE RATIO IS AGAIN 1.41.0'S A FIFTH AT A TIME: that curve stepped by 1.085 a rung, this one by
+// 101645/100000, which is its fifth root, so five of these steps cost what one of 1.41.0's did
+// times the base. AND THE BASE WENT 10 -> 5, WHICH IS THE ONE ECONOMIC CHOICE IN THIS CURVE. Five
+// steps at half the old price is two and a half old steps, so the whole ladder is 2.57 times
+// 1.41.0's 410,383 credits -- and it has to be, because the ceiling below took what a token earns
+// in the mine up sixteenfold. Priced at a fifth of the old rung (the arithmetically pure
+// subdivision) the ladder came to 417,780 credits and this reader's own throughput cleared it in
+// 38 days against 1.41.0's 87. A ladder five times as long that is over in half the time is the
+// reader's complaint coming back with more steps in it. At 1,054,575 the top step lands on day 94.
+//
+// CARRIED IN THOUSANDTHS so the floor does not stall the bottom of the curve: a price of 5 times
+// 1.01645 floors back to 5, and without the finer unit every step under the tenth would cost the
+// same. It still stalls for six steps at the very bottom, which is where 1.41.0's own curve was
+// flat for one, and six steps at five credits is six presses a reader makes in their first minute
 const PRICE = (function () {
   const out = [0];
-  let mil = 10 * 1000;
-  for (let s = 1; s <= STEPS; s++) { out[s] = Math.round(mil / 1000); mil = Math.floor(mil * 1085 / 1000); }
+  let mil = 5 * 1000;
+  for (let s = 1; s <= STEPS; s++) { out[s] = Math.round(mil / 1000); mil = Math.floor(mil * 101645 / 100000); }
   return Object.freeze(out);
 })();
 
@@ -224,9 +280,15 @@ function swingsOf(step) { return Math.round((workOf(step) || FIST_WORK) / TOK_PE
 function nextStep(step) { return Math.min((step >= 1 ? step : 0) + 1, TOP_STEP); }
 
 // THE FOUR BANDS, which are the gate steps. The screen draws a band and not a step (four looks, not
-// a hundred), so this is the one place the two are tied together, and the rows a band opens are the
-// rows whose gate is at or below its first step
-const BANDS = Object.freeze([1, 10, 35, 70]);
+// five hundred), so this is the one place the two are tied together, and the rows a band opens are
+// the rows whose gate is at or below its first step.
+//
+// THEY ARE 1.41.0'S FOUR, FIVE TIMES OVER (1.42.0): 1 / 10 / 35 / 70 became 1 / 50 / 175 / 350, and
+// the first band is the first step at either length because it is the step that replaces the fist.
+// That is what lets a stored record keep the key it paid for: `clean` multiplies its step by SUB,
+// so a reader who bought the idol open at step 70 of a hundred is at step 350 of five hundred with
+// the idol still open, and nothing about the wall changed under them
+const BANDS = Object.freeze([1, 50, 175, 350]);
 function bandOf(step) {
   let b = 0;
   for (let i = 0; i < BANDS.length; i++) if (step >= BANDS[i]) b = i + 1;
@@ -236,20 +298,29 @@ function bandOf(step) {
 // --- the ceiling --------------------------------------------------------------------------------
 //
 // The promise of claim (a), as this module's own constant so the suite is written against it rather
-// than against a number typed twice. 15%: the mine is a game played with work that was done anyway,
-// so it may garnish what that work earns and may not become the way credits are earned. The band is
-// one-sided on purpose; the realised rate is 12.108% at the worst step and the margin of 2.892
-// points is the room the seam table has to be retuned in without this line moving. RE-ENUMERATED
-// AGAINST A PICK THAT NEVER WEARS OUT (1.41.0) and unchanged by it, because the enumeration always
-// priced a cell at a working pick's full speed: there was never a cell in it that a fist was
-// digging, so taking the fist out of the derivation takes nothing out of the sum.
+// than against a number typed twice.
 //
-// RE-ENUMERATED AGAINST THE WINDOW (1.41.0) and this time nothing cancels. The window, the cell,
-// the ruler and the pay table all moved, and the rate is what came out: 12.108%, which is the
-// same 12% band the game has always run at, reached by a table that is a quarter of 1.40.0's over
-// a cell that is a third of its tokens. The enumeration is the only thing that could have said
-// so -- there is no sentence about this one that is true without doing the sum.
-const EARN_CAP_NUM = 15;
+// 200%, AND THE REASON IS THE LEDGER (1.42.0). Every ceiling this game has had was 15%, and at
+// 15% the mine is a rounding error on the balance: this reader's own throughput is 43.1 MT of
+// weighted tokens a day, which is 4,310 credits of ordinary earning, and the most the wall could
+// add to that was 522. The reader's words for it were that the ore is far too cheap, and they are
+// arithmetically right -- at a twelfth of the ledger, the thing that pays is the work and the mine
+// is a decoration on it. 200% is TWICE WHAT THE LEDGER GIVES FOR THE SAME TOKENS, so at the top of
+// the ladder two credits in three on this screen were dug rather than earned, and that is the
+// figure the reader chose out of three.
+//
+// WHY A MULTIPLE OF THE LEDGER AT ALL, now that it is above 1:1. The mine is still a game played
+// with work that was done anyway, so it may not pay for work that was not: every term in the sum
+// is a number of weighted tokens times a rate, which means a reader who stops working stops being
+// paid however deep they are and however long the pick sat in the wall. That property is what the
+// ceiling is for, and it does not care whether the multiple is a tenth or a double.
+//
+// WHAT THE BAND NOW IS: the realised rate is 191.750% at the worst step and the margin of 8.250
+// points is the room the seam table has to be retuned in without this line moving. The band is
+// one-sided on purpose. It has been RE-ENUMERATED at every release that touched the window, the
+// ruler, the cell or the table, and 1.42.0 touched two of them -- there is no sentence about this
+// one that is true without doing the sum.
+const EARN_CAP_NUM = 200;
 const EARN_CAP_DEN = 100;
 
 // --- the layout ---------------------------------------------------------------------------------
@@ -269,7 +340,7 @@ const EARN_CAP_DEN = 100;
 //
 // AND THAT IS WHAT FIXES THE PAY TABLE. A cell costs CELL_M x work(step) tokens, the lookahead is
 // six ordinary replies of the fastest step, so a cell is six replies of work: 183,600 weighted
-// tokens, or 18.36 credits of ordinary earning, whatever the ruler. EARN_CAP of that is 2.75
+// tokens, or 18.36 credits of ordinary earning, whatever the ruler. EARN_CAP of that is 36.72
 // credits a cell, and the table below is what fits under it in whole credits
 const CELL_M = 30;
 
@@ -282,27 +353,32 @@ const BUCKETS = 64;
 //
 // The pays are tuned DOWN to the ceiling and not up to a feeling: see test/mine.test.js, which
 // enumerates this table against EARN_CAP at every step and would fail on a single pay raised past
-// it. The shape of the ladder is 1 / 2 / 3 for the three gems and 7 / 26 for the two relics, so
-// a relic is worth a handful of gems and the rarest find is two and a half of the first picks.
+// it. The shape of the ladder is 1 / 3 / 7 for the three gems and 20 / 71 for the two relics, so
+// a relic is worth a handful of gems and the rarest find is a thirtieth of the ladder it opens on.
 //
-// A QUARTER OF 1.40.0'S TABLE, AND THAT IS NOT A NERF: a cell is 183,600 weighted tokens where it
-// was 2,000,000, so a find is eleven times as close and worth a quarter as much, and what a token
-// earns here came out at 12.108% against 12.080%. Nobody earns less per hour; the numbers on the
-// Sell button are smaller and they arrive far more often.
+// SIXTEEN TIMES 1.41.0'S TABLE (1.42.0), which is the whole of what the ceiling above bought. The
+// reader's complaint was that the ore is far too cheap, and under a 15% ceiling they were right by
+// construction: a quartz was one credit, which is a tenth of the first pick and four thousandths
+// of an hour's ordinary earning, so no find could be worth looking at. The multiple is not a taste
+// either -- it is EARN_CAP divided by what the table realised, and the enumeration is what says
+// where that lands (191.750% against a 200% line; the brief's own estimate of sixteen and a half
+// came out at 200.982% and would have shipped a mine over its own ceiling).
 //
-// WHAT HAD TO GIVE IS THE GEMS' OWN LADDER. Quartz cannot go under one whole credit and it is
-// 20 of the 64 buckets, so a table that fits under 2.75 credits a cell cannot also be 1/3/7: the
-// gems compress to 1/2/3 and the RELICS keep their proportions (7 is 2.33x the best gem, 26 is
-// 3.71x the coin, against 2.79x and 3.59x before). That is the right way round -- a step is a key,
-// so what the gates open has to stay worth the climb, and the three ungated rows are the ones that
-// can afford to sit close together.
+// AND THE GEMS GOT THEIR OWN LADDER BACK. 1.41.0 compressed them to 1/2/3 for one reason: quartz
+// cannot go under one whole credit and it is 20 of the 64 buckets, so a table fitting under 2.75
+// credits a cell could not also be 1/3/7. Under 36.72 credits a cell it can, and 7/21/49 is that
+// shape at the scale the ceiling allows: amethyst is seven quartz again rather than three, which
+// is what makes the rarer gem a different event and not a bigger number. The RELICS keep the
+// proportions they have had since 1.40.0 (140 is 2.86x the best gem against 2.79x, and 500 is
+// 3.57x the coin against 3.59x), and the two round numbers at the top are round on purpose: they
+// are what the Sell button prints.
 //
 // `gate` IS THE LOWEST STEP THE WALL GIVES THE ROW UP TO, and it is the whole of "a pick is a key".
 // Three things to keep about it:
 //
 //   gate 0    bare hands take it. The gems are all 0, so a reader who has bought nothing still has
 //             something coming out of the wall and the screen is not dead on its first open
-//   gate 10+  the row is in the rock for everybody and OUT OF REACH below that step. It is still
+//   gate 50+  the row is in the rock for everybody and OUT OF REACH below that step. It is still
 //             drawn (`seamsAhead` sends it with `locked`), because a thing you can see and cannot
 //             take is the whole of what the next band is for
 //   BANDS     every gate is the first step of a band, so the four looks the screen draws are
@@ -320,12 +396,12 @@ const BUCKETS = 64;
 // Its gate is the lowest of the three because the ground it gives is worth less than a relic is:
 // the bands open the three gated rows in the order of what they are worth, cheapest first.
 const SEAMS = Object.freeze([
-  { name: 'Quartz', kind: 'gem', pay: 1, odds: 20, gate: 0 },
-  { name: 'Garnet', kind: 'gem', pay: 2, odds: 14, gate: 0 },
-  { name: 'Amethyst', kind: 'gem', pay: 3, odds: 6, gate: 0 },
-  { name: 'Old coin', kind: 'relic', pay: 7, odds: 4, gate: 35 },
-  { name: 'Crab idol', kind: 'relic', pay: 26, odds: 2, gate: 70 },
-  { name: 'Fever', kind: 'fever', pay: 0, odds: 2, gate: 10 }
+  { name: 'Quartz', kind: 'gem', pay: 7, odds: 20, gate: 0 },
+  { name: 'Garnet', kind: 'gem', pay: 21, odds: 14, gate: 0 },
+  { name: 'Amethyst', kind: 'gem', pay: 49, odds: 6, gate: 0 },
+  { name: 'Old coin', kind: 'relic', pay: 140, odds: 4, gate: 175 },
+  { name: 'Crab idol', kind: 'relic', pay: 500, odds: 2, gate: 350 },
+  { name: 'Fever', kind: 'fever', pay: 0, odds: 2, gate: 50 }
 ].map((s) => Object.freeze(s)));
 
 // How many kinds there are to hold. The inventory is indexed by the row's place in the table above,
@@ -404,7 +480,7 @@ const PUSH_M = 32;
 // --- how much one claim may walk ----------------------------------------------------------------
 //
 // A mine nobody has looked at for a month is 3,504 cells behind (52.4 MT a day for thirty days at
-// the first step, and 8,557 at the hundredth), and a reader coming back from leave is further.
+// the first step, and 8,557 at the top one), and a reader coming back from leave is further.
 // THE BUDGET WENT UP WITH THE CELL COUNT (1.41.0, 64 to 256): a cell is 30 m where it was 100, so
 // the same month is three times as many cells and a 64-cell bite would have taken 134 pushes, or
 // 22 minutes of dashes, to catch up. 256 brings that back to 34 pushes, which is what it was, and
@@ -486,10 +562,18 @@ const CLAIM_CELLS = 256;
   if (CELL_M < AHEAD_M) throw new Error('mine: two markers can be on screen at once: check the spacing');
   // ...but not so wide that the lookahead is usually empty, which is the reason to come back
   if (CELL_M > AHEAD_M * 2) throw new Error('mine: the lookahead is empty more often than not');
-  // the ladder has to be a ladder in both columns, or a step would offer something worse
+  // the ladder has to be a ladder in both columns, or a step would offer something worse.
+  // THE WORK COLUMN IS STRICT AND THE PRICE COLUMN IS NOT, and that asymmetry is 1.42.0's: a
+  // flat price is two steps a reader buys for the same money, which is nothing to answer for, but
+  // a flat RUNG is a purchase that buys nothing at all. It is the one way a longer ladder can go
+  // wrong that no figure in this file would show -- a curve run past the window's line and clamped
+  // flat at the bottom would pass every other condition here and sell the reader five hundred
+  // steps of which the last hundred do nothing. There is a price curve asserted against this too
+  // (test/mine.test.js: every step is recovered by the ground it digs), and this line is why it
+  // can be
   for (let s = 2; s <= STEPS; s++) {
     if (PRICE[s] < PRICE[s - 1]) throw new Error('mine: the steps are not a rising price');
-    if (WORK[s] > WORK[s - 1]) throw new Error('mine: a dearer step is not faster');
+    if (WORK[s] >= WORK[s - 1]) throw new Error('mine: a dearer step is not faster');
   }
   if (WORK[STEPS] < TOK_PER_SWING) throw new Error('mine: the top step breaks a stone in under one swing');
   if (PRICE[1] < 1) throw new Error('mine: the first step is free');
@@ -518,6 +602,11 @@ const CLAIM_CELLS = 256;
 //   moves        accepted writes. The merge clock: it only grows, so of two copies the one with more
 //                moves is the later one, and a window writes exactly one record per move count,
 //                which is what makes (moves, by) the record's name
+//   rungs        HOW LONG THE LADDER WAS WHEN `step` WAS WRITTEN. It is always this build's STEPS
+//                on the way out and it is read on the way in for one job: a step is a number on a
+//                ladder of a known length, so a record from a ladder of a different length names
+//                its rung with the wrong number and `clean` rescales it. Nothing else reads it and
+//                nothing in the game can change it
 //   step         THE WHOLE OF WHAT TOOL IS IN HAND: the step fitted, 0 for none, and it only ever
 //                rises (nextStep). There is no second field about the pick, because a pick never
 //                wears out: what was bought is what is being dug with, at every token count, for
@@ -552,7 +641,8 @@ const CLAIM_CELLS = 256;
 // stored depth and a token count that disagreed would be two answers to one question, and the
 // token count is the one that cannot be edited by hand.
 const REC_FIELDS = Object.freeze([
-  'moves', 'step', 'anchorTok', 'anchorDepth', 'claimedTo', 'bonus', 'spent', 'earned', 'finds'
+  'moves', 'rungs', 'step', 'anchorTok', 'anchorDepth', 'claimedTo', 'bonus', 'spent', 'earned',
+  'finds'
 ]);
 // The two counters that are kept per row. Held apart from REC_FIELDS because every rule that walks
 // a record (clean, save, same) has to walk these one element at a time
@@ -575,8 +665,14 @@ const BAG_FIELDS = Object.freeze(['got', 'sold']);
 //                      is opened with, so a window whose purchase lost the merge would keep the
 //                      pick it did not buy next to a `spent` that says it never paid for one
 // `finds` is not maxed either, for the market's reason (market.js, MAX_FIELDS): a find that was
-// dropped did not happen, so its figure may not outlive it. The winning record is adopted WHOLE and
-// nothing is lifted out of the loser.
+// dropped did not happen, so its figure may not outlive it. `rungs` is not maxed because it is not
+// a figure about the reader at all: it is the length of the ladder the step beside it was counted
+// on, and maxing it across a merge would read a step on this ladder as a step on a longer one and
+// rescale a number that was already right. `pick` is not maxed and is not even in the record: it
+// is written by `save` for an older build to read and it is derived from `step`, so lifting it out
+// of the loser would carry the band of a purchase the merge threw away, which is `step` being
+// maxed by the side door. The winning record is adopted WHOLE and nothing is lifted out of the
+// loser.
 const MAX_FIELDS = Object.freeze([]);
 
 // What `clean` will believe. A figure outside these is not one `save` could have produced, so it
@@ -594,8 +690,13 @@ const MAX_DEPTH = 1e12;
 // A FORGED `step` IS NOT A HOLE IN CLAIM (a). The ceiling is enumerated at every step including the
 // top one, and the enumeration prices a cell at that step's own full digging speed, so the most a
 // hand-edited store can give itself is the rate step 100 was already proved against
+// `rungs` IS NOT CEILED AT STEPS, and that is deliberate: a ladder longer than this build's is
+// exactly the record a NEWER build writes, and dropping its length to 0 would read its step as a
+// rung of 1.41.0's hundred and multiply it by five. Held as written, `clean` divides instead and
+// the reader comes back at the same fraction of the climb. The step itself is still ceiled, so no
+// `rungs` can hand out a rung that is not on this ladder
 const REC_CEIL = Object.freeze({
-  moves: MAX_MOVES, step: STEPS, anchorTok: MAX_TOK, anchorDepth: MAX_DEPTH,
+  moves: MAX_MOVES, rungs: MAX_MOVES, step: STEPS, anchorTok: MAX_TOK, anchorDepth: MAX_DEPTH,
   claimedTo: MAX_DEPTH, bonus: MAX_DEPTH, spent: MAX_MONEY, earned: MAX_MONEY, finds: MAX_MOVES
 });
 // One row cannot hold more than this. A reader at the top step breaks 8,556 stones a day, so a
@@ -612,7 +713,7 @@ function fresh(by, anchorTok) {
   const tok = (Number.isSafeInteger(anchorTok) && anchorTok > 0) ? Math.min(anchorTok, MAX_TOK) : 0;
   return {
     by: by == null ? '' : String(by),
-    moves: 0, step: FIST, anchorTok: tok, anchorDepth: 0, claimedTo: 0, bonus: 0,
+    moves: 0, rungs: STEPS, step: FIST, anchorTok: tok, anchorDepth: 0, claimedTo: 0, bonus: 0,
     spent: 0, earned: 0, finds: 0, got: zeroBag(), sold: zeroBag()
   };
 }
@@ -716,7 +817,7 @@ function bandIn(rec) { return bandOf(stepOf(rec)); }
 
 // HOW FAR INTO THE STONE IN HAND THE WORK HAS GOT, in swings, which is the reader's own unit for
 // this ladder. The screen draws the next stone from it and works nothing out: `of` is how many
-// swings this step takes to break a stone (ten at the first step, four at the hundredth) and `at`
+// swings this step takes to break a stone (ten at the first step, four at the top one) and `at`
 // is how many of them have landed. Bare hands are a stone of their own, eight times the first
 // step's, so the pair still says something true when there is no pick
 function stoneOf(rec, tok) {
@@ -974,18 +1075,58 @@ function clean(rec) {
   for (let i = 0; i < ROWS; i++) if (out.sold[i] > out.got[i]) out.sold[i] = out.got[i];
   // ...and the fever row is ground rather than a thing, so it is never in the bag
   for (let i = 0; i < ROWS; i++) if (!sellable(i)) { out.got[i] = 0; out.sold[i] = 0; }
-  // A TIER FROM AN OLDER RECORD IS A STEP. `step` is not a field those records have, so the loop
-  // above read 0 for it and the reader would be back to bare hands with their purchase gone
-  if (out.step < 1) out.step = migrateStep(rec);
+  // `step` IS READ TWICE, AND THIS IS THE READING THAT COUNTS. The loop above held it against
+  // REC_CEIL, which is THIS ladder's end, and a step past this ladder's end is exactly what a
+  // record from a longer one has: dropping it there would take the pick off a reader whose only
+  // mistake was running a newer window. So the raw figure is taken again and held against the
+  // ladder the record NAMES (`rungs`), which is the only length it could have been a rung of, and
+  // the rescale turns it into a rung of this one. A figure past that length is still a forgery and
+  // still reads as nothing at all.
+  // A TIER FROM AN OLDER RECORD IS A STEP TOO: those records have no `step` at all, and without
+  // the line below the reader would be back to bare hands with their purchase gone
+  const named = rec.step;
+  const rungs = out.rungs > 0 ? out.rungs : LADDER_1_41;
+  out.step = (Number.isSafeInteger(named) && named > 0 && named <= rungs)
+    ? rescaleStep(named, rungs) : migrateStep(rec);
+  // ...and what goes back out is always this build's ladder, whatever came in
+  out.rungs = STEPS;
   return out;
 }
 
-// WHAT A RECORD FROM AN OLDER BUILD MEANS HERE. Three shapes have been in the field and all three
+// THE SAME RUNG ON A LADDER OF A DIFFERENT LENGTH. A `step` means nothing without the number of
+// rungs it was counted against, and 1.42.0 is the release that made that true: five hundred rungs
+// where there were a hundred, between the SAME TWO STONES (see STEPS, and the work curve's own
+// note). So what travels between ladders is the FRACTION OF THE CLIMB, and that fraction is what
+// this reads back.
+//
+// ROUNDED UP AND NEVER DOWN. A rung that lands between two of this ladder's takes the FASTER of
+// them, which is the direction every migration in this file errs in and the only one that is
+// allowed here: the depth is derived from the work curve, so a step rounded DOWN would be a slower
+// stone and the reader's own depth would come back shallower than it went in. That is the one
+// thing on this screen that would be unforgivable (see the note on the ruler below).
+//
+// AND IT WORKS BOTH WAYS, which is why it is a division and not a multiplication by SUB. A record
+// written by a NEWER build names a longer ladder, and reading its step as a rung of the hundred
+// would multiply a number that was already too big. The fraction is the invariant because both
+// ends of the work column are pinned (STEPS): every ladder this game can ever have runs between
+// ten swings and the window's own line, so the same fraction is the same stone at any length
+function rescaleStep(step, rungs) {
+  if (rungs === STEPS) return step;
+  return Math.max(1, Math.min(STEPS, Math.ceil(step * STEPS / rungs)));
+}
+
+// WHAT A RECORD FROM AN OLDER BUILD MEANS HERE. Four shapes have been in the field and all four
 // keep the step they paid for, because a reader who bought a pick owns it:
 //
 //   1.39.0 and before   `pick` 1..4, and the durability was derived from the tier
 //   1.40.0              `pick` 1..4 and `durTok`, the remaining durability in TOKENS
 //   1.41.0              `step` 1..100 and `durM`, the remaining durability in METRES
+//   1.42.0              `step` 1..500 and `rungs`, the length of the ladder it is counted on
+//
+// THE 1.41.0 SHAPE IS NOT READ HERE but by `rescaleStep` above: it has a `step`, so `clean`'s own
+// loop took it, and what it has no way of saying is that the number is out of a hundred. A missing
+// `rungs` is that ladder and there is only one it can be, because 1.41.0 is the only build that
+// ever wrote a `step` without a length beside it.
 //
 // THE DURABILITY FIELDS ARE DROPPED AND NOT MIGRATED, which is the whole of this release at the
 // storage boundary: they are not in REC_FIELDS, so `clean` never reads them, and a pick that had
@@ -997,30 +1138,34 @@ function clean(rec) {
 //
 // `pick` is the one field that still has to be read here, because `clean`'s loop only walks fields
 // this build has: a tier becomes the FIRST STEP OF ITS BAND, which is the step with exactly the
-// rows that tier could take. A tier-4 reader lands on step 70 with the idol still open.
+// rows that tier could take. A tier-4 reader lands on step 350 with the idol still open, because
+// the bands moved with the ladder and a band's first step is still the step its rows open at.
 //
 // --- AND THE RULER MOVED UNDER THESE RECORDS, WHICH IS NOT MIGRATED EITHER ----------------------
 //
-// `anchorDepth`, `claimedTo` and `bonus` are all stored IN METRES, and a metre is half the tokens
-// it was. Nothing converts them, and the reason is that there is only one direction the arithmetic
-// can go: depth = anchorDepth + bonus + floor(used / work), and `work` got SMALLER, so
+// `anchorDepth`, `claimedTo` and `bonus` are all stored IN METRES and nothing converts them, at
+// any release. The reason is that there is only one direction the arithmetic can go:
+// depth = anchorDepth + bonus + floor(used / work), so for any two rulers w' <= w
 //
-//   floor(used / (work / 2))  >=  2 x floor(used / work)  >=  floor(used / work)
+//   floor(used / w')  >=  floor(used / w)
 //
-// for every `used` and every `work`. A STORED RECORD CANNOT COME BACK SHALLOWER THAN IT WENT IN,
-// at any step, at any token count, which is the one thing that would be unforgivable here: the
-// depth is the only thing on this screen a reader has been watching for a month.
-// test/mine.test.js keeps the 1.40.0 curve frozen as a fixture and walks a grid of (step, used)
-// against it rather than taking the inequality above on trust.
+// for every `used`. A STORED RECORD CANNOT COME BACK SHALLOWER THAN IT WENT IN, at any step, at
+// any token count, which is the one thing that would be unforgivable here: the depth is the only
+// thing on this screen a reader has been watching for a month. So every release that touches the
+// work curve owes exactly one thing, which is that the rung a record lands on is AT LEAST AS FAST
+// as the rung it left: 1.41.0 owed it per step (the ruler halved under a ladder of the same
+// length) and 1.42.0 owes it per FRACTION (`rescaleStep` above, five hundred rungs where there
+// were a hundred). test/mine.test.js keeps both of the curves that have been in the field frozen
+// as fixtures and walks a grid of (step, used) against them rather than taking the inequality
+// above on trust.
 //
 // WHAT IT DOES COST is a one-off catch-up: a reader whose anchor is a long way back comes forward
 // by the ground they had already dug, and the stretch between `claimedTo` and that new face yields
 // once, as ordinary ground. It is bounded by CLAIM_CELLS a message so it arrives over several
-// pushes rather than as a lump, and it is drawn from the table below, which is a quarter of what
-// 1.40.0's was. That is the same
-// direction every other migration in this file errs in (nobody's pick breaks, nobody's step is
-// taken away), and the alternative was a stored field whose only job was to mark the one release
-// the ruler changed in.
+// pushes rather than as a lump, and it is drawn from the table above. That is the same direction
+// every other migration in this file errs in (nobody's pick breaks, nobody's step is taken away,
+// nobody's rung comes back slower), and the alternative was a stored field whose only job was to
+// mark the one release the ruler changed in.
 function migrateStep(src) {
   const t = src && src.pick;
   if (!Number.isSafeInteger(t) || t < 1) return 0;
@@ -1035,13 +1180,52 @@ function load(rec, anchorTok) {
 }
 
 // What the host stores. The same fields back out, so a record through save(load(x)) is the record
-// clean() believed
+// clean() believed, PLUS one field that this build never reads. See below.
 function save(rec) {
   const out = { by: rec.by };
   for (const k of REC_FIELDS) out[k] = rec[k];
   // the bags are copied rather than handed over, so a host that held on to what it stored cannot
   // reach into the record this module is still acting on
   for (const k of BAG_FIELDS) out[k] = rec[k].slice();
+  // --- THE ONE FIELD THAT IS WRITTEN AND NEVER READ. DO NOT DELETE IT. -------------------------
+  //
+  // It is not dead code and it is not a leftover: it is the only thing standing between a reader
+  // and the loss of their whole climb, and the reason it looks dead is that THE CODE IT IS FOR IS
+  // IN A BUILD THAT IS ALREADY ON PEOPLE'S MACHINES and cannot be edited any more.
+  //
+  // THE PATH, which happens on every update and not in theory. VS Code replaces the extension
+  // globally but a window that is already open keeps running the old code until it is reloaded, so
+  // two builds share one store for as long as that window is up:
+  //
+  //   1  the reader updates to 1.42.0
+  //   2  a window opened after that writes step 350 of 500
+  //   3  a window still running 1.41.0 reads it. Its REC_CEIL.step is 100, so 350 is a figure its
+  //      save could not have produced and its `clean` drops it to 0
+  //   4  it then runs `if (out.step < 1) out.step = migrateStep(rec)`, and 1.41.0's migrateStep
+  //      reads the field below
+  //   5  it writes the record back
+  //
+  // WITHOUT THIS FIELD step 4 finds nothing, the reader is handed bare hands, and the record that
+  // goes back to the store is a mine with no pick in it: five hundred rungs of climbing gone, and
+  // gone for good, because `spent` is still there and nothing refunds it. WITH IT, the old window
+  // reads a tier of 1 to 4 and lands on the first step of that band (1 / 10 / 35 / 70 on ITS
+  // ladder, which this build's `clean` then rescales back to 1 / 50 / 175 / 350). The reader loses
+  // the rungs between bands and keeps the band, the keys and the depth. Those two outcomes are not
+  // the same kind of thing.
+  //
+  // IT IS WRITE-ONLY, AND THAT IS THE RULE. The truth about the tool in this build is `step` and
+  // `rungs`; this is a projection of them for a reader that cannot see either. `clean` must never
+  // take it (REC_FIELDS does not list it, and `migrateStep` only sees it on a record whose `step`
+  // was not a rung of its own ladder, which is what an OLD record looks like), because the moment
+  // it is read, a stale four-value tier can overwrite a step this build knows exactly.
+  //
+  // AND IT MAY NOT BE MAXED ACROSS A MERGE. MAX_FIELDS is empty and it stays empty: it is derived
+  // from `step`, so lifting it out of the losing record would carry the band of a purchase the
+  // merge threw away, which is `step` being maxed by the side door (see MAX_FIELDS' own note).
+  //
+  // WHEN IT CAN GO: when no 1.41.0 window can be running any more, which is not a date this file
+  // can know. Until then it costs one small integer per write
+  out.pick = bandIn(rec);
   return out;
 }
 
@@ -1161,7 +1345,7 @@ function opensFor(rec, step) {
 // What the one button fits, what it costs, HOW FAST IT CUTS and WHAT IT OPENS.
 //
 // `lose` went with the loss it described, `reach` with the durability that was the only thing it
-// could have measured, and `name` with the four names: a hundred steps cannot have a hundred names,
+// could have measured, and `name` with the four names: five hundred steps cannot have five hundred names,
 // so the button carries the STEP NUMBER and the price, which is fewer glyphs than a name as well as
 // being true at every step.
 //   swings  how many swings a stone takes once it is fitted. Beside `stone.of` in the view, that is
@@ -1198,7 +1382,7 @@ function offerFor(rec) {
 //   step    0..steps, the step in hand, 0 being the fist
 //   tier    0..4, WHICH OF THE FOUR LOOKS that step wears, and it keeps the name it has had since
 //           1.40.0 because that is what the screen always meant by it: `.mn-pick.t3` is a drawing
-//           and not a rung. A hundred steps cannot be a hundred drawings, and the four bands are
+//           and not a rung. Five hundred steps cannot be five hundred drawings, and the four bands are
 //           exactly the four sets of rows the gate opens, so the look and the key are one thing
 //   stone   { at, of } in SWINGS: how far into the stone in hand the work has got. The screen draws
 //           the next stone from this pair and the reader reads their own "ten swings" off `of`
@@ -1256,7 +1440,7 @@ function view(rec, free, tok, ev, since) {
 
 module.exports = {
   // the ruler, the stone and the ladder
-  TOK_PER_MT, STONE_M, TOK_PER_SWING, UNIT, FIST_DIV, FIST, STEPS, TOP_STEP, BANDS,
+  TOK_PER_MT, STONE_M, TOK_PER_SWING, UNIT, FIST_DIV, FIST, STEPS, SUB, LADDER_1_41, TOP_STEP, BANDS,
   WORK, PRICE, hasStep, workOf, FIST_WORK, priceOf, swingsOf, nextStep, bandOf,
   // the ceiling claim (a) is made against
   EARN_CAP_NUM, EARN_CAP_DEN,

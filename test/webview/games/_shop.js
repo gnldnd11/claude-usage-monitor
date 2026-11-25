@@ -31,7 +31,13 @@ module.exports = {
   // than four more lines in `cross`, because what it is checking is a rule about the page and not
   // a step of the walk `cross` makes: a door says how finished the room behind it is, and it says
   // so from DATA (games/registry.js's `beta`) so that no shared file has to know which game it is
-  modes: ['cross', 'cross-beta', 'shop', 'shop-poor', 'shop-held'],
+  // `cross-market` is the crossroads a THIRD time and only about the market's door (1.42.0): that
+  // a door with one game behind it opens that game's screen rather than a list of one, that the
+  // list the Games door opens is four rounds with no market row on it, and that a view stored
+  // before this release -- which names the game and knows nothing about a door -- comes back to the
+  // market and not to the crossroads. Its own mode, because it needs that stored view to exist
+  // before the first script runs
+  modes: ['cross', 'cross-beta', 'cross-market', 'shop', 'shop-poor', 'shop-held'],
   // 3,000 buys the one thing on the shelf and leaves something over. 5 is a purse that cannot
   // reach it, and 1,500 is a purse that can until a table is holding 1,000 of it, which is what
   // the two different short-purse sentences need
@@ -44,7 +50,11 @@ module.exports = {
   // the two shop modes RESUME INTO THE SHOP, which also says that the stored door comes back
   state: {
     shop: { tab: 'games', door: 'shop', lastTab: 'usage' },
-    'shop-poor': { tab: 'games', door: 'shop', lastTab: 'usage' }
+    'shop-poor': { tab: 'games', door: 'shop', lastTab: 'usage' },
+    // A VIEW STORED BY 1.41.0: it names the market and no door, because on that build the market
+    // was a row behind the Games door and `door` was only ever 'games', 'mine' or 'shop'. The
+    // reader shut the panel inside the market and the upgrade landed while it was shut
+    'cross-market': { tab: 'games', game: 'market', lastTab: 'usage' }
   },
 
   run: function (h, MODE) {
@@ -97,6 +107,19 @@ module.exports = {
       want.length > 0, JSON.stringify(want));
     ok('exactly the doors the register marks carry the stamp, and no others',
       worn.join() === want.join(), JSON.stringify(worn) + ' vs ' + JSON.stringify(want));
+    // ...AND THE WHOLE ROW IS THE REGISTER'S ANSWER, not this page's. The same argument as `beta`
+    // one line wider: the ids, the order, the captions and the drawings all travel on the data, so
+    // html.js draws a button per door without ever learning which game is behind one. A hardcoded
+    // door in that loop, or one skipped by its name, shows up here as the page and the register
+    // disagreeing -- which is what makes a FOURTH door cost no edit in a shared file (1.42.0).
+    // The shop's is html.js's own and comes last, because the shop is not a game (4-5)
+    const fromReg = h.registry.doors((f) => f).map((d) => d.id + ':' + d.name + ':' + d.art)
+      .concat(['shop:Shop:hero-shop.png']);
+    const onPage = [].slice.call(doc.querySelectorAll('#panelCross .cr-door')).map((d) =>
+      d.getAttribute('data-door') + ':' + d.querySelector('.cr-cap').textContent + ':'
+      + /[^/]+$/.exec(d.querySelector('.cr-art img').getAttribute('src'))[0]);
+    ok('and the row itself is the register’s list of doors, in its order, with its own captions',
+      onPage.join(' ') === fromReg.join(' '), onPage.join(' ') + '\n      vs ' + fromReg.join(' '));
     const badge = doc.querySelector('#panelCross .cr-beta');
     ok('it is one word, in letters, with no picture in it',
       badge.textContent === 'BETA' && !badge.querySelector('svg') && !badge.querySelector('img'),
@@ -124,6 +147,58 @@ module.exports = {
     return;
     }
 
+    // --- the market's own door (1.42.0) -----------------------------------------------------------
+    if (MODE === 'cross-market') {
+    const LISTED = h.registry.behind(h.registry.LIST_DOOR).map((g) => g.id);
+    // ---------- 1. the stored view from the build before this one ----------
+    // `door` was never written for the market, because it did not have one. doorOf() reads the
+    // register instead of migrating anything, so the screen the reader was on is the screen they
+    // come back to (webview.js, curDoor). Migrating would have cost them their place
+    ok('a view stored before this release names the market and no door, and still comes back to it',
+      doc.body.classList.contains('game-mk') && $('panelMarket').style.display === ''
+      && !showing('panelCross') && !showing('panelGames'), bodyTabs());
+    // ---------- 2. one step out is the crossroads, not the list ----------
+    // A door holds one game, so there is no list of one to stand on: the arrow out of the market
+    // climbs the whole way (webview.js's backStep, soleGame)
+    $('mkBack').click(); advance(20);
+    ok('and one step out of it is the crossroads, because a door of one has no list behind it',
+      showing('panelCross') && !showing('panelGames'), bodyTabs());
+    // ...and it said where it goes before it was pressed. The title is chosen off the DOOR and not
+    // off the game (webview.js's frameHtml), so this reads "Games and shop" for the same reason the
+    // list's own arrow and the shop's do, and the floor still learns no game's name
+    ok('the arrow said where it goes before it was pressed, which is not "All games" any more',
+      $('mkBack').title === 'Games and shop', $('mkBack').title);
+    // ---------- 3. four doors, two to a row ----------
+    const caps = doc.querySelectorAll('#panelCross .cr-door')
+      .map((d) => d.getAttribute('data-door') + ':' + d.querySelector('.cr-cap').textContent);
+    ok('four doors stand on it, the market among them, each with its own drawing',
+      caps.join(' ') === 'mine:Mine market:Market games:Games shop:Shop', caps.join(' '));
+    ok('and the market’s is its own picture rather than the games list’s',
+      /hero-market\.png$/.test(doorBtn('market').querySelector('.cr-art img').getAttribute('src')),
+      doorBtn('market').querySelector('.cr-art img').getAttribute('src'));
+    // ---------- 4. the door IS the screen ----------
+    doorBtn('market').click(); advance(20);
+    ok('pressing it opens the market itself, with no list of one on the way',
+      doc.body.classList.contains('game-mk') && $('panelMarket').style.display === ''
+      && !showing('panelGames') && !showing('panelCross'), bodyTabs());
+    ok('and it asked the host for the prices, which is what opening this screen means',
+      h.sent('mk').filter((m) => m.op === 'open').length >= 1,
+      h.sent('mk').map((m) => m.op).join());
+    // Escape is the same one step the arrow takes, from the same place
+    doc.pressKey('Escape'); advance(20);
+    ok('Escape takes the same step the arrow did', showing('panelCross'), bodyTabs());
+    // ---------- 5. the list it left ----------
+    doorBtn('games').click(); advance(20);
+    ok('the Games door opens a list of four rounds, and the market is not one of them',
+      doc.querySelectorAll('#panelGames .gm-row').map((r) => r.getAttribute('data-game')).join()
+        === LISTED.join() && LISTED.length === 4 && LISTED.indexOf('market') < 0,
+      LISTED.join());
+    ok('so there is no row for it to be starred on, and no figure slot either',
+      !h.rowBox('market') && !h.rowFor('market') && !$('fig-market'), LISTED.join());
+    ok('no handler threw', h.errors.length === 0, h.errors.map((e) => e && e.message).join(' | '));
+    return;
+    }
+
     if (MODE === 'cross') {
     // ---------- 1. the coin opens a choice ----------
     ok('the page starts on Usage, as it always has', bodyTabs() === 'tab-usage', bodyTabs());
@@ -132,17 +207,33 @@ module.exports = {
       showing('panelCross') && !showing('panelGames') && !showing('panelShop')
       && notShown('panelTable') && bodyTabs() === 'tab-games', bodyTabs());
     const doors = doc.querySelectorAll('#panelCross .cr-door');
-    // THREE SINCE 2026-11-24 (docs/shop-spec.md, 2-7). The order is the register's doors and then
-    // the shop's, which is the one html.js owns because the shop is not a game
-    ok('three doors, each a picture with its name under it',
-      doors.length === 3
-      && doors.map((d) => d.querySelector('.cr-cap').textContent).join() === 'Mine,Games,Shop'
+    // FOUR SINCE 1.42.0, when the market left the games list for a door of its own
+    // (docs/shop-spec.md, 2-7). The order is the register's doors and then the shop's, which is the
+    // one html.js owns because the shop is not a game.
+    //
+    // NAMED RATHER THAN COUNTED OFF THE REGISTER, deliberately: which doors the crossroads has is
+    // the decision this release IS, and a test that asked registry.doors() for the answer would
+    // pass just as happily if the market quietly went back on the list tomorrow. The register's own
+    // shape is test/registry.test.js's job, and the cross-beta mode above is the one that has to
+    // follow the data, because what it checks is that a shared file reads it
+    ok('four doors, each a picture with its name under it',
+      doors.length === 4
+      && doors.map((d) => d.querySelector('.cr-cap').textContent).join() === 'Mine,Market,Games,Shop'
       && doors.every((d) => !!d.querySelector('.cr-art img')),
       doors.map((d) => d.querySelector('.cr-cap').textContent).join());
-    ok('and they are the three drawings, not a glyph or a tile',
+    ok('and they are the four drawings, not a glyph or a tile',
       doors.map((d) => /[^/]+$/.exec(d.querySelector('.cr-art img').getAttribute('src'))[0]).join()
-        === 'hero-mine.png,hero-games.png,hero-shop.png',
+        === 'hero-mine.png,hero-market.png,hero-games.png,hero-shop.png',
       doors.map((d) => d.querySelector('.cr-art img').getAttribute('src')).join(' '));
+    // ...AND TWO TO A ROW, which is what four doors cost. One row of four is 62.25px a column at the
+    // design width and 37px at a sidebar dragged to 250, where the shop's drawing paints at 0.041x
+    // and the word "Market" (39.53px at 12.5px/700) does not fit the column at all. A grid of two
+    // and not a wrapping flex row, so that two per row is true at every width rather than at most
+    // of them (styles.js, .cr-pair)
+    ok('and they stand two to a row, which is a grid of two columns and not a row that wraps',
+      /\.cr-pair\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(css())
+      && !/\.cr-pair\{[^}]*flex-wrap/.test(css()),
+      (/\.cr-pair\{[^}]*\}/.exec(css()) || [''])[0]);
     // NO NUMBERS. The balance is in the button directly above this screen, and a figure here would
     // be the same number twice (docs/shop-spec.md, section 2-1)
     ok('there is not one digit on the screen', !/\d/.test($('panelCross').textContent),

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.42.0: A find is worth digging for, and the market gets its own door
+
+- **A find pays sixteen times what it did.** Quartz 1 to 7, garnet 2 to 21, amethyst 3 to 49, the old coin 7 to 140, the crab idol 26 to 500. The same seam stands at the same metre; it is worth looking at now.
+- **The ceiling it is tuned against went from 15% of what the work earns to 200%.** On a real day that was 522 credits against the ledger's own 4,310, and no table under that line was worth selling. What the ceiling protects is untouched: every term is weighted tokens times a rate, so a mine nobody works still pays nothing. Re-enumerated as exact rationals over all 501 steps, the worst is 191.750%.
+- **The gems have their own ladder back.** They were squashed to 1 / 2 / 3 because quartz cannot go under one whole credit and a cell could only pay 2.75. At 36.72 a cell they are 1 / 3 / 7 again, so a rarer gem is a different event rather than a bigger number.
+- **The ladder is 500 steps where it was 100.** Both ends are pinned by the screen and not by taste: ten swings a stone at the bottom, six ordinary replies of lookahead at the top. So a longer ladder is a finer one, not a faster one. 5 credits at the first rung and 17,072 at the last.
+- **Every pickaxe in the field keeps its rung, its keys and its depth.** Step 70 of a hundred is step 350 of five hundred. The record carries the length of the ladder its step was counted on, so the rescale works both ways.
+- **An unreloaded 1.41.0 window cannot take your pickaxe away.** VS Code updates an extension globally while an open window keeps running the old code, and that build drops any step past its own hundred to zero before writing the record back. The record now carries the tier beside the step, which is the field that build reads, so the worst a stale window can do is put you at the first step of the band you were in.
+- **The four pick drawings are spread over the climb** instead of crowding its first seventh: steps 1, 50, 175 and 350 where 10, 35 and 70 were.
+- **The Coin Market has a door of its own, and the games list is four.** The list answers "what shall I play", and that answer is a stake laid down and a round that ends. A position is not a round: it is bought and then it is yours, and it moves while the panel is shut. Nothing about the screen changed. If you had starred it, the star is kept.
+- **The crossroads stands two doors to a row.** Four across is 62px a column at the design width and 37px at a narrow sidebar, where the shop's drawing paints at four hundredths of its size and the word Market does not fit its column at all. Two to a row gives every door the same height on the same floor, and the drawings are the largest they have been since there were two.
+- **Escape leaves the market now.** While a game is open the page hands the key to that game, and nothing on the coin list was listening.
+- 14 suites and 55 webview modes pass. Eleven mutations were run against them and all were caught, including both halves of the raise frozen as literals so neither can move without the other.
+
 ## 1.41.0: The crab walks, and the pickaxe is yours for good
 
 - **A pickaxe never wears out now.** The ladder is 100 steps and a step buys one thing: how fast a stone breaks. Ten swings a stone at step 1, four at step 100. Every pickaxe in the field keeps the step it was bought at.

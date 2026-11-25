@@ -982,19 +982,35 @@
     // so from a coin the arrow closes the coin and from the list it leaves the market. It is the same
     // step Escape takes, which is why there is no second arrow on the screen any more
     up: function () { if (!mk.coin) return false; mkOpenList(); return true; },
-    // The row's figure, drawn whether this panel was ever built or not: the lists rows are in the
-    // page from the first paint, and a figure you have to open the panel to see cannot be the reason
-    // you open it. A reply with no state says nothing about positions, so it leaves the row alone
-    fig: function (m) {
-      if (!m.state) return;
-      var st = m.state;
-      if (!st.holding) return CUC.rowFig('market', null);
-      CUC.rowFig('market', signed(st.heldPl), st.heldPl > 0 ? 'up' : st.heldPl < 0 ? 'down' : null);
-    },
+    // NO `fig` HOOK ANY MORE, and it went with the row rather than with the figure. This panel used
+    // to write the open position's profit into its list row (CUC.rowFig), because the rows are in
+    // the page from the first paint and a figure you have to open the panel to see cannot be the
+    // reason you open it. Since 1.42.0 the market stands behind a door of its own and has no row at
+    // all, and the crossroads is not where that number can go instead: there is not one digit on
+    // that screen, by its own rule (docs/shop-spec.md, 2-1).
+    // THE NUMBER IS NOT LOST. It is in the heading's corner the moment this screen opens (mkHead's
+    // mkSide), signed and coloured the same way, which is one step further in than the row was and
+    // the only place left that is this game's own.
     // a credit minted while the buy screen is up lights the chips at once
     credits: function () { if (mk.coin) mkButtons(); },
     keys: function (e) {
-      if (!mk.coin) return;              // on the list the rows are buttons: Tab and Enter already work
+      // ESCAPE IS ONE STEP FROM EITHER DEPTH OF THIS GAME, and the shallow one is new in 1.42.0.
+      // While a game is open the page hands it the key and does nothing else of its own
+      // (webview.js's keydown), so until now Escape on the list of coins did nothing at all: the
+      // market was a row one arrow away from the games list and the arrow was the only way back.
+      // Behind a door of its own it is a top-level screen, where every other screen in the area
+      // leaves on Escape (docs/shop-spec.md, 4-1), and the mine already does this.
+      // IT PRESSES THE ARROW rather than working out the step itself. There is one answer to "what
+      // is one step from here" and it is webview.js's backStep; a second one here is how a game
+      // ends up going somewhere its own arrow does not. Escape only, which is what the page's own
+      // rule is: Backspace is this game's key for closing a coin and not for leaving a screen
+      if (!mk.coin) {                    // on the list the rows are buttons: Tab and Enter already work
+        if (e.key === 'Escape') {
+          var out = el('mkBack');
+          if (out) { e.preventDefault(); out.click(); }
+        }
+        return;
+      }
       if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); mkOpenList(); return; }
       var k = String(e.key).toLowerCase();
       var hit = k === 'b' ? el('mkDeal') : k === 's' ? el('mkSell') : null;
