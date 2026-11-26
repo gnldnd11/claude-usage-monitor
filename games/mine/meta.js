@@ -28,6 +28,7 @@
 const engine = require('../../mine');
 const ore = require('./ore');
 const tools = require('./tools');
+const idle = require('./idle');
 
 // How much more work bare hands take, for the heading's one-line tooltip. Read off the engine
 // rather than written down: a hint that disagrees with what the wall actually gives up is worse
@@ -521,10 +522,20 @@ ${ore.CSS}
      a movement, so reduced motion keeps it and the two pictures are different (section 8).
      AND NOTHING TRANSITIONS INTO IT. The frame the swing is removed on is whatever angle the
      browser happened to be on, which is not a value to start an animation from (7-6).
-     THERE IS NO .mn-pick RULE UNDER .rest AND THERE MUST NOT BE. The tool hangs in the claw at
-     its resting -12 degrees, which is what taking the dig class off already leaves; a rule here
-     would have to out-rank .mn-pick.g1..g4, and anything it set would paint over the four lights
-     the ladder bought. The rule that is not here is the reason those four are safe.
+     THE TOOL GOES DOWN, AND IT IS THE ONE RULE HERE THAT TOUCHES IT. Until now nothing under
+     .rest named .mn-pick at all, and the reason given was that anything set here out-ranks
+     .mn-pick.g1..g4 and would paint over the four lights the ladder bought. That reason is
+     answered rather than abandoned: OPACITY IS NOT A LIGHT. The filter, the drawing and the
+     angle are all left exactly as they are and the element is simply not shown, so when the work
+     comes back the tool that comes back with it is the same tool at the same band with the same
+     glow on it -- there is no second state of the pick anywhere in this stylesheet to disagree
+     with the first. What it costs is that the band in hand cannot be read WHILE the window is
+     quiet, which is a real loss and a small one: it is back on the first frame of the first swing,
+     and the thing a resting band has to say is that it is resting.
+     160ms AND NOT AT ONCE. A tool that vanishes between two frames is the "frozen, then broken"
+     reading again, one element smaller. Going down it is the first beat of three (the tool, the
+     drop, the bubble) and coming back it is the only one, which is why the transition is on the
+     element and not under .rest: it runs in both directions.
      WHICH IS WHY IT IS .mn-dig THAT STEPS BACK AND NOT .mn-crab. The two are 12.6px apart for as
      long as the state lasts, and the pick is pinned to the crab's claw by its own left/top and
      transform-origin: move the crab alone and the claw goes with it while the tool does not, so
@@ -536,6 +547,7 @@ ${ore.CSS}
      and it does not rest either -- it simply stays under the crab */
   .mn-drift.rest .mn-dig,
   .mn-drift.rest .mn-shade{transform:translateX(-12.6px);}
+  .mn-drift.rest .mn-pick{opacity:0;}
   /* THE EARTH UNDER THE CRAB. One ellipse of ink, which is what sits it on the floor rather than
      in front of it. It is not a drawing and not a filter: a shadow that followed the swing would
      be a second animation on a screen that is allowed one */
@@ -601,7 +613,8 @@ ${ore.CSS}
      recovery that join them (docs/mine-mockup/spec.md, 8) */
   .mn-pick{position:absolute;left:calc(40% - 16.8px);top:8px;width:28px;height:28px;z-index:3;
     pointer-events:none;background-repeat:no-repeat;background-position:50% 50%;
-    background-size:contain;transform-origin:7.5px 25.9px;transform:rotate(-12deg);}
+    background-size:contain;transform-origin:7.5px 25.9px;transform:rotate(-12deg);
+    transition:opacity 160ms linear;}
   .mn-pick.dig{animation:mnPick 1760ms step-end infinite;}
   @keyframes mnPick{
     0%{transform:rotate(-12deg);}
@@ -637,7 +650,8 @@ ${ore.CSS}
   .mn-chip{position:absolute;left:6px;top:44px;background:#bbbdc7;box-shadow:0 0 0 1px #0b1310;
     transform:translate(-50%,-50%);opacity:0;animation-duration:1760ms;
     animation-timing-function:step-end;animation-iteration-count:1;animation-fill-mode:both;}
-${tools.CSS}  /* Reduced motion stops the swing and leaves frame 0, which is the crab standing with the pick
+${tools.CSS}${idle.CSS}
+  /* Reduced motion stops the swing and leaves frame 0, which is the crab standing with the pick
      held up at its resting angle: this screen needs no still drawing of its own, which is most of
      why the strip is a PNG and not a GIF. ALL FIVE STOP TOGETHER -- the crab, the pick, the step,
      the grit and the bite in the wall -- or the pick carries on swinging next to a crab that has
@@ -662,6 +676,11 @@ ${tools.CSS}  /* Reduced motion stops the swing and leaves frame 0, which is the
     .mn-drift.pan,.mn-drift.pan .mn-cut,.mn-drift.pan .mn-floor,.mn-drift.pan .mn-adv,
     .mn-drift.pan .mn-rock,.mn-drift.pan .mn-slide,.mn-drift.pan .mn-sills,
     .mn-drift.pan .mn-frames{transition:none;}
+    /* ...and the tool is put down in one step rather than over 160ms. WHICH TOOL IS IN HAND is
+       not in here and must not be: the drawing, the band and the light are all untouched by
+       resting, so a reader who asked for less motion loses the fade and keeps every pixel of
+       what the ladder bought (games/mine/idle.js makes the same split) */
+    .mn-pick{transition:none;}
   }
   /* THE BAG, which is what the sentence under the band turned into (docs/mine-mockup/spec-dig.md,
      section 4). It was a line of 10.5px muted text that read "No finds yet" until something was

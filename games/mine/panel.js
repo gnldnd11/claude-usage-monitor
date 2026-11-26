@@ -186,6 +186,7 @@
     adv: 0,
     timberAt: '',
     rest: false,         // the gap is open: the window is quiet and nothing is being cut
+    bought: null,        // how far up the ladder the last draw was. null is "no draw yet"
     pan: null,           // the grain's offset on screen, so a dash can run to the next one
     art: '',             // the host's picture URIs, as declarations, kept to be rewritten with
     step: 'quiet',       // the rung, off the floor
@@ -330,9 +331,15 @@
       // THE CRAB AND THE PICK IN ONE BOX, because the step into the hole is a transform and the
       // pick's own transform is its angle: two animations on one property is one animation
       // (games/mine/meta.js, .mn-dig). The shadow is outside it, since the earth does not step
+      // ...AND WHAT IT DOES WHEN THERE IS NOTHING TO HIT, in the same box for the same reason:
+      // both are pinned to the crab's head and both have to step back the 12.6px with it
+      // (games/mine/idle.js). They are in the markup from the start and shown by a class, because
+      // the state they draw can be true on the very first paint
       +   '<div class="mn-dig" id="mnDig">'
       +     '<div class="mn-crab" id="mnCrab"></div>'
       +     '<i class="mn-pick" id="mnPick" hidden></i>'
+      +     '<i class="mn-sweat" id="mnSweat"></i>'
+      +     '<div class="mn-wait" id="mnWait"><i></i><i></i><i></i></div>'
       +   '</div>'
       +   '<div class="mn-chips" id="mnChips">' + chips + '</div>'
       + '</div>';
@@ -545,8 +552,10 @@
     // `rest` IS ABOUT THE WORK AND NOT ABOUT MOTION, so reduceMotion is not in it: a reader who
     // asked for less motion while the machine is busy gets a crab standing ON the face, and a
     // quiet window gets one standing 12.6px back from it with rock showing in between. Different
-    // pictures for different facts, which is all section 7 is asking for. The tool is the same
-    // drawing in both and that is deliberate (7-4): the gap is the signal and nothing else is
+    // pictures for different facts, which is all section 7 is asking for. The gap is still the
+    // signal; what the tool does is no longer nothing (spec-idle.md 13, which reversed 7-4): it
+    // goes down over 160ms while the window is quiet, and it comes up for one beat if a step is
+    // bought in the meantime, which is when steps are bought
     var rest = !ms;
     var st = mn.st;
     var tier = (st && st.tier) | 0;
@@ -588,12 +597,33 @@
     var rung = tier >= 1 ? ' t' + tier : '';
     var lit = mnGlow(st);
     if (p) {
-      p.className = 'mn-pick' + rung + (lit ? ' g' + lit : '') + (on ? ' dig' : '');
-      // NO TOOL IS DRAWN WHEN NONE HAS BEEN BOUGHT. It is the one thing on the band that `tier`
-      // decides, and it has nothing to do with resting: the gap at the face is the whole of the
-      // resting picture (section 7-4), so bare hands and the top step rest alike. That is why
-      // the known weakness 7-5 used to carry is gone -- there is no second language to be missing
+      // THE LIFT IS CARRIED OVER, and it is the one class on this element the draw does not own.
+      // The band is written as the WHOLE class on every draw so a drop from band 3 to bare hands
+      // cannot leave last reply's `t3` behind, and that same sweep would cut a claw that is in
+      // the middle of coming up for a purchase -- the tool would snap away mid-beat on whatever
+      // reply happened to land next. Reading it back is what makes the sweep safe for the rest
+      var up = p.classList.contains('lift') ? ' lift' : '';
+      p.className = 'mn-pick' + rung + (lit ? ' g' + lit : '') + (on ? ' dig' : '') + up;
+      // NO TOOL IS DRAWN WHEN NONE HAS BEEN BOUGHT, which is `hidden` and is about OWNERSHIP:
+      // there is no pick, so there is no element. Resting is a different sentence said with a
+      // different property (opacity, under .rest) and the two do not interfere -- bare hands and
+      // the top step still rest alike, which is why the weakness 7-5 used to carry is gone.
+      // THE ORDER MATTERS ON THE WAY UP: a step bought from bare hands turns `hidden` off and
+      // raises the claw in the same draw, so the lift below is armed after this line
       p.hidden = tier < 1;
+      // ...AND A STEP BOUGHT WHILE THE WINDOW IS QUIET IS SHOWN. With the tool down, a purchase
+      // changes nothing a reader can see on the band, and the band is where the purchase lives
+      // (games/mine/idle.js, .mn-pick.lift).
+      // IT IS THE STEP AND NOT THE BAND. `tier` is one of four drawings over five hundred steps
+      // and the light is one of five, so an ordinary purchase moves neither: triggering off the
+      // band would raise the claw on four of the five hundred and the other 496 would still buy
+      // a screen that does not move. What is shown is the tool as it stands, which is the true
+      // answer to "what did I just get" even when the answer is the same drawing as before.
+      // ON THE WAY UP ONLY. The step cannot fall, but a reply that arrived out of order could
+      // say so, and a claw raised for a loss that did not happen is worse than a still band
+      var sold = st ? st.step | 0 : 0;
+      if (rest && mn.bought != null && sold > mn.bought) mnLift();
+      mn.bought = sold;
     }
     // THE GAP, which is a class on the band because three boxes read it (the crab, its shadow and
     // the tool) and because the band is the only element all three can see.
@@ -602,7 +632,7 @@
     // push's burst, and a piece of rock hanging in the air beside a crab that has stepped away
     // from the face is the "frozen mid-animation" reading all of this is meant to end
     var band = el('mnDrift');
-    if (rest && !mn.rest) mnCalm();
+    if (rest && !mn.rest) { mnCalm(); mnDrip(); }
     mn.rest = rest;
     if (band) band.classList.toggle('rest', rest);
   }
@@ -668,6 +698,45 @@
     mnGritOff();
     var rock = el('mnRock');
     if (rock) rock.classList.remove('burst');
+  }
+
+  // THE DROP, ONCE, AS THE WORK STOPS. The bubble that follows it is a state and needs no help
+  // from here -- .rest is what stands it up (games/mine/idle.js) -- but a thing that happens at
+  // the MOMENT of stopping has no class that is simply true afterwards, so it is armed by hand.
+  //
+  // IT CARRIES NO MILLISECOND AND NEEDS NO TIMER. The class is taken off and put back from
+  // nothing (the trick mnBurst already uses, for the same reason: an animation that has finished
+  // does not replay because its class was set again), and then it is LEFT ON. Its fill is `both`
+  // and its last frame is opacity 0, so a drop that has fallen is already absent -- scheduling a
+  // removal would be a second figure for the duration, kept in this file, able to disagree with
+  // the one in the stylesheet.
+  //
+  // REDUCED MOTION IS CHECKED HERE AS WELL AS IN THE STYLESHEET, and the two are not the same
+  // guard: the media query stops the drawing, and this stops the class going on at all, so a
+  // reader who asked for less motion does not accumulate an animation name on an element every
+  // time the window goes quiet
+  function mnDrip() {
+    if (CUC.reduceMotion()) return;
+    var d = el('mnSweat'); if (!d) return;
+    d.classList.remove('drip');
+    reflow(d);
+    d.classList.add('drip');
+  }
+
+  // THE CLAW COMES UP FOR ONE BEAT, when a step is bought and the window is quiet. Same shape as
+  // the drop above and for the same two reasons: there is no class that stays true afterwards
+  // (the purchase is a moment), and the keyframes have no fill, so the resting rule is back in
+  // force the instant they are over and no timer has to be right about when that is.
+  //
+  // reduceMotion IS NOT CHECKED HERE and is checked in mnDrip, which is the one difference
+  // between them. The drop is decoration and has nothing to say; this is the only drawing of a
+  // thing the reader has just paid for, and a reader who asked for less motion did not ask to
+  // stop being shown what they bought (games/mine/idle.js, .mn-pick.lift)
+  function mnLift() {
+    var p = el('mnPick'); if (!p || p.hidden) return;
+    p.classList.remove('lift');
+    reflow(p);
+    p.classList.add('lift');
   }
 
   // How long until phase 0 of the `i`th swing from now. A burst runs for one whole swing and the

@@ -965,6 +965,17 @@ module.exports = {
       ok('while the window is being worked the crab swings and there is no gap',
         dig() && !$('mnDrift').classList.contains('rest'),
         'dig=' + dig() + ' ' + $('mnDrift').className);
+      // ...AND NOTHING THAT BELONGS TO RESTING IS ON THE BAND WHILE IT IS NOT RESTING. This is
+      // the NEGATIVE half and it is the one that matters: the rule that stands the bubble up is
+      // under .rest, so the only thing keeping it off a busy band is its own base opacity 0. A
+      // mutation of that one declaration leaves a speech bubble over a crab that is swinging,
+      // and every other assertion in this mode passes with it there
+      // THE CLASS ON THE DROP IS NOT WHAT IS READ. It is left on for ever by design (the
+      // keyframes end at opacity 0 and there is no timer to be right about), so what keeps the
+      // drop off a busy band is the same base rule the bubble has and not the absence of a class
+      ok('and the bubble is not on it: what keeps it off a busy band is its own base',
+        /\{[^}]*opacity:0/.test(rule('.mn-wait')) && /\{[^}]*opacity:0/.test(rule('.mn-sweat')),
+        rule('.mn-wait').slice(0, 120) + ' | ' + rule('.mn-sweat').slice(0, 120));
       // AND THEN NOTHING ARRIVES. The rung is the window's own (webview.js) and not a count this
       // screen keeps: there are two crabs in this window and they may not disagree about whether
       // it is quiet
@@ -996,21 +1007,111 @@ module.exports = {
       // the main character down, and resting is not even bad news
       ok('the crab is not faded, greyed or filtered to say it',
         !/opacity|filter|grayscale/.test(restRule()), restRule());
-      // THE TOOL STAYS IN THE CLAW AND SAYS NOTHING. The first attempt stood it on the floor and
-      // that was rejected on the rendered screen: 51% of it lies over the crab, where the head's
-      // fill is 1.77:1 at the first band and 1.27:1 at the fourth, so the fill vanishes and the
-      // ink outline does not -- a snout on the crab's face rather than a tool, and worse the
-      // better the tool is (7-4). THIS IS AN ASSERTION AND NOT A DELETION: the rule that is not
-      // there is load-bearing, because anything set under `.rest` would also out-rank
-      // .mn-pick.g1..g4 and paint over the four lights the ladder bought
-      ok('the tool is left hanging in the claw: resting adds no rule to it at all',
-        !rule('.mn-drift.rest .mn-pick') && !/mn-pick/.test(restRule())
-        && !/\.rest[^{]*\.mn-pick/.test(decls()),
+      // THE TOOL GOES DOWN, AND OPACITY IS THE WHOLE OF WHAT IS DONE TO IT. It was left hanging in
+      // the claw until now and the reason was that a rule here out-ranks .mn-pick.g1..g4, so
+      // anything it set would paint over the four lights the ladder bought. That is still true of
+      // every property but this one: the drawing, the band, the angle and the glow are all
+      // untouched, so the tool that comes back on the first frame of the next swing is the same
+      // tool it was. This assertion is the fence around that -- one declaration, and it is opacity
+      ok('resting puts the tool down, and does nothing else to it at all',
+        /\{opacity:0;?\}/.test(rule('.mn-drift.rest .mn-pick'))
+        && !/background|filter|transform|rotate|content/.test(rule('.mn-drift.rest .mn-pick'))
+        && !/mn-pick/.test(restRule()),
         JSON.stringify(rule('.mn-drift.rest .mn-pick')));
-      ok('...so what it draws while resting is its own resting angle, the one `dig` coming off leaves',
-        /transform:rotate\(-12deg\)/.test(rule('.mn-pick'))
+      // THE BASE RULE AND NOT THE RESTING ONE. `rule()` finds a selector anywhere, and
+      // `.mn-drift.rest .mn-pick` ENDS in `.mn-pick`: read loosely, the one-line resting rule is
+      // what comes back and the assertion passes on the wrong rule. Anchored to the start of a
+      // line, which is where every top-level selector in this stylesheet begins
+      const pickBase = (/^\s*\.mn-pick\{[^}]*\}/m.exec(css()) || [''])[0];
+      ok('...and the band, the light and the angle it will come back at are all still on it',
+        /transform:rotate\(-12deg\)/.test(pickBase)
+        && /transition:opacity 160ms/.test(pickBase)
         && !/dig/.test($('mnPick').className) && $('mnPick').hidden === bare,
-        rule('.mn-pick') + ' | ' + $('mnPick').className);
+        pickBase + ' | ' + $('mnPick').className);
+      // --- and the two drawings that say it is resting rather than stuck -------------------------
+      //
+      // "IT LOOKS LIKE A BUG WHEN IT JUST STOPS LIKE THAT" was the reading the gap did not answer.
+      // The gap is a STATE and it is correct, but the moment it is entered the band goes from one
+      // thing moving to none, and a screen with nothing moving on it has crashed. So the drop is
+      // the moment (once, as the work stops) and the bubble is the state (up for as long as the
+      // window is quiet, with three dots taking turns in it). games/mine/idle.js argues both
+      ok('a bubble comes up over the crab while it waits, and it is pinned to the crab',
+        /opacity:1/.test(rule('.mn-drift.rest .mn-wait'))
+        && !!doc.querySelector('#mnDig #mnWait') && doc.querySelectorAll('#mnWait i').length === 3,
+        rule('.mn-drift.rest .mn-wait'));
+      // THE BREATHING IS THE ONE PIXEL STILL MOVING, and three dots that blink together are one
+      // dot three times: the delays are what make them take turns
+      const dotDelay = (n) => rule('.mn-drift.rest .mn-wait i:nth-child(' + n + ')');
+      ok('...and the three dots take turns rather than blinking as one',
+        /animation:mnWaitDot [0-9]+ms step-end infinite/.test(rule('.mn-drift.rest .mn-wait i'))
+        && [1, 2, 3].map((n) => parseInt((/animation-delay:([0-9]+)ms/.exec(dotDelay(n)) || [])[1], 10))
+          .every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1])),
+        [1, 2, 3].map(dotDelay).join(' '));
+      // THE DROP IS ARMED BY HAND because it has no class that stays true: it is what the moment
+      // of stopping looks like, not what being stopped looks like
+      ok('a drop falls from the head as the work stops, once',
+        $('mnSweat').classList.contains('drip')
+        && /animation:mnSweat [0-9]+ms ease-in 1 both/.test(rule('.mn-sweat.drip')),
+        $('mnSweat').className + ' | ' + rule('.mn-sweat.drip'));
+      // NEITHER OF THEM IS DRAWN IN THE GAP. The 11.9px of rock to the crab's right IS the resting
+      // signal, so anything standing in it is covering the thing it came to explain. Both are
+      // placed to the LEFT of 40% and the bubble is above the shell, which is read off the two
+      // rules rather than off a layout this harness does not do
+      // 5px IS THE FLOOR AND NOT A ROUND NUMBER: `calc(40% - 0.1px)` is left of the face and is
+      // still in the gap, so a bare "is it negative" reads as an assertion and is not one. The
+      // drop is the nearer of the two at 9.4px back, which is inside the crab's own shell and
+      // 2.5px clear of where the shell ends
+      const backFromFace = (sel) =>
+        parseFloat((/left:calc\(40% - ([0-9.]+)px\)/.exec(rule(sel)) || [0, 0])[1]);
+      ok('and neither stands in the gap at the face, which is the signal itself',
+        backFromFace('.mn-wait') >= 5 && backFromFace('.mn-sweat') >= 5,
+        backFromFace('.mn-wait') + ' / ' + backFromFace('.mn-sweat'));
+      // --- and the one thing the tool going down took away ------------------------------------
+      //
+      // A STEP IS BOUGHT WHILE THE WINDOW IS QUIET, because that is when this screen is open: a
+      // reader opens the mine because a reply is slow. With the tool down, a purchase changed
+      // nothing on the band at all -- the figure on the button moved and the picture did not, at
+      // every band including the fourth. So the claw comes up for one beat, with the new drawing
+      // and the new light on it, and then resting is true again (games/mine/idle.js, .lift)
+      // NOT IN THE BARE MODE, which is about a reader who has bought NOTHING: buying there is the
+      // one thing that mode may not do, and the block below would leave a pick in its claw for
+      // every assertion after it
+      const lifted = () => $('mnPick').classList.contains('lift');
+      if (!bare) {
+      ok('nothing is being shown off before anything is bought',
+        !lifted() && $('mnDrift').classList.contains('rest'), $('mnPick').className);
+      const before = stepOf();
+      $('mnBuy').click(); advance(60);
+      ok('a step bought while it rests raises the claw, so the purchase is on the band',
+        stepOf() > before && lifted()
+        && /animation:mnLift [0-9]+ms linear 1/.test(rule('.mn-drift.rest .mn-pick.lift')),
+        'step ' + before + ' to ' + stepOf() + ', ' + $('mnPick').className);
+      // ...AND IT OUTRANKS THE RULE THAT PUT THE TOOL DOWN WITHOUT REPLACING IT. The lift is one
+      // more class on the same element: four parts to .mn-drift.rest .mn-pick.lift against three
+      // for .mn-drift.rest .mn-pick, and it still sets nothing but opacity
+      ok('...without touching the drawing, the band or the light while it does it',
+        !/background|filter|transform/.test(rule('.mn-drift.rest .mn-pick.lift'))
+        && /\.mn-pick\.t[0-9]/.test(decls()) && /^mn-pick t[1-4]( |$)/.test($('mnPick').className),
+        rule('.mn-drift.rest .mn-pick.lift') + ' | ' + $('mnPick').className);
+      // IT ENDS BY ITSELF. No fill and no timer: the last stop is opacity 0, so the moment the
+      // keyframes are over the resting rule is in force again and the tool is down because
+      // resting is what is TRUE, rather than because something took a class off in time
+      ok('and it ends on its own, so nothing has to be right about when to take it off',
+        !/both|forwards/.test(rule('.mn-drift.rest .mn-pick.lift'))
+        && /100%\{opacity:0;?\}/.test(kf('mnLift')),
+        rule('.mn-drift.rest .mn-pick.lift') + ' | ' + kf('mnLift'));
+      // ...AND THE DRAW THAT COMES AFTER IT DOES NOT CUT IT SHORT. The pick's class is rewritten
+      // whole on every draw (so a drop from band 3 cannot leave `t3` behind), and the sweep used
+      // to take the lift with it: the claw would snap away mid-beat on whatever reply landed next
+      drivePush(0, true); advance(40);
+      ok('and a reply landing mid-beat does not cut the claw away',
+        lifted(), $('mnPick').className);
+      }
+      ok('no word is added to the band: the bubble holds three squares and no text',
+        [].slice.call(doc.querySelectorAll('#mnWait i'))
+          .every((e) => !(e.textContent || '').trim())
+        && !/content:'[^']/.test(rule('.mn-wait i')),
+        JSON.stringify(text('mnWait')));
       if (bare) {
         // ...AND BARE HANDS REST EXACTLY LIKE EVERY OTHER BAND, which is what the rejection bought:
         // the gap does not know which tool is in the claw, so there is no state here that is drawn
@@ -1024,8 +1125,21 @@ module.exports = {
       // the two pictures would be identical again, which is the whole defect
       const quiet = (css().match(/@media \(prefers-reduced-motion:reduce\)\{(?:[^{}]|\{[^{}]*\})*\}/g)
         || []).filter((b) => /\.mn-/.test(b)).join(' ');
-      ok('and reduced motion does not touch it, or the two pictures would be one again',
-        !/\.rest/.test(quiet), JSON.stringify(quiet).slice(0, 200));
+      // ...AND WHAT MAY BE IN THERE UNDER `.rest` IS `animation:none` AND NOTHING ELSE. The query
+      // used to be forbidden from naming the state at all, which was the same fence drawn with a
+      // blunter pen: now that resting has a pop and a fall in it, those are MOVEMENT and belong
+      // here, while the gap, the tool going down and the bubble standing up are STATE and must
+      // come through untouched. A `transform` or an `opacity` in this block would weld the two
+      // pictures back together, which is the whole defect section 8 is about
+      ok('and reduced motion takes only movement from it, never the state itself',
+        !/transform|translateX|opacity|display/.test(quiet)
+        && quiet.split('}').filter((b) => /\.rest/.test(b))
+          .every((b) => /animation\s*:\s*none/.test(b)),
+        JSON.stringify(quiet).slice(0, 300));
+      ok('...so the bubble is still standing for a reader who asked for less motion',
+        /opacity:1/.test(rule('.mn-drift.rest .mn-wait'))
+        && /\.mn-drift\.rest \.mn-wait[^{]*\{animation:none/.test(quiet.replace(/\s+/g, ' ')),
+        JSON.stringify(quiet).slice(0, 300));
       // NOTHING TRANSITIONS INTO IT EITHER (7-6): the frame the swing is removed on is whatever
       // angle the browser happened to be on, which is not a value to animate from
       ok('nothing eases into the gap: a state is entered, not animated',
@@ -1108,9 +1222,15 @@ module.exports = {
         ['adv', 'rock', 'slide', 'sills', 'frames'].every((k) => new RegExp('mn-' + k).test(quiet))
         && /transition:none/.test(quiet),
         JSON.stringify(quiet).slice(0, 260));
-      // THE LIGHT IS NOT MOTION AND NEITHER IS THE GAP: neither one is in there
+      // THE LIGHT IS NOT MOTION AND NEITHER IS THE GAP. The query may name the resting state now,
+      // because resting has a pop and a fall in it and those ARE motion, but what it is allowed
+      // to say about it is `animation:none` and no more: the step back, the tool going down and
+      // the bubble standing up are the state itself and come through whole
       ok('...and touches neither the light on the tool nor the gap',
-        !/mn-pick\.g/.test(quiet) && !/filter/.test(quiet) && !/\.rest/.test(quiet),
+        !/mn-pick\.g/.test(quiet) && !/filter/.test(quiet)
+        && !/transform|translateX|opacity|display/.test(quiet)
+        && quiet.split('}').filter((b) => /\.rest/.test(b))
+          .every((b) => /animation\s*:\s*none/.test(b)),
         JSON.stringify(quiet).slice(0, 200));
       ok('no handler threw', errors.length === 0, errors.map((e) => e && e.message).join(' | '));
       return;

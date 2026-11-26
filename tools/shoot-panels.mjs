@@ -473,6 +473,18 @@ const SHOTS = {
   'mine-walk-step': {
     file: 'measure-mine-walk-step', tab: 'games', door: 'mine', measure: true,
     mine: { tok: 13000000, step: 1, depth: 1400 }
+  },
+  // THE BAND WITH NOBODY WORKING, which is the state the reader called a bug. It is the same mine
+  // at the same depth as `mine` above and the only thing changed is the WINDOW: the last reply is
+  // ten minutes old, so the rung is quiet, the swing stops, the crab steps 12.6px off the face,
+  // the tool goes down and the bubble comes up (games/mine/idle.js).
+  // IT IS A SHOT AND NOT A MODE'S JOB. The webview modes assert that the rules exist and that the
+  // classes land, which is what a harness with no layout in it can do; whether a 28px bubble over
+  // a 60px crab is cute or is a smudge is a question only a rendered pixel answers, and that
+  // question is the whole reason this drawing was asked for
+  'mine-rest': {
+    file: 'measure-mine-rest', tab: 'games', door: 'mine', measure: true,
+    quiet: true, mine: { tok: 13000000, step: 1, depth: 1301 }
   }
 };
 
@@ -1112,8 +1124,12 @@ async function main() {
       const m = playMine(Object.assign({ purse }, shot.mine));
       // the data push first, because the swing's speed is the window's own rung (webview.js's
       // driveStep) and a screen with no push on it would be measured with the crab standing still
-      messages = [{ type: 'data', data: usageData({ pct: 42, weekly: 61, session: true }) }].concat(m.sent);
-      note = m.note;
+      // ...AND A SHOT MAY ASK FOR THE QUIET RUNG, which is the one state of this band that cannot
+      // be reached by digging: resting is what the WINDOW is doing and not what the mine is, so
+      // the only way to it is a reading that is ten minutes old (`mine-rest`, below)
+      messages = [{ type: 'data', data: usageData({
+        pct: 42, weekly: 61, session: true, quiet: !!f.quiet || !!shot.quiet }) }].concat(m.sent);
+      note = m.note + (shot.quiet || f.quiet ? ', and nobody is working: the quiet rung' : '');
     } else if (shot.shop) {
       const s = playShop(Object.assign({ purse }, shot.shop));
       // the data push first (what the shop has sold, and the readings the header needs), then the
