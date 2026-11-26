@@ -24,6 +24,8 @@ module.exports = {
                              // a DOM attribute and a record key, so it may hold nothing else
   name: 'My Theme',          // the shelf cell's label (its aria-label: the cell shows no words)
   order: 90,                 // where on the shelf. The shipped ones are spaced by ten
+  retired: true,             // optional, and only `true`: this one is no longer SOLD. It is still
+                             // listed and still worn by whoever bought it. See section 7
   layers: ['frame', 'floor', 'badge', 'motes'],   // WHICH AXES THIS THEME PAINTS. See below
   art: {},                   // optional: a PNG per picture layer, laid over the CSS. See section 5
   accent: '#8ed158',         // the one colour. Six hex digits, and it is MEASURED (see below)
@@ -263,12 +265,14 @@ of "the CSS is the finished article" that would be wrong.
 plain       Default         free      the panel as it has always looked
 mine        Coal Face       10K
 forest      Forest          10K
-space       Deep Field      10K       the only one with something in the ring (.th-orbit)
-market      Trading Floor   10K       a BLUE accent: see below
-matrix      Phosphor        10K
-ocean       Ocean           10K
-cyberpunk   Cyberpunk       10K
+space       Deep Field      10K       retired. the only one with something in the ring (.th-orbit)
+market      Trading Floor   10K       retired. a BLUE accent: see below
+matrix      Phosphor        10K       retired
+ocean       Ocean           10K       retired
+cyberpunk   Cyberpunk       10K       retired
 ```
+
+Five of them are **no longer sold** (2026-11-26, see section 8). Two are.
 
 Seven pictures of three layers each, so all seven land on the same rung. That is the count saying
 they are the same amount of drawing, and if a ninth theme ships two layers or four it will price
@@ -278,7 +282,42 @@ itself.
 is not taste: the burn ramp a theme may **not** touch is red (`webview.js`), so a market drawn in
 red and green would be putting the warning colour on the decoration.
 
-## 7. Running it
+## 7. Taking one off the price list
+
+One line in the meta, and the theme stops being sold:
+
+```js
+retired: true,      // boolean or nothing. The register refuses anything else
+```
+
+**It is in the theme's own directory and nowhere else.** A list of retired ids in
+`themes/registry.js` or in `shop.js` would be a shared file knowing a theme's name, which is the one
+thing section 1 is about and which `test/themes.test.js` asserts of all five shared files.
+
+**WHAT IT DOES NOT DO IS TAKE ANYTHING BACK.**
+
+```
+the price      stays exactly where the picture count put it. What it cost is what it cost
+the row        stays in the shop's catalog, which is what `owns()` answers off
+an owner       goes on wearing it, choosing it and seeing "in use" on its cell
+the CSS        is still in the page, because somebody is wearing it
+the purchase   is refused by the HOST, on the message (shop.js, whyNot), not by the screen
+the cell       stays on the shelf with no price on it: a grey chip and the word `Gone`
+```
+
+That last pair is the whole of it on screen. A retired theme nobody bought is **not a button** and
+is not in the tab order, since there is nothing a press could do; its label says
+`<name>, no longer sold`, so a reader who cannot see the shelf is told what it is and why.
+
+**The cell stays rather than going.** The shelf is the whole list of themes, so a gap in it would
+say nothing, and the reader who is *wearing* a retired theme has to be able to find it.
+
+**Deleting the directory is a different, heavier decision** and is not this. The row would go with
+it, `owns()` would answer no, and the reader who paid would lose the theme they are wearing. What
+their record keeps in that case is the receipt alone (`shop.js`, `clean`, the unknown-`theme:` pass
+through).
+
+## 8. Running it
 
 ```bash
 npm test          # test/themes.test.js is the register's, and there is no list to join

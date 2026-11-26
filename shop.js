@@ -192,6 +192,20 @@ const THEME_WHEN = 'Behind everything';
 // `clean` below believes only keys it knows, so an item simply deleted from ITEMS would be cleaned
 // out of the records of everyone who paid for it. An item leaving the shop MOVES HERE. It then keeps
 // its place in every record and is not drawn on the shelf, because the shelf is built from ITEMS.
+//
+// AND THE SECOND SHELF RETIRES THE OTHER WAY ROUND, which is not an inconsistency but the same rule
+// read against a shelf that is DISCOVERED (2026-11-26, five themes taken off the price list).
+//
+//   a drawing   is written down here, so leaving the shop means moving between two lists in this
+//               file and the shelf stops drawing it. Nothing else holds its row
+//   a theme      is a directory, and nothing in this file names one. There is no list to move it
+//               to, and taking the directory away would take its CATALOG row with it -- which is
+//               the row `owns` answers off, so the reader who bought it could no longer wear it
+//
+// So a theme says so in its own meta (`retired: true`, themes/README.md), the register carries that
+// onto its row, and the row stays in the catalog: still listed, still worn by whoever paid for it,
+// and refused to everybody else at the purchase (`whyNot` below). THE SHELF STILL DRAWS IT, without
+// its price, because an owner has to be able to find the thing they are wearing.
 const RETIRED = Object.freeze([]);
 
 // --- THE FIVE SCENES ----------------------------------------------------------------------------
@@ -321,6 +335,8 @@ function itemOf(key) { return (typeof key === 'string' && BY_KEY.get(key)) || nu
 // a field added to them would be a field in every record that ever quoted one; the second shelf's
 // rows carry `slot` because the register builds them. A key the catalog has no row for falls back
 // to the first prefix, so a stored `mascot:something` from a build that sold it still reads
+// `retired` is on the second shelf's rows for the same reason and reads as false off the first: a
+// drawing that leaves the shop moves to RETIRED above and has no row left to carry a flag
 function slotOf(key) {
   const it = itemOf(key);
   return (it && it.slot) || (SLOT + ':' + key);
@@ -723,6 +739,12 @@ function whyNot(rec, op, budget) {
   const it = itemOf(op.key);
   if (!it) return 'nothing is sold under that name';
   if (owns(rec, it.key)) return 'you already have the ' + it.name;
+  // ...AND NOTHING THAT HAS BEEN TAKEN OFF THE PRICE LIST, which is the second shelf's form of
+  // retirement (see RETIRED above). It is asked HERE and not on the screen, because the screen only
+  // ever draws what it was sent: a message naming a retired theme is refused whatever the page looks
+  // like, and `act` goes through this function too. Checked after `owns` on purpose, so an owner
+  // pressing one is told they already have it rather than that it is gone
+  if (it.retired) return 'the ' + it.name + ' is no longer sold';
   const room = budget == null ? Infinity : budget;
   if (!(it.price <= room)) return 'not enough credits';
   return null;
@@ -794,9 +816,16 @@ function view(rec) {
     // WHICH ONE IS WORN IS NOT IN HERE, for the reason the scenes' is not: it rides every data
     // push (`push` below), because the panel it repaints is on the Usage tab and most readers
     // never open the shop at all, and a second copy here could disagree between two messages
+    // ...with one field the first shelf's cells do not have: whether this row is still SOLD. A
+    // retired theme is on the shelf (its owner has to be able to find what they are wearing) and
+    // cannot be bought, so the cell has to be able to draw neither a price nor a button. The screen
+    // still works out no verdict of its own: this says what the row IS, and the refusal that
+    // matters is asked again on the message (`whyNot`)
     themes: {
       id: THEME_ID, name: THEME_NAME, when: THEME_WHEN, free: THEME_FREE,
-      opts: THEMES.map((t) => ({ key: t.key, name: t.name, price: t.price, owned: owns(st, t.key) }))
+      opts: THEMES.map((t) => ({
+        key: t.key, name: t.name, price: t.price, owned: owns(st, t.key), retired: !!t.retired
+      }))
     }
   };
 }

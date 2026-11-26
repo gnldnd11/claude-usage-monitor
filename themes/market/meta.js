@@ -31,6 +31,12 @@ module.exports = {
   id: 'market',
   name: 'Trading Floor',
   order: 50,
+  // NO LONGER SOLD, 2026-11-26. The shelf keeps this row, this file keeps its price and its CSS,
+  // and a reader who bought it goes on wearing it exactly as before: what the flag takes away is
+  // the purchase, which the shop refuses on the message rather than on the screen (shop.js,
+  // whyNot). A theme declares this itself because no shared file may know a theme's name
+  // (themes/README.md, section 7)
+  retired: true,
   layers: ['frame', 'floor', 'badge', 'motes'],
   art: {},
   accent: '#4fa3d8',

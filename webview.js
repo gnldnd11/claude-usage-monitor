@@ -1698,10 +1698,14 @@
     // ...and the second shelf last, which is the order the shelf is read in. A theme is a priced
     // row like any other and the one button has to be able to aim at it, or a price would be drawn
     // on a cell that nothing could ever buy
+    // ...MINUS WHAT IS NO LONGER SOLD. A theme taken off the price list keeps its cell, because
+    // whoever bought it is wearing it, and a cell the one button could be aimed at is a cell the
+    // host would refuse at the purchase (shop.js, whyNot). So it is not on this list at all, which
+    // is what keeps the button and the price off it
     var t = sh.st && sh.st.themes;
     if (t && t.opts) {
       for (j = 0; j < t.opts.length; j++) {
-        if (t.opts[j].price && !t.opts[j].owned) out.push(t.opts[j]);
+        if (t.opts[j].price && !t.opts[j].owned && !t.opts[j].retired) out.push(t.opts[j]);
       }
     }
     return out;
@@ -1846,11 +1850,29 @@
   // NO NAME IS PRINTED. The scenes' cells do not print theirs either: a cell carries a tag (what it
   // costs, or what it is) and its name is in the label, which is what a reader on a screen reader
   // is told. This product does not grow text for a decoration.
+  //
+  // AND ONE KIND OF CELL THE FIRST SHELF HAS NO USE FOR: a theme that is NO LONGER SOLD and was
+  // never bought (shop.js, RETIRED's second paragraph). The cell stays, because this shelf is the
+  // whole list of themes and a gap in it would say nothing, and because the reader wearing one of
+  // them has to be able to find it. What goes is the PRICE, since that price cannot be paid any
+  // more and a figure nothing will take is the worst thing this cell could say.
+  //
+  // IT IS THE SHAPE AN EMPTY SLOT ALREADY HAS (`shopSoonHtml`): a span with one word in it, not a
+  // button and not in the tab order, because a press that cannot change anything is a stop the
+  // keyboard makes for nothing (docs/game-panels.md, section 2). No new vocabulary is invented for
+  // it: the word is in the tag where every other cell's word is, and the reason is in the label.
   function shopThemeCellHtml(o, on) {
-    var buy = !o.owned && !!o.price;
-    var what = o.owned ? (on ? 'in use' : 'yours') : fmtInt(o.price) + ' credits';
+    var gone = !o.owned && !!o.retired;
+    var buy = !o.owned && !!o.price && !gone;
+    var what = o.owned ? (on ? 'in use' : 'yours')
+      : gone ? 'no longer sold' : fmtInt(o.price) + ' credits';
     var chip = '<span class="th-chip" data-th="' + esc(o.key) + '"></span>';
     var at = ' data-theme="' + esc(o.key) + '"';
+    if (gone) {
+      return '<span class="sh-cell gone"' + at + ' role="img"'
+        + ' aria-label="' + esc(o.name + ', ' + what) + '">'
+        + chip + '<span class="sh-tag">Gone</span></span>';
+    }
     if (buy) {
       var aim = sh.aim === o.key;
       return '<button type="button" class="sh-cell buy' + (aim ? ' aim' : '') + '"' + at

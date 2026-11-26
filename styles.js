@@ -877,6 +877,12 @@ module.exports = `
   .th-chip{--accent:#e8895a;--accent-hi:#f0a882;--card:#232326;--text:#ececec;--th-scene:none;
     position:relative;width:48px;height:34px;border-radius:5px;display:block;overflow:hidden;
     background:var(--card);box-shadow:inset 0 0 0 1px rgba(127,127,127,.3);}
+  /* ...AND IT HAS TO SAY SO ITSELF. The display:block one line up out-ranks the browser's own
+     [hidden] rule, so the chip the script hid stayed on the screen: a theme's cell showed the
+     chip AND the drawing's img with nothing in its src, which is the broken-image box. Both
+     halves of the block need this and neither had it, so the block had two pictures in it
+     whichever shelf the aimed row came off (2026-11-26) */
+  .th-chip[hidden]{display:none;}
   .th-chip::before{content:'';position:absolute;inset:0;background:var(--th-scene);
     background-size:250px 598px;}
   .th-chip::after{content:'';position:absolute;left:7px;bottom:7px;width:24px;height:4px;
@@ -884,6 +890,15 @@ module.exports = `
   /* ...and the same chip at the size the drawing would be, in the block beside the Buy button, so
      that block is the same shape whichever shelf the aimed row came off */
   .sh-try .th-chip{width:88px;height:74px;border-radius:10px;flex:none;}
+  /* A THEME THAT IS NO LONGER SOLD AND WAS NEVER BOUGHT (webview.js, shopThemeCellHtml).
+     NO NEW SHAPE AND NO NEW COLOUR. The cell is the plate every cell is, with no price written on
+     it and nothing to press, which is the empty slot's own treatment one block down. What is taken
+     away here is the one thing the chip was there to show: its COLOUR. A full-strength swatch is
+     this screen's way of saying a theme is on offer, so a retired one keeps its shape and loses its
+     paint, and the word in the tag says the same thing in letters.
+     THE TAG NEEDS NOTHING. .sh-tag is already the muted token and only .owned and .on lift it to
+     --text, neither of which is on a cell like this. */
+  .sh-cell.gone .th-chip{opacity:.5;filter:grayscale(1);}
   /* AN EMPTY SLOT: the frame, and the word in the middle of it. NO PICTURE, which is the one thing
      that tells it from a drawing nobody can press: that one has a crab in it and says when the
      crab shows up, and this says only that something will go here */
@@ -913,6 +928,7 @@ module.exports = `
   @media (prefers-reduced-motion:reduce){.sh-try.ping{animation:none;}}
   .sh-try img{width:88px;height:74px;object-fit:contain;object-position:bottom;
     image-rendering:pixelated;display:block;flex:none;}
+  .sh-try img[hidden]{display:none;}
   .sh-what{flex:1 1 100px;display:flex;flex-direction:column;gap:3px;min-width:0;padding-bottom:7px;}
   .sh-nm{font-size:12.5px;font-weight:700;color:var(--text);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}

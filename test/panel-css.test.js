@@ -770,5 +770,64 @@ const fresh = /function renderFreshness\(d\) \{[\s\S]*?\n  \}/.exec(CLIENT);
 ok('and it reads the endpoint’s own stamp, never the age of the last push',
   !!fresh && /usageAt/.test(fresh[0]) && !/refreshedAt/.test(fresh[0]), fresh ? 'refreshedAt in it' : 'renderFreshness not found');
 
+// WHAT THE SCRIPT HIDES HAS TO BE ABLE TO HIDE.
+//
+// `el('x').hidden = true` asks for the browser's own rule, `[hidden]{display:none}`, and that rule
+// is the weakest one on the page: ANY rule in this stylesheet that gives the same element a display
+// beats it. The script is then right and the stylesheet overrules it, silently.
+//
+// Shipped in 1.43.0 and found by a reader: `.sh-try img` and `.th-chip` both carry `display:block`,
+// so neither half of the shop's aimed block could be hidden. A theme's row showed its chip AND the
+// drawing's <img> with nothing in its src, which the browser draws as a broken-image box: two
+// pictures in a block that holds one, and one of them broken.
+//
+// THE WEBVIEW HARNESS CANNOT SEE THIS. minidom has no cascade, so `.hidden = true` is true there
+// and the element counts as hidden whatever the stylesheet says; the shop's own suite asserts
+// exactly that and passed throughout. So it is read here, off the two files, like everything else
+// in this suite. It undercounts on purpose: only elements hidden through `el('<id>')` are
+// collected, a selector carrying a pseudo-class or an unread attribute is skipped rather than
+// guessed at, and the markup is matched on its LAST compound, which is the part that must fit.
+const SRC = PAGE + '\n' + CLIENT;   // the host's page, and the markup the script builds itself
+const hiddenIds = [...new Set((CLIENT.match(/el\('([A-Za-z0-9_]+)'\)\.hidden\s*=/g) || [])
+  .map((s) => /el\('([A-Za-z0-9_]+)'\)/.exec(s)[1]))];
+// The element as it is written, wherever it is written: the host page for what html.js renders,
+// the client for the panels it builds on first open (the shop is one of those, so DOC has no #shArt)
+function written(id) {
+  const m = new RegExp('<([a-z]+)([^>]*\\bid="' + id + '"[^>]*)>', 'i').exec(SRC);
+  if (!m) return null;
+  const cls = /class="([^"]*)"/.exec(m[2]);
+  return { tag: m[1].toLowerCase(), cls: cls ? cls[1].split(/\s+/).filter(Boolean) : [] };
+}
+// Does this selector's last compound fit that element? Anything it cannot read says no, which
+// leaves the rule out of the count rather than inventing a match for it
+function fits(group, el, id) {
+  const last = lastCompound(group);
+  if (/[:()>~+*]/.test(last)) return false;
+  const tag = (/^[a-z][a-z0-9]*/.exec(last) || [''])[0];
+  if (tag && tag !== el.tag) return false;
+  if ((last.match(/#[A-Za-z0-9_-]+/g) || []).some((s) => s.slice(1) !== id)) return false;
+  if ((last.match(/\.[A-Za-z0-9_-]+/g) || []).some((s) => el.cls.indexOf(s.slice(1)) < 0)) return false;
+  return (last.match(/\[[^\]]+\]/g) || []).every((a) => a === '[hidden]');
+}
+const cannotHide = [];
+for (const id of hiddenIds) {
+  const el = written(id);
+  if (!el) continue;
+  let shows = null, escape = false;
+  for (const r of RULES) {
+    if (r.at) continue;
+    const display = decls(r.body).display;
+    if (!display) continue;
+    for (const g of groups(r.sel)) {
+      if (!fits(g, el, id)) continue;
+      if (/\[hidden\]/.test(lastCompound(g))) { if (display === 'none') escape = true; }
+      else if (display !== 'none' && !shows) shows = g + ' -> display:' + display;
+    }
+  }
+  if (shows && !escape) cannotHide.push('#' + id + '  ' + shows);
+}
+ok('every element the script hides is one the stylesheet lets hide',
+  cannotHide.length === 0, cannotHide.join('  |  ') || hiddenIds.length + ' element(s) read');
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASS');
 process.exit(fails ? 1 : 0);

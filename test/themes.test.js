@@ -31,6 +31,11 @@ function test(name, fn) { tests.push({ name, fn }); }
 // THE PRICED THEMES, never an index into the shelf. test/webview/games/_theme.js reads the same
 // thing the same way: an index is a dependency on the order a directory happens to be read in
 const PAID = themes.THEMES.filter((t) => t.price);
+// ...and the ones STILL SOLD, which is what a test that BUYS something has to be written against.
+// Five themes were taken off the price list on 2026-11-26 and the shop refuses to sell one
+// (shop.js, whyNot), so a buy aimed at PAID[0] would fail the day the first paid theme is one of
+// them, and it would fail as "a theme cannot be bought" rather than as what it is
+const SOLD = PAID.filter((t) => !t.retired);
 
 // the stylesheet with its comments gone: a comment is carried into the served page, so a rule
 // written about "the old z-index 9" would be found by anything that greps for a number
@@ -398,9 +403,9 @@ test('a theme is a second prefix and not one single drawing moved', () => {
   assert.equal(shop.slotOf('sleep'), 'mascot:sleep');
   for (const t of themes.THEMES) assert.equal(shop.slotOf(t.key), 'theme:' + t.key);
   // the two shelves share one record, one spent and one merge, and nothing else
-  const rec = shop.act(shop.fresh('abcdef0123456789'), { op: 'buy', key: PAID[0].key });
-  assert.deepEqual(Object.keys(rec.owned), ['theme:' + PAID[0].key]);
-  assert.equal(rec.spent, PAID[0].price);
+  const rec = shop.act(shop.fresh('abcdef0123456789'), { op: 'buy', key: SOLD[0].key });
+  assert.deepEqual(Object.keys(rec.owned), ['theme:' + SOLD[0].key]);
+  assert.equal(rec.spent, SOLD[0].price);
   assert.deepEqual(shop.clean(shop.save(rec)), rec, 'a theme does not survive the storage boundary');
   // ...and a theme cannot be put in a scene, nor a drawing on the panel, which is the one thing
   // two prefixes in one key space have to be able to say
@@ -416,7 +421,7 @@ test('a theme is a second prefix and not one single drawing moved', () => {
 });
 
 test('the shelf and the push carry the theme, and neither carries it twice', () => {
-  const key = PAID[0].key;
+  const key = SOLD[0].key;
   const rec = shop.act(shop.fresh('abcdef0123456789'), { op: 'buy', key });
   const view = shop.view(rec);
   assert.equal(view.themes.id, shop.THEME_ID);
@@ -428,6 +433,112 @@ test('the shelf and the push carry the theme, and neither carries it twice', () 
   const push = shop.push(rec, { theme: key });
   assert.equal(push.theme, key);
   assert.equal(shop.push(rec, null).theme, themes.FREE, 'nothing chosen is not the free theme');
+});
+
+// --- taken off the price list --------------------------------------------------------------------
+
+test('a theme may declare its own retirement, and only as a boolean', () => {
+  // THE DECLARATION IS IN THE THEME'S OWN DIRECTORY, which is the only place it could be: a list
+  // of retired ids in registry.js or shop.js is a shared file knowing a theme's name, and the test
+  // above asserts no shared file does. So the register reads a field, and it reads it strictly.
+  assert.equal(themes.whyNotMeta({ id: 'x', name: 'X', layers: [], retired: true }), null);
+  assert.equal(themes.whyNotMeta({ id: 'x', name: 'X', layers: [], retired: false }), null);
+  assert.equal(themes.whyNotMeta({ id: 'x', name: 'X', layers: [] }), null, 'the field is optional');
+  // ...AND ANYTHING THAT IS NOT ONE IS REFUSED rather than coerced. `retired: 0` and
+  // `retired: 'no'` both read as somebody meaning something by them, and either would be answered
+  // by whichever way the value happened to fall
+  for (const v of ['yes', 'no', 0, 1, [], {}]) {
+    const why = themes.whyNotMeta({ id: 'x', name: 'X', layers: [], retired: v }) || '';
+    assert.ok(/retired must be true or false/.test(why), 'accepted retired: ' + JSON.stringify(v));
+  }
+  // every meta on disk that carries the field carries a literal `true`, so none of them is relying
+  // on a value the register would have had to interpret, and ABSENCE is how a theme says it is
+  // still sold: a `retired: false` written down is a line that reads as a decision and is not one
+  for (const t of themes.THEMES) {
+    const src = fs.readFileSync(path.join(ROOT, 'themes', t.id, 'meta.js'), 'utf8');
+    const m = /^\s*retired\s*:\s*(.*?),?\s*$/m.exec(src);
+    if (m) {
+      assert.equal(m[1], 'true', t.id + '/meta.js writes retired: ' + m[1]
+        + '. A theme that is still sold says nothing at all');
+    }
+    assert.equal(!!m, t.retired, t.id + ': the register and the file disagree about retirement');
+  }
+  // THE DECISION ITSELF, which is the owner's and not this file's: these five came off the price
+  // list on 2026-11-26 and are not to drift back on because somebody deleted a line. A TEST may
+  // know a theme's name; the five shared files may not, which is what the check further up asserts.
+  // A theme whose directory has gone is skipped rather than failed: a theme that is not there
+  // cannot be sold either, and removing the directory is the separate decision (themes/README.md 7)
+  for (const id of ['space', 'market', 'matrix', 'ocean', 'cyberpunk']) {
+    const t = themes.themeOf(id);
+    if (t) assert.equal(t.retired, true, id + ' is on the price list again');
+  }
+});
+
+test('a theme off the price list loses the sale and nothing else', () => {
+  const GONE = themes.THEMES.filter((t) => t.retired);
+  // Both halves have to exist or this test is checking nothing: one theme that cannot be bought
+  // and one that can, which is the state this build shipped in (2026-11-26, five of seven retired)
+  assert.ok(GONE.length > 0, 'no theme is retired, so there is nothing here to check');
+  assert.ok(SOLD.length > 0, 'nothing is still for sale, which is not what was decided');
+  const rich = shop.fresh('abcdef0123456789');
+
+  // 1. NOTHING ABOUT IT MOVED BUT THE SALE. The price is still the rung its pictures reach, the
+  //    row is still in the catalog (which is what `owns` answers off), and its CSS is still in the
+  //    page, because somebody is wearing it
+  const sheet = themes.css();
+  for (const t of GONE) {
+    assert.equal(t.price, themes.rungOf(t.pictures), t.id + ' was repriced by being retired');
+    assert.ok(shop.itemOf(t.key), t.id + ' lost its catalog row, so nobody can wear it any more');
+    assert.equal(shop.itemOf(t.key).retired, true, t.id + ' is retired but its row does not say so');
+    assert.ok(sheet.indexOf('body.tab-usage[data-theme="' + t.id + '"]') >= 0,
+      t.id + ' is worn by somebody and has no CSS in the page');
+  }
+
+  // 2. AND THE HOST WILL NOT SELL IT, which is the refusal that matters: the screen only ever
+  //    draws what it was sent, so this is asked on the message. `act` goes through the same gate
+  //    and returns the very record it was given, so nothing is charged either
+  for (const t of GONE) {
+    const why = shop.whyNot(rich, { op: 'buy', key: t.key }, 1e9) || '';
+    assert.ok(/is no longer sold/.test(why), t.id + ' was sellable: ' + JSON.stringify(why));
+    assert.ok(why.indexOf(t.name) >= 0, t.id + ' is refused without saying which theme: ' + why);
+    assert.equal(shop.act(rich, { op: 'buy', key: t.key }), rich, t.id + ' was charged for');
+  }
+
+  // 3. ...AND THE ONES STILL ON SALE ARE SOLD EXACTLY AS BEFORE. The flag is per row and this is
+  //    what says so: a refusal written one line too wide would take the whole shelf with it
+  for (const t of SOLD) {
+    assert.equal(shop.whyNot(rich, { op: 'buy', key: t.key }, 1e9), null, t.id + ' stopped selling');
+    const bought = shop.act(rich, { op: 'buy', key: t.key });
+    assert.equal(bought.spent, t.price, t.id + ' was bought at the wrong price');
+    assert.equal(bought.owned['theme:' + t.key], 1);
+  }
+  // ...and so is every drawing on the first shelf, whose rows carry no such field at all
+  for (const i of shop.ITEMS.filter((x) => x.price)) {
+    assert.ok(!i.retired, i.key + ' carries a retirement flag the first shelf does not use');
+    assert.equal(shop.whyNot(rich, { op: 'buy', key: i.key }, 1e9), null, i.key + ' stopped selling');
+  }
+
+  // 4. WHAT IS BOUGHT STAYS BOUGHT, which is the rule this whole shape exists to keep (shop.js's
+  //    header). A reader who paid before the theme was retired still has it, still wears it, and
+  //    still sees it on the shelf as theirs
+  for (const t of GONE) {
+    const rec = shop.clean({ by: 'abcdef0123456789', moves: 1, spent: t.price,
+      owned: { ['theme:' + t.key]: 1 } });
+    assert.ok(rec, t.id + ': a record holding it did not survive the storage boundary');
+    assert.equal(shop.owns(rec, t.key), true, t.id + ' was taken off the reader who paid for it');
+    const push = shop.push(rec, { theme: t.key });
+    assert.equal(push.theme, t.key, t.id + ' was bought and worn and the push says otherwise');
+    assert.equal(shop.whyNotTheme(push.owned, t.key), null, t.id + ' cannot be worn by its owner');
+    // the shelf still carries the row, with its price, marked as theirs: an owner has to be able
+    // to find the thing they are wearing
+    const row = shop.view(rec).themes.opts.filter((o) => o.key === t.key)[0];
+    assert.ok(row && row.owned && row.retired && row.price === t.price,
+      t.id + ' is not on the shelf as the owner’s: ' + JSON.stringify(row));
+    // ...and an owner who somehow presses it is told they already have it, not that it is gone:
+    // the two sentences answer different questions and the order of the two checks decides which
+    assert.ok(/already have/.test(shop.whyNot(rec, { op: 'buy', key: t.key }, 1e9) || ''),
+      t.id + ': an owner is told the wrong thing');
+  }
 });
 
 // --- run ------------------------------------------------------------------------------------

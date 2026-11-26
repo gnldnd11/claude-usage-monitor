@@ -90,8 +90,12 @@ module.exports = {
     const themeCell = (key) => doc.querySelector('#shThemes .sh-cell[data-theme="' + key + '"]');
     const anyCell = (key) => cell(key) || poolCell(key) || themeCell(key);
     // EVERYTHING THE SHOP SELLS, both prefixes, so a count written against it covers a row added to
-    // either shelf the day it lands (shop.js, CATALOG)
-    const SELLS = shop.CATALOG.filter((i) => i.price);
+    // either shelf the day it lands (shop.js, CATALOG).
+    // A PRICE IS NOT ENOUGH TO BE ON SALE. A theme taken off the price list keeps its row and its
+    // price, because the reader who bought it is wearing it, and is refused at the purchase
+    // (shop.js, whyNot): it has no price written on its cell and the one button cannot be aimed at
+    // it, so a count of what is for sale may not include it (2026-11-26, five themes retired)
+    const SELLS = shop.CATALOG.filter((i) => i.price && !i.retired);
     const worn = () => cells().filter((c) => c.classList.contains('on'));
     const wornKeys = () => worn().map((c) => c.getAttribute('data-key') || (c.querySelector('.sh-pic') || {}).src || '?');
     const btn = () => $('shAct');

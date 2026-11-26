@@ -250,6 +250,19 @@ function whyNotMeta(t) {
   }
   if (new Set(t.layers).size !== t.layers.length) return 'it names a layer twice';
   if (t.price != null) return 'a theme may not price itself: the rung is counted off its pictures';
+  // A THEME DECLARES ITS OWN RETIREMENT, IN ITS OWN DIRECTORY, and that is the only shape this
+  // could take without breaking the one promise this register is built on: a list of retired ids in
+  // this file, or in shop.js, would be a shared file knowing a theme's name (test/themes.test.js
+  // asserts none of them does), and the next writer would have to edit it from a second place.
+  //
+  // IT IS NOT A DELETION AND IT IS NOT A PRICE. A retired theme is still listed, still styled and
+  // still worn by whoever bought it (shop.js, wornTheme): what it loses is the ability to be sold,
+  // which the shop refuses on the message rather than on the screen. Taking the DIRECTORY away is
+  // the separate, heavier decision, because it would take the record's row with it.
+  //
+  // BOOLEAN ONLY. `retired: 'yes'` and `retired: 0` both read as "somebody meant something by this"
+  // and would be answered by whichever way the value happened to coerce, so neither is accepted
+  if (t.retired != null && typeof t.retired !== 'boolean') return 'retired must be true or false';
   if (t.accent != null && !HEX_RE.test(t.accent)) return 'accent must be six hex digits';
   if (t.accentHi != null && !HEX_RE.test(t.accentHi)) return 'accentHi must be six hex digits';
   if (t.accentLight != null && !HEX_RE.test(t.accentLight)) return 'accentLight must be six hex digits';
@@ -319,6 +332,9 @@ function normalize(t) {
     slot: PREFIX + ':' + t.id,
     price: rungOf(pictures),
     pictures: pictures,
+    // ...and whether it is still sold. The price stays exactly where the count put it: what a
+    // retired theme cost is what it cost, and the shelf still has to say so to whoever paid it
+    retired: !!t.retired,
     layers: Object.freeze(t.layers.slice()),
     accent: t.accent || '',
     accentHi: t.accentHi || t.accent || '',
@@ -438,8 +454,13 @@ function artCss(uri) {
 
 // The shelf, as the shop sells it: the catalog rows, in shelf order. shop.js concatenates these
 // onto its own catalog under the second prefix and prices nothing itself
+// `retired` rides the row because the shop is the one thing that may refuse a purchase, and it
+// cannot ask this register: shop.js is handed VALUES and names no theme. A row that carries it is
+// also what lets the screen draw the cell without a second message
 function items() {
-  return THEMES.map((t) => ({ key: t.key, slot: t.slot, name: t.name, price: t.price }));
+  return THEMES.map((t) => ({
+    key: t.key, slot: t.slot, name: t.name, price: t.price, retired: t.retired
+  }));
 }
 
 module.exports = {
