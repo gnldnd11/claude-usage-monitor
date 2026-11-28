@@ -52,6 +52,13 @@ module.exports = `
      default, which is what the panel has always had. */
   .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;
     padding:30px 14px 14px;box-shadow:var(--glow,none);isolation:isolate;}
+  /* ...AND A THEME HAS TO REACH THE BOTTOM OF THE SIDEBAR, NOT THE BOTTOM OF THE CARD. The scene,
+     the floor and the motes are children of the card, so they stop where it stops, and the card
+     is only as tall as what is switched on: a reader who hides the ring and the tiles is left
+     with a short painted card and a tall bare strip under it, which reads as the drawing having
+     failed rather than as the panel being short. Only while a theme is worn, because an unthemed
+     card stretched to the viewport is just a bigger empty box. (2026-11-28) */
+  body.tab-usage[data-theme]:not([data-theme=""]) .card{min-height:calc(100vh - 20px);}
   /* ===========================================================================================
      THE PANEL THEME'S LAYERS. The boxes are here; what goes in them is each theme's
      (themes/<id>/meta.js) and this file never learns a theme's name -- the only thing it knows is
@@ -93,6 +100,16 @@ module.exports = `
      rule below decides is only WHERE they may paint, never whether a theme is on */
   .th-l{position:absolute;display:none;pointer-events:none;}
   body.tab-usage .th-l{display:block;}
+  /* ...AND A FIXED NUMBER OF EMPTY CHILDREN IN EACH BOX (html.js: scene 2, frame 10, floor 6,
+     motes 8). This one line is the whole of what the shell gives them: a theme that writes no rule
+     for a child leaves it 0x0 and paints nothing, exactly as an unused layer does.
+     WHY A CHILD AND NOT ONE MORE BACKGROUND LAYER. Two reasons, both measured on the first theme
+     that needed them. One element's background layers share ONE animation clock, so two pieces
+     that drift at different speeds cannot live in the same element. And a frame is nine-slice: each
+     piece needs its own tiling (repeat-x, repeat-y, no-repeat), which a background layer can carry,
+     but the POSITION of tiles of mixed sizes cannot be anchored to opposite edges at the same time.
+     So a piece is an element. */
+  .th-l > i{position:absolute;display:block;pointer-events:none;}
   .th-scene{inset:0;border-radius:15px;overflow:hidden;z-index:1;background:var(--scene,none);}
   .th-floor{left:0;right:0;bottom:0;height:156px;z-index:2;border-radius:0 0 15px 15px;overflow:hidden;}
   /* THE MOTES PAINT WHERE THERE IS NO TEXT, and this mask is the whole of that rule.
@@ -106,12 +123,21 @@ module.exports = `
                    card's (14) and the inner's border all stack under it
      A theme may not widen this. The one theme that shipped a mask of its own had a tighter one
      (an ellipse in the top right corner) and it was dropped for this, because six of the seven
-     had none at all and the rule belongs to the shell rather than to whoever remembers it. */
+     had none at all and the rule belongs to the shell rather than to whoever remembers it.
+     AND TWO SIDE BANDS BESIDE THE TWO HORIZONTAL ONES (2026-11-28). Mask layers are a UNION, so
+     these only add. Without them a speck is trapped in the top 30px or the bottom 39 and cannot
+     rise past a frame at all: the first theme to fly anything had eight fireflies crossing the
+     whole height and six of them were cut in half. 14px and not 23: .th-motes is a child of the
+     CARD, so its coordinates are 10px in from the frame's, and the card's own text starts at x14. */
   .th-motes{inset:0;border-radius:15px;z-index:3;overflow:hidden;
     -webkit-mask:linear-gradient(180deg,#000 0,#000 20px,transparent 30px,
-      transparent calc(100% - 39px),#000 calc(100% - 30px),#000 100%);
+      transparent calc(100% - 39px),#000 calc(100% - 30px),#000 100%),
+      linear-gradient(#000,#000) left 0 top 0/14px 100% no-repeat,
+      linear-gradient(#000,#000) right 0 top 0/14px 100% no-repeat;
     mask:linear-gradient(180deg,#000 0,#000 20px,transparent 30px,
-      transparent calc(100% - 39px),#000 calc(100% - 30px),#000 100%);}
+      transparent calc(100% - 39px),#000 calc(100% - 30px),#000 100%),
+      linear-gradient(#000,#000) left 0 top 0/14px 100% no-repeat,
+      linear-gradient(#000,#000) right 0 top 0/14px 100% no-repeat;}
   /* the content, above the first three. Written as a list of the card's own children so that a
      layer cannot be slipped between two of them by anything but this line */
   .card > .head,.card > .tabs,.card > .inner,.card > #gameStage,.card > #authbar{position:relative;z-index:4;}
@@ -136,7 +162,19 @@ module.exports = `
      post 12px wide instead of 22, and it reads the same, because a post is a vertical gradient.
 
      The top padding is 30 and not 14 FOR THIS: at 14 that band was the header row. The panel is
-     16px taller for it, for every theme including the free one, so the two never differ in height. */
+     16px taller for it, for every theme including the free one, so the two never differ in height.
+
+     THIS WAS WIDENED TO THREE BANDS ON 2026-11-28 AND PUT BACK THE SAME DAY, which is the only
+     reason that attempt is written down here: THE SIX RETIRED THEMES ARE DRAWN AGAINST THESE FOUR
+     STRIPS. Widening the window does not re-reveal art that was merely clipped, it reveals art that
+     was never composed to be seen. Rendered on ocean, which the reader is wearing
+     (tools/shoot-panels.mjs --only usage --panel-theme ocean): a bright blue fragment appeared at
+     x465..500 y20..70 with nothing to read it as, and a blue band at x480..690 hung out below the
+     card's floor. Both read as a fault rather than as a frame. Those figures are the SHOT's pixels
+     (702 wide for a 250px panel), not CSS pixels, which is how that render is measured.
+     SO A THEME THAT NEEDS A DIFFERENT WINDOW WIDENS IT ITSELF, in its own block, for itself alone
+     (themes/forest/meta.js, and themes/README.md section 3 for the one condition on that). One
+     theme reaching past the shell is cheaper than six themes' frames breaking. */
   .th-frame{inset:0;z-index:5;
     -webkit-mask:linear-gradient(#000,#000) left 10px top 10px/14px calc(100% - 20px) no-repeat,
       linear-gradient(#000,#000) right 10px top 10px/14px calc(100% - 20px) no-repeat,
@@ -161,9 +199,19 @@ module.exports = `
   .th-orbit{position:absolute;inset:0;display:none;pointer-events:none;}
   /* THE ONE PIECE OF MOTION A THEME IS ALLOWED, and the guard that stops it is the shell's rather
      than each theme's: a rule a theme has to remember is a rule six themes out of seven will
-     forget. The layers themselves animate, as do their two pseudo-elements */
+     forget. The layers animate, so do their two pseudo-elements, AND SO DO THEIR CHILDREN AND THOSE
+     CHILDREN'S PSEUDO-ELEMENTS (2026-11-28, when the pieces became elements above): ".th-l *" does
+     NOT reach a child's ::before, so the list is written out rather than left to look complete. */
   @media (prefers-reduced-motion:reduce){
-    .th-l,.th-l::before,.th-l::after,.th-orbit,.th-orbit::after{animation:none !important;}}
+    .th-l,.th-l::before,.th-l::after,.th-l *,.th-l *::before,.th-l *::after,
+    .th-orbit,.th-orbit::before,.th-orbit::after,
+    .th-orbit *,.th-orbit *::before,.th-orbit *::after{animation:none !important;}}
+  /* A THEME WITH A LANDSCAPE NEEDS THE BOARD TO SHOW IT, and the shell writes that once rather than
+     every theme writing the same line (docs/panel-themes/reach-and-preview.md, 2-3). The surface a
+     theme puts on the board is then its own (an ::before, a gradient, nothing at all).
+     ON THE USAGE TAB, like every other rule in this block: ".inner" is also the Agents panel, the
+     crossroads, the shop and the casino, and off this tab the shipped surface has to be back. */
+  body.tab-usage[data-theme]:not([data-theme=""]) .inner{background:transparent;}
   /* folded, the stat row is gone and there is no ground for a landscape to stand on */
   .compact .th-floor{height:0;}
   .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:13px;}
@@ -890,15 +938,11 @@ module.exports = `
   /* ...and the same chip at the size the drawing would be, in the block beside the Buy button, so
      that block is the same shape whichever shelf the aimed row came off */
   .sh-try .th-chip{width:88px;height:74px;border-radius:10px;flex:none;}
-  /* A THEME THAT IS NO LONGER SOLD AND WAS NEVER BOUGHT (webview.js, shopThemeCellHtml).
-     NO NEW SHAPE AND NO NEW COLOUR. The cell is the plate every cell is, with no price written on
-     it and nothing to press, which is the empty slot's own treatment one block down. What is taken
-     away here is the one thing the chip was there to show: its COLOUR. A full-strength swatch is
-     this screen's way of saying a theme is on offer, so a retired one keeps its shape and loses its
-     paint, and the word in the tag says the same thing in letters.
-     THE TAG NEEDS NOTHING. .sh-tag is already the muted token and only .owned and .on lift it to
-     --text, neither of which is on a cell like this. */
-  .sh-cell.gone .th-chip{opacity:.5;filter:grayscale(1);}
+  /* A THEME THAT IS NO LONGER SOLD AND WAS NEVER BOUGHT HAS NO CELL AT ALL, so it has no style
+     either (2026-11-28, webview.js, shopThemeCellHtml). There was a greyed-out plate with the word
+     "Gone" on it here, and it was the right answer to the wrong question: a shelf of eight cells
+     where six say "Gone" is a shop that mostly advertises what it will not sell. The cell a
+     reader WHO BOUGHT one gets is the ordinary owned cell, which is what lets them wear it. */
   /* AN EMPTY SLOT: the frame, and the word in the middle of it. NO PICTURE, which is the one thing
      that tells it from a drawing nobody can press: that one has a crab in it and says when the
      crab shows up, and this says only that something will go here */

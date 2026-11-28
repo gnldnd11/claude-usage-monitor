@@ -111,6 +111,10 @@ const inkEdgeFilter = `<svg class="cuc-fx" aria-hidden="true" width="0" height="
 // markup. A value that does not match comes out empty, which is the free theme
 const THEME_RE = /^[a-z][a-z0-9-]{0,23}$/;
 
+// The empty boxes a theme's layer is made of (styles.js, .th-l > i). Written here and not by a
+// theme, because the markup is the shell's: a theme is a stylesheet and nothing else
+const pieces = (n) => '<i></i>'.repeat(n);
+
 // Render the panel webview HTML. All per-webview values (CSP source, asset URIs, the serialized
 // asset catalog, and the script URIs) are injected via `vars` so this stays free of vscode
 // specifics. The static stylesheet and icon set are required directly.
@@ -200,22 +204,28 @@ function renderHtml(vars) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${csp} data:; style-src ${csp} 'unsafe-inline'; script-src ${csp};">
 <style>${CSS}${games.css()}${themes.css()}${themeVars || ''}</style></head><body data-theme="${THEME_RE.test(theme || '') ? theme : ''}">${symbols.sprite()}${inkEdgeFilter}<div class="wrap">
-  <!-- THE THEME'S FRAME, and it is a child of the WRAP rather than of the card: it runs the full
+  <!-- THE PIECES EACH LAYER IS MADE OF, and the count is fixed here rather than per theme: the
+       markup cannot be written by a theme (themes/README.md, section 1), so what the shell gives is
+       a fixed number of empty boxes that paint nothing until a theme writes a rule for one
+       (styles.js, .th-l > i). The frame gets ten because nine-slice is nine pieces and one spare;
+       the scene, the floor and the motes got the counts the first two themes needed. A theme that
+       uses fewer leaves the rest 0x0.
+       THE THEME'S FRAME, and it is a child of the WRAP rather than of the card: it runs the full
        height of the panel and its two outer strips are wider than the card's own padding, so a
        frame boxed to the card could not reach the edge it is drawing. It sits OVER the card
        (styles.js, z-index 5) and what keeps it off the text is the mask, not the stacking order.
        Empty, like every layer here: what goes in it is a theme's CSS, and a theme that is not
        worn paints nothing at all. -->
-  <div class="th-l th-frame" aria-hidden="true"></div>
+  <div class="th-l th-frame" aria-hidden="true">${pieces(10)}</div>
   <div class="card">
   <!-- ...and the three that belong to the card. aria-hidden because there is nothing here to
        read: a theme adds no information to this panel, which is the property that lets it be sold
        at all. The badge is not here either -- it belongs on the crab and is drawn inside the
        mascot's own box (#pm_mascot below), because that box is the crab's geometry and nothing
        outside it knows where the drawing came out. -->
-  <div class="th-l th-scene" aria-hidden="true"></div>
-  <div class="th-l th-floor" aria-hidden="true"></div>
-  <div class="th-l th-motes" aria-hidden="true"></div>
+  <div class="th-l th-scene" aria-hidden="true">${pieces(2)}</div>
+  <div class="th-l th-floor" aria-hidden="true">${pieces(6)}</div>
+  <div class="th-l th-motes" aria-hidden="true">${pieces(8)}</div>
   <div id="authbar" style="display:none;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;margin-bottom:9px;border-radius:8px;background:#e8895a;color:#fff;font-size:11px;font-weight:600;line-height:1.35">
     <span>Sign in for <b>live</b> session &amp; weekly %</span>
     <button id="signinBtn" style="background:#fff;color:#c25a34;border:0;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:11px;white-space:nowrap">Sign In</button>
@@ -292,6 +302,18 @@ function renderHtml(vars) {
                  .th-orbit), and it is the only piece of a theme that is inside a reading -->
             <div class="th-orbit" aria-hidden="true"></div>
             <svg width="88" height="88" viewBox="0 0 88 88">
+              <!-- ONE PAINT SERVER THE SHELL OWNS, AND WHY IT HAS TO BE HERE. A theme may colour
+                   the arc, and that is all it may do to it: CSS cannot reach into a stroke, a mask
+                   on this child does nothing at all (a plain half-and-half gradient mask left the
+                   arc untouched), and a mask could only ever subtract -- never put a blade out past
+                   the stroke. What may be set on a stroke is a colour or a PAINT SERVER, and a
+                   paint server has to live in a <defs>, which a theme cannot write: a theme is a
+                   stylesheet. So the pattern is here, every theme may point at it
+                   (stroke:url of #grassStroke) or ignore it, and the arc keeps its path, its
+                   length and its end angle exactly. Only the surface inside it changes.
+                   It is not one theme's: it costs 480 bytes, it is drawn in no theme's colours, and
+                   a second texture would go in beside it rather than replace it. -->
+              <defs><pattern id="grassStroke" width="7" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(12)"><rect width="7" height="9" fill="#8fce52"/><path fill="#b6ec74" d="M0,9 Q1.1,4.4 1.9,0 L3.1,0 Q2.2,4.6 1.4,9 Z"/><path fill="#6aa83c" d="M3.4,9 Q4.2,5.2 4.6,1.4 L5.5,1.9 Q5.1,5.4 4.6,9 Z"/><path fill="#cdf78d" d="M5.8,9 Q6.3,6 6.6,3 L7,3.4 Q6.8,6.1 6.6,9 Z"/><path fill="#5d9733" d="M2.2,9 Q2.6,7 2.8,5 L3.2,5.2 Q3,7.1 2.9,9 Z"/></pattern></defs>
               <circle class="rtrack" cx="44" cy="44" r="33" fill="none" stroke-width="6"/>
               <circle id="ringArc" cx="44" cy="44" r="33" fill="none" stroke="#e8895a" stroke-width="6"
                 stroke-linecap="round" stroke-dasharray="207.3" stroke-dashoffset="207.3"/>

@@ -53,6 +53,11 @@ module.exports = {
     const wornAttr = () => doc.body.getAttribute('data-theme');
     const themeCell = (id) => doc.querySelector('#shThemes .sh-cell[data-theme="' + id + '"]');
     const themeCells = () => doc.querySelectorAll('#shThemes .sh-cell');
+    // WHAT THE SHELF IS AS LONG AS, which is no longer the list of themes (2026-11-28): a theme
+    // that is no longer sold and was never bought has no cell at all. So the length is computed
+    // from the same two facts the screen is sent, and a theme retired or sold tomorrow moves both
+    const shelfWidth = (owned) => themes.THEMES
+      .filter((t) => !t.price || !t.retired || (owned || []).indexOf(t.id) >= 0).length;
     const stored = () => h.gs.data.creditLedgerV1.shop || null;
     const pref = () => h.gs.data.mascotSlotsV1 || {};
     const btn = () => $('shAct');
@@ -61,9 +66,21 @@ module.exports = {
     // THE BOXES ARE THE SHELL'S AND THE PAINT IS A THEME'S (styles.js, the .th-l block). So they
     // are here before anything has been bought, and they are empty
     const layers = doc.querySelectorAll('.th-l');
-    ok('the four card-and-wrap layers are on the page, every one of them empty',
-      layers.length === 4 && layers.every((e) => e.innerHTML === ''),
+    ok('the four card-and-wrap layers are on the page',
+      layers.length === 4,
       layers.map((e) => e.getAttribute('class')).join(' | '));
+    // ...AND EACH ONE HOLDS A FIXED NUMBER OF EMPTY PIECES (html.js, pieces; styles.js, .th-l > i).
+    // Empty is the property that matters and it is still the same one: not one of these boxes
+    // carries a byte of content, so a reader on no theme renders nothing for any of them. The
+    // COUNTS are pinned because the markup is the shell's and a theme cannot add a piece it needs
+    const PIECES = { 'th-scene': 2, 'th-frame': 10, 'th-floor': 6, 'th-motes': 8 };
+    ok('and each one holds its own fixed number of empty pieces, with nothing in them',
+      layers.every((e) => {
+        const want = PIECES[e.getAttribute('class').split(/\s+/)[1]];
+        const kids = e.children;
+        return kids.length === want && kids.every((k) => k.localName === 'i' && k.innerHTML === '');
+      }),
+      layers.map((e) => e.getAttribute('class').split(/\s+/)[1] + '=' + e.children.length).join(' '));
     // THE FRAME IS A CHILD OF THE WRAP AND THE OTHER THREE ARE THE CARD'S, which is not a tidying
     // detail: the frame runs the full height of the panel and its outer strips are wider than the
     // card's own padding, so a frame boxed to the card could not reach the edge it draws
@@ -118,9 +135,11 @@ module.exports = {
         h.bodyTabs());
       // ---------- 2. AND IT IS STILL ON THE SHELF, AS THEIRS ----------
       openDoor('shop'); advance(20);
-      ok('the shelf still holds every theme, the retired ones included',
-        themeCells().length === themes.THEMES.length,
-        themeCells().length + ' cell(s) against ' + themes.THEMES.length + ' theme(s)');
+      ok('the shelf holds the free one, the ones still sold, and the retired one they BOUGHT',
+        themeCells().length === shelfWidth([paid.key])
+        && themeCells().map((c) => c.getAttribute('data-theme')).indexOf(paid.key) >= 0,
+        themeCells().map((c) => c.getAttribute('data-theme')).join(' ')
+        + ' against ' + shelfWidth([paid.key]));
       ok('the one that was bought is pressable and says it is in use, with no word about the sale',
         themeCell(paid.key).localName === 'button'
         && themeCell(paid.key).classList.contains('on')
@@ -140,26 +159,17 @@ module.exports = {
         wornAttr() + ' / ' + JSON.stringify(pref()));
       // ---------- 3. AND IT CANNOT BE BOUGHT BY ANYBODY ELSE ----------
       if (never) {
-        ok('one nobody bought carries no figure, is not a button, and says why',
-          themeCell(never.key).localName === 'span'
-          && themeCell(never.key).classList.contains('gone')
-          && themeCell(never.key).textContent.trim() === 'Gone'
-          && themeCell(never.key).getAttribute('aria-label') === never.name + ', no longer sold',
-          themeCell(never.key).localName + ' '
-          + JSON.stringify(themeCell(never.key).getAttribute('aria-label')));
-        // A PRESS DOES NOTHING AT ALL, which is the screen's half: the cell is not a button, so the
-        // one control cannot be pointed at it and no message leaves the page
-        const sentN = h.sent('shop').length;
-        h.mouseClick(themeCell(never.key)); advance(40);
-        ok('a press on it points the one button at nothing and sends the host nothing',
-          $('shCtl').hidden && $('shTry').hidden
-          && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 0
-          && h.sent('shop').length === sentN,
-          ($('shCtl').hidden ? 'no button' : 'BUTTON') + ', '
-          + (h.sent('shop').length - sentN) + ' message(s)');
-        // ...AND THE HOST IS WHAT REFUSES IT. The screen only ever draws what it was sent, so the
-        // refusal is asked for on the MESSAGE: a hand-made buy is answered with the sentence and
-        // not one credit moves (shop.js, whyNot)
+        // NO CELL AT ALL, which is the reversal of 2026-11-28 (webview.js, shopThemeCellHtml): a
+        // grey plate reading "Gone" was the right answer while one theme was withdrawn and the
+        // wrong one at six, because a shelf that is mostly withdrawals advertises what it will not
+        // sell. So there is nothing on the shelf, nothing in the tab order, and nothing to press
+        ok('one nobody bought is not on the shelf at all',
+          themeCell(never.key) === null
+          && themeCells().map((c) => c.getAttribute('data-theme')).indexOf(never.key) < 0,
+          themeCells().map((c) => c.getAttribute('data-theme')).join(' '));
+        // ...AND THE HOST IS WHAT REFUSES IT ANYWAY, which is the half that has to hold whatever
+        // the screen draws: a hand-made buy is answered with the sentence and not one credit moves
+        // (shop.js, whyNot). A screen that simply stopped drawing the cell would be no defence
         const spent0 = stored().spent, bal0 = h.ledgerBalance();
         h.hostSend({ type: 'shop', op: 'buy', key: never.key, n: 7101 }); advance(40);
         ok('and a message buying it is refused by the host, which says which theme and why',
@@ -169,10 +179,8 @@ module.exports = {
           stored().spent === spent0 && h.ledgerBalance() === bal0
           && !stored().owned[shop.slotOf(never.key)],
           JSON.stringify(stored()));
-        ok('and its cell did not become something bought',
-          themeCell(never.key).textContent.trim() === 'Gone'
-          && !themeCell(never.key).classList.contains('on'),
-          themeCell(never.key).textContent.trim());
+        ok('and the refusal did not put a cell on the shelf either',
+          themeCell(never.key) === null, 'a cell appeared');
         // ---------- 3a. AN AIM THAT WAS SET WHILE IT WAS STILL ON SALE ----------
         // The one button is pointed at a KEY, and that key outlives the shelf being redrawn
         // (webview.js, sh.aim). So the aim is set on a shelf where this theme is still for sale,
@@ -201,13 +209,13 @@ module.exports = {
           ($('shCtl').hidden ? 'no button' : 'button'));
         h.intercept = null;
         openList(); advance(20); openDoor('shop'); advance(20);
-        ok('and the real shelf takes the aim, the block and the button away with the price',
+        ok('and the real shelf takes the aim, the block and the button away with the cell',
           $('shCtl').hidden && $('shTry').hidden
           && doc.querySelectorAll('#panelShop .sh-cell.aim').length === 0
-          && themeCell(never.key).textContent.trim() === 'Gone',
+          && themeCell(never.key) === null,
           ($('shCtl').hidden ? 'no button' : 'BUTTON') + ', '
-          + doc.querySelectorAll('#panelShop .sh-cell.aim').length + ' aimed, cell says '
-          + themeCell(never.key).textContent.trim());
+          + doc.querySelectorAll('#panelShop .sh-cell.aim').length + ' aimed, cell '
+          + (themeCell(never.key) ? 'still there' : 'gone'));
       }
       // ---------- 4. AND THE ONES STILL ON SALE ARE SOLD EXACTLY AS BEFORE ----------
       // The flag is per row, and this is what says so: a refusal written one line too wide would
@@ -263,8 +271,9 @@ module.exports = {
 
     // ---------- 2. THE SECOND SHELF ----------
     ok('the stored door comes back as the shop, with the second shelf on it',
-      !!$('shThemes') && themeCells().length === themes.THEMES.length,
-      themeCells().length + ' cell(s) against ' + themes.THEMES.length + ' theme(s)');
+      !!$('shThemes') && themeCells().length === shelfWidth([]),
+      themeCells().map((c) => c.getAttribute('data-theme')).join(' ')
+      + ' against ' + shelfWidth([]));
     ok('it names itself and says when, the way the scenes do',
       $('shThemes').querySelector('.sh-sn').textContent === shop.THEME_NAME
       && $('shThemes').querySelector('.sh-sw').textContent === shop.THEME_WHEN,
@@ -283,30 +292,22 @@ module.exports = {
       SOLD.length > 0 && SOLD.every((t) => themeCell(t.id).classList.contains('buy')
         && themeCell(t.id).textContent.trim() === (t.price / 1000) + 'K'),
       SOLD.map((t) => t.id + ':' + themeCell(t.id).textContent.trim()).join(' '));
-    // ...AND ONE THAT IS NO LONGER SOLD CARRIES NO FIGURE AT ALL. A price nothing will take is the
-    // worst thing that cell could say, and a cell that cannot change anything is not a button and is
-    // not in the tab order either (webview.js, shopThemeCellHtml). The `theme-gone` mode is where
-    // the state an OWNER of one of these is in is checked, because that needs a record to exist
-    ok('and one that is no longer sold says so in a word, with no price and nothing to press',
-      GONE.every((t) => themeCell(t.id).localName === 'span'
-        && themeCell(t.id).classList.contains('gone')
-        && themeCell(t.id).textContent.trim() === 'Gone'
-        && !themeCell(t.id).hasAttribute('aria-pressed')
-        && themeCell(t.id).getAttribute('aria-label') === t.name + ', no longer sold'),
-      GONE.map((t) => t.id + ':' + themeCell(t.id).localName + ':'
-        + themeCell(t.id).textContent.trim()).join(' '));
-    // ...so the one button can never be pointed at one: the shelf draws no mark on it and the list
-    // of what is for sale does not hold it (webview.js, shopForSale)
-    ok('and the one button cannot be aimed at a theme that is no longer sold',
-      GONE.every((t) => !themeCell(t.id).classList.contains('buy')
-        && !themeCell(t.id).classList.contains('aim')),
-      GONE.map((t) => t.id + ':' + (themeCell(t.id).getAttribute('class') || '')).join(' '));
-    // ...AND THE GREY IS ITS OWN COLOUR BEING TAKEN OFF rather than a colour being added. A chip at
-    // full strength is how this shelf says a theme is on offer, and this screen is allowed one
-    // accent, which is already spoken for twice (the ring and the aiming bar)
-    ok('and what greys it is its own colour coming off, with no new colour spent on it',
-      GONE.length > 0 && /\.sh-cell\.gone \.th-chip\{[^}]*filter:grayscale\(1\)/.test(css())
-      && !/\.sh-cell\.gone[^}]*#[0-9a-f]{3,8}/i.test(css()),
+    // ...AND ONE THAT IS NO LONGER SOLD IS NOT ON THE SHELF, for a reader who never bought it
+    // (webview.js, shopThemeCellHtml, and the reversal written there). The state an OWNER of one of
+    // these is in is checked in the `theme-gone` mode, because that needs a record to exist
+    ok('and one that is no longer sold has no cell on it at all',
+      GONE.length > 0 && GONE.every((t) => themeCell(t.id) === null),
+      GONE.map((t) => t.id + ':' + (themeCell(t.id) ? 'DRAWN' : '-')).join(' '));
+    // ...so the one button can never be pointed at one: there is nothing to press, and the list of
+    // what is for sale does not hold it either (webview.js, shopForSale)
+    ok('and nothing on this shelf is a price that cannot be paid',
+      doc.querySelectorAll('#shThemes .sh-cell.buy')
+        .every((c) => SOLD.map((t) => t.id).indexOf(c.getAttribute('data-theme')) >= 0),
+      doc.querySelectorAll('#shThemes .sh-cell.buy').map((c) => c.getAttribute('data-theme')).join(' '));
+    // ...AND NO STYLE IS LEFT BEHIND FOR A CELL NOTHING DRAWS. A rule for a shape that cannot
+    // appear is dead CSS served to every reader, and the next writer cannot tell it from a live one
+    ok('and the stylesheet carries no rule for a cell this screen no longer draws',
+      css().indexOf('.sh-cell.gone') < 0,
       (/\.sh-cell\.gone[^}]*\}/.exec(css()) || ['(no rule)'])[0]);
     ok('and every cell says what it is for a reader who cannot see it',
       themeCells().every((c) => !!c.getAttribute('aria-label'))
@@ -400,7 +401,10 @@ module.exports = {
     // ---------- 5. THE HOST REFUSES, NOT THE SCREEN ----------
     // The screen only ever draws cells for what it was sent, so the refusal is asked for on the
     // MESSAGE: a theme nobody bought cannot be worn however that message was made
-    const notMine = SOLD[1] ? SOLD[1].id : null;
+    // ...and "nobody bought it" is the only thing that matters here, so a theme no longer sold will
+    // do just as well as a second one on sale. With one theme on the price list (2026-11-28) it has
+    // to: SOLD[1] is not there, and the check this covers is the host's refusal rather than the sale
+    const notMine = (SOLD[1] || GONE[0] || { id: null }).id;
     if (notMine) {
       h.hostSend({ type: 'panelTheme', id: notMine }); advance(20);
       ok('a theme nobody bought is refused by the host and nothing moves',

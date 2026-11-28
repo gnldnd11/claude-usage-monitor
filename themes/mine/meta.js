@@ -21,6 +21,14 @@ module.exports = {
   id: 'mine',
   name: 'Coal Face',
   order: 20,
+  // NOT YET SOLD AT ALL, 2026-11-28, which is the other reason this flag is here. The five before
+  // it were withdrawn after being on sale; this one is withdrawn BEFORE: the drawing is unfinished
+  // (the live mockup, docs/panel-themes/live/two-themes.html, carries its next pass) and a half-
+  // drawn theme on the shelf reads as a defect rather than as a work in progress. One line comes
+  // out again when it is finished, and nothing else about this file has to change.
+  // The rest is the same as for the five: the row stays, the price stays, the CSS stays in the
+  // page, and anybody who bought it goes on wearing it (themes/README.md, section 7).
+  retired: true,
   layers: ['frame', 'floor', 'badge', 'motes'],
   art: {},
   accent: '#e08b3c',

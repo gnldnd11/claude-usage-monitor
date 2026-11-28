@@ -1851,28 +1851,27 @@
   // costs, or what it is) and its name is in the label, which is what a reader on a screen reader
   // is told. This product does not grow text for a decoration.
   //
-  // AND ONE KIND OF CELL THE FIRST SHELF HAS NO USE FOR: a theme that is NO LONGER SOLD and was
-  // never bought (shop.js, RETIRED's second paragraph). The cell stays, because this shelf is the
-  // whole list of themes and a gap in it would say nothing, and because the reader wearing one of
-  // them has to be able to find it. What goes is the PRICE, since that price cannot be paid any
-  // more and a figure nothing will take is the worst thing this cell could say.
+  // AND ONE KIND OF ROW THE FIRST SHELF HAS NO USE FOR: a theme that is NO LONGER SOLD and was
+  // never bought (shop.js, RETIRED's second paragraph). IT GETS NO CELL. Nothing is drawn, nothing
+  // holds its place, and the shelf is as long as the list of things a reader can do something with.
   //
-  // IT IS THE SHAPE AN EMPTY SLOT ALREADY HAS (`shopSoonHtml`): a span with one word in it, not a
-  // button and not in the tab order, because a press that cannot change anything is a stop the
-  // keyboard makes for nothing (docs/game-panels.md, section 2). No new vocabulary is invented for
-  // it: the word is in the tag where every other cell's word is, and the reason is in the label.
+  // THAT IS A REVERSAL AND IT IS WORTH THE LINES (2026-11-28). This drew a greyed-out plate with
+  // the word `Gone` on it, for the reason above it: the shelf is the whole list of themes, so a gap
+  // would say nothing. That reasoning holds for ONE retirement and falls over at six: with one
+  // theme on sale and six withdrawn, a shelf that keeps every cell is a shop which mostly
+  // advertises what it will not sell, and the reader cannot tell at a glance which cell is the
+  // offer. A price nothing will take is bad; six of them is the screen's whole message.
+  //
+  // WHAT THE OWNER SEES IS UNCHANGED, which is the half that matters: a theme somebody BOUGHT falls
+  // through to the ordinary owned cell below, with its price, marked `yours` or `in use`, and is
+  // pressable. Nothing is taken back from anybody -- the row, the record and the CSS all stay
+  // (themes/README.md, section 7), and this is only the shelf declining to advertise.
   function shopThemeCellHtml(o, on) {
-    var gone = !o.owned && !!o.retired;
-    var buy = !o.owned && !!o.price && !gone;
-    var what = o.owned ? (on ? 'in use' : 'yours')
-      : gone ? 'no longer sold' : fmtInt(o.price) + ' credits';
+    if (!o.owned && o.retired) return '';
+    var buy = !o.owned && !!o.price;
+    var what = o.owned ? (on ? 'in use' : 'yours') : fmtInt(o.price) + ' credits';
     var chip = '<span class="th-chip" data-th="' + esc(o.key) + '"></span>';
     var at = ' data-theme="' + esc(o.key) + '"';
-    if (gone) {
-      return '<span class="sh-cell gone"' + at + ' role="img"'
-        + ' aria-label="' + esc(o.name + ', ' + what) + '">'
-        + chip + '<span class="sh-tag">Gone</span></span>';
-    }
     if (buy) {
       var aim = sh.aim === o.key;
       return '<button type="button" class="sh-cell buy' + (aim ? ' aim' : '') + '"' + at

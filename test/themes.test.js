@@ -253,9 +253,25 @@ test('the layers are boxes, and the order they are in is a number', () => {
   assert.ok(/\.mascot-wrap:not\(\[data-state="idle"\]\) \.th-badge\{display:none;\}/.test(BARE),
     'the badge is worn on a drawing it was not placed for');
   // the motion guard is the shell's rather than each theme's: a rule a theme has to remember is a
-  // rule six themes out of seven will forget
-  assert.ok(/@media \(prefers-reduced-motion:reduce\)\{\s*\.th-l,\.th-l::before,\.th-l::after,\.th-orbit,\.th-orbit::after\{animation:none/.test(BARE),
-    'a theme motion is not stopped for a reader who asked for none');
+  // rule six themes out of seven will forget.
+  // READ AS THE SET IT HAS TO COVER rather than as the line that is written (2026-11-28, when the
+  // layers grew children and `.th-l *` turned out not to reach a child's ::before). What has to
+  // hold is that every animating thing a theme can paint is in the guard: the layer, its two
+  // pseudo-elements, its descendants and THEIR two pseudo-elements, and the same for the orbit
+  let guard = '', stops = '';
+  for (const m of BARE.matchAll(/@media \(prefers-reduced-motion:reduce\)\{\s*([^{}]+)\{([^{}]*)\}/g)) {
+    if (/\.th-l\b/.test(m[1])) { guard = m[1]; stops = m[2]; }
+  }
+  assert.ok(guard, 'the theme layers are not in a reduced-motion block at all');
+  assert.ok(/animation:\s*none\s*!important/.test(stops), 'the guard does not stop an animation: ' + stops);
+  const sels = guard.split(',').map((s) => s.trim());
+  for (const root of ['.th-l', '.th-orbit']) {
+    for (const sel of [root, root + '::before', root + '::after',
+      root + ' *', root + ' *::before', root + ' *::after']) {
+      assert.ok(sels.indexOf(sel) >= 0,
+        'a reader who asked for no motion can still be shown one: ' + sel + ' is not in the guard');
+    }
+  }
 });
 
 test('the shell carries every surface a theme moves, with the shipped value as the default', () => {
@@ -463,12 +479,14 @@ test('a theme may declare its own retirement, and only as a boolean', () => {
     }
     assert.equal(!!m, t.retired, t.id + ': the register and the file disagree about retirement');
   }
-  // THE DECISION ITSELF, which is the owner's and not this file's: these five came off the price
-  // list on 2026-11-26 and are not to drift back on because somebody deleted a line. A TEST may
-  // know a theme's name; the five shared files may not, which is what the check further up asserts.
+  // THE DECISION ITSELF, which is the owner's and not this file's: five came off the price list on
+  // 2026-11-26 and `mine` joined them on 2026-11-28 (unfinished rather than withdrawn, and its own
+  // meta says which). None of the six is to drift back on because somebody deleted a line. A TEST
+  // may know a theme's name; the five shared files may not, which is what the check further up
+  // asserts.
   // A theme whose directory has gone is skipped rather than failed: a theme that is not there
   // cannot be sold either, and removing the directory is the separate decision (themes/README.md 7)
-  for (const id of ['space', 'market', 'matrix', 'ocean', 'cyberpunk']) {
+  for (const id of ['space', 'market', 'matrix', 'ocean', 'cyberpunk', 'mine']) {
     const t = themes.themeOf(id);
     if (t) assert.equal(t.retired, true, id + ' is on the price list again');
   }

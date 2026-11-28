@@ -1,96 +1,365 @@
-// THE FOREST. Vines and leaves pouring in over the top left, a lantern at the top right,
-// mushrooms and stones and grass along the floor, a leaf cap on the crab, and fireflies.
+// THE FOREST. A bush frames the panel, grass and soil hold its floor, fireflies drift through the
+// two bands that carry no text, and the session ring is woven out of blades.
 //
-// THE CSS IS THE FINISHED ARTICLE AND A PNG IS AN UPGRADE. Every shape in here is drawn by the
-// stylesheet, so this theme is complete with no asset at all; the three picture layers still carry
-// their boxes (250x597.5 for the frame, 230x156 for the floor, 88x74 for the badge, which is the
-// mascot's own), so a drawing can be laid over one later without anything else moving. See
-// themes/README.md section 5 for the swap, which is one declaration and one line of `art`.
+// WHAT IS DRAWN IN WHAT. The split is by material and not by convenience:
 //
-// AND THE PRICE DOES NOT MOVE WHEN IT HAPPENS, because the rung is counted off `layers` and not off
-// `art`: what was designed is three pictures whether they are painted in CSS today or in a PNG next
-// month. Counting the files instead would make every theme in this directory free.
+//   .th-scene   CSS   the backdrop, the drifting light, the canopy shade, the vignette, the dither
+//   .th-frame   SVG   the bush. Seven children: two corners, three tiles, two swaying front pieces
+//   .th-floor   SVG   the ground. Six children: soil and undergrowth, a far layer, two end masses,
+//                     one swaying tuft (the third is off: three layers stand the floor up)
+//   .th-motes   CSS   eight fireflies. There is no reason to draw those
+//   #ringArc          the shell's one pattern of blades, pointed at. See 5 below
 //
-// The figures in here are the mockup's, measured at a 250px sidebar. Section 5 of
-// docs/panel-themes/spec.md holds the safe area the frame is masked to and the brightness ceiling
-// the floor keeps over the stat row.
+// NO PNG, AND THAT IS A DECISION RATHER THAN A WAIT. The order for a frame and a floor PNG was
+// withdrawn (2026-11-28): ordered piece by piece, the stem weight, the colour and the light came
+// back different every time and the pieces did not meet. So the art is CODE, inline SVG in the
+// layers' own backgrounds, and there is nothing in `art` for the host to resolve.
+//
+// THE PRICE DOES NOT MOVE FOR THAT. The rung is counted off `layers` and not off `art`
+// (themes/registry.js, rungOf), so two picture layers is 10K whether they arrive as SVG today or as
+// a PNG next month. This theme claimed `badge` until 2026-11-28 and no longer does (see 7), and the
+// rung does not move for that either: three pictures and two are one rung, which is the ladder
+// saying they cost about the same to draw.
+//
+// THE MOCKUP IS THE SOURCE AND IT IS THE LIVE ONE. Every declaration below was copied out of
+// docs/panel-themes/live/two-themes.html, section C, with one change: the scope prefix
+// (`.sim.tab-usage[data-theme="forest"]` became `body.tab-usage[data-theme="forest"]`). That file's
+// markup is the shipped markup, so its figures hold: the frame is a child of the wrap and the other
+// three of the card, measured at a 250px and a 351px sidebar. docs/panel-themes/two-themes.md reads
+// behind the design and is BEHIND the mockup where the two disagree.
+//
+// B AND NOT A. The mockup carries two leaf idioms behind a toggle. B (large leaves) shipped: at a
+// 14px side edge A's smaller, denser blades mash into texture while B's survive one by one.
+//
+// --- what each block is for, in the order they are in -------------------------------------------
+//
+// 1 THE SURFACE. A theme carries its own card rather than tinting the editor's
+//   (themes/README.md, section 1), so the tokens come first and every contrast below is measured
+//   against them.
+//   --dither IS NOT DECORATION. A 300px ramp near #0f1a10 crosses a handful of 8-bit values, so it
+//   arrives as a few wide treads with a seam between them whatever shape it was authored in:
+//   sampling a row of the rendered panel found the green channel stepping 27-26-24-23-20-19-18,
+//   each tread 8 to 12px. This 32x32 tile (671 bytes) carries zero-mean noise of about one level
+//   and scatters each tread's edge. It goes FIRST in a stack, so it sits over the ramp it is
+//   breaking up, and it is in both places that own a dark ramp: the scene and the board.
+//   AND NO BAND IN THE SCENE HAS AN EDGE YOU CAN POINT AT. Three light shafts used to live here,
+//   each a fixed-width band running the full height, and that reads as wallpaper stripes. What is
+//   left is radial: an ellipse has no straight edge, and the light it carries is a glow in the air
+//   rather than a column standing in it.
+//
+// 2 THE SCENE'S TWO CHILDREN. Both are very slow (31s and 43s) because fast light beside an editor
+//   reads as flicker. They are children and not two more background layers because one element's
+//   background layers share one animation clock.
+//
+// 3 THE BUSH, AND WHY IT IS SVG. A CSS background layer cannot be rotated, which is what made the
+//   first two attempts round blobs and angular blobs. A <path> costs nothing to repeat and carries
+//   its own fill and opacity, so ONE PIECE HOLDS OVER A HUNDRED BLADES, which is exactly what a
+//   bush needs. Each blade is asymmetric from base to tip, its angle is baked into the coordinates
+//   (cheaper than a transform), six depth layers get smaller and darker going back, the front layer
+//   lays lit blades down and covers them off-centre with the body so the top left is bright, and a
+//   density function rises and falls along each edge so there are thick places, thin places and
+//   near-empty ones. Three colours and no new ones: --fb-far, --fb-mid, --fb-lit.
+//   THE SEAMS. An edge tile repeats vertically and the top tile horizontally; a blade that crosses
+//   a boundary is drawn again at the other end, and the density function is itself periodic over
+//   the tile. The top tile is 128px and not 64 by measurement: at a 351px sidebar 64 repeats 3.5
+//   times and reads as regular ripple, 128 repeats 1.7 and reads as a bush.
+//   AND NOT ONE BRACE OR DOUBLE QUOTE INSIDE AN SVG. whyNotCss blanks the strings in a declaration
+//   block and then counts braces, and either character costs the whole sheet its place. So # is
+//   written %23, there is no <style> and no filter, and every value is a presentation attribute.
+//
+// 3a THE MASK, WHICH IS THE ONE PLACE THIS THEME REACHES PAST THE SHELL. The shell owns the frame's
+//   mask (themes/README.md, section 3) and that is still the rule; this is the exception the same
+//   section now names, and the condition on it is that the reason is written down. Here it is.
+//   The shell's window is four strips pinned to the CARD's padding: 14px down each side from x10,
+//   and a 52x30 window into each top corner. This bush is composed in the WRAP's coordinates with
+//   72x40 corner pieces and 23px edge tiles, so those strips cut the corners to 52x30 and the edges
+//   to 14px, and what reaches the screen is a frame missing its outer third.
+//   WIDENING THE SHELL'S OWN MASK WAS TRIED FIRST AND PUT BACK THE SAME DAY (2026-11-28). It breaks
+//   the six retired themes, which were composed against those four strips: a wider window does not
+//   re-reveal art that was clipped, it reveals art nobody drew to be seen. Rendered on ocean, which
+//   the reader is wearing, a bright blue fragment appeared at x465..500 y20..70 and a blue band hung
+//   out below the card's floor at x480..690. One theme reaching past the shell for its own frame is
+//   cheaper than six themes' frames breaking, so the three bands live here.
+//   The bands: the top one is FULL WIDTH y0..40, which is measured -- the wrap's 10px padding, the
+//   card's border and its 30px top padding put the header row at y41 and the fold button at y46, so
+//   not one glyph is in that band and there is nothing for two corner windows to protect. The sides
+//   are 23px, the safe area docs/panel-themes/spec.md measured, down to 10px short of the wrap's
+//   floor. The property the shell's mask exists for still holds: no band is both wide and tall, so
+//   the middle of the card is untouched.
+//
+// 4 THE GROUND RUNS THE OTHER WAY UP. Leaves come down at the top and grass grows up from the
+//   bottom: the same blades at both ends would read as a frame pattern. Four things keep the two
+//   apart -- the direction, the shapes (fine blades, moss domes, pebbles and fallen leaves rather
+//   than bamboo), two soil values the top edge never uses, and a 160px density period against the
+//   top edge's 128px, so the two never thicken in the same place.
+//   AND IT LIVES IN THE BOTTOM 34px, measured against the shipped panel rather than against a
+//   mockup (themes/README.md, section 3): 39px of padding always stack up under the last line of
+//   the stat row. Nine of the 34 are soil and the grass grows 3 to 25 by density, so the top edge
+//   is the subject. In each child the ground is the LAST background layer, because in CSS the first
+//   layer is the topmost and a ground written first paints over everything after it.
+//
+// 5 THE RING, AND WHY THE SHELL HAS TO HAND A THEME A PAINT. A mask on the arc does nothing here:
+//   a plain half-and-half gradient mask left it untouched, so masks are not applying to that SVG
+//   child, and even where they do they can only subtract, never put a blade out past the stroke.
+//   What a theme may set on a stroke is a colour or a paint server, and a paint server has to live
+//   in a <defs> no theme owns. So the shell carries one pattern of blades (html.js, grassStroke),
+//   every theme may point at it or ignore it, and the arc keeps its path, its length and its end
+//   angle exactly: only the surface inside it changes.
+//
+// 6 EIGHT FIREFLIES. Points of light: round, pulsing, rising slowly, 2 to 4px so not one of them is
+//   in the way of a reading. Stopped, the eight stand still where they are. The last two are seeds,
+//   the slowest and the faintest of them.
+//
+// 7 THE BOARD: A LINE IS TAKEN AWAY AND A SURFACE IS GIVEN. Measured, .inner had no surface at all
+//   -- a transparent background behind one 0.56px --iborder line, and that rounded rectangle read
+//   as a slab. A LINE IS UI'S IDIOM AND A SURFACE IS AN OBJECT'S. Of the three candidates this is
+//   the dark one with the forest showing through, chosen because this surface carries the most text
+//   and wood grain or stone grit eats 10.5px supporting type. Five gradients so the colour is not
+//   one value, the light running the same way as the scene's (101-104deg, bright at the top left),
+//   border-color:transparent so the boundary is made by the inner darkness and the contact shadow,
+//   and .30 to .58 opacity so the light and the grass still show through it.
+//   THE CONTACT SHADOW IS THE POINT. What says an object is IN a scene is not its surface, it is
+//   the shadow it drops on what is under it; without one it reads as a cut-out laid on top however
+//   it is painted. NOTHING HERE MOVES, because this is where the text is and brightness that
+//   wobbles is contrast that wobbles. No SVG either: a surface is what gradients are for. The tab
+//   strip is the same idiom at a smaller size, and the stat row gets one darkness rather than a
+//   second surface, so it reads as a low step inside the board.
+//   AND NO BADGE. A leaf sat on the crab's head here and the reader cut it (2026-11-28): the mascot
+//   is their own art and a theme does not dress it, and at 40x24 it read as a leaf stuck to the
+//   sprite rather than worn by it. The layer stays in the markup and this theme does not claim it,
+//   so a later theme may still use the box.
+//
+// 8 A NARROW SIDEBAR. At a 170px card the left mass (120), the middle (160) and the right (110) add
+//   up to 390 with nowhere to go, and measured, the left one overlapped the middle by 101.5px. The
+//   middle is the subject and the two end masses are the ones drawn to crop, so they go. The top
+//   tile is NOT switched off: at 190px the top edge has 62.5px left and the tile is 64, so 0.98 of
+//   one lands almost whole. Measured rather than guessed.
+//
+// 9 THE CELL ON THE SHELF. It is drawn whatever theme is being worn, so it cannot be under the
+//   scope above; it cannot show a panel at 48x34 either, so it shows the card colour and the scene
+//   at the panel's own scale (styles.js, .th-chip).
 'use strict';
 
 module.exports = {
   id: 'forest',
   name: 'Forest',
   order: 30,
-  layers: ['frame', 'floor', 'badge', 'motes'],
+  // frame and floor are the pictures; the motes are the stylesheet's and cost nobody a drawing
+  layers: ['frame', 'floor', 'motes'],
   art: {},
   accent: '#a3d94a',
   accentHi: '#c9ea82',
 
   css: `
-  body.tab-usage[data-theme="forest"]{--card:#0f1a10;--inner:#0f1a10;--track:#24381f;--text:#e8f3df;--muted:#9bb48e;--shell:#070e08;--glow:0 0 0 1px #24411f, 0 0 24px -4px rgba(163,217,74,.38);--scene:repeating-linear-gradient(103deg,transparent 0 26px,rgba(190,240,130,.055) 26px 40px),radial-gradient(ellipse 80% 34% at 36% -4%,rgba(190,245,120,.20) 0%,transparent 66%),radial-gradient(ellipse 34% 16% at 16% 28%,rgba(0,0,0,.34),transparent 70%),radial-gradient(ellipse 30% 14% at 84% 52%,rgba(0,0,0,.30),transparent 72%),linear-gradient(180deg,transparent 56%,rgba(0,0,0,.40) 100%);--tabsbg:rgba(0,0,0,.34);--tabon:var(--accent);--tabonink:#0d0d0f;--statsbg:transparent;--tilebg:transparent;--ringtrack:rgba(0,0,0,.46);--bartrack:rgba(0,0,0,.52);--border:#1e3020;--iborder:#1e3020;}
-  body.tab-usage[data-theme="forest"] #panelUsage{background:transparent;border:1px solid rgba(190,240,130,.08);}
-
-body.tab-usage[data-theme="forest"] .stats{gap:0;}
-body.tab-usage[data-theme="forest"] .stat + .stat{box-shadow:inset 1px 0 0 rgba(255,255,255,.07);}
-body.tab-usage[data-theme="forest"] .wk-more{background:rgba(255,255,255,.09);}
-body.tab-usage[data-theme="forest"] .th-motes{background:
-  radial-gradient(circle,rgba(226,255,140,.95) 0 1.4px,transparent 2.1px) 0 0/58px 46px,
-  radial-gradient(circle,rgba(190,240,120,.75) 0 1.1px,transparent 1.8px) 23px 17px/71px 59px;
-  opacity:.65;animation:th-forest-fireflyFloat 13s ease-in-out infinite alternate;}
-@keyframes th-forest-fireflyFloat{from{background-position:0 0,23px 17px;opacity:.38}
-  to{background-position:11px -24px,-14px 20px;opacity:.75}}
-body.tab-usage[data-theme="forest"] .th-motes::after{content:'';position:absolute;left:18px;top:388px;width:11px;height:8px;
-  background:radial-gradient(ellipse 5px 4px at 3px 4px,#f5c542 0 72%,transparent 76%),
-    radial-gradient(ellipse 5px 4px at 8px 4px,#e8a92f 0 72%,transparent 76%);
-  animation:th-forest-flit 11s ease-in-out infinite alternate;}
-@keyframes th-forest-flit{from{transform:translate(0,0) rotate(-6deg)}
-  to{transform:translate(46px,-28px) rotate(8deg)}}
-/* 틀: 좌상에서 쏟아져 들어오는 덩굴과 잎, 우상에 매달린 랜턴, 좌우 줄기 */
-body.tab-usage[data-theme="forest"] .th-frame{background:
-  radial-gradient(circle 18px at 233px 32px,rgba(255,224,122,.46) 0 16%,rgba(255,210,100,.13) 54%,transparent 76%),
-  radial-gradient(ellipse 5px 6px at 50% 46%,#fffbe2 0 30%,#ffe08a 58%,#c99a28 84%,transparent 90%) 228px 24px/12px 15px no-repeat,
-  linear-gradient(180deg,#43642f,#24381a) 229px 20px/10px 4px no-repeat,
-  linear-gradient(180deg,#24381a,#16240f) 230px 38px/8px 3px no-repeat,
-  linear-gradient(180deg,#355024,#1e3014) 233px 10px/2px 10px no-repeat,
-  radial-gradient(ellipse 20px 11px at 14px 12px,#4f8a3a 0 70%,transparent 74%),
-  radial-gradient(ellipse 15px 9px at 38px 7px,#5c9c44 0 70%,transparent 74%),
-  radial-gradient(ellipse 12px 20px at 7px 34px,#3f7030 0 70%,transparent 74%),
-  radial-gradient(ellipse 17px 10px at 34px 26px,#4a8436 0 70%,transparent 74%),
-  radial-gradient(ellipse 10px 17px at 13px 60px,#5c9c44 0 70%,transparent 74%),
-  radial-gradient(ellipse 13px 8px at 30px 52px,#3f7030 0 70%,transparent 74%),
-  radial-gradient(ellipse 8px 15px at 8px 92px,#4a8436 0 70%,transparent 74%),
-  radial-gradient(ellipse 18px 10px at 206px 9px,#4f8a3a 0 70%,transparent 74%),
-  radial-gradient(ellipse 12px 7px at 192px 4px,#5c9c44 0 70%,transparent 74%),
-  linear-gradient(180deg,#2d5422,#16300f) 0 0/250px 11px no-repeat,
-  linear-gradient(180deg,#2a4e1f,#12280c) 0 0/14px 100% no-repeat,
-  linear-gradient(180deg,#2a4e1f,#12280c) 236px 0/14px 100% no-repeat;}
-  /* THE LANDSCAPE, RE-LAID AGAINST THE SHIPPED PANEL (2026-11-26).
-     The mushrooms and the stones were standing in the stat row.
-     Three rules, and they are the same three for every theme in this directory:
-       1. every object is anchored to the card's FLOOR and lives in the bottom 34px. Under the
-          last line of the stat row there are 39px of padding that always stack up (the tile's 10,
-          the inner's 13, the card's 14, the border), so that band is structural and does not have
-          to be re-measured when the bars above change
-       2. THE GROUND IS THE LAST LAYER. In CSS the first background layer is the topmost, and the
-          mockup wrote the ground first: the cart, its wheels and its rails were all underneath an
-          opaque ground and what reached the screen was a 4px lip of gold across a figure
-       3. what will not read at 34px is taken out rather than cropped
-     TAKEN OUT: the second grass bank, which at 34px was a stripe across the whole width. */
-  body.tab-usage[data-theme="forest"] .th-floor{background:
-  radial-gradient(ellipse 14px 8px at 50% 50%,#c7452f 0 70%,transparent 74%) left 22px bottom 18px/28px 16px no-repeat,
-  radial-gradient(ellipse 4px 3px at 50% 50%,#f0d8c0 0 70%,transparent 74%) left 26px bottom 22px/8px 6px no-repeat,
-  linear-gradient(180deg,#eadfc4,#c4b596) left 29px bottom 4px/7px 15px no-repeat,
-  radial-gradient(ellipse 9px 6px at 50% 50%,#d4563c 0 70%,transparent 74%) left 48px bottom 11px/18px 12px no-repeat,
-  linear-gradient(180deg,#eadfc4,#c4b596) left 53px bottom 2px/5px 10px no-repeat,
-  radial-gradient(ellipse 20px 12px at 50% 50%,#56624f 0 68%,transparent 72%) left 182px bottom 1px/40px 24px no-repeat,
-  radial-gradient(ellipse 10px 7px at 50% 50%,#45503f 0 68%,transparent 72%) left 164px bottom 0/20px 14px no-repeat,
-  repeating-linear-gradient(86deg,transparent 0 4px,#3c6b2c 4px 7px) left 68px bottom 0/96px 22px no-repeat,
-  linear-gradient(180deg,transparent 0 134px,#1a3014 134px) 0 0/230px 156px no-repeat;}
-/* 악세: 잎 모자 */
-body.tab-usage[data-theme="forest"] .th-badge{background:
-  radial-gradient(ellipse 13px 7px at 38px 37px,#5c9c44 0 74%,transparent 78%),
-  radial-gradient(ellipse 10px 6px at 50px 35px,#4a8436 0 74%,transparent 78%),
-  linear-gradient(180deg,#3f7030,#2d5422) 43px 38px/2px 6px no-repeat;}
-
-  .th-chip[data-th="forest"]{--card:#0f1a10;--th-scene:repeating-linear-gradient(103deg,transparent 0 26px,rgba(190,240,130,.055) 26px 40px),radial-gradient(ellipse 80% 34% at 36% -4%,rgba(190,245,120,.20) 0%,transparent 66%),radial-gradient(ellipse 34% 16% at 16% 28%,rgba(0,0,0,.34),transparent 70%),radial-gradient(ellipse 30% 14% at 84% 52%,rgba(0,0,0,.30),transparent 72%),linear-gradient(180deg,transparent 56%,rgba(0,0,0,.40) 100%);}
+/* 1 THE SURFACE. --dither is the FIRST layer of every dark ramp here. Header, 1 */
+body.tab-usage[data-theme="forest"]{
+  --shell:#070e08;--card:#0f1a10;--inner:#0f1a10;--track:#24381f;
+  --text:#e8f3df;--muted:#9bb48e;--border:#1e3020;--iborder:#1e3020;
+  --accent:#a3d94a;--accent-hi:#c9ea82;
+  --bartrack:rgba(0,0,0,.52);--ringtrack:rgba(0,0,0,.46);
+  --tabsbg:rgba(0,0,0,.34);--tabon:var(--accent);--tabonink:#0d0d0f;
+  --statsbg:transparent;--tilebg:transparent;
+  --glow:0 0 0 1px #24411f,0 0 24px -4px rgba(163,217,74,.30);
+  --fb-ink:#09150b;--fb-far:#172d16;--fb-mid:#24421d;--fb-lit:#3c6a2c;
+  --fb-soil:#1d2e16;--fb-soil2:#101e0c;
+  --dither:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAQAAADZc7J/AAACZklEQVR42lVVCXLEMAgT8P83u0aHs20nycY2IIQgOA3caw5OnT51f819zl2d3UOj7n32ec/c//3b+z0zd08LPHDNvNFye9+GV/kUHZziT+5eq8OIqJhi4ysCeATH1z1Ti5BI9n0ti57kl/CVglyWI27M5tsY455ehHYwiUHgG3fdbEoy2/vuFJalRnAN01jqaMZXQgONhrkXguV7bjLEIj6UvVnls0gfftDsvXicWBi5XY2jJMQzC+gVeJX4yLeMSuVl/FYU8r4xGB0I++16dIimJprJ9K6CCS+4gY4l2hy5G6c1jFY8Za0wJK+hARLNFYcAH2UOlzjoyNJRTZjCvmwixCLuU3fIVPUY310pUADUl2OLZQuX8FWsiDo1MT88aQKV/bpRrAf/pOojQZGNUfZkwgfkzXkKGlke9agUeKKJr+Gg6GXA9m01mP1/SH4wOpgLFTlLk3JK9SG0yfhjRuxMJNuKrs5wDbziusDtFLk7afE6aWhFTHfgyYWytvKiVs8Lja9P70dlVbN2EjqVBH06pLZ6wDPpUGPO3S2Fb4BxGkEz9M0K9hzKjfLmAdyLRPKZCtm4W9m9UiIQtt15T/0pVr1BVm6uN51HHfAGZwhU0UwohVOhVU6s3kyfnzGlMo4EbWll9E2+DhptyE0AoU8L0C+JN9RoIp7kGFaG1Z4PhoSqJp+vzV41pFV9dpSIB3cGaqAqCbgOo4nsb1S4yvA96T/DZ41HsymTwXT2a3mnA41V1tlEcjKnVftHj57aEtxRkJL3Vm95OsqJWfC+Gj2dIF7G34lAJah5xv1Ga3hIB3bWRP4ftkkO4dEhKSoAAAAASUVORK5CYII=") 0 0/32px 32px repeat;
+  /* ...AND NOT ONE OF THESE MAY BE SIZED IN PER CENT. A view in a sidebar is whatever height
+     the reader drags it to: alone it can be 900px, stacked under other views it can be 200.
+     Written in per cent, a scene tuned at 425 stretches, and a stretched vignette dies in the
+     middle, which is exactly the flat black band that showed up the first time this panel was
+     given a tall sidebar. It read as the drawing having failed. So every layer here is pinned
+     in px to the TOP or to the BOTTOM, and what fills the space between them is a band that
+     repeats down the view: canopy above, ground below, forest in between, at any height.
+     (2026-11-28) */
+  --scene:
+    var(--dither),
+    linear-gradient(180deg,rgba(0,0,0,.34) 0,transparent 120px) top/100% 120px no-repeat,
+    linear-gradient(0deg,rgba(0,0,0,.52) 0,transparent 150px) bottom/100% 150px no-repeat,
+    radial-gradient(ellipse 128% 300px at 50% 0,transparent 34%,rgba(0,0,0,.26) 100%) top/100% 300px no-repeat,
+    radial-gradient(ellipse 58% 110px at 26% 0,rgba(190,240,150,.055),transparent 72%) top/100% 260px no-repeat,
+    radial-gradient(ellipse 30% 70px at 90% 0,rgba(255,206,118,.13),transparent 74%) top/100% 120px no-repeat,
+    radial-gradient(ellipse 92% 140px at 44% 0,rgba(176,232,112,.19),transparent 66%) top/100% 140px no-repeat,
+    linear-gradient(180deg,rgba(26,46,24,.17) 0,rgba(12,24,12,.07) 46%,rgba(26,46,24,.17) 100%) 0 0/100% 190px repeat-y;
+}
+/* 2 THE SCENE: light drifts, canopy shade moves. One clock per element, so one child each */
+body.tab-usage[data-theme="forest"] .th-scene > i:nth-child(1){
+  left:8px;top:-30px;width:150px;height:330px;opacity:.9;
+  background:linear-gradient(103deg,transparent 0,rgba(206,250,152,.030) 34%,rgba(206,250,152,.072) 56%,transparent 100%);
+  animation:th-forest-shaft 31s ease-in-out infinite alternate}
+body.tab-usage[data-theme="forest"] .th-scene > i:nth-child(2){
+  right:-30px;top:150px;width:190px;height:150px;opacity:.85;
+  background:radial-gradient(ellipse 50% 50% at 50% 50%,rgba(186,242,126,.062),transparent 72%);
+  animation:th-forest-dapple 43s ease-in-out infinite alternate}
+@keyframes th-forest-shaft{from{transform:translate(-11px,0) scaleX(.94);opacity:.55}to{transform:translate(13px,0) scaleX(1.08);opacity:1}}
+@keyframes th-forest-dapple{from{transform:translate(-15px,-10px) scale(.94)}to{transform:translate(16px,12px) scale(1.08)}}
+/* 3 THE BUSH, in inline SVG. NO BRACE AND NO DOUBLE QUOTE IN AN SVG: whyNotCss drops the whole sheet over either. # is written %23. Seven children of the ten. Header, 3 */
+/* 3a THE WINDOW THIS FRAME PAINTS THROUGH, and it is this theme's and not the shell's. The shell's four strips are the card's padding and the six retired themes are composed against them; widening them there made ocean leak (header, 3a). So this widens it for forest alone: top band FULL WIDTH y0..40 (no glyph is in that band), 23px down each side to 10px short of the wrap's floor. Header, 3a. */
+body.tab-usage[data-theme="forest"] .th-frame{
+  -webkit-mask:linear-gradient(#000,#000) left 0 top 0/100% 40px no-repeat,
+    linear-gradient(#000,#000) left 0 top 0/23px calc(100% - 10px) no-repeat,
+    linear-gradient(#000,#000) right 0 top 0/23px calc(100% - 10px) no-repeat;
+  mask:linear-gradient(#000,#000) left 0 top 0/100% 40px no-repeat,
+    linear-gradient(#000,#000) left 0 top 0/23px calc(100% - 10px) no-repeat,
+    linear-gradient(#000,#000) right 0 top 0/23px calc(100% - 10px) no-repeat}
+body.tab-usage[data-theme="forest"] .th-frame > i{background-repeat:no-repeat}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(1){
+  left:0;top:0;width:72px;height:40px;z-index:2;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='40' viewBox='0 0 72 40'><path fill='%23172d16' fill-opacity='.6' d='M-3,1c4,4 4,15 4,17c-5,-4-7,-16-4,-17zM0,3c7,3 4,14-1,17c-1,-3-1,-13 1,-17zM3,1c1,3-1,6-2,7c-1,-3 0,-7 2,-7zM7,-2c2,0 7,3 8,4c-3,0-8,-2-8,-4zM11,4c5,2 6,9 5,12c-3,-3-7,-9-5,-12zM16,3c2,2-1,6-4,6c1,-1 3,-5 4,-6zM16,2c0,5-7,4-11,2c3,-2 9,-3 11,-2zM18,5c0,4-7,8-11,8c3,-3 8,-8 11,-8zM21,7c-1,5-7,12-10,15c2,-7 6,-15 10,-15zM23,6c4,1 5,8 4,11c-2,-2-5,-9-4,-11zM26,-1c6,-3 12,7 11,13c-4,-2-11,-9-11,-13zM29,2c1,5-6,10-9,10c1,-4 6,-10 9,-10zM36,5c3,1 3,7 2,8c-2,-1-3,-7-2,-8zM37,-1c6,1 2,12-3,17c0,-5 1,-14 3,-17zM41,-1c6,-2 15,1 17,1c-5,3-15,2-17,-1zM47,1c4,1 12,10 14,11c-6,-1-15,-8-14,-11zM53,0c1,4-4,8-8,8c1,-3 5,-8 8,-8zM59,4c2,2-2,6-4,7c0,-3 3,-8 4,-7z'/><path fill='%2324421d' fill-opacity='.78' d='M-5,8c4,-2 10,4 11,8c-5,-1-11,-5-11,-8zM0,7c1,7-12,13-18,11c3,-2 14,-10 18,-11zM-1,7c2,6-1,17-1,20c-3,-6-2,-18 1,-20zM4,1c4,0 9,10 8,14c-2,-2-8,-11-8,-14zM4,6c3,3 4,10 4,14c-3,-4-5,-11-4,-14zM8,1c4,4 3,11 2,14c-3,-4-5,-12-2,-14zM11,-2c4,0 7,6 7,8c-3,-1-7,-6-7,-8zM14,-2c5,-1 10,5 10,8c-4,-1-10,-4-10,-8zM16,8c6,-3 17,2 19,4c-6,2-18,0-19,-4zM18,8c1,2-6,6-10,6c2,-1 8,-6 10,-6zM20,5c6,-2 16,3 20,5c-8,1-20,-1-20,-5zM20,4c3,7-9,17-14,16c0,-4 9,-16 14,-16zM24,5c-1,5-11,6-15,4c3,-2 12,-5 15,-4zM24,5c5,1 7,12 7,15c-4,-3-8,-13-7,-15zM29,8c6,-4 13,0 15,2c-5,2-13,1-15,-2zM32,3c3,4-3,8-8,8c1,-3 6,-7 8,-8zM36,-1c8,-5 19,0 22,2c-7,4-21,2-22,-2zM42,-2c0,5-7,11-11,11c2,-5 7,-12 11,-11zM49,3c5,-2 15,6 17,9c-6,0-17,-5-17,-9zM61,-1c2,1 1,8-1,9c0,-2 0,-7 1,-9z'/><path fill='%2324421d' d='M-3,-3c6,-1 14,3 16,5c-5,1-15,-1-16,-5zM-1,0c7,3 13,12 16,16c-8,-4-17,-11-16,-16zM0,-1c8,6 5,24 3,26c-6,-6-8,-24-3,-26zM2,1c8,-2 22,11 24,14c-7,0-23,-9-24,-14zM7,0c2,9-9,17-15,19c2,-8 9,-19 15,-19zM6,-1c0,7-16,7-24,3c6,-2 20,-5 24,-3zM9,-1c7,5 10,16 10,23c-7,-7-12,-18-10,-23zM11,-2c6,-2 14,4 15,7c-4,1-13,-3-15,-7zM13,-1c2,6-9,15-17,16c4,-5 13,-14 17,-16zM16,-3c7,4 8,20 4,24c-3,-4-6,-18-4,-24zM21,3c7,-2 14,6 16,11c-7,-2-15,-7-16,-11zM25,5c8,-1 17,8 19,14c-7,-2-17,-9-19,-14zM27,2c2,4-2,11-4,13c-1,-4 2,-12 4,-13zM30,-1c5,6-5,17-12,17c1,-3 7,-15 12,-17zM32,6c0,8-13,16-17,17c1,-7 13,-18 17,-17zM34,7c5,1 6,9 6,15c-3,-5-7,-12-6,-15zM37,-2c-3,9-20,11-27,8c6,-2 21,-8 27,-8zM40,-2c6,4 7,14 7,17c-6,-4-10,-14-7,-17zM42,6c7,4 8,20 8,24c-7,-6-12,-22-8,-24zM59,0c8,0 19,14 19,19c-4,-2-17,-14-19,-19zM70,0c4,2 5,9 4,12c-3,-3-5,-10-4,-12z'/><path fill='%233c6a2c' fill-opacity='.72' d='M-5,1c4,6-7,12-15,13c4,-4 11,-11 15,-13zM-3,3c1,7-14,22-19,22c2,-5 14,-21 19,-22zM1,3c-1,7-9,14-12,17c2,-7 8,-17 12,-17zM4,1c13,-2 17,21 11,30c-4,-4-13,-23-11,-30zM4,6c8,1 23,21 26,24c-10,-2-27,-19-26,-24zM9,3c2,7-7,19-10,20c0,-6 6,-19 10,-20zM15,0c2,9-12,13-22,10c5,-4 16,-10 22,-10zM26,-2c3,8-2,19-5,23c-2,-10 0,-22 5,-23zM31,5c8,7 10,23 10,29c-8,-8-14,-24-10,-29zM39,4c-2,7-10,19-11,23c0,-8 6,-22 11,-23zM47,2c10,-3 23,12 22,17c-6,0-21,-11-22,-17zM66,4c8,-3 15,13 12,20c-3,-3-12,-15-12,-20zM71,2c5,4-1,20-6,23c0,-4 4,-20 6,-23z'/><path fill='%233c6a2c' fill-opacity='.5' d='M-4,2c3,5-6,11-13,12c3,-4 9,-10 13,-12zM-2,4c0,6-13,19-17,20c1,-5 13,-19 17,-20zM2,4c-1,6-8,13-11,15c2,-6 7,-15 11,-15zM5,2c11,-1 15,19 9,27c-2,-4-10,-21-9,-27zM5,7c7,2 20,19 23,21c-9,-2-24,-17-23,-21zM10,5c2,5-6,15-9,17c0,-6 6,-17 9,-17zM16,1c2,8-11,11-19,9c4,-3 14,-9 19,-9zM27,-1c3,7-2,16-5,20c-1,-8 1,-19 5,-20zM32,6c6,6 8,21 9,26c-7,-7-12,-22-9,-26zM40,5c-2,6-9,17-10,20c0,-7 5,-19 10,-20zM48,3c8,-2 20,11 19,16c-5,-1-18,-10-19,-16zM67,5c7,-2 13,12 10,18c-2,-3-10,-14-10,-18zM72,3c4,4-1,18-6,20c1,-3 4,-17 6,-20z'/><path fill='%233c6a2c' d='M11,-1c2,2-3,8-6,9c1,-2 4,-8 6,-9zM52,-1c5,1 10,10 10,15c-3,-3-10,-12-10,-15z'/></svg>");
+  background-size:72px 40px}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(2){
+  right:0;top:0;width:72px;height:40px;z-index:2;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='40' viewBox='0 0 72 40'><path fill='%23172d16' fill-opacity='.6' d='M75,2c-4,-3-7,4-8,10c3,-2 7,-8 8,-10zM74,4c-4,4 0,9 3,12c1,-5-1,-11-3,-12zM71,-1c-1,4 5,10 8,11c-1,-3-6,-10-8,-11zM68,-1c-5,3-3,10-1,13c2,-4 3,-10 1,-13zM65,1c-6,-4-13,4-14,9c4,-1 13,-6 14,-9zM64,-2c-3,3-2,10-2,12c3,-3 4,-11 2,-12zM62,-1c-4,6 6,10 14,10c-3,-4-10,-9-14,-10zM58,-3c-4,6 3,15 7,17c1,-6-3,-16-7,-17zM56,0c1,3 7,4 10,4c-2,-2-7,-5-10,-4zM51,-1c-3,1-7,9-7,10c3,-1 8,-8 7,-10zM49,7c-5,-2-14,1-16,1c4,2 14,1 16,-1zM50,-2c0,5 9,7 12,5c-2,-2-10,-6-12,-5zM47,1c-4,-1-6,4-6,6c3,-1 6,-4 6,-6zM45,-2c-2,2-2,6-2,8c2,-2 4,-7 2,-8zM39,7c-6,-1-13,5-15,8c5,0 13,-5 15,-8zM31,6c-4,1-5,12-1,16c0,-3 1,-13 1,-16zM23,1c-1,7 4,14 7,16c0,-7-3,-16-7,-16zM19,2c-2,0-2,5 0,7c0,-2 1,-6 0,-7zM15,4c1,5 13,7 19,4c-5,-1-16,-4-19,-4zM1,2c0,4 6,5 9,4c-2,-2-7,-4-9,-4zM-1,7c-5,-2-12,5-14,11c5,-3 12,-8 14,-11z'/><path fill='%2324421d' fill-opacity='.78' d='M76,-2c-2,3-2,10-2,11c3,-2 4,-9 2,-11zM75,5c0,5 10,4 14,1c-3,-1-12,-2-14,-1zM70,3c-8,1-6,15-1,22c1,-5 3,-17 1,-22zM69,1c-6,2-5,14-1,19c2,-4 3,-15 1,-19zM69,2c-5,-3-15,3-17,4c5,2 16,-1 17,-4zM66,8c-4,-2-11,3-14,7c6,-1 13,-4 14,-7zM63,0c-5,-1-9,3-11,6c5,-1 11,-4 11,-6zM59,1c0,3 5,8 6,10c-1,-4-4,-10-6,-10zM58,7c-3,6 6,14 12,15c-1,-4-8,-13-12,-15zM56,6c-4,1-8,10-9,16c4,-5 9,-13 9,-16zM53,-1c-3,-1-6,5-5,7c2,-1 5,-5 5,-7zM52,7c0,3 6,4 10,2c-3,0-8,-2-10,-2zM49,7c-6,2-5,15-1,19c1,-3 2,-15 1,-19zM47,5c-3,0-6,5-6,8c2,-2 5,-6 6,-8zM43,-1c-1,5 5,9 9,10c-2,-5-7,-11-9,-10zM42,2c-4,0-6,5-5,9c2,-2 5,-6 5,-9zM37,8c-3,1-2,10 1,13c0,-3 1,-11-1,-13zM38,5c-5,-2-12,0-16,2c7,1 15,1 16,-2zM34,-1c0,3 3,8 5,9c-1,-3-3,-9-5,-9zM27,-1c-6,0-17,5-19,6c6,2 17,-2 19,-6zM23,4c-6,1-10,15-10,17c5,-2 12,-15 10,-17zM18,8c-4,-1-7,5-7,8c2,-1 7,-6 7,-8zM8,5c-3,2-2,9 0,11c1,-3 2,-9 0,-11zM1,5c-5,-1-11,4-11,5c3,1 11,-3 11,-5z'/><path fill='%2324421d' d='M76,1c-3,10 11,18 21,20c-5,-8-15,-18-21,-20zM75,1c-8,0-19,10-24,15c9,-2 22,-10 24,-15zM71,4c-3,5 3,10 7,12c-1,-4-4,-10-7,-12zM70,4c-9,-3-14,12-11,21c4,-4 11,-16 11,-21zM63,-2c-6,1-5,15-1,19c1,-3 3,-16 1,-19zM63,-1c0,5 12,5 17,2c-4,-1-15,-2-17,-2zM58,0c-2,6 5,13 7,13c1,-4-3,-12-7,-13zM58,2c-5,6 6,19 14,20c-2,-3-10,-17-14,-20zM53,0c-7,5-7,23-6,29c7,-9 11,-27 6,-29zM50,7c-4,4 2,12 6,13c0,-3-4,-11-6,-13zM49,7c-3,6 5,11 12,12c-2,-5-8,-12-12,-12zM46,5c-8,-4-18,3-21,9c8,0 19,-4 21,-9zM37,4c-5,5 1,14 7,18c-1,-6-4,-14-7,-18zM38,0c0,8 13,16 19,14c-3,-3-14,-13-19,-14zM33,-1c-6,0-7,14-4,18c2,-3 6,-15 4,-18zM32,0c-4,5 1,14 5,15c0,-3-2,-12-5,-15zM31,5c-3,1-5,10-3,13c2,-2 4,-11 3,-13zM28,3c-10,-1-15,14-13,22c6,-4 15,-16 13,-22zM24,6c-8,-1-12,13-10,20c4,-4 11,-16 10,-20zM19,-2c-9,-1-18,11-20,14c9,0 22,-10 20,-14zM14,6c0,8 10,20 14,24c-2,-10-9,-24-14,-24zM10,1c-5,2-6,13-5,17c3,-4 7,-15 5,-17z'/><path fill='%233c6a2c' fill-opacity='.72' d='M74,4c-2,6 7,14 13,16c-2,-6-9,-15-13,-16zM60,-1c-8,0-15,18-13,29c4,-8 12,-23 13,-29zM49,4c-10,-2-17,11-16,18c6,-2 16,-12 16,-18zM46,3c-4,5 2,18 9,23c-2,-6-7,-19-9,-23zM45,5c-9,5-14,21-15,30c9,-9 17,-24 15,-30zM36,0c-6,5 4,16 11,18c-1,-5-7,-16-11,-18zM33,4c-1,7 14,11 20,7c-3,-2-16,-9-20,-7zM30,-1c-4,5-5,21-6,24c5,-5 8,-21 6,-24zM24,4c-5,-1-11,11-9,17c1,-4 8,-14 9,-17zM6,4c-8,3 0,18 8,26c0,-8-4,-23-8,-26z'/><path fill='%233c6a2c' fill-opacity='.5' d='M75,5c-2,5 7,12 12,14c-2,-5-9,-13-12,-14zM61,0c-7,0-13,16-12,26c4,-7 11,-21 12,-26zM50,5c-9,-1-15,10-14,16c5,-2 14,-11 14,-16zM47,4c-4,5 2,16 8,21c-2,-6-6,-17-8,-21zM46,6c-8,5-12,19-13,27c8,-8 15,-21 13,-27zM37,1c-5,5 3,14 10,16c-1,-4-7,-14-10,-16zM34,5c-1,6 13,9 17,6c-2,-2-14,-7-17,-6zM31,0c-3,5-4,19-5,21c4,-4 7,-18 5,-21zM25,5c-5,-1-10,10-8,15c1,-3 7,-13 8,-15zM7,5c-7,3 0,16 7,23c0,-7-4,-20-7,-23z'/><path fill='%233c6a2c' d='M40,4c-4,2-6,11-5,13c2,-2 6,-10 5,-13z'/></svg>");
+  background-size:72px 40px}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(3){
+  left:64px;right:64px;top:0;height:40px;z-index:1;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='128' height='40' viewBox='0 0 128 40'><path fill='%23172d16' fill-opacity='.6' d='M12,1c3,5-1,11-5,13c0,-5 1,-12 5,-13zM26,-1c1,6-7,12-12,14c3,-5 9,-12 12,-14zM35,3c9,1 15,11 15,14c-7,-1-16,-9-15,-14zM43,0c8,1 12,12 12,15c-5,-2-13,-11-12,-15zM43,-2c4,2 6,9 7,12c-4,-3-8,-10-7,-12zM47,1c5,5-4,15-10,15c0,-3 6,-14 10,-15zM48,3c3,1 7,5 9,6c-4,0-9,-4-9,-6zM61,0c5,3 4,15 0,17c-1,-3-2,-13 0,-17zM67,1c2,4-3,8-6,9c0,-3 3,-8 6,-9zM72,2c3,3 2,8 2,10c-2,-3-3,-8-2,-10zM80,1c3,2 6,7 7,9c-3,-1-8,-6-7,-9zM85,1c1,4-4,8-8,10c2,-3 6,-9 8,-10zM120,1c4,3 6,15 6,20c-4,-6-8,-18-6,-20zM120,0c5,-1 10,5 10,7c-3,0-10,-4-10,-7zM-8,0c5,-1 10,5 10,7c-3,0-10,-4-10,-7zM125,1c1,3-2,11-3,12c-1,-3 1,-11 3,-12zM125,1c3,5 4,16 4,18c-4,-4-6,-15-4,-18zM-3,1c3,5 4,16 4,18c-4,-4-6,-15-4,-18z'/><path fill='%2324421d' fill-opacity='.78' d='M-1,-2c4,3 4,13 3,15c-3,-3-5,-13-3,-15zM127,-2c4,3 4,13 3,15c-3,-3-5,-13-3,-15zM7,-2c3,4-2,10-6,11c0,-3 3,-10 6,-11zM135,-2c3,4-2,10-6,11c0,-3 3,-10 6,-11zM17,-2c2,6-6,11-12,12c3,-4 9,-10 12,-12zM23,-2c0,6-7,15-10,17c1,-6 6,-16 10,-17zM22,0c5,8 0,20-3,23c-3,-8-2,-21 3,-23zM25,1c8,2 7,12 5,16c-4,-4-7,-12-5,-16zM31,2c2,6-3,14-5,16c-2,-6 1,-16 5,-16zM33,2c0,6-6,14-9,17c1,-7 5,-16 9,-17zM35,2c2,4 1,13 0,15c-2,-4-3,-13 0,-15zM38,-2c3,4-2,12-7,14c0,-4 4,-12 7,-14zM42,-3c5,-2 13,3 14,6c-4,0-13,-3-14,-6zM53,0c2,5-1,13-2,15c-2,-6-1,-14 2,-15zM63,0c2,5-8,9-13,7c2,-2 10,-7 13,-7zM69,2c5,3 1,9-3,12c0,-4 2,-10 3,-12zM72,1c5,4-2,14-7,16c0,-4 4,-15 7,-16zM76,2c4,-3 11,1 12,2c-4,2-11,0-12,-2zM87,-3c-1,8-15,12-24,11c7,-3 19,-9 24,-11zM90,1c4,3 2,10 1,11c-3,-2-3,-9-1,-11zM97,-3c3,-1 8,9 6,13c-1,-2-6,-11-6,-13zM109,-1c0,2-8,5-10,4c2,-1 8,-5 10,-4zM117,-1c2,3-2,10-6,10c1,-2 5,-8 6,-10zM120,-1c5,-1 13,6 15,10c-5,-2-13,-7-15,-10zM-8,-1c5,-1 13,6 15,10c-5,-2-13,-7-15,-10z'/><path fill='%2324421d' d='M3,1c2,4 2,15 2,17c-3,-4-4,-14-2,-17zM131,1c2,4 2,15 2,17c-3,-4-4,-14-2,-17zM8,-1c5,4 0,14-5,16c0,-3 1,-14 5,-16zM15,0c10,-3 20,9 20,14c-7,1-20,-8-20,-14zM22,-2c4,3 1,14-2,17c0,-4 0,-15 2,-17zM22,2c7,2 6,14 4,19c-3,-5-6,-16-4,-19zM24,-3c0,7-6,14-10,17c1,-7 6,-16 10,-17zM32,0c2,6-2,11-6,14c0,-5 3,-12 6,-14zM33,-2c3,4 4,13 5,17c-4,-5-7,-14-5,-17zM37,0c5,2 2,15-3,18c0,-4 1,-16 3,-18zM37,-3c1,7-10,6-17,3c5,-2 14,-4 17,-3zM44,-2c6,1 5,17 1,22c-1,-4-3,-19-1,-22zM45,-2c7,0 11,13 10,21c-4,-5-10,-17-10,-21zM45,-1c5,4 7,19 8,24c-5,-6-10,-21-8,-24zM50,0c3,8-10,16-17,16c2,-5 12,-16 17,-16zM52,-1c4,2 1,12-2,14c0,-2 1,-12 2,-14zM59,-2c6,6-1,23-7,28c-1,-7 3,-24 7,-28zM64,1c5,4 2,17-3,20c0,-3 1,-16 3,-20zM68,-3c10,-1 23,14 22,20c-5,-2-19,-14-22,-20zM123,0c7,4 5,19 2,22c-4,-5-5,-19-2,-22zM-5,0c7,4 5,19 2,22c-4,-5-5,-19-2,-22zM126,1c3,3 0,12-3,15c-1,-5 1,-14 3,-15zM-2,1c3,3 0,12-3,15c-1,-5 1,-14 3,-15z'/><path fill='%233c6a2c' fill-opacity='.72' d='M3,-1c8,4 8,17 5,24c-3,-6-7,-18-5,-24zM131,-1c8,4 8,17 5,24c-3,-6-7,-18-5,-24zM19,1c9,2 15,16 16,22c-8,-4-17,-16-16,-22zM25,0c10,9 9,26 6,32c-7,-8-12,-26-6,-32zM27,-1c11,6 7,24 0,33c-3,-10-4,-27 0,-33zM33,0c8,0 16,17 13,22c-3,-3-13,-17-13,-22zM36,-1c6,4 5,17 2,23c-2,-6-3,-18-2,-23zM46,1c7,4 5,14 2,19c-4,-6-6,-16-2,-19zM53,-1c9,3 12,13 13,20c-8,-6-15,-15-13,-20zM65,-2c6,1 13,15 13,20c-5,-4-14,-17-13,-20zM72,0c10,0 14,18 12,28c-4,-7-12,-23-12,-28zM81,-3c2,9-12,12-22,10c6,-5 16,-10 22,-10zM115,-2c11,3 12,26 4,34c-1,-6-5,-27-4,-34zM-13,-2c11,3 12,26 4,34c-1,-6-5,-27-4,-34z'/><path fill='%233c6a2c' fill-opacity='.5' d='M4,0c7,4 7,15 5,22c-4,-6-6,-17-5,-22zM20,2c8,2 13,14 14,20c-7,-4-15,-15-14,-20zM26,1c8,8 7,24 6,28c-7,-7-11,-23-6,-28zM28,0c9,6 6,21 0,29c-2,-8-3,-23 0,-29zM34,1c7,0 14,15 12,20c-3,-3-12,-16-12,-20zM37,0c5,4 4,16 2,21c-2,-6-3,-17-2,-21zM47,2c5,4 4,12 2,17c-4,-6-5,-14-2,-17zM54,1c7,2 11,11 11,16c-6,-4-13,-13-11,-16zM65,-1c6,1 12,14 13,18c-5,-4-13,-15-13,-18zM73,1c8,0 12,16 11,25c-4,-7-11,-20-11,-25zM82,-2c1,8-11,10-19,9c5,-4 14,-9 19,-9zM116,-1c9,3 10,23 4,30c-1,-5-5,-24-4,-30z'/><path fill='%233c6a2c' d='M14,-1c4,1 3,9 1,11c-1,-2-2,-10-1,-11zM26,0c1,4-4,12-7,13c1,-3 5,-12 7,-13zM123,-1c3,2 2,9 0,12c-1,-3-1,-10 0,-12z'/></svg>");
+  background-size:128px 40px;background-repeat:repeat-x}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(4){
+  left:0;top:32px;bottom:10px;width:23px;z-index:1;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='23' height='240' viewBox='0 0 23 240'><path fill='%23172d16' fill-opacity='.6' d='M-5,5c5,0 9,10 8,16c-2,-4-7,-13-8,-16zM-4,12c7,-6 17,-4 22,-2c-8,4-19,7-22,2zM-1,22c4,-2 10,5 12,11c-4,-3-10,-8-12,-11zM1,21c2,-4 11,2 15,8c-5,-2-13,-6-15,-8zM-6,30c-2,-5 6,-10 10,-10c-1,4-7,10-10,10zM1,31c0,-4 8,-3 12,0c-3,1-10,2-12,0zM-6,38c4,-1 9,4 11,6c-5,0-11,-4-11,-6zM1,39c5,-2 8,7 8,13c-4,-3-8,-10-8,-13zM-2,43c-2,-4 3,-8 7,-9c-1,4-5,9-7,9zM-3,45c4,1 8,11 8,14c-3,-2-9,-11-8,-14zM-1,48c-1,-5 7,-7 12,-5c-3,2-9,6-12,5zM-7,56c5,-1 10,4 10,6c-3,1-10,-3-10,-6zM0,60c4,-3 9,0 11,3c-4,0-10,-1-11,-3zM-3,65c5,-5 16,-4 19,-3c-5,3-15,6-19,3zM0,70c3,1 2,9-1,12c0,-3 0,-10 1,-12zM-2,72c1,-6 11,-12 14,-11c-1,3-10,11-14,11zM0,73c1,-3 8,-6 10,-5c-1,2-7,5-10,5zM-4,74c6,-5 15,0 19,3c-6,2-17,1-19,-3zM-5,77c-3,-3-1,-11 0,-13c3,4 2,13 0,13zM-3,83c5,-4 11,2 13,6c-5,0-12,-3-13,-6zM0,82c-2,-3 1,-9 2,-11c1,3-1,10-2,11zM-5,88c1,-6 12,-12 15,-14c-2,7-12,15-15,14zM0,92c4,1 4,13 0,17c0,-4-1,-15 0,-17zM-5,91c-1,-4 7,-5 11,-3c-2,1-9,3-11,3zM-4,94c-4,-7 8,-13 15,-13c-2,5-10,14-15,13zM1,102c4,-3 13,3 15,8c-3,-2-12,-6-15,-8zM0,103c6,1 3,12-2,16c0,-4 0,-13 2,-16zM-3,108c3,0 6,8 5,12c-2,-3-5,-10-5,-12zM2,112c-3,-3 2,-8 5,-9c0,3-3,8-5,9zM-4,117c1,-6 9,-8 12,-7c-2,4-9,9-12,7zM-6,125c4,1 6,11 6,13c-3,-2-7,-11-6,-13zM-1,140c6,-3 15,2 16,4c-5,2-16,0-16,-4zM-4,145c6,1 10,13 8,17c-3,-2-9,-13-8,-17zM2,156c6,1 9,10 10,14c-6,-4-12,-11-10,-14zM-2,173c0,-4 7,-9 10,-10c-2,6-8,12-10,10zM1,188c4,-5 12,1 15,7c-5,0-14,-3-15,-7zM-4,191c1,-5 10,-9 13,-9c-2,4-10,10-13,9zM-1,198c-4,-6-1,-18 1,-20c3,5 3,18-1,20zM-4,200c-1,-7 7,-11 12,-10c-2,4-9,11-12,10zM-5,219c5,-3 16,-4 18,-4c-4,4-14,6-18,4zM-5,217c0,-7 6,-14 9,-16c0,8-5,17-9,16zM-1,236c5,-3 16,1 19,2c-6,2-18,1-19,-2zM-1,-4c5,-3 16,1 19,2c-6,2-18,1-19,-2z'/><path fill='%2324421d' fill-opacity='.78' d='M-2,3c2,-4 8,-7 11,-8c-2,4-8,9-11,8zM-2,243c2,-4 8,-7 11,-8c-2,4-8,9-11,8zM-6,7c5,-5 16,-7 22,-7c-8,5-18,10-22,7zM-6,247c5,-5 16,-7 22,-7c-8,5-18,10-22,7zM-3,11c2,-6 15,-5 21,-1c-6,1-17,2-21,1zM1,15c4,1 5,9 4,14c-2,-4-4,-11-4,-14zM1,19c3,1 4,8 4,12c-3,-3-5,-10-4,-12zM-6,21c-3,-5 4,-14 8,-16c0,5-5,15-8,16zM-2,29c8,-3 15,9 14,17c-4,-3-13,-12-14,-17zM-4,26c3,-3 13,3 16,8c-4,-2-14,-6-16,-8zM0,29c7,-3 16,4 16,8c-4,1-14,-3-16,-8zM-4,32c2,-5 10,-9 12,-10c-2,5-9,11-12,10zM-1,38c4,-3 15,2 17,4c-5,2-16,-1-17,-4zM-4,41c5,-3 13,6 13,11c-3,-1-11,-7-13,-11zM-1,47c4,-7 15,-7 20,-4c-5,4-15,6-20,4zM0,57c6,-2 10,9 7,15c-2,-3-7,-12-7,-15zM-6,60c2,-7 12,-5 18,-1c-5,2-14,3-18,1zM-1,66c6,-3 16,5 17,9c-3,-1-14,-6-17,-9zM-4,73c0,-5 6,-11 9,-14c-2,7-7,14-9,14zM-1,75c0,-5 11,-3 16,1c-4,0-13,1-16,-1zM0,74c4,-5 14,-5 19,-4c-6,4-16,6-19,4zM-2,81c3,-2 9,2 10,5c-3,-1-9,-3-10,-5zM-7,80c6,2 8,17 4,21c-1,-4-4,-17-4,-21zM0,83c-1,-5 10,-10 15,-10c-3,4-11,10-15,10zM-4,83c9,-3 13,11 12,20c-5,-5-12,-15-12,-20zM-4,87c4,0 9,5 12,6c-5,0-12,-4-12,-6zM-1,92c-3,-8 9,-16 15,-14c-2,2-10,12-15,14zM-3,92c2,-3 12,-3 15,-1c-3,1-13,3-15,1zM-6,94c-2,-7 6,-11 11,-12c-1,6-7,12-11,12zM-6,98c2,-5 9,-4 12,-2c-3,2-10,3-12,2zM-3,102c0,-6 10,-10 16,-11c-4,5-13,12-16,11zM0,101c-3,-6 1,-17 2,-21c3,7 2,19-2,21zM-2,112c5,-3 16,-1 18,0c-4,2-15,2-18,0zM1,120c2,-2 7,-1 9,0c-3,2-8,2-9,0zM1,159c1,-4 9,-1 12,3c-4,0-11,-2-12,-3zM-6,160c-1,-4 5,-12 8,-14c-1,5-5,13-8,14zM-4,175c5,-4 18,-1 22,-1c-7,4-20,4-22,1zM-7,182c4,-2 12,0 15,2c-5,0-14,0-15,-2zM0,182c7,2 9,16 6,22c-3,-5-7,-17-6,-22zM-1,182c1,-6 10,-8 15,-7c-4,4-12,9-15,7zM-2,191c1,-5 10,-5 14,-4c-4,3-12,6-14,4zM-2,194c-1,-5 5,-8 9,-9c-1,4-5,9-9,9zM-1,195c4,-5 12,-5 15,-4c-4,4-13,7-15,4zM-1,203c3,-4 12,0 15,3c-4,0-12,-1-15,-3zM0,205c-3,-6 9,-17 16,-16c-2,3-12,15-16,16zM-7,216c3,-4 12,-2 16,2c-5,0-13,-1-16,-2zM-3,223c3,-2 12,6 12,10c-2,-2-11,-8-12,-10zM-6,225c6,-2 15,2 19,4c-7,2-18,0-19,-4zM-3,230c6,-4 15,2 18,5c-7,2-18,-1-18,-5zM-5,235c8,0 17,11 17,14c-5,0-16,-9-17,-14zM-5,-5c8,0 17,11 17,14c-5,0-16,-9-17,-14zM0,242c-3,-5 3,-14 6,-14c2,3-3,13-6,14zM0,2c-3,-5 3,-14 6,-14c2,3-3,13-6,14z'/><path fill='%2324421d' d='M-3,-3c-1,-4 5,-12 9,-14c-2,5-6,13-9,14zM-3,237c-1,-4 5,-12 9,-14c-2,5-6,13-9,14zM2,4c2,-5 11,-10 14,-11c-2,6-11,12-14,11zM2,244c2,-5 11,-10 14,-11c-2,6-11,12-14,11zM-1,6c6,-4 15,7 14,14c-4,-2-14,-10-14,-14zM-2,6c4,-4 13,-6 16,-6c-3,3-12,7-16,6zM-2,246c4,-4 13,-6 16,-6c-3,3-12,7-16,6zM-4,11c3,-5 15,-2 22,1c-7,1-19,1-22,-1zM0,21c7,-1 20,5 24,6c-8,2-23,-2-24,-6zM-4,26c5,-4 18,3 21,9c-5,-2-18,-6-21,-9zM3,26c2,-3 10,-3 13,-2c-4,2-11,3-13,2zM1,34c3,-5 16,-1 19,4c-4,-1-16,-3-19,-4zM-5,31c1,-5 7,-9 12,-10c-3,5-8,10-12,10zM0,38c7,-1 20,7 22,9c-8,2-22,-5-22,-9zM0,39c2,-5 14,-9 18,-9c-4,5-15,11-18,9zM-3,42c7,-2 15,13 16,21c-6,-5-16,-17-16,-21zM-1,47c0,-7 7,-13 12,-15c-2,7-8,15-12,15zM-1,49c8,-1 18,7 23,12c-10,-2-23,-7-23,-12zM3,54c8,1 19,14 21,17c-8,-1-22,-12-21,-17zM-3,55c6,-1 13,3 16,6c-7,0-16,-2-16,-6zM2,63c5,-1 18,3 21,3c-6,2-19,0-21,-3zM-1,70c-1,-7 8,-14 13,-14c-1,5-9,14-13,14zM-4,74c-2,-6 3,-16 5,-18c1,6-2,17-5,18zM-2,75c-1,-9 15,-9 25,-5c-6,3-20,7-25,5zM1,79c7,-1 15,6 18,10c-7,-1-16,-6-18,-10zM-1,81c5,2 7,13 3,18c0,-3-3,-14-3,-18zM1,86c8,-2 17,10 16,16c-5,-2-15,-11-16,-16zM-2,89c3,-2 12,1 14,3c-3,0-13,-1-14,-3zM-2,92c3,-4 12,-5 16,-4c-4,3-13,6-16,4zM-5,97c5,-9 20,-2 27,7c-7,-1-22,-5-27,-7zM-4,97c7,0 14,13 13,20c-4,-4-12,-16-13,-20zM-2,100c7,-3 18,5 20,8c-6,1-19,-4-20,-8zM-5,100c7,-2 14,9 14,15c-4,-2-13,-11-14,-15zM-5,109c8,0 14,8 16,14c-7,-3-16,-9-16,-14zM0,114c6,-1 11,7 12,9c-5,0-13,-6-12,-9zM0,124c4,-3 9,4 10,9c-3,-2-8,-7-10,-9zM-3,133c6,-1 9,10 7,15c-3,-3-8,-11-7,-15zM2,167c6,0 6,10 3,15c-1,-3-4,-12-3,-15zM-2,171c0,-4 9,-9 11,-10c-1,4-9,10-11,10zM2,182c5,-2 14,1 17,2c-5,1-15,0-17,-2zM1,186c5,-1 9,13 7,19c-1,-4-7,-16-7,-19zM-2,190c1,-6 14,-6 20,-2c-5,1-17,3-20,2zM-4,191c0,-7 14,-15 21,-15c-4,5-16,15-21,15zM1,190c3,-6 17,-7 19,-5c-2,3-15,7-19,5zM-4,206c1,-6 12,-9 14,-8c-1,4-11,9-14,8zM2,211c2,-3 8,1 9,5c-2,-1-7,-4-9,-5zM-5,220c4,-4 14,3 16,8c-4,-1-14,-5-16,-8zM-1,226c4,-2 13,-1 16,-1c-4,3-14,3-16,1zM1,226c3,-6 12,-3 16,1c-5,1-13,1-16,-1zM-3,231c-3,-9 13,-15 23,-12c-5,4-17,13-23,12zM2,236c2,-6 13,-9 15,-7c-2,3-12,8-15,7zM0,235c3,-4 16,-3 21,-1c-6,2-18,3-21,1z'/><path fill='%233c6a2c' fill-opacity='.72' d='M-5,3c9,-1 24,12 26,14c-8,2-26,-9-26,-14zM-2,7c1,-8 18,-8 24,-3c-4,2-19,5-24,3zM-2,247c1,-8 18,-8 24,-3c-4,2-19,5-24,3zM2,30c1,-4 11,-8 14,-7c-3,2-11,7-14,7zM2,33c3,-5 12,-11 14,-13c-2,6-11,14-14,13zM-2,34c3,-7 16,-11 22,-11c-6,5-18,12-22,11zM-4,43c6,-6 18,1 20,7c-5,1-17,-2-20,-7zM0,49c7,-2 18,5 20,6c-7,2-19,-2-20,-6zM-2,53c8,-3 20,5 20,10c-4,1-17,-5-20,-10zM0,57c7,-5 18,-1 22,2c-9,3-22,3-22,-2zM0,62c7,-6 20,0 23,3c-7,4-22,2-23,-3zM-3,62c2,-6 15,-11 20,-11c-4,6-17,13-20,11zM0,70c0,-10 9,-19 14,-24c-2,12-8,24-14,24zM-3,79c8,0 16,18 12,26c-1,-5-11,-21-12,-26zM2,80c2,-7 11,-8 16,-7c-5,5-13,9-16,7zM2,103c4,-4 15,1 18,6c-4,-1-16,-4-18,-6zM-5,104c7,-5 18,0 21,4c-6,2-18,0-21,-4zM-3,112c5,-2 15,3 18,7c-6,0-16,-4-18,-7zM0,119c2,-2 6,2 7,5c-3,-1-7,-3-7,-5zM-4,143c0,-5 9,-10 13,-12c-3,6-10,12-13,12zM-2,177c4,-4 13,0 15,5c-2,-1-12,-4-15,-5zM2,185c2,-3 11,-1 13,1c-3,1-11,1-13,-1zM3,194c1,-5 11,-7 16,-6c-4,2-14,6-16,6zM0,199c3,-5 14,-6 20,-4c-6,3-16,5-20,4zM3,214c1,-4 12,-5 17,-2c-5,0-14,2-17,2zM-2,226c-1,-4 9,-12 13,-11c-2,2-11,11-13,11zM-3,234c-1,-8 9,-20 13,-25c-1,11-8,25-13,25z'/><path fill='%233c6a2c' fill-opacity='.5' d='M-4,4c8,-1 21,11 23,13c-7,1-23,-8-23,-13zM-1,9c1,-7 16,-8 22,-4c-4,2-18,5-22,4zM-1,249c1,-7 16,-8 22,-4c-4,2-18,5-22,4zM3,31c1,-4 10,-7 12,-6c-2,1-9,6-12,6zM3,34c2,-4 11,-9 12,-11c-1,5-9,12-12,11zM-1,35c2,-6 14,-9 20,-9c-5,4-16,9-20,9zM-3,44c6,-5 16,1 18,6c-4,1-15,-2-18,-6zM1,50c6,-1 16,4 18,5c-6,2-17,-1-18,-5zM-1,54c7,-3 18,5 18,9c-4,1-16,-5-18,-9zM1,58c6,-4 16,0 20,2c-8,2-20,2-20,-2zM1,63c6,-5 18,0 21,3c-7,3-20,1-21,-3zM-2,63c1,-5 13,-9 18,-10c-4,5-15,11-18,10zM1,71c0,-9 8,-17 13,-21c-2,10-8,21-13,21zM-2,80c7,0 14,16 11,23c-1,-5-10,-19-11,-23zM3,81c2,-6 10,-7 15,-6c-5,4-12,7-15,6zM3,104c4,-3 14,1 16,5c-4,0-14,-3-16,-5zM-4,105c6,-4 16,0 18,4c-4,1-15,0-18,-4zM-2,113c5,-2 13,3 16,6c-5,0-14,-3-16,-6zM1,120c2,-1 5,2 6,4c-2,0-6,-2-6,-4zM-3,144c0,-5 8,-9 12,-11c-3,5-9,11-12,11zM-1,178c3,-3 12,0 14,4c-3,-1-11,-3-14,-4zM3,186c2,-3 10,-1 12,1c-3,1-10,1-12,-1zM4,195c0,-4 10,-6 14,-5c-3,2-12,5-14,5zM1,200c3,-4 12,-5 17,-3c-5,2-14,4-17,3zM4,215c1,-3 10,-4 15,-2c-4,1-13,2-15,2zM-1,227c-1,-4 8,-11 11,-10c-1,2-9,10-11,10zM-2,235c0,-6 8,-17 12,-22c-2,9-8,22-12,22z'/><path fill='%233c6a2c' d='M-1,24c1,-3 6,-4 10,-3c-3,2-8,3-10,3zM4,59c4,-3 9,4 10,10c-5,-2-10,-7-10,-10zM-1,111c1,-4 7,-6 9,-6c-1,2-7,6-9,6zM2,201c3,-4 10,-1 12,2c-2,1-9,0-12,-2zM1,235c3,-3 10,2 10,6c-1,-1-9,-4-10,-6zM1,-5c3,-3 10,2 10,6c-1,-1-9,-4-10,-6z'/></svg>");
+  background-size:23px 240px;background-repeat:repeat-y;
+  -webkit-mask:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);
+  mask:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(5){
+  right:0;top:32px;bottom:10px;width:23px;z-index:1;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='23' height='240' viewBox='0 0 23 240'><path fill='%23172d16' fill-opacity='.6' d='M27,1c-5,0-6,10-4,14c2,-3 5,-11 4,-14zM27,241c-5,0-6,10-4,14c2,-3 5,-11 4,-14zM21,10c-6,0-15,5-19,7c7,0 18,-3 19,-7zM27,8c3,-6-1,-15-3,-17c-2,5 0,16 3,17zM27,248c3,-6-1,-15-3,-17c-2,5 0,16 3,17zM23,11c2,-5-4,-12-6,-14c-1,5 3,14 6,14zM23,251c2,-5-4,-12-6,-14c-1,5 3,14 6,14zM23,18c0,-5-7,-13-8,-14c-1,4 4,14 8,14zM25,18c-5,-1-13,5-15,8c5,0 14,-4 15,-8zM23,23c-5,-1-9,9-7,13c3,-2 8,-10 7,-13zM23,27c-5,-3-14,4-15,10c3,-2 12,-7 15,-10zM26,32c-3,1-3,7-1,10c0,-2 2,-8 1,-10zM24,36c-1,-6-12,-13-14,-13c1,5 10,14 14,13zM21,40c5,-6 3,-17 2,-21c-5,8-6,20-2,21zM30,41c-3,-5-10,-7-14,-8c4,6 11,10 14,8zM27,44c-3,-3-10,-1-12,0c4,1 10,2 12,0zM23,49c-3,-4-11,-2-13,1c4,1 11,1 13,-1zM30,52c-5,0-10,6-12,8c5,-1 13,-6 12,-8zM24,52c-4,-6-14,1-18,8c5,-2 15,-5 18,-8zM27,54c-4,-2-10,2-11,3c3,2 10,0 11,-3zM23,62c3,-6-7,-12-12,-10c1,3 8,10 12,10zM29,62c-4,-4-12,-2-14,-1c4,3 12,3 14,1zM27,67c0,-5-7,-9-9,-9c1,4 6,9 9,9zM24,68c-4,-1-10,3-12,4c5,1 12,-2 12,-4zM25,72c-5,-1-11,12-10,18c3,-4 10,-14 10,-18zM28,77c-2,-4-10,-5-12,-6c3,5 10,8 12,6zM24,77c-1,-4-10,-4-12,-2c2,1 10,2 12,2zM28,85c2,-5-5,-10-9,-11c1,4 6,11 9,11zM28,89c-3,-4-9,0-11,4c3,0 9,-2 11,-4zM24,87c-3,-2-10,4-10,6c3,0 10,-3 10,-6zM23,89c-4,-2-10,7-10,12c3,-3 10,-10 10,-12zM27,96c-2,-6-11,-14-12,-16c0,6 8,16 12,16zM23,96c-5,-1-8,7-6,12c2,-2 6,-9 6,-12zM28,114c2,-4-6,-8-11,-9c3,4 9,9 11,9zM25,132c0,-5-5,-10-7,-11c0,4 4,10 7,11zM26,135c3,-5-7,-10-13,-10c2,4 9,11 13,10zM28,159c2,-5-7,-12-12,-12c2,3 9,11 12,12zM23,164c0,-6-8,-12-10,-13c0,6 7,14 10,13zM29,177c-2,-7-11,-13-14,-14c2,6 9,14 14,14zM22,177c-2,-3-12,-4-13,-3c2,2 11,4 13,3zM21,187c-1,-4-9,-6-12,-7c3,4 10,8 12,7zM21,194c-3,-2-9,4-11,10c4,-3 10,-8 11,-10zM21,196c-3,-4-11,-3-15,-1c5,2 13,3 15,1zM24,196c-4,0-13,7-14,9c4,0 14,-6 14,-9zM25,203c2,-4-5,-10-8,-10c1,1 6,8 8,10zM22,209c-3,-3-10,3-11,9c3,-2 9,-6 11,-9zM25,210c1,-6-9,-8-14,-5c2,2 11,6 14,5zM27,216c-5,0-6,8-4,11c1,-1 4,-8 4,-11zM23,219c-3,-6-13,-5-16,-3c4,3 15,5 16,3zM25,221c-2,-6-13,-3-16,1c3,2 13,2 16,-1zM24,231c-3,-2-10,0-12,2c3,0 10,-1 12,-2zM22,237c-6,-1-12,7-13,9c6,0 14,-6 13,-9zM22,-3c-6,-1-12,7-13,9c6,0 14,-6 13,-9z'/><path fill='%2324421d' fill-opacity='.78' d='M27,6c-1,-7-15,-9-21,-7c4,3 17,8 21,7zM27,246c-1,-7-15,-9-21,-7c4,3 17,8 21,7zM25,12c-1,-6-12,-13-13,-15c0,7 9,17 13,15zM25,252c-1,-6-12,-13-13,-15c0,7 9,17 13,15zM25,11c-5,-3-16,5-16,10c2,-2 14,-8 16,-10zM21,25c-4,-3-11,0-13,1c5,2 12,1 13,-1zM22,31c-1,-9-12,-10-19,-8c5,5 14,10 19,8zM22,31c-3,-3-14,1-18,6c5,-1 16,-4 18,-6zM28,35c-5,-3-12,3-14,8c4,-2 11,-6 14,-8zM22,37c-1,-8-11,-13-16,-13c4,7 13,15 16,13zM24,43c0,-5-8,-11-12,-13c2,6 9,13 12,13zM25,49c-5,-2-16,8-16,14c2,-3 13,-11 16,-14zM23,50c-2,-3-12,0-17,4c5,-1 15,-3 17,-4zM29,52c-2,-8-15,-11-18,-9c2,5 14,12 18,9zM25,53c-3,-3-11,-1-13,1c2,1 11,0 13,-1zM21,60c-6,-2-11,8-10,13c3,-2 10,-9 10,-13zM24,63c2,-5-8,-12-15,-14c4,4 12,12 15,14zM27,67c-3,-6-13,-10-18,-12c6,7 15,13 18,12zM28,68c1,-3-6,-7-10,-7c3,2 8,7 10,7zM26,68c-3,-3-10,3-9,8c2,-1 8,-6 9,-8zM30,72c-7,-2-16,7-17,9c6,1 17,-5 17,-9zM24,78c-4,0-12,5-13,6c4,1 13,-3 13,-6zM25,80c-8,2-12,12-14,17c8,-4 16,-12 14,-17zM23,87c-7,0-15,9-18,14c9,-3 19,-10 18,-14zM30,88c2,-4-7,-10-13,-11c3,3 10,10 13,11zM29,96c-4,2-10,8-13,11c6,-2 14,-8 13,-11zM21,110c1,-3-4,-10-6,-12c0,5 4,12 6,12zM27,116c-4,-3-10,-3-14,-3c5,3 12,5 14,3zM30,123c-2,-5-15,-2-18,4c3,-1 15,-2 18,-4zM25,130c-3,-4-11,2-13,7c3,-1 11,-5 13,-7zM23,157c1,-6-7,-12-10,-14c0,6 6,14 10,14zM29,169c-4,1-11,9-13,10c5,0 13,-8 13,-10zM24,168c-4,-2-10,2-12,5c4,0 11,-2 12,-5zM25,177c-1,-5-11,-7-17,-7c5,3 14,7 17,7zM22,178c-3,-3-12,0-14,3c3,0 12,-1 14,-3zM27,187c-5,-1-9,6-9,10c4,-2 10,-8 9,-10zM22,187c-6,-2-13,7-14,10c5,0 14,-7 14,-10zM23,198c-7,-4-21,1-24,3c8,4 23,1 24,-3zM28,203c-4,-4-13,2-15,7c3,-1 12,-5 15,-7zM23,207c-2,-8-11,-14-15,-16c2,8 10,17 15,16zM28,207c-6,2-12,10-14,13c6,-2 14,-9 14,-13zM24,214c1,-5-9,-8-17,-7c5,3 14,6 17,7zM22,213c-5,1-5,10-2,13c1,-2 3,-10 2,-13zM22,226c-1,-4-11,-6-14,-4c2,1 12,5 14,4zM26,229c-2,-3-13,-2-16,1c3,0 14,0 16,-1zM24,235c-5,-1-8,6-7,10c3,-1 8,-7 7,-10zM24,-5c-5,-1-8,6-7,10c3,-1 8,-7 7,-10zM29,237c-1,-3-9,-7-11,-7c2,2 9,7 11,7z'/><path fill='%2324421d' d='M27,0c-6,-2-14,10-14,17c3,-3 13,-13 14,-17zM27,240c-6,-2-14,10-14,17c3,-3 13,-13 14,-17zM28,8c-7,-4-15,6-16,13c5,-2 15,-9 16,-13zM29,6c-8,0-14,12-15,19c5,-4 14,-14 15,-19zM21,13c-1,-6-11,-7-17,-4c4,3 13,5 17,4zM22,16c-7,1-12,13-11,18c4,-3 11,-14 11,-18zM25,16c-6,-2-15,3-18,6c6,0 16,-2 18,-6zM24,26c2,-8-9,-15-15,-15c2,4 10,14 15,15zM26,25c-5,-1-8,11-6,16c2,-3 7,-13 6,-16zM27,39c2,-7-6,-18-8,-20c-1,5 5,18 8,20zM27,39c-7,-2-15,5-16,7c4,1 14,-3 16,-7zM21,42c3,-6-3,-14-7,-17c0,6 4,16 7,17zM27,47c-6,-2-20,1-22,0c5,4 19,4 22,0zM29,50c-6,-1-10,11-8,17c2,-4 8,-14 8,-17zM24,56c-7,1-11,16-10,24c3,-6 9,-20 10,-24zM27,55c-6,-1-13,6-15,10c6,-1 15,-6 15,-10zM27,58c-9,-3-18,12-16,20c3,-3 14,-15 16,-20zM24,61c3,-9-11,-17-20,-17c4,6 15,16 20,17zM21,67c3,-7-4,-14-9,-17c1,7 5,15 9,17zM25,72c-2,-6-10,-13-14,-18c4,8 10,18 14,18zM27,71c-2,-4-10,-4-14,-3c4,3 12,5 14,3zM24,78c-4,-6-15,-6-19,-5c6,5 17,8 19,5zM24,75c0,-5-10,-8-15,-7c3,2 12,7 15,7zM26,81c-8,-1-15,10-15,14c6,-1 15,-9 15,-14zM23,86c-2,-6-16,-12-20,-11c3,4 16,12 20,11zM25,85c-2,-6-13,-11-15,-12c2,7 12,14 15,12zM28,90c-4,-7-17,-3-22,4c5,0 18,-1 22,-4zM25,93c-1,-5-9,-7-15,-6c4,4 11,7 15,6zM20,94c-2,-4-11,-4-15,-3c4,3 13,5 15,3zM24,100c-6,0-17,10-18,12c5,1 17,-8 18,-12zM25,101c-2,-4-11,-5-14,-3c2,2 11,4 14,3zM28,113c-1,-6-14,-5-20,-1c5,0 17,2 20,1zM23,122c-2,-3-8,-1-10,1c3,1 9,1 10,-1zM22,125c-6,0-9,13-6,19c0,-4 5,-16 6,-19zM21,144c-4,-2-10,3-10,6c3,0 9,-3 10,-6zM24,161c1,-7-10,-10-16,-7c2,2 11,7 16,7zM26,162c-7,-2-12,10-11,18c4,-4 11,-14 11,-18zM21,171c4,-6-5,-15-10,-15c0,4 6,14 10,15zM26,177c-8,-3-19,10-18,17c4,-2 17,-12 18,-17zM23,175c-5,-2-14,8-14,14c2,-3 12,-11 14,-14zM20,184c0,-5-9,-15-10,-17c-1,5 7,17 10,17zM23,185c3,-8-6,-17-10,-20c0,8 6,20 10,20zM28,192c-2,-7-12,-5-17,-2c5,3 14,5 17,2zM27,196c-5,-2-15,1-17,2c5,3 15,1 17,-2zM24,204c-4,0-7,12-6,19c2,-6 6,-16 6,-19zM21,211c-1,-5-11,-6-15,-3c3,1 12,4 15,3zM28,214c3,-8-8,-12-17,-12c4,5 12,11 17,12zM26,214c-1,-9-15,-6-24,-2c7,3 19,4 24,2zM26,236c0,-6-15,-9-22,-6c5,1 18,6 22,6z'/><path fill='%233c6a2c' fill-opacity='.72' d='M21,4c-7,-2-14,9-14,12c5,0 14,-9 14,-12zM28,5c-10,-4-24,6-27,11c10,1 27,-5 27,-11zM28,245c-10,-4-24,6-27,11c10,1 27,-5 27,-11zM19,22c-7,0-18,10-21,13c8,-1 21,-9 21,-13zM21,21c-5,-4-14,-3-15,-1c3,3 12,4 15,1zM27,30c-5,-5-15,4-16,11c3,-1 13,-7 16,-11zM20,41c-2,-4-12,-7-15,-8c3,4 12,9 15,8zM27,42c-5,-5-18,-5-22,-5c6,5 19,9 22,5zM21,51c0,-6-10,-10-13,-11c2,6 10,13 13,11zM27,54c-6,-2-12,6-14,12c6,-2 14,-8 14,-12zM23,68c-5,-5-15,3-16,9c3,-1 13,-5 16,-9zM24,74c-4,-3-16,5-18,8c4,0 17,-5 18,-8zM26,78c-2,-9-15,-14-21,-14c4,7 15,15 21,14zM24,93c1,-6-5,-18-6,-21c-2,7 3,21 6,21zM23,96c-4,-6-14,-7-17,-6c4,5 15,9 17,6zM21,94c-9,-3-15,13-13,22c4,-5 13,-17 13,-22zM25,100c1,-8-19,-13-26,-9c4,2 21,9 26,9zM25,111c-4,-7-17,-11-19,-11c3,7 15,14 19,11zM20,143c-1,-4-8,-5-10,-4c1,3 8,5 10,4zM22,192c-3,-4-10,-1-12,3c4,0 10,-1 12,-3zM21,199c-2,-5-13,-4-17,0c4,0 14,0 17,0zM24,201c-3,-5-11,-12-15,-16c3,8 11,17 15,16zM27,201c-4,-2-14,6-15,10c4,-2 14,-8 15,-10zM20,216c-1,-4-7,-8-9,-10c1,5 6,10 9,10zM24,234c-4,-5-16,0-19,6c4,-1 16,-4 19,-6zM24,-6c-4,-5-16,0-19,6c4,-1 16,-4 19,-6zM27,236c-3,-5-13,-8-16,-9c4,6 13,11 16,9zM27,237c3,-9-5,-21-9,-23c-1,9 3,23 9,23z'/><path fill='%233c6a2c' fill-opacity='.5' d='M22,5c-6,-1-13,8-13,11c4,-1 13,-8 13,-11zM29,6c-8,-3-21,6-24,10c9,1 23,-5 24,-10zM20,23c-6,0-16,9-19,11c7,0 19,-7 19,-11zM22,22c-4,-3-12,-2-14,-1c3,3 11,4 14,1zM28,31c-5,-4-13,3-15,10c3,-2 12,-7 15,-10zM21,42c-2,-3-11,-7-14,-7c4,3 12,8 14,7zM28,44c-4,-5-16,-5-20,-5c6,4 17,7 20,5zM22,52c0,-5-9,-9-11,-9c1,5 9,11 11,9zM28,55c-5,-2-11,6-12,11c5,-2 12,-8 12,-11zM24,69c-5,-4-13,3-15,8c3,-1 13,-5 15,-8zM25,75c-4,-2-14,4-16,7c4,0 15,-5 16,-7zM27,79c-2,-7-14,-12-19,-13c4,6 14,14 19,13zM25,94c1,-5-5,-16-5,-19c-2,6 2,19 5,19zM24,97c-3,-5-12,-6-15,-6c4,5 13,9 15,6zM21,95c-7,-2-12,11-11,19c4,-4 11,-15 11,-19zM26,101c0,-7-17,-12-23,-8c4,1 19,8 23,8zM26,112c-3,-6-15,-9-17,-10c3,7 14,13 17,10zM21,144c-1,-4-7,-5-9,-3c1,2 7,4 9,3zM23,193c-3,-3-9,0-11,2c4,1 9,0 11,-2zM22,200c-2,-4-11,-4-15,0c3,0 12,0 15,0zM25,202c-3,-4-10,-11-13,-14c2,7 9,15 13,14zM28,202c-4,-2-12,5-14,9c4,-2 13,-7 14,-9zM21,217c-1,-4-6,-7-8,-9c1,4 5,9 8,9zM25,235c-4,-4-14,1-17,5c4,-1 14,-3 17,-5zM25,-5c-4,-4-14,1-17,5c4,-1 14,-3 17,-5zM28,237c-3,-4-12,-7-14,-8c3,5 11,10 14,8zM28,-3c-3,-4-12,-7-14,-8c3,5 11,10 14,8zM28,238c2,-8-5,-18-8,-21c-1,8 3,21 8,21z'/><path fill='%233c6a2c' d='M26,0c-2,-4-9,-8-12,-9c3,5 9,10 12,9zM26,240c-2,-4-9,-8-12,-9c3,5 9,10 12,9zM26,48c-3,-4-10,-1-13,2c4,0 11,-1 13,-2zM22,121c-4,-1-9,4-11,8c4,-1 11,-5 11,-8zM21,164c0,-3-7,-7-8,-7c0,3 6,8 8,7zM19,176c-1,-5-13,-6-17,-4c4,1 14,4 17,4z'/></svg>");
+  background-size:23px 240px;background-repeat:repeat-y;
+  -webkit-mask:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);
+  mask:linear-gradient(180deg,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(6){
+  left:0;top:118px;width:22px;height:56px;z-index:3;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='56' viewBox='0 0 22 56'><path fill='%2324421d' fill-opacity='.78' d='M4,5c1,-5 12,-7 18,-5c-5,2-15,6-18,5zM2,12c0,-4 8,-4 13,-2c-4,1-11,2-13,2zM1,18c4,-3 11,0 13,1c-4,2-12,2-13,-1zM0,21c3,-2 9,3 9,6c-2,-1-8,-4-9,-6zM3,34c5,-4 15,0 17,4c-3,1-14,-1-17,-4zM0,40c2,-5 12,-8 16,-8c-4,6-14,11-16,8zM-1,47c3,-1 5,6 4,9c-2,-2-4,-8-4,-9z'/><path fill='%233c6a2c' fill-opacity='.72' d='M-1,24c6,2 4,16-2,22c0,-6 1,-18 2,-22zM2,34c4,-5 15,-4 20,-4c-7,5-18,7-20,4z'/><path fill='%233c6a2c' fill-opacity='.5' d='M0,25c5,2 3,14-2,20c1,-5 1,-17 2,-20zM3,35c4,-4 14,-4 17,-3c-5,3-15,6-17,3z'/></svg>");
+  background-size:22px 56px;transform-origin:3px 8px;
+  animation:th-forest-sway-a 8.3s ease-in-out infinite alternate}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(7){
+  right:0;top:228px;width:22px;height:48px;z-index:3;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='48' viewBox='0 0 22 48'><path fill='%2324421d' fill-opacity='.78' d='M18,2c-4,-2-11,2-12,4c3,1 10,-2 12,-4zM19,5c-5,3-7,17-5,19c2,-2 6,-15 5,-19zM19,12c-2,-5-12,-11-15,-14c3,6 12,15 15,14zM23,15c-7,-5-16,1-21,5c8,1 19,-1 21,-5zM19,18c-3,-1-7,4-8,8c3,-2 7,-6 8,-8zM21,21c-7,-2-14,7-16,14c6,-3 14,-10 16,-14zM19,24c-3,0-4,7-3,9c1,-2 3,-7 3,-9zM23,28c0,-6-8,-9-10,-8c0,4 7,9 10,8zM21,31c-2,1-5,7-6,9c3,-2 7,-8 6,-9zM21,40c-4,-4-12,0-17,4c6,0 14,-1 17,-4z'/><path fill='%233c6a2c' fill-opacity='.72' d='M20,2c-5,-4-12,4-14,10c4,-1 13,-7 14,-10zM17,12c-2,-5-12,-8-15,-7c3,3 12,8 15,7zM18,15c-5,-4-15,1-17,4c4,1 15,-1 17,-4zM22,21c-4,-4-15,2-19,7c5,-2 15,-5 19,-7zM19,24c-3,-2-9,2-11,5c3,0 10,-2 11,-5z'/><path fill='%233c6a2c' fill-opacity='.5' d='M20,3c-4,-3-10,4-11,9c3,-1 11,-6 11,-9zM18,13c-2,-4-11,-7-13,-7c2,4 11,8 13,7zM19,16c-5,-3-14,1-15,3c4,2 13,0 15,-3zM23,22c-4,-3-13,2-17,7c4,-2 14,-5 17,-7zM20,25c-3,-2-8,2-10,5c3,-1 9,-3 10,-5z'/></svg>");
+  background-size:22px 48px;transform-origin:19px 8px;
+  animation:th-forest-sway-b 11.9s ease-in-out -3.1s infinite alternate}
+@keyframes th-forest-sway-a{from{transform:rotate(-2.6deg)}to{transform:rotate(2.6deg)}}
+@keyframes th-forest-sway-b{from{transform:rotate(2.1deg)}to{transform:rotate(-2.1deg)}}
+/* 4 THE GROUND. Bottom 34px, every child anchored to the floor, soil LAST in each stack */
+body.tab-usage[data-theme="forest"] .th-floor{
+  background:linear-gradient(180deg,transparent 52%,rgba(0,0,0,.42) 100%)}
+body.tab-usage[data-theme="forest"] .th-floor > i{background-repeat:no-repeat}
+body.tab-usage[data-theme="forest"] .th-floor > i:nth-child(1){
+  left:0;right:0;bottom:0;height:34px;z-index:3;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='34' viewBox='0 0 160 34'><path fill='%231d2e16' d='M0,34l0,-6 10,-1 10,-1 10,-1 10,0 10,1 10,1 10,-1 10,-2 10,-1 10,0 10,0 10,0 10,0 10,2 10,2 10,1 0,6zM160,34l0,-6 10,-1 10,-1 10,-1 10,0 10,1 10,1 10,-1 10,-2 10,-1 10,0 10,0 10,0 10,0 10,2 10,2 10,1 0,6zM-160,34l0,-6 10,-1 10,-1 10,-1 10,0 10,1 10,1 10,-1 10,-2 10,-1 10,0 10,0 10,0 10,0 10,2 10,2 10,1 0,6z'/><path fill='%23172d16' d='M0,28l10,-1 10,-1 10,-1 10,0 10,1 10,1 10,-1 10,-2 10,-1 10,0 10,0 10,0 10,0 10,2 10,2 10,1 0,3-10,-1-10,-2-10,-2-10,0-10,0-10,0-10,0-10,1-10,2-10,1-10,-1-10,-1-10,0-10,1-10,1-10,1zM160,28l10,-1 10,-1 10,-1 10,0 10,1 10,1 10,-1 10,-2 10,-1 10,0 10,0 10,0 10,0 10,2 10,2 10,1 0,3-10,-1-10,-2-10,-2-10,0-10,0-10,0-10,0-10,1-10,2-10,1-10,-1-10,-1-10,0-10,1-10,1-10,1zM-160,28l10,-1 10,-1 10,-1 10,0 10,1 10,1 10,-1 10,-2 10,-1 10,0 10,0 10,0 10,0 10,2 10,2 10,1 0,3-10,-1-10,-2-10,-2-10,0-10,0-10,0-10,0-10,1-10,2-10,1-10,-1-10,-1-10,0-10,1-10,1-10,1zM21,25l1,-2 2,-2 2,0 2,1 0,3zM45,26l0,-1 1,-1 2,-1 2,1 1,1 1,1zM50,24l1,-1 3,-1 2,1 1,1zM61,27l1,-2 1,-1 1,0 2,1 0,2zM78,25l1,-2 1,-2 3,0 2,1 1,1 1,2zM83,24l0,-1 1,-2 1,-1 1,2 1,1 1,1zM88,25l1,-2 1,-1 2,0 1,1 1,2zM97,26l1,-1 2,-1 3,1 1,1zM106,27l1,-2 3,-1 2,1 1,2zM121,26l1,-1 2,-1 2,0 2,0 2,1 0,1z'/><path fill='%2324421d' fill-opacity='.72' d='M-10,27l4,-2 3,-3 4,-2 3,-2 4,1 3,5 3,1 4,2zM150,27l4,-2 3,-3 4,-2 3,-2 4,1 3,5 3,1 4,2zM1,26c-2,-1-4,-5-4,-6c1,1 4,5 4,6zM161,26c-2,-1-4,-5-4,-6c1,1 4,5 4,6zM-1,26c-1,-2-2,-7-2,-8c1,2 2,7 2,8zM159,26c-1,-2-2,-7-2,-8c1,2 2,7 2,8zM-1,26c0,-3 3,-8 5,-9c-1,2-3,8-5,9zM159,26c0,-3 3,-8 5,-9c-1,2-3,8-5,9zM-3,26l3,-1 3,-4 3,0 3,2 3,-1 3,1 2,1 3,2zM157,26l3,-1 3,-4 3,0 3,2 3,-1 3,1 2,1 3,2zM4,26c-3,-1-4,-9-2,-12c0,2 2,10 2,12zM164,26c-3,-1-4,-9-2,-12c0,2 2,10 2,12zM7,26c-1,-2-1,-7-1,-9c1,2 1,8 1,9zM6,26c0,-3 7,-5 11,-4c-3,0-9,4-11,4zM71,26c-2,-1-5,-3-6,-3c2,0 6,2 6,3zM68,26c0,-1 1,-4 1,-5c1,1 0,4-1,5zM68,26c0,-1 4,-4 5,-4c-1,0-4,4-5,4zM81,27l3,-3 4,-3 4,2 4,-1 3,0 4,1 4,1 4,3zM103,26c-2,-1-7,-6-8,-6c2,0 8,4 8,6zM103,26c-1,-1 1,-7 2,-8c-1,2-2,7-2,8zM105,26c0,-1 1,-6 0,-7c1,2 1,6 0,7zM111,26c-3,-2-7,-8-8,-9c3,1 8,7 8,9zM109,26c-1,-2 0,-9 2,-10c-1,2-1,8-2,10zM109,26c0,-2 4,-7 4,-9c0,3-2,8-4,9zM115,26c-2,-2-3,-11-2,-13c0,2 2,11 2,13zM116,26c-2,-1-1,-6 0,-7c0,2 0,6 0,7zM117,26c-1,-2 2,-8 3,-9c0,2-2,8-3,9zM112,26l4,-3 3,-3 4,2 3,0 4,-1 3,1 4,1 3,3zM117,26l3,-3 2,0 3,1 3,-3 2,-1 3,2 3,2 2,2zM127,26c-3,-2-4,-10-2,-12c0,2 2,10 2,12zM126,26c-1,-2-2,-12-3,-13c3,2 4,11 3,13zM128,26c0,-2 3,-6 4,-6c0,1-3,5-4,6zM134,26c-2,0-5,-3-6,-4c2,1 5,3 6,4zM133,26c-1,-1-3,-6-4,-7c2,2 5,6 4,7zM132,26c0,-3 5,-8 8,-9c-2,2-7,7-8,9zM121,26l3,-4 4,-2 4,2 4,-3 4,-4 4,5 4,3 4,3zM138,26c-2,-1-5,-5-5,-5c1,0 5,4 5,5zM140,26c-1,-1-2,-7-3,-7c2,1 4,6 3,7zM140,26c0,-3 7,-8 10,-7c-2,1-8,6-10,7zM152,26c-4,-1-8,-8-9,-9c3,0 9,7 9,9zM150,26c-2,-1-4,-6-6,-6c3,0 6,5 6,6zM150,26c0,-2 5,-10 5,-10c0,2-4,9-5,10zM156,26c-2,0-6,-4-6,-5c1,0 5,4 6,5zM158,26c-1,-2 2,-8 4,-9c-1,1-3,8-4,9zM-2,26c-1,-2 2,-8 4,-9c-1,1-3,8-4,9zM157,26c0,-4 6,-9 9,-10c-2,2-7,8-9,10zM-3,26c0,-4 6,-9 9,-10c-2,2-7,8-9,10z'/><path fill='%2324421d' d='M-1,25c-3,-2-7,-10-7,-13c1,3 6,11 7,13zM159,25c-3,-2-7,-10-7,-13c1,3 6,11 7,13zM-1,25c-2,-2-6,-11-7,-12c2,1 7,10 7,12zM159,25c-2,-2-6,-11-7,-12c2,1 7,10 7,12zM-1,25c-1,-2-2,-9-3,-9c2,1 3,8 3,9zM159,25c-1,-2-2,-9-3,-9c2,1 3,8 3,9zM1,25c0,-2 2,-6 3,-7c0,2-2,6-3,7zM161,25c0,-2 2,-6 3,-7c0,2-2,6-3,7zM-11,25l3,-2 3,-2 3,-1 2,-3 3,2 3,4 3,0 2,2zM149,25l3,-2 3,-2 3,-1 2,-3 3,2 3,4 3,0 2,2zM6,25c-2,-1-5,-5-5,-6c2,0 5,5 5,6zM166,25c-2,-1-5,-5-5,-6c2,0 5,5 5,6zM6,25c-3,-3-2,-11-1,-12c1,1 1,10 1,12zM5,25c-1,-3 2,-13 3,-15c1,3-1,13-3,15zM5,25c0,-3 4,-8 6,-9c0,2-4,8-6,9zM31,25l3,-3 3,-1 3,1 2,-3 3,-1 3,3 3,2 2,2zM65,25c-2,-1-6,-5-7,-5c2,0 7,4 7,5zM63,25c-1,-1-2,-5-1,-6c1,1 2,5 1,6zM65,25c-1,-1 0,-6 0,-7c1,2 0,6 0,7zM65,25c-1,-2 3,-5 5,-5c-1,1-4,4-5,5zM75,25c-1,-1-2,-5-2,-6c0,1 2,5 2,6zM76,25c0,-1 0,-5 1,-6c-1,1 0,5-1,6zM75,25c0,-1 1,-5 1,-6c1,2 0,5-1,6zM77,25c0,-2 4,-4 6,-4c-2,1-5,3-6,4zM80,25l3,-1 2,-4 2,-2 3,2 2,0 2,2 3,1 2,2zM92,25c-2,-1-3,-8-1,-11c-1,2 1,9 1,11zM94,25c-2,-2-3,-8-3,-9c1,1 3,7 3,9zM92,25c-1,-2 3,-7 6,-8c-2,2-5,7-6,8zM92,25c0,-2 2,-8 3,-10c0,3-2,9-3,10zM100,25c-4,-2-12,-9-14,-8c4,-1 13,5 14,8zM97,25c-1,-2-1,-11 1,-13c-1,2-1,11-1,13zM98,25c-1,-2-2,-8-3,-9c2,1 4,8 3,9zM98,25c0,-3 3,-11 3,-12c1,3-1,11-3,12zM95,25l2,-1 1,-3 2,-1 1,-2 2,0 1,4 2,2 2,1zM104,25c-3,-1-9,-11-8,-12c1,1 7,10 8,12zM103,25c-2,-2-5,-9-5,-11c2,2 5,9 5,11zM104,25c-1,-3 1,-10 2,-11c0,2-1,9-2,11zM103,25c0,-3 2,-11 1,-13c2,3 0,12-1,13zM97,25l1,-2 2,-1 1,0 2,0 1,-2 2,0 2,4 1,1zM110,25c-3,-1-6,-12-4,-14c1,2 4,11 4,14zM110,25c-3,-2-6,-11-6,-12c3,1 6,9 6,12zM110,25c-1,-3-2,-11-3,-12c3,2 4,10 3,12zM111,25c0,-4 4,-13 5,-14c0,2-3,12-5,14zM99,25l2,-1 3,-2 2,0 2,-2 2,-1 2,3 2,2 2,1zM109,25l2,-2 3,-1 2,-3 3,-3 2,4 3,2 2,1 3,2zM120,25c-3,-1-6,-10-5,-13c2,2 5,11 5,13zM122,25c-2,-1-6,-8-6,-8c2,0 5,6 6,8zM120,25c0,-3 1,-10 0,-12c2,3 2,10 0,12zM123,25c-1,-3 1,-12 2,-15c1,4-1,13-2,15zM127,25c-2,-1-1,-8 1,-9c-1,1 0,8-1,9zM127,25c-2,-2-7,-9-9,-9c4,1 10,7 9,9zM127,25c-2,-2 1,-9 3,-9c0,1-2,8-3,9zM128,25c-2,-4 2,-16 2,-17c2,3 0,15-2,17zM117,25l3,-2 3,-2 3,-2 3,2 2,2 3,-2 3,2 3,2zM127,25l3,-1 3,-1 2,-2 3,0 3,1 3,1 3,1 2,1zM147,25c-3,-2-11,-9-14,-9c4,1 13,7 14,9zM146,25c-3,-1-4,-9-3,-10c1,1 3,8 3,10zM145,25c-2,-4 4,-14 8,-14c-1,2-6,12-8,14zM144,25c0,-4 5,-12 8,-14c-1,4-6,12-8,14zM136,25l2,-2 2,-1 3,-4 2,-1 2,1 3,2 2,4 2,1zM140,25l3,-2 3,1 3,-2 2,0 3,0 3,0 2,2 3,1zM-20,25l3,-2 3,1 3,-2 2,0 3,0 3,0 2,2 3,1zM157,25c-3,-1-6,-7-7,-9c2,2 7,7 7,9zM158,25c-2,-2-8,-7-10,-8c4,1 9,6 10,8zM158,25c-1,-2 0,-10 0,-11c1,2 1,10 0,11zM-2,25c-1,-2 0,-10 0,-11c1,2 1,10 0,11zM157,25c0,-3 9,-10 13,-10c-3,2-10,9-13,10zM-3,25c0,-3 9,-10 13,-10c-3,2-10,9-13,10zM147,25l2,-1 2,-2 3,-2 2,-1 2,0 3,3 2,2 2,1zM-13,25l2,-1 2,-2 3,-2 2,-1 2,0 3,3 2,2 2,1z'/><path fill='%233c6a2c' fill-opacity='.52' d='M-1,24c-3,-3-11,-11-15,-12c6,1 15,9 15,12zM159,24c-3,-3-11,-11-15,-12c6,1 15,9 15,12zM0,24c-4,-3-8,-15-9,-18c4,3 10,14 9,18zM160,24c-4,-3-8,-15-9,-18c4,3 10,14 9,18zM0,24c-1,-5-1,-18-2,-20c3,3 4,17 2,20zM160,24c-1,-5-1,-18-2,-20c3,3 4,17 2,20zM-1,24c0,-3 0,-13-1,-15c2,3 2,14 1,15zM159,24c0,-3 0,-13-1,-15c2,3 2,14 1,15zM28,26c1,-6 10,-4 13,0c-3,2-11,2-13,0zM41,24c-1,-1-4,-4-5,-4c2,0 5,3 5,4zM41,24c-1,-1 0,-5 1,-6c-1,1-1,5-1,6zM41,24c-1,-1 1,-4 2,-5c-1,1-2,4-2,5zM39,24c0,-2 0,-6-1,-6c2,1 2,5 1,6zM48,24c2,-3 8,0 9,2c-2,0-7,-1-9,-2zM83,25c4,-5 12,-3 15,-2c-5,4-14,5-15,2zM86,24c-2,-1-4,-7-2,-9c0,2 2,7 2,9zM88,24c-2,-1-2,-6-1,-7c0,1 1,6 1,7zM87,24c-1,-1-3,-6-4,-7c2,1 4,6 4,7zM87,24c0,-2 3,-6 4,-6c-1,1-3,5-4,6zM102,24c5,-5 12,3 13,9c-4,0-11,-5-13,-9zM99,24c-3,-2-3,-14-1,-16c-1,2 1,14 1,16zM98,24c-1,-2-4,-8-6,-9c3,2 6,7 6,9zM99,24c-1,-3 3,-14 5,-14c0,2-3,12-5,14zM99,24c-1,-3 0,-13-1,-14c3,3 3,12 1,14zM104,24c-4,-2-4,-17 0,-21c-2,5-1,18 0,21zM104,24c-4,-3-7,-15-7,-18c3,3 8,15 7,18zM106,24c-1,-3-2,-12-4,-13c3,2 5,11 4,13zM104,24c-1,-2 0,-9 0,-10c1,2 1,9 0,10zM111,24c-4,-1-7,-15-3,-19c-1,3 3,16 3,19zM111,24c-2,-2-2,-12 0,-15c0,3 1,13 0,15zM112,24c-3,-4 2,-16 7,-19c-3,4-6,16-7,19zM111,24c0,-3 2,-9 3,-10c0,2-1,9-3,10zM116,24c-2,-2-4,-10-3,-11c1,1 4,9 3,11zM116,24c-4,-2-11,-13-14,-15c6,3 15,12 14,15zM115,24c-2,-2-1,-10 0,-10c1,1 1,9 0,10zM117,24c0,-3 8,-11 13,-10c-4,1-11,8-13,10zM126,24c-2,-2-2,-9 1,-12c-1,3-1,10-1,12zM128,24c-3,-4-8,-17-11,-19c6,3 12,16 11,19zM127,24c-3,-3-4,-18-4,-20c4,4 6,18 4,20zM128,24c0,-2 2,-10 1,-12c2,3 0,11-1,12zM138,24c-3,-3-10,-12-13,-12c5,0 13,9 13,12zM138,24c-2,-2-6,-11-6,-12c2,2 6,10 6,12zM139,24c-3,-4 6,-17 13,-18c-4,2-11,16-13,18zM138,24c-1,-3 0,-12-1,-13c3,3 3,12 1,13zM146,24c-3,-2-12,-8-16,-9c7,0 16,6 16,9zM145,24c-4,-3-7,-15-8,-18c4,3 9,15 8,18zM146,24c-3,-5 1,-17 4,-19c0,4-2,16-4,19zM144,24c-1,-6 7,-16 10,-17c-1,4-7,15-10,17zM152,25c2,-3 7,1 8,6c-2,-1-7,-4-8,-6zM-8,25c2,-3 7,1 8,6c-2,-1-7,-4-8,-6zM149,24c-2,-3-8,-11-11,-12c4,2 11,9 11,12zM150,24c-3,-4-4,-15-5,-18c3,4 6,15 5,18zM152,24c-2,-2 1,-8 4,-10c-1,2-3,8-4,10zM150,24c0,-3 2,-9 3,-10c0,2-2,8-3,10zM158,24c-3,-1-9,-7-11,-8c4,1 11,6 11,8zM158,24c-2,-3-1,-15 2,-17c-2,3-2,14-2,17zM-2,24c-2,-3-1,-15 2,-17c-2,3-2,14-2,17zM158,24c-1,-3 3,-12 6,-13c-2,2-5,11-6,13zM-2,24c-1,-3 3,-12 6,-13c-2,2-5,11-6,13zM157,24c0,-5 8,-14 13,-14c-3,1-11,11-13,14zM-3,24c0,-5 8,-14 13,-14c-3,1-11,11-13,14z'/><path fill='%233c6a2c' d='M-1,24c-3,-2-3,-11 0,-13c-2,2-1,11 0,13zM159,24c-3,-2-3,-11 0,-13c-2,2-1,11 0,13zM0,24c-2,-2-4,-9-4,-11c2,2 4,9 4,11zM160,24c-2,-2-4,-9-4,-11c2,2 4,9 4,11zM-1,24c-1,-2 5,-8 8,-9c-2,2-7,8-8,9zM159,24c-1,-2 5,-8 8,-9c-2,2-7,8-8,9zM10,24c-2,-2-8,-9-9,-11c3,2 9,9 9,11zM170,24c-2,-2-8,-9-9,-11c3,2 9,9 9,11zM11,24c-1,-3-5,-10-8,-11c4,1 8,9 8,11zM13,24c-1,-2 0,-7-1,-8c1,2 2,7 1,8zM117,24c-2,-2-1,-9 2,-12c-2,3-2,10-2,12zM117,24c-1,-3 4,-11 8,-13c-3,3-7,11-8,13zM116,24c0,-2 1,-7 1,-8c1,2 0,7-1,8zM156,24c-1,-2-4,-9-4,-10c1,2 4,8 4,10zM158,24c-1,-2-2,-7-2,-8c2,1 2,7 2,8zM157,24c-1,-2 6,-7 10,-7c-3,1-9,6-10,7zM-3,24c-1,-2 6,-7 10,-7c-3,1-9,6-10,7z'/></svg>");
+  background-size:160px 34px;background-repeat:repeat-x}
+body.tab-usage[data-theme="forest"] .th-floor > i:nth-child(2){
+  left:0;right:0;bottom:8px;height:26px;z-index:1;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='224' height='26' viewBox='0 0 224 26'><path fill='%23172d16' fill-opacity='.34' d='M105,26l6,-1 6,-2 6,-3 7,0 6,-1 6,3 6,3 6,1zM107,26l7,-4 7,-3 8,-3 7,-2 7,-4 7,6 7,8 7,2zM121,26l6,-2 6,-2 6,-1 6,-2 6,-1 6,4 6,3 6,1zM162,26l4,-2 3,-2 4,-1 4,-3 4,1 4,5 3,0 4,2zM167,26l4,-3 5,-5 4,1 5,2 5,-2 4,1 5,3 4,3zM179,26l7,-4 6,-2 6,-2 7,3 6,-1 7,-2 6,4 6,4zM-45,26l7,-4 6,-2 6,-2 7,3 6,-1 7,-2 6,4 6,4z'/><path fill='%23172d16' fill-opacity='.44' d='M0,25c-2,0-5,-6-4,-7c1,0 5,6 4,7zM224,25c-2,0-5,-6-4,-7c1,0 5,6 4,7zM0,25c-1,-1-4,-6-6,-7c3,1 6,6 6,7zM224,25c-1,-1-4,-6-6,-7c3,1 6,6 6,7zM1,25c-1,-1-1,-7 0,-8c0,2 0,7 0,8zM225,25c-1,-1-1,-7 0,-8c0,2 0,7 0,8zM1,25c0,-2 3,-6 3,-6c0,1-2,5-3,6zM225,25c0,-2 3,-6 3,-6c0,1-2,5-3,6zM41,25c-1,0-2,-5-1,-7c0,1 1,6 1,7zM41,25c-1,-1-1,-5-1,-5c0,1 1,4 1,5zM40,25c0,-1 3,-4 5,-4c-1,0-4,3-5,4zM41,25c0,-2 2,-5 3,-5c0,1-2,4-3,5zM104,25c-3,-1-8,-8-9,-8c3,0 8,6 9,8zM106,25c-2,-2-3,-7-3,-9c2,2 4,7 3,9zM106,25c-1,-2-1,-9-1,-10c1,1 1,9 1,10zM103,25c0,-3 4,-7 6,-7c-1,1-4,6-6,7zM141,25c-3,-1-5,-11-3,-14c1,2 3,12 3,14zM139,25c-3,-3 0,-13 3,-15c-1,3-2,12-3,15zM139,25c-1,-2 0,-6 0,-7c1,1 0,6 0,7zM141,25c0,-3 7,-10 11,-10c-2,2-9,9-11,10zM168,25c-3,-1-9,-6-10,-6c3,0 10,4 10,6zM168,25c-1,-3 0,-11 2,-14c-1,4-1,12-2,14zM169,25c-1,-3 1,-11 3,-12c-1,2-2,10-3,12zM169,25c0,-2 2,-6 4,-7c-1,2-3,6-4,7zM190,25c-3,-1-8,-6-10,-6c3,0 9,4 10,6zM190,25c-3,-2-2,-12 1,-14c-2,2-1,12-1,14zM188,25c-1,-2-1,-7-2,-8c2,2 3,7 2,8zM190,25c0,-2 6,-7 9,-7c-2,1-8,6-9,7zM210,25c-3,-2-9,-7-11,-7c3,0 10,5 11,7zM211,25c-1,-2-4,-8-5,-8c3,0 6,7 5,8zM210,25c-1,-2 3,-8 6,-10c-2,2-5,9-6,10zM209,25c0,-3 4,-11 5,-11c0,2-3,10-5,11z'/></svg>");
+  background-size:224px 26px;background-repeat:repeat-x}
+body.tab-usage[data-theme="forest"] .th-floor > i:nth-child(3){display:none}
+body.tab-usage[data-theme="forest"] .th-floor > i:nth-child(4){
+  left:-12px;bottom:2px;width:88px;height:32px;z-index:4;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='88' height='32' viewBox='0 0 88 32'><path fill='%23172d16' d='M60,31l1,-3 3,-2 5,-1 4,2 3,1 1,3z'/><path fill='%2324421d' fill-opacity='.72' d='M-11,32l9,-4 10,-8 9,1 9,3 10,-1 9,2 9,2 10,5zM2,30c-1,-1-3,-6-2,-7c0,1 2,6 2,7zM2,30c-1,-3 2,-9 5,-11c-1,3-3,9-5,11zM3,30c0,-3 3,-11 3,-12c1,3-1,11-3,12zM9,30c-2,-1-5,-9-3,-12c0,2 3,10 3,12zM12,30c-1,-2 3,-7 5,-8c-2,2-5,7-5,8zM9,30c0,-2 1,-8 0,-10c1,3 1,9 0,10zM29,30c-1,0-3,-4-2,-6c0,2 1,5 2,6zM27,30c-1,-1-1,-5-1,-6c1,1 1,5 1,6zM26,30c0,-2 3,-5 4,-5c0,1-3,4-4,5zM44,30c-2,-1-3,-7-3,-8c1,2 3,7 3,8zM44,30c-1,-2 0,-7 1,-8c0,1 0,7-1,8zM46,30c0,-2 5,-5 8,-4c-2,0-7,3-8,4zM63,30c-2,-1-3,-5-3,-6c0,1 2,5 3,6zM61,30c-1,-1 0,-5 2,-5c-1,1-2,4-2,5zM61,30c-1,-2 6,-7 8,-7c-2,1-7,6-8,7zM79,30c-2,-1-3,-7-3,-8c1,1 2,6 3,8zM77,30c-1,-1 0,-6 1,-8c-1,2-1,7-1,8zM78,30c0,-2 2,-8 2,-9c1,2-1,8-2,9z'/><path fill='%2324421d' d='M30,32l6,-2 6,-4 7,-2 6,-1 6,1 6,5 6,1 6,2zM2,29c-3,-2-10,-10-11,-11c4,0 11,8 11,11zM3,29c-2,-3 0,-13 3,-16c-2,4-3,13-3,16zM2,29c-1,-3 1,-11 2,-13c0,3-1,11-2,13zM3,29c-1,-4 4,-13 5,-14c1,2-3,12-5,14zM11,29c-4,-1-11,-7-13,-7c5,-1 13,4 13,7zM12,29c-3,-1-6,-8-7,-9c3,1 7,7 7,9zM10,29c-1,-2 4,-9 7,-9c-2,1-6,8-7,9zM10,29c0,-4 4,-12 6,-13c0,3-4,11-6,13zM20,29c-4,-2-12,-11-13,-11c4,0 13,8 13,11zM19,29c-2,-1-1,-10 1,-12c-1,2-1,10-1,12zM19,29c-2,-3 0,-12 3,-15c-1,4-2,12-3,15zM20,29c-2,-3 2,-13 3,-14c1,3-2,13-3,14zM26,29c-2,-1-5,-6-5,-8c1,1 5,6 5,8zM26,29c-1,-1-1,-7 0,-8c0,2 0,7 0,8zM27,29c-1,-2-2,-8-2,-9c2,1 3,8 2,9zM29,29c-1,-4 3,-11 4,-12c1,3-2,11-4,12zM35,29c-3,0-4,-9-2,-12c0,3 2,10 2,12zM35,29c-1,-2-4,-7-5,-8c3,2 6,7 5,8zM35,29c-2,-3-2,-11-2,-13c2,3 4,11 2,13zM37,29c1,-2 7,-6 11,-5c-3,1-9,4-11,5zM46,29c-3,-1-9,-6-10,-7c3,0 10,5 10,7zM44,29c-2,-2-5,-10-6,-11c2,2 6,9 6,11zM46,29c-2,-3 0,-12 0,-13c1,2 1,11 0,13zM44,29c0,-4 2,-13 3,-14c1,3-1,12-3,14zM79,29c-1,0-4,-5-4,-6c1,1 4,5 4,6zM78,29c-1,-1-3,-6-3,-7c1,1 3,6 3,7zM80,29c-1,-2 3,-7 6,-7c-2,1-5,6-6,7zM79,29c0,-3 4,-7 6,-8c-1,2-4,7-6,8z'/><path fill='%233c6a2c' fill-opacity='.52' d='M1,28c-4,-2-4,-16 1,-20c-1,4 0,16-1,20zM1,28c-1,-2 1,-12 3,-13c-1,2-3,11-3,13zM3,28c-2,-4 0,-16 2,-17c0,2-1,14-2,17zM2,28c-1,-3 0,-14-1,-16c3,4 3,14 1,16zM9,28c-2,-3-9,-12-12,-14c5,2 12,11 12,14zM11,28c-3,-4-1,-16 3,-19c-1,3-3,15-3,19zM11,28c-2,-4 1,-15 2,-17c1,4 0,15-2,17zM10,28c-1,-3 4,-10 8,-10c-2,1-6,8-8,10zM18,28c-3,-2-10,-9-13,-10c5,1 13,8 13,10zM20,28c-4,-2-1,-13 3,-16c-2,3-3,13-3,16zM19,28c-1,-2 3,-7 5,-8c-2,1-5,7-5,8zM18,28c-2,-3 4,-11 7,-11c-1,1-5,10-7,11zM46,28c-2,-2-4,-11-3,-14c1,3 3,12 3,14zM43,28c-3,-2-2,-14 2,-16c-1,2-1,14-2,16zM45,28c0,-3 5,-11 8,-12c-2,2-7,10-8,12zM44,28c0,-5 8,-13 12,-13c-2,2-9,11-12,13zM61,28c-1,-1-5,-5-6,-6c2,1 6,4 6,6zM63,28c-3,-3-2,-11 0,-13c0,2 1,11 0,13zM60,28c-1,-2-1,-7-1,-8c1,2 2,7 1,8zM61,28c0,-3 5,-11 7,-12c-1,2-5,10-7,12z'/></svg>");
+  background-size:88px 32px}
+body.tab-usage[data-theme="forest"] .th-floor > i:nth-child(5){
+  right:-10px;bottom:2px;width:76px;height:28px;z-index:4;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='76' height='28' viewBox='0 0 76 28'><path fill='%23172d16' d='M24,27l-1,-2-2,-1-4,-1-4,-1-3,3-1,2z'/><path fill='%2324421d' fill-opacity='.72' d='M86,28l-9,-3-8,-5-8,-2-8,-1-8,3-8,5-8,-1-8,4zM74,26c2,-1 3,-6 2,-8c0,2-1,7-2,8zM73,26c2,-1 3,-7 3,-8c-1,1-3,7-3,8zM74,26c0,-3-5,-9-7,-10c1,2 5,9 7,10zM65,26c3,-1 4,-9 3,-11c-1,2-3,9-3,11zM66,26c2,-2-2,-9-6,-10c2,1 5,8 6,10zM65,26c1,-2-4,-5-7,-5c2,1 6,4 7,5zM56,26c3,-1 7,-8 7,-9c-2,1-7,7-7,9zM57,26c1,-1 0,-5 0,-6c-1,1 0,5 0,6zM57,26c0,-3-6,-9-9,-9c2,1 7,8 9,9zM50,26c2,-1 7,-5 8,-6c-2,1-8,5-8,6zM48,26c1,-1 2,-6 2,-7c-1,1-2,6-2,7zM47,26c1,-3-5,-8-9,-9c3,2 8,8 9,9zM39,26c1,0 3,-3 4,-5c-1,1-4,4-4,5zM40,26c1,-2 3,-7 4,-9c-2,2-5,7-4,9zM40,26c0,-2-2,-5-3,-5c0,1 2,4 3,5zM33,26c2,-1 6,-7 6,-9c-1,1-6,8-6,9zM32,26c2,-2-1,-9-3,-10c1,2 3,9 3,10zM30,26c0,-2-2,-7-3,-9c0,3 2,8 3,9zM22,26c2,-1 4,-5 4,-6c-1,1-4,5-4,6zM22,26c1,-2 0,-8-2,-9c1,2 1,7 2,9zM24,26c0,-1-1,-5-1,-6c0,2 0,5 1,6z'/><path fill='%2324421d' d='M50,28l-5,-1-6,-5-5,-2-5,1-5,1-6,3-5,1-5,2zM73,25c2,-1 2,-7 1,-9c0,2-1,7-1,9zM73,25c3,-2 5,-11 5,-14c-2,3-5,11-5,14zM73,25c2,-2 2,-10 1,-12c-1,3-1,10-1,12zM75,25c2,-3-4,-11-7,-11c1,1 6,10 7,11zM65,25c3,-1 6,-11 4,-14c0,3-3,12-4,14zM64,25c2,-2 5,-9 7,-10c-3,2-7,8-7,10zM64,25c2,-2 0,-8-1,-9c0,2 0,8 1,9zM66,25c1,-3-4,-8-7,-9c1,2 5,8 7,9zM47,25c2,-1 7,-7 7,-7c-1,0-6,5-7,7zM48,25c1,-2 3,-9 3,-11c-1,3-3,9-3,11zM50,25c2,-4-4,-13-9,-13c2,1 7,11 9,13zM48,25c1,-2-4,-7-7,-8c2,2 6,7 7,8zM40,25c3,-1 9,-10 10,-12c-3,2-10,10-10,12zM41,25c2,-1 6,-7 7,-8c-3,1-7,7-7,8zM39,25c2,-2 0,-9-2,-11c1,2 2,9 2,11zM40,25c0,-2-4,-6-6,-6c1,1 5,5 6,6zM7,25c2,-1 4,-7 4,-9c-2,2-4,7-4,9zM6,25c1,-1 2,-8 1,-8c0,1-2,7-1,8zM8,25c1,-2-2,-8-4,-9c1,1 3,8 4,9zM6,25c0,-2-6,-6-9,-6c3,1 8,5 9,6z'/><path fill='%233c6a2c' fill-opacity='.52' d='M74,24c3,-1 8,-8 8,-9c-2,1-7,7-8,9zM75,24c2,-2 8,-9 10,-10c-4,1-10,8-10,10zM75,24c1,-2 0,-8-1,-10c0,2 1,8 1,10zM75,24c0,-4-1,-13-1,-15c-1,3-1,12 1,15zM30,24c2,-1 7,-9 8,-9c-2,0-8,7-8,9zM31,24c2,-2 6,-8 7,-9c-3,1-8,7-7,9zM31,24c1,-2-3,-10-5,-10c2,1 5,8 5,10zM32,24c1,-3-8,-9-13,-9c4,1 12,8 13,9z'/></svg>");
+  background-size:76px 28px}
+body.tab-usage[data-theme="forest"] .th-floor > i:nth-child(6){
+  left:118px;bottom:2px;width:30px;height:32px;z-index:5;transform-origin:50% 100%;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='30' height='32' viewBox='0 0 30 32'><path fill='%2324421d' d='M16,31c-4,-1-11,-12-10,-16c2,3 10,13 10,16zM13,31c-5,-2-11,-19-10,-23c3,4 11,19 10,23zM17,31c-4,-4-1,-21 3,-24c-1,4-2,21-3,24zM14,31c-2,-5 4,-17 9,-19c-2,4-7,16-9,19zM16,31c-3,-5-2,-23-4,-26c6,6 7,24 4,26zM16,31c0,-3 6,-12 8,-12c-1,2-6,11-8,12z'/><path fill='%233c6a2c' fill-opacity='.52' d='M14,30c-4,-3-5,-16-1,-20c-1,4 0,17 1,20zM16,30c-4,-3-8,-21-6,-25c2,4 7,21 6,25zM14,30c-1,-3 3,-11 8,-12c-3,1-7,10-8,12zM15,30c-1,-4-2,-14-2,-17c2,4 4,15 2,17zM14,30c0,-5 3,-16 3,-17c2,3 0,15-3,17z'/><path fill='%233c6a2c' d='M15,30c-5,-3-7,-17-5,-22c1,5 4,18 5,22zM15,30c-1,-4 0,-14 0,-16c2,3 2,14 0,16z'/></svg>");
+  background-size:30px 32px;
+  animation:th-forest-tuft 7.1s ease-in-out infinite alternate}
+@keyframes th-forest-tuft{from{transform:rotate(-2.2deg)}to{transform:rotate(2.2deg)}}
+/* 5 THE RING. #ringArc and not .ringArc: the arc carries the id, so a class loses the cascade to styles.js. The pattern is the shell's (html.js, grassStroke). Header, 5 */
+body.tab-usage[data-theme="forest"] #ringArc{
+  stroke:url(#grassStroke);
+  filter:drop-shadow(0 0 2px rgba(169,224,97,.38))}
+body.tab-usage[data-theme="forest"] .rtrack{stroke:#13220f}
+body.tab-usage[data-theme="forest"] .th-orbit{display:none}
+/* 6 EIGHT FIREFLIES, 2-4px. The mask keeping them off the glyphs is the shell's: do not write one here (themes/README.md, 3) */
+body.tab-usage[data-theme="forest"] .th-motes > i{
+  width:var(--s,3px);height:var(--s,3px);border-radius:50%;
+  background:radial-gradient(circle at 50% 50%,#fbffe8 0 26%,#dcff92 54%,rgba(170,214,78,0) 100%);
+  box-shadow:0 0 8px 2px rgba(206,255,126,.34)}
+body.tab-usage[data-theme="forest"] .th-motes > i:nth-child(1){--s:4px;left:7px;top:326px;animation:th-forest-fly-a 13.3s ease-in-out infinite}
+body.tab-usage[data-theme="forest"] .th-motes > i:nth-child(2){--s:3px;left:5px;top:118px;animation:th-forest-fly-b 17.9s ease-in-out infinite}
+body.tab-usage[data-theme="forest"] .th-motes > i:nth-child(3){--s:3px;right:6px;top:252px;animation:th-forest-fly-a 11.1s ease-in-out -4.4s infinite}
+body.tab-usage[data-theme="forest"] .th-motes > i:nth-child(4){--s:4px;right:5px;top:62px;animation:th-forest-fly-b 19.7s ease-in-out -8.2s infinite}
+body.tab-usage[data-theme="forest"] .th-motes > i:nth-child(5){--s:2px;left:9px;bottom:14px;animation:th-forest-fly-a 15.3s ease-in-out -2.1s infinite}
+body.tab-usage[data-theme="forest"] .th-motes > i:nth-child(6){--s:3px;right:8px;bottom:12px;animation:th-forest-fly-b 12.7s ease-in-out -6.8s infinite}
+@keyframes th-forest-fly-a{
+  0%{transform:translate(0,0);opacity:.08}
+  22%{opacity:.88}
+  50%{transform:translate(9px,-38px);opacity:.30}
+  74%{opacity:.76}
+  100%{transform:translate(-5px,-76px);opacity:.05}}
+@keyframes th-forest-fly-b{
+  0%{transform:translate(0,0);opacity:.07}
+  28%{opacity:.72}
+  55%{transform:translate(-5px,34px);opacity:.24}
+  80%{opacity:.60}
+  100%{transform:translate(5px,68px);opacity:.04}}
+body.tab-usage[data-theme="forest"] .th-motes > i:nth-child(7){
+  --s:3px;right:16px;top:24px;opacity:.5;
+  background:radial-gradient(circle at 50% 50%,#f8ffe9 0 30%,rgba(226,246,198,.5) 60%,rgba(150,180,110,0) 100%);
+  box-shadow:0 0 5px rgba(232,248,206,.4);
+  animation:th-forest-seed 31.7s linear infinite}
+body.tab-usage[data-theme="forest"] .th-motes > i:nth-child(8){
+  --s:2px;left:18px;top:52px;opacity:.44;
+  background:radial-gradient(circle at 50% 50%,#f8ffe9 0 30%,rgba(226,246,198,.5) 60%,rgba(150,180,110,0) 100%);
+  box-shadow:0 0 4px rgba(232,248,206,.34);
+  animation:th-forest-seed 41.3s linear -14.6s infinite}
+@keyframes th-forest-seed{
+  0%{transform:translate(0,-10px);opacity:0}
+  12%{opacity:.52}
+  88%{opacity:.46}
+  100%{transform:translate(-6px,372px);opacity:0}}
+/* 7 THE BOARD: a line taken away and a surface given. NOTHING HERE MOVES, because this is the surface the text sits on. No badge: see the header. Header, 7 */
+body.tab-usage[data-theme="forest"] .inner,
+body.tab-usage[data-theme="forest"] .tabs{border-color:transparent}
+body.tab-usage[data-theme="forest"] .inner::before{
+  content:"";position:absolute;inset:-3px;z-index:-1;border-radius:15px;pointer-events:none;
+  background:
+    var(--dither),
+    radial-gradient(ellipse 46% 26% at 17% 1%,rgba(2,8,3,.70),transparent 72%),
+    radial-gradient(ellipse 32% 19% at 55% -2%,rgba(2,8,3,.60),transparent 72%),
+    radial-gradient(ellipse 38% 23% at 90% 2%,rgba(2,8,3,.54),transparent 74%),
+    radial-gradient(ellipse 26% 30% at 72% 96%,rgba(2,8,3,.42),transparent 76%),
+    linear-gradient(180deg,rgba(206,250,152,.085) 0 1.5px,transparent 1.5px),
+    linear-gradient(0deg,rgba(168,214,118,.055) 0 2px,transparent 2px),
+    radial-gradient(ellipse 58% 42% at 6% 3%,rgba(206,250,152,.105),transparent 72%),
+    linear-gradient(154deg,rgba(12,26,14,.22) 0%,rgba(4,11,6,.66) 100%);
+  box-shadow:0 5px 20px rgba(0,0,0,.46),
+    inset 0 0 30px 10px rgba(3,9,4,.46);
+  -webkit-mask:linear-gradient(90deg,transparent 0,#000 15px,#000 calc(100% - 15px),transparent 100%),
+    linear-gradient(180deg,transparent 0,#000 4px,#000 calc(100% - 11px),transparent 100%);
+  -webkit-mask-composite:source-in;
+  mask:linear-gradient(90deg,transparent 0,#000 15px,#000 calc(100% - 15px),transparent 100%),
+    linear-gradient(180deg,transparent 0,#000 4px,#000 calc(100% - 11px),transparent 100%);
+  mask-composite:intersect}
+body.tab-usage[data-theme="forest"] .tabs{position:relative;isolation:isolate;background:transparent}
+body.tab-usage[data-theme="forest"] .tabs::before{
+  content:"";position:absolute;inset:-2px;z-index:-1;border-radius:12px;pointer-events:none;
+  background:
+    radial-gradient(ellipse 40% 150% at 8% 0%,rgba(206,250,152,.065),transparent 72%),
+    radial-gradient(ellipse 34% 120% at 78% 100%,rgba(2,8,3,.46),transparent 76%),
+    linear-gradient(180deg,rgba(206,250,152,.075) 0 1.5px,transparent 1.5px),
+    linear-gradient(158deg,rgba(12,26,14,.28) 0%,rgba(3,10,5,.64) 100%);
+  box-shadow:0 3px 12px rgba(0,0,0,.42),inset 0 0 16px 5px rgba(3,9,4,.40);
+  -webkit-mask:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 12px),transparent 100%),
+    linear-gradient(180deg,transparent 0,#000 3px,#000 calc(100% - 7px),transparent 100%);
+  -webkit-mask-composite:source-in;
+  mask:linear-gradient(90deg,transparent 0,#000 12px,#000 calc(100% - 12px),transparent 100%),
+    linear-gradient(180deg,transparent 0,#000 3px,#000 calc(100% - 7px),transparent 100%);
+  mask-composite:intersect}
+body.tab-usage[data-theme="forest"] .stats{
+  background:linear-gradient(180deg,rgba(3,10,5,.34) 0%,rgba(3,10,5,.05) 100%)}
+/* 8 A NARROW SIDEBAR. The two end masses overlap the middle by 101.5px at a 170px card, so they go. The top tile stays: 0.98 of one lands at 190px */
+@media (max-width:232px){
+  body.tab-usage[data-theme="forest"] .th-floor > i:nth-child(4),
+  body.tab-usage[data-theme="forest"] .th-floor > i:nth-child(5){display:none}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(4),
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(5){width:16px}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(5){background-position:right 0 top 0}
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(6),
+body.tab-usage[data-theme="forest"] .th-frame > i:nth-child(7){display:none}
+}
+/* 9 THE CELL ON THE SHELF, drawn whatever is worn, so it cannot be under the scope above. No dither: --dither is declared in the panel's block and a 48px chip cannot band */
+.th-chip[data-th="forest"]{--card:#0f1a10;--th-scene:radial-gradient(ellipse 128% 72% at 50% 46%,transparent 34%,rgba(0,0,0,.30) 100%),linear-gradient(180deg,transparent 40%,rgba(0,0,0,.58) 100%),radial-gradient(ellipse 58% 26% at 26% 24%,rgba(190,240,150,.055),transparent 72%),radial-gradient(ellipse 30% 16% at 90% 2%,rgba(255,206,118,.13),transparent 74%),radial-gradient(ellipse 92% 32% at 44% -12%,rgba(176,232,112,.19),transparent 66%);}
 `
 };

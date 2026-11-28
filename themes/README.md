@@ -140,6 +140,21 @@ Your own rules come **after** those, so you can override anything written for yo
 The six layer elements, their stacking order, the clip to the card, the frame's mask, the motes'
 mask and the reduced-motion guard. **You give a layer a background; you do not place it.**
 
+**One exception, with one condition: a theme may write its own `.th-frame` mask, and it has to say
+why in a comment beside it.** The shell's four strips are the card's own padding, which is where
+most frames are composed, but not all of them are: a frame drawn in the wrap's coordinates needs a
+wider window and the shell cannot give it one for everybody. Widening the shell's mask was tried on
+2026-11-28 and put back within the hour, because **the six retired themes are composed against the
+four strips** and a wider window does not re-reveal art that was clipped, it reveals art nobody drew
+to be seen (rendered on ocean: a loose blue fragment at x465..500 y20..70 and a blue band hanging
+below the card's floor). So the widening belongs to the one theme that needs it.
+
+Two things still hold whatever a theme writes there:
+
+- **no band may be both wide and tall**, so the middle of the card is never painted over
+- **`.th-motes` is still the shell's alone.** That mask keeps specks off glyphs for every theme, and
+  it is not a composition question
+
 *** THE WHOLE OF `styles.js` IS ONE TEMPLATE LITERAL. A BACKTICK IN A COMMENT THERE STOPS THE
 EXTENSION LOADING. *** It happened twice while this directory was being written.
 
@@ -155,17 +170,21 @@ EXTENSION LOADING. *** It happened twice while this directory was being written.
 
 **Five and six are over the words and that is not a slip.** In the reference the vines and the pit
 timbers lie ON the card's corners. What keeps them off the text is not the z-index, it is the
-**mask**: the frame may paint in four strips and the rest of it is transparent.
+**mask**: the frame may paint in four strips and the rest of it is transparent. The frame's box is
+the **wrap**, which is where a frame is composed, and the card sits at x10..240 inside it.
 
 ```
-A  left post    x   0..24     full height    the header crab starts at x25
-B  right post   x 227..250    full height    the fold button is x201..225
-C  top left     x   0..62     y 0..40        an arch or a vine spills in here
-D  top right    x 188..250    y 0..40        something hangs. It ENDS above the fold button (y46)
+A  left post    x  10..24    full height    the card's left padding
+B  right post   x 227..240   full height    the card's right padding
+C  top left     x  10..62    y 10..40       an arch or a vine spills in here
+D  top right    x 188..240   y 10..40       something hangs. It ENDS above the fold button (y46)
 ```
 
 **C and D are why the card has 30px of top padding** instead of 14. The panel is 16px taller for
 it, for every theme including the free one, so the two never differ in height.
+
+A frame composed in the wrap's own coordinates rather than the card's needs a wider window than
+this, and widens it **in its own block** (see the exception below). `forest` is the one that does.
 
 The floor is the other way round and stays **under** the words, because a landscape is a long soft
 shape with no edge to mask to. What keeps it legible is section 4's measurement and one rule:
@@ -195,10 +214,27 @@ bottom padding 10, the inner's 13, the card's 14, the border), whatever the bars
 
 ### The motes paint where there is no text
 
-The shell masks them to the card's top band and its bottom band (`styles.js`). A speck sitting on
-a glyph does not read as weather, it reads as dirt on the screen. **Do not write a mask of your
-own on `.th-motes`**; the one theme that did had a tighter one and it was dropped, because the
-rule belongs to the shell rather than to whoever remembers it.
+The shell masks them to the card's top band, its bottom band and a 14px band down each side
+(`styles.js`). A speck sitting on a glyph does not read as weather, it reads as dirt on the screen.
+**Do not write a mask of your own on `.th-motes`**; the one theme that did had a tighter one and it
+was dropped, because the rule belongs to the shell rather than to whoever remembers it.
+
+The two side bands came in with the first theme that flew anything the height of the panel
+(2026-11-28): with only the horizontal bands a speck is trapped in the top 30px or the bottom 39 and
+cannot rise past a frame at all.
+
+### Each layer holds a fixed number of empty children
+
+`html.js` puts them there and `styles.js` gives them one line (`.th-l > i{position:absolute}`):
+**scene 2, frame 10, floor 6, motes 8.** A child a theme writes no rule for is 0x0 and paints
+nothing, so a theme that uses three of the frame's ten costs nothing for the other seven.
+
+Two reasons a piece is an element rather than one more background layer, both measured:
+
+- one element's background layers share **one animation clock**, so two pieces that drift at
+  different speeds cannot live in the same element
+- a frame is nine-slice, and each piece needs its own tiling. A background layer can carry that,
+  but the **position** of tiles of mixed sizes cannot be anchored to opposite edges at once
 
 The layers are drawn on the **Usage tab only** (`body.tab-usage .th-l`). A game's screen, the
 crossroads and the shop never see one.
@@ -263,8 +299,8 @@ of "the CSS is the finished article" that would be wrong.
 
 ```
 plain       Default         free      the panel as it has always looked
-mine        Coal Face       10K
-forest      Forest          10K
+forest      Forest          10K       the one that is sold. Frame and floor in inline SVG
+mine        Coal Face       10K       retired, and NOT YET FINISHED: see section 7
 space       Deep Field      10K       retired. the only one with something in the ring (.th-orbit)
 market      Trading Floor   10K       retired. a BLUE accent: see below
 matrix      Phosphor        10K       retired
@@ -272,11 +308,12 @@ ocean       Ocean           10K       retired
 cyberpunk   Cyberpunk       10K       retired
 ```
 
-Five of them are **no longer sold** (2026-11-26, see section 8). Two are.
+**Six of them are no longer sold** (five on 2026-11-26, `mine` on 2026-11-28). One is, plus the free
+one, and that is what the shelf shows: a retired theme nobody bought has no cell at all.
 
-Seven pictures of three layers each, so all seven land on the same rung. That is the count saying
-they are the same amount of drawing, and if a ninth theme ships two layers or four it will price
-itself.
+Every one of them lands on the 10K rung: three picture layers, or, since forest stopped claiming the
+badge it no longer paints, two. That is the count saying three and two are the same amount of
+drawing, and if a ninth theme ships one layer or four it will price itself.
 
 **The trading floor is blue and not red-and-green**, which is the one palette decision in here that
 is not taste: the burn ramp a theme may **not** touch is red (`webview.js`), so a market drawn in
@@ -294,6 +331,10 @@ retired: true,      // boolean or nothing. The register refuses anything else
 `themes/registry.js` or in `shop.js` would be a shared file knowing a theme's name, which is the one
 thing section 1 is about and which `test/themes.test.js` asserts of all five shared files.
 
+**And it also means NOT YET**, which is what `mine` uses it for (2026-11-28): a theme whose drawing
+is unfinished is withdrawn before it is ever sold, because a half-drawn theme on the shelf reads as
+a defect rather than as work in progress. Taking the line out again is the whole of shipping it.
+
 **WHAT IT DOES NOT DO IS TAKE ANYTHING BACK.**
 
 ```
@@ -302,15 +343,31 @@ the row        stays in the shop's catalog, which is what `owns()` answers off
 an owner       goes on wearing it, choosing it and seeing "in use" on its cell
 the CSS        is still in the page, because somebody is wearing it
 the purchase   is refused by the HOST, on the message (shop.js, whyNot), not by the screen
-the cell       stays on the shelf with no price on it: a grey chip and the word `Gone`
+the cell       is drawn only for an OWNER, as the ordinary owned cell with its price on it.
+               A retired theme nobody bought gets no cell at all
 ```
 
-That last pair is the whole of it on screen. A retired theme nobody bought is **not a button** and
-is not in the tab order, since there is nothing a press could do; its label says
-`<name>, no longer sold`, so a reader who cannot see the shelf is told what it is and why.
+**That last line is a reversal** (2026-11-28) and the reasoning it replaced is worth keeping, since
+it was right for the case it was written for. It said: the shelf is the whole list of themes, so a
+gap in it would say nothing, and a retired theme kept a grey chip and the word `Gone` where its
+price had been. That holds for **one** retirement. At six it does not: a shelf where six cells of
+eight say `Gone` is a shop that mostly advertises what it will not sell, and the one cell that *is*
+the offer stops reading as one.
 
-**The cell stays rather than going.** The shelf is the whole list of themes, so a gap in it would
-say nothing, and the reader who is *wearing* a retired theme has to be able to find it.
+The owner's half is untouched either way, which is the half that matters: a theme somebody bought is
+on the shelf as theirs, pressable, so they can always get back to the thing they are wearing.
+
+### Nothing is refunded, and nothing needs to be
+
+A withdrawal takes nothing away, so there is nothing to give back: the directory stays, `owns()`
+goes on answering yes, the CSS is still served, and the panel still wears it. **A reader who bought
+a theme that is no longer sold has lost nothing at all.**
+
+And paying one back is not a small thing to add. `shop.js` is built on money moving one way
+(`netOf` can never return a positive number), so a refund means either breaking that invariant or
+writing a one-shot marker into the record, **and two windows share that record**: a marker that has
+to be applied exactly once, by whichever window reads it first, is the double-credit bug the whole
+merge discipline in that file exists to avoid. The cost is real and the thing it buys is nothing.
 
 **Deleting the directory is a different, heavier decision** and is not this. The row would go with
 it, `owns()` would answer no, and the reader who paid would lose the theme they are wearing. What

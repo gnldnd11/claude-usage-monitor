@@ -204,8 +204,26 @@ const THEME_WHEN = 'Behind everything';
 //
 // So a theme says so in its own meta (`retired: true`, themes/README.md), the register carries that
 // onto its row, and the row stays in the catalog: still listed, still worn by whoever paid for it,
-// and refused to everybody else at the purchase (`whyNot` below). THE SHELF STILL DRAWS IT, without
-// its price, because an owner has to be able to find the thing they are wearing.
+// and refused to everybody else at the purchase (`whyNot` below). THE SHELF DRAWS IT FOR AN OWNER,
+// as the ordinary owned cell, because an owner has to be able to find the thing they are wearing;
+// for everybody else it is not drawn at all (webview.js, shopThemeCellHtml, and the reversal there).
+//
+// AND NOTHING IS REFUNDED, which was asked and settled on 2026-11-28. Two reasons, in this order:
+//
+//   there is nothing to refund   a withdrawal takes nothing away. The directory stays, `owns` goes
+//                               on answering yes, the CSS is still served, the panel still wears
+//                               it. What was bought is still had, in full
+//   it would cost this file its one invariant   MONEY MOVES ONE WAY HERE (`netOf` below can never
+//                               return a positive number), and a refund means either breaking that
+//                               or writing a once-only marker into the record. TWO WINDOWS SHARE
+//                               THAT RECORD: a marker that has to be applied exactly once, by
+//                               whichever window reads it first, is the double-credit bug this
+//                               file's whole merge discipline exists to avoid (see `merge` and
+//                               `kept`, and the 372,000 bug the header tells)
+//
+// So there is no refund path in this module and there is not to be one. If something is ever taken
+// away from a reader for real -- a DIRECTORY deleted rather than retired -- that is the heavier
+// decision themes/README.md section 7 names, and it would have to be answered then and not here.
 const RETIRED = Object.freeze([]);
 
 // --- THE FIVE SCENES ----------------------------------------------------------------------------
