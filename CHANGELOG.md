@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.44.1: The package stops carrying a file that was never meant to leave this machine
+
+- **1.44.0 shipped a `.env` to the marketplace.** `.vscodeignore` had no rule for env files at all, so vsce packaged one holding an Open VSX token and published it. ovsx refused the identical package on the next step, which is the only reason it was caught at all. The token was revoked; this release carries the rule that should have been there, and `vsce ls` now counts zero env files in the package.
+
 ## 1.44.0: Eight themes become one, and the one is drawn leaf by leaf
 
 - **The shelf sells one theme now, and it was redrawn from nothing.** Seven came off the price list; Forest is the one that stayed. What it was before was a green wallpaper with diagonal stripes and a few ellipses at the edge, because a CSS gradient paints a field of colour and cannot paint a thing. What it is now is 819 leaf blades in seven inline SVG pieces, each with its own angle, its own green and its own place in six layers of depth, baked into coordinates rather than rotated at runtime.

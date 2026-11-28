@@ -29,3 +29,11 @@ CLAUDE.md
 # to someone who installed a usage meter. A reminder that this file is a blocklist: a directory
 # added to the repo is published unless a line here says otherwise (verify with: vsce ls).
 tools/**
+
+# ...AND NEVER A SECRET. 1.44.0 shipped a .env holding an Open VSX token to the
+# marketplace because nothing here excluded it: vsce packages what it is not told to
+# skip, and this file had no rule for env at all. ovsx refused the same package and
+# that is the only reason it was caught. (2026-11-28)
+.env
+*.env
+.env.*
